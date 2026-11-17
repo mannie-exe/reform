@@ -9,6 +9,7 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
+import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.serialization.JsonInput;
@@ -239,7 +240,25 @@ public final class ReviewProfile {
             || !Files.getLastModifiedTime(binding.path()).equals(modified))
           throw new IllegalStateException("Public application-only retry wrote the file again");
         session.close();
-        bound.close();
+        var actor =
+            ownerExecutor
+                .submit(
+                    () ->
+                        new EditorActor<>(
+                            context, bound, definition, limits, DraftLimits.CONFIGURATION, 8))
+                .get();
+        try {
+          await(actor.load());
+          await(actor.setRaw(FieldPath.ROOT.field("name"), "Actor"));
+          var savedByActor = await(actor.save());
+          if (savedByActor.receipt().orElseThrow().persistence() != JsonOwner.Persistence.SAVED
+              || actor.view().dirty()
+              || !owner.handle().view().value().orElseThrow().name().equals("Actor"))
+            throw new IllegalStateException(
+                "Public serialized editor did not acknowledge its real save");
+        } finally {
+          actor.close();
+        }
       } finally {
         ownerExecutor.submit(context::close).get(10, TimeUnit.SECONDS);
       }

@@ -2,6 +2,22 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Serialized editing actor
+
+The full Gradle `spotlessApply check build --warning-mode all` passes with 143 core tests, zero failures/errors/skips, 920 generated cases, ten tooling controls and the exact-artifact headless public consumer. The final check took five seconds with relevant cached inputs. No Minecraft client/server or native form is run by this increment.
+
+Nine new controls exercise worker-owned invalid typing, grouped history/defaults/revert/save, late typing while actual file IO is blocked, duplicate pending-save refusal, retained receipt after editor closure, explicit dirty-reload conflict choices, malformed-load diagnostics with retained draft, rejection of an old read after new typing, browse-without-initialization and removable lifecycle subscriptions. One control deliberately holds and releases the two physical workers in opposite order, proving that the same mutable editing session moves between distinct worker IDs under its serialized task verifier. Attribution uses cached validation results so the observer does not rerun the measured validator on its own thread. Another creates and closes 1,024 editor instances in the same live context without exhausting its active hook bound; that is not a heap/GC benchmark.
+
+The actual blocked-write control uses one worker for the file effect while the other accepts and validates a later edit. Its acknowledgement retains the later draft while disk/runtime retain the submitted value. Closing the editor after replacement clears its published view but preserves the `SAVED` fact in the returned receipt. The public Maven consumer now additionally loads, edits and saves through `EditorActor` using only the packaged artifact.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `b9c1d8ba4da919ff3aad82f3811591049efa577b17125f948703f24420678f0f` |
+| Source JAR       | `8bb713c947b44bf5fd9f1d038b5c34f76f42e49f87c2aabbf96838fa067e13fd` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+[Editing](editing.md) owns the pure model and [owners](owners.md) owns the connected actor contract. Native presentation, actor/lifecycle gateways, registered/native backends, full operations/cancellation, richer types, convenience factories, consumer migrations and native/full-pack/cost qualification remain required. This headless actor qualification is not completion of the Phase 1 UI or a release.
+
 ## Worker-prepared publication
 
 The full Gradle `spotlessApply check build --warning-mode all` passes with 134 core tests, zero failures/errors/skips, 920 generated cases, ten tooling controls and the exact-artifact headless consumer. The final check took five seconds with relevant cached inputs. No new Minecraft game process or native actor gateway is included.

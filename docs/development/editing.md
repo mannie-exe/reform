@@ -1,6 +1,6 @@
 # Editing model
 
-The experimental core provides pure edit sessions for current scalar, record, list and custom value types. It performs no persistence, authorization, runtime publication or game operation. [Coverage](coverage.md) owns the remaining Phase 1 scope, including richer value families, actual owners and native presentation.
+The experimental core provides pure edit sessions for current scalar, record, list and custom value types. This model performs no persistence, authorization, runtime publication or game operation. The [JSON owner and editing actor](owners.md) connect it to those services. [Coverage](coverage.md) owns the remaining Phase 1 scope, including richer value families, native gateways and presentation.
 
 ## Drafts and candidates
 
@@ -16,7 +16,7 @@ Inspection is explicit and pure. Leaf checks describe empty, incomplete, invalid
 
 ## History and lifecycle
 
-`EditSession<T>` belongs to its creating thread. Its immutable `Snapshot` may be inspected on an admitted worker when the definition callbacks support that contract. There is no global executor, timer, file watcher or screen reference.
+`EditSession<T>` belongs to its creating thread by default. The explicit advanced `fromDraft` overload accepts a trusted owner verifier for a serialized worker adapter; that adapter must enforce serialization rather than disabling checks. `EditorActor` supplies this verifier from its active worker task and removes it afterward, so editing may move between workers without concurrent mutation. Immutable snapshots may be inspected on an admitted worker when definition callbacks support that contract. The pure model owns no global executor, timer, file watcher or screen reference.
 
 Field typing coalesces only within an explicit `EditGroup`. Compound imports use `stage` as one undoable draft operation. Undo/redo, reset to defaults, revert to the observed baseline and reload are distinct. No-op reset preserves redo and unchanged row identities. Moving identical-valued rows can still be an intentional identity change; authored equality alone does not erase that history.
 
@@ -28,7 +28,7 @@ History is bounded and its oldest retained entries may be removed. A normal edit
 
 Only one submission is pending at a time, while later editing remains available. A prepared operation can be discarded before dispatch. An unknown outcome blocks another submission until actual reconciliation; this model does not blindly repeat a write or infer unchanged disk from an exception. Confirmed unattempted/refused/failed results release the pending slot only when that classification is established by the backend.
 
-Acknowledgement accepts an actual observed value/tree and saved revision. Equal typed saved values can normalize authored spelling and retain submission row identities. This positional alignment applies to the currently supported ordered lists; it is not a matching algorithm for unordered sets or changed collections. Known later field edits remain intact; changed collections stay whole. Both history journals and the resulting draft are prepared and checked before baseline advancement. A failed observation/rebase preserves all of them and retains an observation-unavailable pending state. A backend may already have persisted; this state does not claim otherwise.
+Acknowledgement accepts an actual observed value/tree and saved revision. Equal typed saved values can normalize authored spelling and retain submission row identities. This positional alignment applies to the currently supported ordered lists; it is not a matching algorithm for unordered sets or changed collections. Known later field edits remain intact; changed collections stay whole. Both history journals and the resulting draft are prepared and checked before baseline advancement. A failed observation/rebase preserves all of them and retains an observation-unavailable pending state. The explicit `observationUnavailable(submission)` transition also retains this state when the backend saved but could not return an authorized observation. Neither claims unknown disk persistence.
 
 If the actual saved value differs and later edits exist, the draft remains intact and an explicit review is required. Without later edits, the observed value becomes current and redo is rebased onto that observation. Reload or close makes old acknowledgements stale; they cannot change the replacement session baseline. Foreign session/context tokens cannot target this session.
 
@@ -38,4 +38,4 @@ If the actual saved value differs and later edits exist, the draft remains intac
 
 Choices are checked as one complete bounded change. Resolution updates the observed baseline/revision, preserves the selected draft and clears obsolete history. Any edit after review invalidates its choices. Resolution neither saves nor guarantees validity: complete validation remains mandatory on the next submission. Missing, invalid or unknown observed data may be reviewed without inventing a valid backend result.
 
-The [independent headless consumer](../../examples/headless/src/main/java/example/ReviewProfile.java) exercises invalid drafts, history, delayed acknowledgement, explicit review and reload using only the published local artifact. It is not a native GUI, file-owner or consumer migration fixture. [Verification](verification.md) records its exact qualification.
+The [independent headless consumer](../../examples/headless/src/main/java/example/ReviewProfile.java) exercises invalid drafts, history, delayed acknowledgement, explicit review, reload and a real asynchronous owner/editor save using only the published local artifact. It is not a native GUI or real-consumer migration fixture. [Verification](verification.md) records exact qualification.

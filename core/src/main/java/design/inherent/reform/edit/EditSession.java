@@ -94,7 +94,7 @@ public final class EditSession<T> implements AutoCloseable {
     }
   }
 
-  private final long thread = Thread.currentThread().threadId();
+  private final Runnable ownerThread;
   private final UUID id = UUID.randomUUID();
   private final UUID context;
   private final DocumentDefinition<T> definition;
@@ -158,6 +158,25 @@ public final class EditSession<T> implements AutoCloseable {
         limits);
   }
 
+  /** Advanced serialized-worker adapter; ordinary direct sessions retain their creating thread. */
+  public static <T> EditSession<T> fromDraft(
+      DocumentDefinition<T> definition,
+      UUID context,
+      String savedRevision,
+      DraftTree saved,
+      JsonLimits jsonLimits,
+      DraftLimits limits,
+      Runnable ownerThread) {
+    return new EditSession<>(
+        definition,
+        context,
+        savedRevision,
+        new DraftTree(saved.root(), limits),
+        jsonLimits,
+        limits,
+        ownerThread);
+  }
+
   private EditSession(
       DocumentDefinition<T> definition,
       UUID context,
@@ -165,18 +184,37 @@ public final class EditSession<T> implements AutoCloseable {
       DraftTree saved,
       JsonLimits jsonLimits,
       DraftLimits limits) {
+    this(definition, context, savedRevision, saved, jsonLimits, limits, currentThread());
+  }
+
+  private EditSession(
+      DocumentDefinition<T> definition,
+      UUID context,
+      String savedRevision,
+      DraftTree saved,
+      JsonLimits jsonLimits,
+      DraftLimits limits,
+      Runnable ownerThread) {
     this.definition = Objects.requireNonNull(definition);
     this.context = Objects.requireNonNull(context);
     this.savedRevision = revision(savedRevision);
     this.jsonLimits = Objects.requireNonNull(jsonLimits);
     this.limits = Objects.requireNonNull(limits);
+    this.ownerThread = Objects.requireNonNull(ownerThread);
     baseline = saved;
     current = saved;
   }
 
   private void thread() {
-    if (Thread.currentThread().threadId() != thread)
-      throw new IllegalStateException("Edit session requires its owning thread");
+    ownerThread.run();
+  }
+
+  private static Runnable currentThread() {
+    long expected = Thread.currentThread().threadId();
+    return () -> {
+      if (Thread.currentThread().threadId() != expected)
+        throw new IllegalStateException("Edit session requires its owning thread");
+    };
   }
 
   private void active() {
@@ -485,6 +523,14 @@ public final class EditSession<T> implements AutoCloseable {
   private Acknowledgement unavailableObservation() {
     pendingState = PendingState.OBSERVATION_UNAVAILABLE;
     return Acknowledgement.INVALID_OBSERVATION;
+  }
+
+  /** A save receipt can be known even when a qualified authorized readback is unavailable. */
+  public boolean observationUnavailable(Submission<T> submission) {
+    thread();
+    if (!current(submission)) return false;
+    unavailableObservation();
+    return true;
   }
 
   private static List<History> rebaseHistory(

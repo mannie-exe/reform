@@ -10,6 +10,8 @@ The native gateway creates `OwnerContext.Access` using read/write callbacks boun
 
 An access can serve several document sessions. Closing one session invalidates that session without closing another session's access or the document's runtime handle. Closing the access invalidates its sessions. Closing the context invalidates all access and native publication, releases queued work and clears executor/actor references. Native lifecycle code must close the context before its executor stops accepting work.
 
+`OwnerContext.onClose` returns an unregisterable subscription. A shorter-lived editor closes that subscription when it closes, releasing its captured state and active hook capacity while the game/server context remains alive. Context-close callbacks retain registration order and run outside the context gate; one failure does not skip later cleanup.
+
 ## Run the shared workflow
 
 `Session.read()` checks actual READ permission, obtains saved data on the worker and rechecks permission before returning the observation. Browsing does not initialize missing files or publish saved values. Observations contain distinct saved state and effective context/revision; an uninitialized handle contains no substituted defaults.
@@ -21,6 +23,16 @@ An access can serve several document sessions. Closing one session invalidates t
 All actor sessions of one document share a bounded logical lane through persistence **and** publication. A physical file lock alone would permit a second session to act between those stages. A competing session prepared against the prior effective revision is refused before its own persistence. External file changes remain subject to the backend's exact observed-byte conflict checks; this does not create a cross-process transaction.
 
 `Session.applySaved(observation)` reads saved bytes again, refuses a changed saved revision and attempts publication from that actual saved candidate. It performs no file write. It supports application-only retry after a successful save and refused application; it never substitutes a new unsaved candidate for the saved observation. A new observation allows an explicit review of externally changed values.
+
+## Keep editing off native threads
+
+`EditorActor<T>` owns one bound JSON session and a bounded serialized editing lane on the admitted workers. It supplies immutable views of raw drafts, validation, observation/operation reports, history availability, conflicts, pending acknowledgement and the latest receipt. Widgets and command presenters read those views and queue operations; they must not invoke `Snapshot.inspect()` during rendering. Definition validation, defaults, undo/rebase/acknowledgement and other pure editing work run inside the serialized worker task, even when the borrowed worker pool uses several threads.
+
+Explicit `load` reads through the actual owner. Missing data is reported without initialization. Dirty reload creates a manual conflict review; a load result that arrives after intervening typing is refused without replacing it. An invalid saved source is reported while retaining an existing draft. `setRaw`, undo/redo, reset/revert and conflict choices remain pure edits. Typing in the same field uses an explicit history group.
+
+`save` freezes one submitted draft and lets later editing continue while authorization and IO are pending. Actual owner receipts drive acknowledgement and preserve later edits. Saved data without an authorized readback keeps observation-unavailable pending state; an unknown write remains blocked until actual reconciliation. Save returns the backend receipt independently of editor acknowledgement, including when the editor closes after replacement. Closing the actor invalidates its own session and queued edits, unregisters its lifecycle subscription and clears the published draft view; it does not close the shared document/runtime context or pretend an active save was undone.
+
+This actor currently connects the explicit JSON backend. Its native screen/command presenters, native backend adaptation, full operation/cancellation suite and convenience construction remain implementation work. A core worker actor is not a native UI qualification.
 
 ## Preserve truthful outcomes
 

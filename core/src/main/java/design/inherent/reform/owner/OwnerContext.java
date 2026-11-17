@@ -2,6 +2,7 @@ package design.inherent.reform.owner;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -31,6 +32,28 @@ public final class OwnerContext implements AutoCloseable {
   }
 
   private record Authorization(BooleanSupplier read, BooleanSupplier write) {}
+
+  /** Closing this subscription unregisters its lifecycle callback and releases captured owners. */
+  public final class CloseHook implements AutoCloseable {
+    private final AtomicReference<Runnable> action;
+
+    private CloseHook(Runnable action) {
+      this.action = new AtomicReference<>(action);
+    }
+
+    @Override
+    public void close() {
+      action.set(null);
+      synchronized (gate) {
+        closeHooks.remove(this);
+      }
+    }
+
+    private void run() {
+      var selected = action.getAndSet(null);
+      if (selected != null) selected.run();
+    }
+  }
 
   public final class Access implements AutoCloseable {
     private final UUID id = UUID.randomUUID();
@@ -147,7 +170,7 @@ public final class OwnerContext implements AutoCloseable {
   private volatile boolean open = true;
   private final Set<Call<?>> waiting = new HashSet<>();
   private final Set<Access> accesses = new HashSet<>();
-  private final ArrayList<Runnable> closeHooks = new ArrayList<>();
+  private final Set<CloseHook> closeHooks = new LinkedHashSet<>();
   private int outstanding;
 
   /** Borrowed executors: the factory/runtime owns and bounds their actual queues and shutdown. */
@@ -206,11 +229,13 @@ public final class OwnerContext implements AutoCloseable {
     }
   }
 
-  public void onClose(Runnable hook) {
+  public CloseHook onClose(Runnable hook) {
     requireOwner();
     synchronized (gate) {
       if (closeHooks.size() >= limits.maximumCloseHooks()) throw busy();
-      closeHooks.add(Objects.requireNonNull(hook));
+      var registered = new CloseHook(Objects.requireNonNull(hook));
+      closeHooks.add(registered);
+      return registered;
     }
   }
 
@@ -251,7 +276,7 @@ public final class OwnerContext implements AutoCloseable {
     checkOwnerThread();
     final ArrayList<Call<?>> queued;
     final ArrayList<Access> actors;
-    final ArrayList<Runnable> hooks;
+    final ArrayList<CloseHook> hooks;
     synchronized (gate) {
       if (!open) return;
       open = false;
