@@ -2,6 +2,24 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Draft/history slice
+
+The experimental editing slice passes `./gradlew --no-daemon spotlessApply check build --warning-mode all` on the same pinned Java/native baseline. The final build took five seconds with relevant cached inputs: 59 core tests, eight artifact/release-tool controls and the exact-artifact independent public consumer pass. The native entry point remains unchanged; no client/server game run is included.
+
+The new independent session model runs 120 generated sequences of up to 60 edit, undo/redo, reset/revert, delayed-save, refusal and reload operations. Its final seed is `-5699923791281119624`. Together with the previous numeric properties, four properties exercise 920 generated cases. A minimized failure `[0, 2, 14, 3]` at seed `-6603154812098735058` reproduced a no-op reset discarding redo because fresh row identities created a fake edit; the retained explicit regression and property pass after the correction.
+
+Additional focused red/green controls reproduced an oversized normalized acknowledgement throwing during history rebasing, redo restoring the pre-observation saved value, and a valid compound conflict choice being refused by an intermediate tree budget. All now pass without weakening their controls. Observations are prepared before either journal/baseline changes; a budget refusal preserves the pending operation and draft instead of implying a persistence failure.
+
+Other controls cover invalid input without owner construction, original number spelling, absent/null/empty distinctions, wrong scalar kind, blank unknown fields, stable diagnostics after row movement/edit/removal, immutable backing state, explicit history groups/imports, unknown-outcome retry prevention, reload/close invalidation, late invalid/reverted edits, manual/stale/whole-collection conflict review, history limits and owner-thread confinement. The public consumer resolves the exact combined JAR without game classes and exercises decode, incomplete drafts, undo, a delayed acknowledgement retaining later edits, manual review and stale reload refusal. These are pure-model claims; no native owner, permission check, file effect or screen behavior is implied.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `86ce3bbe6338d3a6fb69751184c0ce2d29658c812b6bc74dabc2df23dbbd773e` |
+| Source JAR       | `a2242804e5d4c8486fa081d72303e0712c077e6e01652348244f9b11d1a4939e` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+The current shapes still exclude built-in sets/maps/optionals/tagged alternatives and references. File/native owners, generated controls, commands, real consumer migrations and native/full-pack/cost qualification remain required by Phase 1. [Editing](editing.md) owns these implemented contracts; this is an unpublished development increment.
+
 ## Initial core definition slice
 
 The experimental definition/decoding slice passes `./gradlew --no-daemon spotlessApply check build --warning-mode all` on Temurin 21.0.13 / Apple Silicon macOS. The final build took five seconds with relevant cached inputs. It includes 30 core tests, eight distribution/release-tool controls and the independent headless consumer. No native game run or GUI is included.
@@ -18,7 +36,7 @@ Controls cover strict duplicate/encoding/trailing/depth/node/string/number admis
 | Source JAR       | `b2cf208195328fca18d23f59ff80e27666ebabe32ab9efdce3e3cbc1e5ed1f70` |
 | Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
 
-Drafts/history, file/native owners, native UI/commands, remaining recursive type families and all Compat/Skyweave migrations remain required. [Coverage](coverage.md) is the current capability index. The artifact is an unpublished development increment, not a Phase 1 release candidate.
+At that snapshot, drafts/history, file/native owners, native UI/commands, remaining recursive type families and all Compat/Skyweave migrations remained required. [Coverage](coverage.md) is the current capability index. The artifact is an unpublished development increment, not a Phase 1 release candidate.
 
 ## Bootstrap at 250c20f
 

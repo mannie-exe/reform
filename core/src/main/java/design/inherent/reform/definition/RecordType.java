@@ -184,10 +184,15 @@ public final class RecordType<T> implements ValueType<T> {
       else if (!names.add(name.orElseThrow()))
         issues.add(
             Issue.error(
-                "value.duplicate_field", path.field(name.orElseThrow()), "Duplicate field"));
+                "value.duplicate_field",
+                name.orElseThrow().isBlank() ? path : path.field(name.orElseThrow()),
+                "Duplicate field"));
       else if (!declared.contains(name.orElseThrow()))
         issues.add(
-            Issue.error("value.unknown_field", path.field(name.orElseThrow()), "Unknown field"));
+            Issue.error(
+                "value.unknown_field",
+                name.orElseThrow().isBlank() ? path : path.field(name.orElseThrow()),
+                "Unknown field"));
     }
     var values = new HashMap<FieldKey<?>, Object>();
     boolean complete = true;

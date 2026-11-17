@@ -6,6 +6,8 @@
 - Add reproducible combined/source JARs and Maven staging metadata.
 - Add formatting, documentation/artifact checks and CI/release preparation.
 - Add typed definitions, strict JSON/numeric decoding, recursive snapshots and structured validation.
+- Add immutable raw drafts, stable row diagnostics, bounded undo/redo, context-bound submissions and explicit conflict review.
+- Preserve original number spelling through edits and protect pending/later edits during save acknowledgement.
 - Exercise the packaged public API in an independent headless consumer.
 
 No stable configuration API or consumer migration is released yet.

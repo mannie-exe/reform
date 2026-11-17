@@ -20,7 +20,9 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 
 /** Strict bounded JSON admission before information-losing DOM or codec conversion. */
@@ -28,14 +30,26 @@ public final class JsonInput {
   public static final class Parsed {
     private final String source;
     private final JsonElement tree;
+    private final Map<SourcePath, String> scalarText;
 
-    private Parsed(String source, JsonElement tree) {
+    private Parsed(String source, JsonElement tree, Map<SourcePath, String> scalarText) {
       this.source = source;
       this.tree = tree;
+      this.scalarText = Map.copyOf(scalarText);
     }
 
     public String source() {
       return source;
+    }
+
+    /** Caller-owned DOM copy; neither codecs nor editors can mutate this parsed source. */
+    public JsonElement copyTree() {
+      return tree.deepCopy();
+    }
+
+    /** Original number spelling, or decoded text for other scalar kinds. */
+    public Map<SourcePath, String> scalarText() {
+      return scalarText;
     }
 
     public <T> DecodedValue<T> decode(ValueType<T> type) {
@@ -100,7 +114,7 @@ public final class JsonInput {
     try (var reader = new JsonReader(new StringReader(source))) {
       reader.setLenient(false);
       var parser = new Parser(reader, limits);
-      JsonElement tree = parser.read(0);
+      JsonElement tree = parser.read(0, SourcePath.ROOT);
       try {
         if (reader.peek() != JsonToken.END_DOCUMENT) {
           throw parser.fail("json.trailing", "Expected one complete JSON document");
@@ -110,7 +124,7 @@ public final class JsonInput {
       } catch (IOException invalid) {
         throw parser.fail("json.trailing", "Expected one complete JSON document");
       }
-      return new Parsed(source, tree);
+      return new Parsed(source, tree, parser.scalarText);
     } catch (JsonInputException invalid) {
       throw invalid;
     } catch (IOException | IllegalStateException | NumberFormatException invalid) {
@@ -122,53 +136,63 @@ public final class JsonInput {
     private final JsonReader reader;
     private final JsonLimits limits;
     private int nodes;
+    private final Map<SourcePath, String> scalarText = new HashMap<>();
 
     private Parser(JsonReader reader, JsonLimits limits) {
       this.reader = reader;
       this.limits = limits;
     }
 
-    private JsonElement read(int depth) throws IOException {
+    private JsonElement read(int depth, SourcePath path) throws IOException {
       if (depth > limits.maximumDepth())
         throw fail("json.depth", "JSON nesting exceeds its owner's limit");
       if (++nodes > limits.maximumNodes())
         throw fail("json.nodes", "JSON node count exceeds its owner's limit");
       return switch (reader.peek()) {
-        case BEGIN_OBJECT -> object(depth);
-        case BEGIN_ARRAY -> array(depth);
-        case STRING -> new JsonPrimitive(text(reader.nextString()));
-        case NUMBER -> number();
-        case BOOLEAN -> new JsonPrimitive(reader.nextBoolean());
+        case BEGIN_OBJECT -> object(depth, path);
+        case BEGIN_ARRAY -> array(depth, path);
+        case STRING -> {
+          String value = text(reader.nextString());
+          scalarText.put(path, value);
+          yield new JsonPrimitive(value);
+        }
+        case NUMBER -> number(path);
+        case BOOLEAN -> {
+          boolean value = reader.nextBoolean();
+          scalarText.put(path, String.valueOf(value));
+          yield new JsonPrimitive(value);
+        }
         case NULL -> {
           reader.nextNull();
+          scalarText.put(path, "null");
           yield JsonNull.INSTANCE;
         }
         default -> throw fail("json.syntax", "Expected a JSON value");
       };
     }
 
-    private JsonObject object(int depth) throws IOException {
+    private JsonObject object(int depth, SourcePath path) throws IOException {
       reader.beginObject();
       var object = new JsonObject();
       var keys = new HashSet<String>();
       while (reader.hasNext()) {
         String name = text(reader.nextName());
         if (!keys.add(name)) throw fail("json.duplicate_key", "Duplicate JSON object key");
-        object.add(name, read(depth + 1));
+        object.add(name, read(depth + 1, path.property(name)));
       }
       reader.endObject();
       return object;
     }
 
-    private JsonArray array(int depth) throws IOException {
+    private JsonArray array(int depth, SourcePath path) throws IOException {
       reader.beginArray();
       var array = new JsonArray();
-      while (reader.hasNext()) array.add(read(depth + 1));
+      while (reader.hasNext()) array.add(read(depth + 1, path.index(array.size())));
       reader.endArray();
       return array;
     }
 
-    private JsonElement number() throws IOException {
+    private JsonElement number(SourcePath path) throws IOException {
       String token = reader.nextString();
       if (token.length() > limits.maximumNumberCharacters()) {
         throw fail("json.number_length", "JSON number exceeds its owner's representation limit");
@@ -182,6 +206,7 @@ public final class JsonInput {
       if (Math.abs((long) value.scale()) > limits.maximumAbsoluteScale()) {
         throw fail("json.number_scale", "JSON number exceeds its owner's scale limit");
       }
+      scalarText.put(path, token);
       // BigDecimal does not retain negative zero; source tokens remain separately owned.
       if (value.signum() == 0 && token.startsWith("-")) return new JsonPrimitive(-0.0d);
       return new JsonPrimitive(value);

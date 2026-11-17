@@ -2,7 +2,7 @@
 
 ## Current foundation
 
-The repository has two source modules and one installable NeoForge mod artifact. The bootstrap entry point registers only the mod identity; it creates no files, controls, menus, HUD or gameplay behavior. The [core definition slice](api.md) is implemented; editing, owner/native services and consumer migrations remain implementation work.
+The repository has two source modules and one installable NeoForge mod artifact. The bootstrap entry point registers only the mod identity; it creates no files, controls, menus, HUD or gameplay behavior. The [core definitions](api.md) and [editing model](editing.md) are implemented; owner/native services, additional value families and consumer migrations remain implementation work.
 
 | Module     | Responsibility                                                              | Distribution                                                           |
 | ---------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |

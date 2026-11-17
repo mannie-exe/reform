@@ -1,6 +1,6 @@
 # Core definitions and decoding
 
-The current API is experimental. This increment supplies typed values, explicit record definitions, strict JSON admission, deep snapshots and pure complete-value validation. It does not yet provide editable sessions, persistence owners, native screens or commands. [Coverage](coverage.md) separates those requirements from implemented behavior.
+The current API is experimental. This increment supplies typed values, explicit record definitions, strict JSON admission, deep snapshots and pure complete-value validation. [Editing sessions](editing.md) build on these contracts. Persistence owners, native screens and commands remain unimplemented. [Coverage](coverage.md) separates those requirements from implemented behavior.
 
 ## Declare values once
 
@@ -18,7 +18,7 @@ The native DFU integer codecs intentionally use Java numeric conversions. Author
 
 `JsonInput` admits UTF-8 and JSON before DOM/codec conversion. An owner supplies `JsonLimits` for bytes, nesting, nodes, text, numeric representation and scale. There is no implicit transport policy. Duplicate decoded keys, malformed/trailing input, invalid UTF-8 and unpaired surrogates are refused. The recursive reader supports a maximum configured depth of 256; ordinary owners should choose the bound appropriate to their documents.
 
-The parsed input retains its original source string. Each decode receives an independent tree. Codec partial results never become successful decoded values. `JsonInputException` supplies a stable admission code and source location; a source location is not an editor row ID. Existing native/custom parsers remain available through their eventual owner adapters rather than being silently replaced.
+The parsed input retains its original source string and scalar spellings keyed by structured `SourcePath`. `copyTree()` returns a caller-owned DOM, while the scalar map is immutable. Each decode receives an independent tree. Codec partial results never become successful decoded values. `JsonInputException` supplies a stable admission code and source location; a source location is not an editor row ID. Existing native/custom parsers remain available through their eventual owner adapters rather than being silently replaced.
 
 `DecodedValue<T>` contains a value only after complete successful decoding/validation. `ValidationReport` distinguishes errors from an unavailable required check. `Issue` carries a stable code, severity, structural field/related paths, arguments and readable fallback. Field attribution is declared, never recovered by parsing an English exception. Complete document validators can report cross-field errors before any owner effect.
 
@@ -30,4 +30,4 @@ Built-in lists and explicit records recursively own their values. Defaults are n
 
 Custom types provide an explicit snapshot and equality policy. `SnapshotPolicy.immutable()` is appropriate only when the entire reachable value is immutable. Collection and record policies delegate semantic equality to their children. Callbacks must be pure and bounded; an interface cannot sandbox arbitrary consumer code.
 
-`FieldPath` distinguishes field, stable row, variant and map-part segments. No row-editing implementation is supplied merely by defining those segments. Filenames, labels, logical IDs, schema versions, saved revisions and owner contexts remain distinct. No environment-variable or ambient JVM-property settings source is involved.
+`FieldPath` distinguishes field, stable row, variant and map-part segments. The editing model implements current record/list paths with session row IDs; variant and map-part traversal remains follow-up work. Filenames, labels, logical IDs, schema versions, saved revisions and owner contexts remain distinct. No environment-variable or ambient JVM-property settings source is involved.
