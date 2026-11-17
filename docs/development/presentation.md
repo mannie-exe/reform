@@ -1,6 +1,6 @@
 # Measured presentation
 
-The current presentation extraction supplies native-free `FormGeometry`/`SectionNavigation` and an internal client-only `FormPanel`/`ControlSizing`. It does not yet supply a generated settings screen, public composition facade or command registration. [Coverage](coverage.md) owns those remaining Phase 1 requirements.
+The current presentation supplies native-free `FormGeometry`/`SectionNavigation`, an internal client-only `FormPanel`/`ControlSizing` and an experimental public `SettingsScreen<T>` for scalar/record JSON documents. Public composition/convenience factories, additional editors and command registration remain required. [Coverage](coverage.md) owns the complete Phase 1 remainder.
 
 These parts derive from the owned MIT implementation in Skyweave: Compatibility Patches, as identified in `NOTICE`. The extraction changes packages/type names, library translation fallbacks and the location of the native text-reflow helper. Compat still uses its original implementation until the actual consumer migration; that mod and the modpack are not library dependencies.
 
@@ -12,8 +12,16 @@ These parts derive from the owned MIT implementation in Skyweave: Compatibility 
 
 The internal native panel measures labels, summaries, widgets and group boundaries using the actual native font and widget dimensions. Rendering, clipping, hit testing, focus scrolling and section anchors use those positions. Native widgets retain their input and narration behavior. Control resizing triggers native text reflow without replacing its raw value/caret/selection. The panel has no document ownership, parser, settings writer or context authority.
 
-## Connect a real form next
+## Generated JSON form
 
-The native form must bind these parts to immutable `EditorActor` views and shared actions. Drawing and narration must not invoke model validation or inspect typed candidates per frame. Keep useful input widgets/focus/scroll state across measured reflow and expose invalid/read-only/unavailable reasons accessibly. A new library dependency adds no automatic inventory button, HUD, shortcut or preferences file.
+`SettingsScreen` takes its parent, title/context label, definition and an already admitted `EditorActor`. It has no implicit actor lookup, initialization or file ownership. The caller owns the shared document/context; closing the screen closes its editing actor/session. The [independent native example](../../examples/native/README.md) connects the actual native configuration-menu extension point to the packaged library. It is deliberately explicit wiring until the convenience lifecycle is qualified.
 
-Pure comparison checks cover geometry and navigation. Compilation covers native API linkage at the pinned baseline. Neither proves rendered bounds, caret/selection behavior, actual focus/narration, font/language reload, narrow/high-scale layout or a standalone client/server launch. Those require the generated form and real public native addon, followed by consumer/pack checks. Avoid treating the extraction's earlier consumer history as qualification of the new artifact.
+The form recursively exposes declared records and scalar text/number/choice controls. Unsupported shapes retain their data and show an unavailable editor; they do not become invented defaults. Invalid raw text remains in native inputs with field diagnostics, explicit invalid wording and narration. Drawing and narration read cached actor results rather than invoking complete-candidate validation or snapshot callbacks per frame.
+
+Saving uses the shared asynchronous actor and actual persistence/application receipt; editing may continue during its file effect. Revert, Defaults and Reload have their existing distinct actor semantics. Failed unsubmitted input can be retried explicitly. A dirty close offers Discard or Keep editing and explains that discarding a draft cannot undo a save. Full effect-aware review, Save during dirty-close, conflict/application-only recovery surfaces and operation details remain Phase 1 work.
+
+Native widgets retain raw text/caret/selection through reflow. The screen restores its nested field or footer focus after native `rebuildWidgets` clears the old focus tree. Section-relative scroll restoration uses the same measured geometry. A dependency adds no automatic inventory button, HUD, shortcut or preferences file.
+
+## Qualification boundary
+
+Pure comparison checks cover extracted geometry/navigation; compilation covers pinned API linkage. The opt-in native example fixture separately exercises real controls and actual JSON save/reopen behavior. [Verification](verification.md) records its exact artifact, observations and limitations. Font/language/resource-reload, physical keyboard/clipboard/narrator output, recursive/promoted controls, dedicated/integrated/server gateways, real consumer migrations and full-pack/cost qualification remain required. Earlier consumer history does not qualify the extracted artifact.

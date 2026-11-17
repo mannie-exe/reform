@@ -1,0 +1,88 @@
+plugins {
+    id 'java'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+
+group = 'example.reform'
+version = '1.0.0'
+
+repositories {
+    maven {
+        url = uri('../../build/repository')
+        content { includeGroup 'design.inherent' }
+    }
+    mavenCentral()
+    maven {
+        url = 'https://libraries.minecraft.net/'
+        content { includeGroup 'com.mojang' }
+    }
+}
+
+java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+
+// An ordinary, separate mod build: no library source set or project dependency.
+dependencies { implementation "design.inherent:reform:${providers.gradleProperty('reformVersion').get()}" }
+
+sourceSets {
+    probe {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+def probeEnabled = providers.gradleProperty('nativeProbe').map { it.toBoolean() }.getOrElse(false)
+neoForge {
+    version = '21.1.265'
+    runs {
+        client {
+            client()
+            gameDirectory = file('runs/client')
+            jvmArgument '-Xmx2G'
+        }
+        server {
+            server()
+            gameDirectory = file('runs/server')
+            jvmArgument '-Xmx2G'
+            programArgument '--nogui'
+        }
+    }
+    mods {
+        reform_native_example { sourceSet sourceSets.main }
+        if (probeEnabled) reform_native_example_probe { sourceSet sourceSets.probe }
+    }
+}
+
+def expectedSha256 = providers.gradleProperty('reformSha256')
+def consumerRuntime = configurations.runtimeClasspath
+tasks.register('verifyLibrary') {
+    doLast {
+        def artifacts = consumerRuntime.incoming.artifacts.artifacts.findAll { artifact ->
+            def id = artifact.id.componentIdentifier
+            id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier &&
+                id.group == 'design.inherent' && id.module == 'reform'
+        }
+        if (artifacts.size() != 1) throw new GradleException('Expected one packaged reform artifact')
+        def actual = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(artifacts.first().file.bytes).encodeHex().toString()
+        if (actual != expectedSha256.get()) throw new GradleException('Native addon resolved a different library JAR')
+        println "Native addon library SHA-256: ${actual}"
+    }
+}
+tasks.withType(JavaCompile).configureEach { dependsOn 'verifyLibrary' }
+tasks.matching { it.name in ['runClient', 'runServer'] }.configureEach { dependsOn 'verifyLibrary' }
+
+tasks.named('processResources') {
+    def libraryVersion = providers.gradleProperty('reformVersion').get()
+    inputs.property('reformVersion', libraryVersion)
+    filesMatching('META-INF/neoforge.mods.toml') { expand reformVersion: libraryVersion }
+}
+
+tasks.register('probeJar', Jar) {
+    archiveFileName = 'reform-native-example-probe.jar'
+    from sourceSets.probe.output
+}

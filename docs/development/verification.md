@@ -2,6 +2,24 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Native scalar/record JSON form
+
+The independent native addon loads the packaged Maven library in Minecraft 1.21.1 / NeoForge 21.1.265 / FML 4.0.45 on Java 21 / Apple Silicon macOS. Its opt-in fixture passes two sequential 2 GiB JVMs in 12.282 and 10.733 seconds, including Gradle startup. The library is an exact JAR dependency; the ordinary example/probe use ModDev source containers. Both in-game mod-file hashing and class code-source attribution identify the expected packaged library. These launches do not qualify a packaged example install in Prism.
+
+Thirteen named first-boot steps cover the actual registered menu factory, generated native fields, retained invalid number input, accessible diagnostic text, disabled invalid submission, actual file save and effective publication, native GUI-scale/window reflow, native text/caret/selection/focus retention, dirty-close Keep/Discard, Revert, Defaults without persistence, saved-value reopen and a native Tab focus path. A second JVM initializes from the actual saved preferences and reopens them unchanged. Native methods receive synthetic text/mouse/Tab events; this does not test physical keyboard modifiers, OS clipboard or audible narrator output.
+
+The native resize control first reproduced a product defect: raw text, caret and selection survived, but native rebuilding cleared nested field focus. The screen now restores the focus path after the native rebuild, parent before child. The unchanged focus assertion passes. The final 320×240 GUI image shows measured rows, selected native text, readable status and a wrapped two-row footer without overlapping controls; images and exact source/control receipts are retained with the adopted evidence. Separate probe-only bootstrap, diagnostic-expectation and synthetic-focus-order mistakes are identified separately and are not represented as product failures.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `1f3f7291e6e6b05d1f500c25c6adcf7a498e6d337b034330527c66ea8ea4f3f9` |
+| Source JAR       | `5b73c11bebc501d4c78b66e076545b798efd598efcd598ed46def9fa1dff3583` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+The full Gradle check/build retains 150 core tests, 920 generated property cases and the exact-artifact headless consumer. Twelve tooling controls now include refusal to adopt an existing client and refusal to remove another fixture token. Ordinary `check` compiles/builds the independent native addon/probe but launches no game. Both client runs terminate normally; their marked run tree and logs are removed. No personal instance, world or server is used.
+
+[Presentation](presentation.md) owns the implemented form contract. Generalized factories, native registered backends, richer recursive/promoted editors, full effect/conflict/recovery interfaces, native commands, language/font reload, dedicated/integrated/remote contexts, both consumer migrations and full-pack/cost qualification remain Phase 1 work. This is a bounded native JSON form milestone, local and unpublished.
+
 ## Measured presentation extraction
 
 The full Gradle `spotlessApply check build --warning-mode all` passes with 150 core tests, zero failures/errors/skips, 920 generated property cases, ten tooling controls and the exact-public-artifact headless consumer. The final check took five seconds with relevant cached inputs. The native client panel and text-reflow helper compile against Minecraft 1.21.1 / NeoForge 21.1.265. This increment launches no game process.

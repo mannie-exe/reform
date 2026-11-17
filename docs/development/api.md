@@ -1,6 +1,6 @@
 # Core definitions and decoding
 
-The current API is experimental. This increment supplies typed values, explicit record definitions, strict JSON admission, deep snapshots and pure complete-value validation. [Editing sessions](editing.md) build on these contracts. Persistence owners, native screens and commands remain unimplemented. [Coverage](coverage.md) separates those requirements from implemented behavior.
+The current API is experimental. It supplies typed values, explicit record definitions, strict JSON admission, deep snapshots and pure complete-value validation. [Editing sessions](editing.md), [JSON owners](owners.md) and [presentation](presentation.md) build on these contracts. Native registered backends, full convenience factories and commands remain required. [Coverage](coverage.md) separates the complete requirements from implemented behavior.
 
 ## Declare values once
 

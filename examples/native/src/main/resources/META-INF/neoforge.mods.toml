@@ -1,0 +1,27 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="reform_native_example"
+version="1.0.0"
+displayName="re:form native example"
+description='''Independent public-API settings example. Not a production village or world-generation mod.'''
+
+[[dependencies.reform_native_example]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+side="BOTH"
+
+[[dependencies.reform_native_example]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.265,21.2)"
+side="BOTH"
+
+[[dependencies.reform_native_example]]
+modId="reform"
+type="required"
+versionRange="[${reformVersion}]"
+side="BOTH"

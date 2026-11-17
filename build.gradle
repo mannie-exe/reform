@@ -112,7 +112,22 @@ tasks.register('verifyPublicConsumer', GradleBuild) {
     }
 }
 
+tasks.register('verifyNativeConsumer', GradleBuild) {
+    group = 'verification'
+    description = 'Compile the independent native addon and opt-in probe against the exact local artifact.'
+    dependsOn ':neoforge:publishMavenJavaPublicationToStagingRepository'
+    dir = file('examples/native')
+    tasks = ['jar', 'probeJar']
+    def artifact = project(':neoforge').tasks.named('jar').flatMap { it.archiveFile }
+    def releaseVersion = project.version.toString()
+    doFirst {
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(artifact.get().asFile.bytes).encodeHex().toString()
+        startParameter.projectProperties = [reformVersion: releaseVersion, reformSha256: digest]
+    }
+}
+
 tasks.named('check') {
-    dependsOn ':core:check', ':neoforge:check', 'checkDocs', 'verifyDistribution', 'toolTests', 'verifyPublicConsumer'
+    dependsOn ':core:check', ':neoforge:check', 'checkDocs', 'verifyDistribution', 'toolTests', 'verifyPublicConsumer', 'verifyNativeConsumer'
 }
 tasks.named('assemble') { dependsOn ':core:assemble', ':neoforge:assemble', 'stageDistribution' }

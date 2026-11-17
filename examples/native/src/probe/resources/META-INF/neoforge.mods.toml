@@ -1,0 +1,15 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="reform_native_example_probe"
+version="1.0.0"
+displayName="re:form native example probe"
+description='''Opt-in disposable native form checks. Excluded from the ordinary example JAR.'''
+
+[[dependencies.reform_native_example_probe]]
+modId="reform_native_example"
+type="required"
+versionRange="[1.0.0]"
+side="CLIENT"

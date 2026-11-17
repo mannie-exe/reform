@@ -2,7 +2,7 @@
 
 Shared native configuration editing and command services for Minecraft mods.
 
-This repository is under development. The current core supplies typed definitions, strict decoding, raw edit sessions, bounded history, conflict review, owned JSON storage, effective-value handles and asynchronous actor-bound JSON sessions alongside the Java 21 / NeoForge 1.21.1 foundation. Native owner adapters, convenience factories, settings screens, additional value families and consumer migrations remain under development. No stable release is available.
+This repository is under development. The current core supplies typed definitions, strict decoding, raw edit sessions, bounded history, conflict review, owned JSON storage, effective-value handles and asynchronous actor-bound JSON sessions alongside the Java 21 / NeoForge 1.21.1 foundation. An experimental native scalar/record screen is connected by an [independent addon](examples/native/README.md). Native registered owner adapters, convenience factories, the full interface/control suite, additional value families and consumer migrations remain under development. No stable release is available.
 
 re:form is an independent library. Skyweave, Skyweave: Compatibility Patches and the Create: Skyweave modpack are intended consumers, not dependencies.
 

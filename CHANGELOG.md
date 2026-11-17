@@ -15,6 +15,8 @@
 - Prepare immutable JSON runtime publication on workers and refuse stale observation results.
 - Add serialized editing actors with immutable views, live typing during saves and removable lifecycle subscriptions.
 - Extract owned measured form geometry, section navigation and client panel with independent parity checks.
+- Connect a native scalar/record form to shared JSON editing and restore nested focus after native reflow.
+- Add an independent native addon and disposable save/reopen client fixture against the packaged library.
 - Exercise the packaged public API in an independent headless consumer.
 
 No stable configuration API or consumer migration is released yet.
