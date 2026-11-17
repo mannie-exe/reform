@@ -32,6 +32,7 @@ public interface DocumentSession<T> extends AutoCloseable {
 
   CompletionStage<? extends OwnerObservation<T>> read();
 
+  /** Read-authorized complete validation/preparation; the token never grants WRITE authority. */
   CompletionStage<? extends PreparedEdit<T>> prepare(OwnerObservation<T> observed, DraftTree draft);
 
   /**

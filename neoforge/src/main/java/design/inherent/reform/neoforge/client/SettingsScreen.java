@@ -4,6 +4,9 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
+import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
@@ -18,6 +21,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -37,7 +41,7 @@ public final class SettingsScreen<T> extends Screen {
   private final Screen parent;
   private final Component contextLabel;
   private final DocumentDefinition<T> definition;
-  private final EditorActor<T> actor;
+  private final DocumentActions<T> actions;
   private final Map<FieldPath, Control> controls = new LinkedHashMap<>();
   private final Map<FieldPath, String> local = new LinkedHashMap<>();
   private final Map<FieldPath, Long> versions = new LinkedHashMap<>();
@@ -57,21 +61,30 @@ public final class SettingsScreen<T> extends Screen {
       Component title,
       Component contextLabel,
       DocumentDefinition<T> definition,
-      EditorActor<T> actor) {
+      DocumentActions<T> actions) {
     super(title);
     this.parent = parent;
     this.contextLabel = Objects.requireNonNull(contextLabel);
     this.definition = Objects.requireNonNull(definition);
-    this.actor = Objects.requireNonNull(actor);
+    this.actions = Objects.requireNonNull(actions);
   }
 
   private static Component text(String key, String fallback) {
     return Component.translatableWithFallback("reform.settings." + key, fallback);
   }
 
+  private <O> CompletionStage<O> action(Supplier<OperationHandle<O>> operation) {
+    try {
+      return DocumentActions.result(operation.get());
+    } catch (RuntimeException refused) {
+      return java.util.concurrent.CompletableFuture.<O>failedFuture(refused)
+          .minimalCompletionStage();
+    }
+  }
+
   /** Cached read-only editing state for composed/native views; no validation or owner effect. */
   public EditorActor.View<T> editorView() {
-    return actor.view();
+    return actions.view();
   }
 
   @Override
@@ -79,11 +92,17 @@ public final class SettingsScreen<T> extends Screen {
     float scroll = panel == null ? 0 : panel.scroll();
     String focus = panel == null ? null : panel.focusKey();
     footer.clear();
-    var current = actor.view();
+    var current = actions.view();
     bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
     save = button(text("save_apply", "Save and apply"), this::requestSave);
-    revert = button(text("revert", "Revert"), () -> perform(actor.revert(), true));
-    defaults = button(text("defaults", "Defaults"), () -> perform(actor.reset(), true));
+    revert =
+        button(
+            text("revert", "Revert"),
+            () -> perform(action(() -> actions.revert(EntryPoint.GUI)), true));
+    defaults =
+        button(
+            text("defaults", "Defaults"),
+            () -> perform(action(() -> actions.defaults(EntryPoint.GUI)), true));
     reload = button(text("reload", "Reload saved"), this::requestReload);
     done = button(text("done", "Done"), this::onClose);
     var geometry =
@@ -229,8 +248,10 @@ public final class SettingsScreen<T> extends Screen {
   private void submit(FieldPath path, String value) {
     pendingEdits++;
     notice = null;
-    actor
-        .setRaw(path, value)
+    action(
+            () ->
+                actions.edit(
+                    EntryPoint.GUI, actions.fields().field(path).orElseThrow().selector(), value))
         .whenComplete(
             (result, failed) ->
                 minecraft.execute(
@@ -242,7 +263,7 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private boolean unsent() {
-    var snapshot = actor.view().snapshot();
+    var snapshot = actions.view().snapshot();
     if (snapshot.isEmpty()) return false;
     return controls.entrySet().stream()
         .anyMatch(
@@ -254,22 +275,21 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private void requestSave() {
-    if (saving || loading || pendingEdits > 0 || actor.view().snapshot().isEmpty()) return;
+    if (saving || loading || pendingEdits > 0 || actions.view().snapshot().isEmpty()) return;
     if (unsent()) {
-      var draft = actor.view().snapshot().orElseThrow().draft();
+      var draft = actions.view().snapshot().orElseThrow().draft();
       for (var entry : controls.entrySet())
         if (entry.getValue().editable()
             && !Objects.equals(local.get(entry.getKey()), raw(at(draft, entry.getKey()))))
           submit(entry.getKey(), local.get(entry.getKey()));
       return;
     }
-    if (!actor.view().validation().valid()
-        || actor.view().pending().isPresent()
-        || actor.view().review().isPresent()) return;
+    if (!actions.view().validation().valid()
+        || actions.view().pending().isPresent()
+        || actions.view().review().isPresent()) return;
     saving = true;
     notice = null;
-    actor
-        .save()
+    action(() -> actions.save(EntryPoint.GUI))
         .whenComplete(
             (result, failed) ->
                 minecraft.execute(
@@ -295,7 +315,7 @@ public final class SettingsScreen<T> extends Screen {
     }
     loading = true;
     feedback();
-    perform(actor.load(), true, true);
+    perform(action(() -> actions.load(EntryPoint.GUI)), true, true);
   }
 
   private void perform(
@@ -310,14 +330,14 @@ public final class SettingsScreen<T> extends Screen {
                   else if (synchronize) synchronize(before);
                   if (finishesReload) loading = false;
                   if (minecraft.screen == this) {
-                    if (layoutChanged(actor.view())) rebuildWidgets();
+                    if (layoutChanged(actions.view())) rebuildWidgets();
                     else feedback();
                   }
                 }));
   }
 
   private void synchronize(Map<FieldPath, Long> before) {
-    var snapshot = actor.view().snapshot();
+    var snapshot = actions.view().snapshot();
     if (snapshot.isEmpty()) return;
     updating = true;
     try {
@@ -335,7 +355,7 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private void feedback() {
-    var current = actor.view();
+    var current = actions.view();
     if (save == null) return;
     save.setMessage(
         unsent() ? text("retry_edits", "Retry edits") : text("save_apply", "Save and apply"));
@@ -377,15 +397,15 @@ public final class SettingsScreen<T> extends Screen {
 
   @Override
   public void tick() {
-    if (displayed != actor.view()) {
-      displayed = actor.view();
+    if (displayed != actions.view()) {
+      displayed = actions.view();
       if (layoutChanged(displayed)) rebuildWidgets();
       else feedback();
     }
   }
 
   private Component status() {
-    var current = actor.view();
+    var current = actions.view();
     if (notice != null) return notice;
     if (saving) return text("saving", "Saving; waiting for the actual result");
     if (loading) return text("reloading", "Loading saved values…");
@@ -436,11 +456,15 @@ public final class SettingsScreen<T> extends Screen {
         return true;
       }
       if (key == GLFW.GLFW_KEY_Z) {
-        perform(hasShiftDown() ? actor.redo() : actor.undo(), true);
+        perform(
+            hasShiftDown()
+                ? action(() -> actions.redo(EntryPoint.GUI))
+                : action(() -> actions.undo(EntryPoint.GUI)),
+            true);
         return true;
       }
       if (key == GLFW.GLFW_KEY_Y) {
-        perform(actor.redo(), true);
+        perform(action(() -> actions.redo(EntryPoint.GUI)), true);
         return true;
       }
     }
@@ -453,7 +477,7 @@ public final class SettingsScreen<T> extends Screen {
       notice = text("wait_close", "Wait for the current operation before closing.");
       return;
     }
-    if (actor.view().dirty() || unsent() || actor.view().review().isPresent()) {
+    if (actions.view().dirty() || unsent() || actions.view().review().isPresent()) {
       boolean[] decided = {false};
       handoff = true;
       minecraft.setScreen(
@@ -471,7 +495,7 @@ public final class SettingsScreen<T> extends Screen {
               text("keep_editing", "Keep editing")) {
             @Override
             public void removed() {
-              if (!decided[0]) actor.close();
+              if (!decided[0]) actions.close();
             }
           });
       handoff = false;
@@ -480,13 +504,13 @@ public final class SettingsScreen<T> extends Screen {
 
   private void finish() {
     closed = true;
-    actor.close();
+    actions.close();
     minecraft.setScreen(parent);
   }
 
   @Override
   public void removed() {
-    if (!handoff && !closed) actor.close();
+    if (!handoff && !closed) actions.close();
   }
 
   private static String raw(DraftNode node) {

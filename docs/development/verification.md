@@ -2,6 +2,25 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Shared local operations and native commands
+
+The full Gradle `spotlessApply check build --warning-mode all` passes with 172 core tests, four generated properties/920 checks, two native-file unit tests, twelve tooling controls and the packaged-artifact headless/native-addon checks. New controls cover scope registration/identity/bounds, worker input admission, fresh native permission checks, cancellation and actual-result drain, readonly validation, typed comparison/provenance/export, application-only retry and retained later drafts.
+
+A deterministic two-worker control reproduced parallel input preparation overtaking an earlier submitted operation. Serializing provider entry fixes ordering while releasing the lane before the provider's effect completes. The corrected control proves that the second provider can finish while the first provider's result remains held. A separate cold burst stages `2`, stages `4`, saves, then stages `6`: the actual file/runtime contain `4` and the later draft remains `6`. These are concurrency controls, not timing or heap benchmarks.
+
+`python3 tools/native_form_probe.py --java-home /path/to/jdk21 --timeout 150` passes four sequential disposable 2 GiB clients in 14.100, 12.471, 11.369 and 11.399 seconds including Gradle startup. The first client posts the native client command-registration event and executes actual Brigadier commands using `ClientCommandSourceStack` against the GUI-saved document. It checks quoting/suggestions, retained invalid text, refused invalid save without a write, actual owner validation, typed comparison, exact exported value/copy component, distinct saved/effective values, save/publication, actor-bound status/cancel and foreign-operation refusal. Its sink captures main-menu feedback; no world chat packet or physical clipboard interaction is claimed. The prior native save/reflow/reopen, malformed recovery and reentrant shutdown controls also pass. Inspected screenshots retain field diagnostics and wrapped controls at the native 320 by 240 logical viewport.
+
+The four-client qualification used combined JAR `a26b1c43c7e40da6ede893a7718337500d0a61e92fe8084de2368f5d21446bb4`. The subsequent current-native-player feedback guard and command-builder deduplication are compiled/source-inspected; its stale-player world path still needs a client witness. The registered-owner two-boot dedicated regression passes on the following candidate. It preserves the separately documented native serializer, preflight, callback, failure/readback and restart controls. All task-owned fixtures and raw logs are removed after concise reports are retained.
+
+| Artifact          | SHA-256                                                            |
+| ----------------- | ------------------------------------------------------------------ |
+| Combined mod JAR  | `06516af2743acd8274d92fb0d99b5f23d73779dd554d560f6c2f18c9ac3b2c7f` |
+| Sources           | `fc4e5af96ff41e2a141c3a2d80a8ab85c48499951a7a62162c519b47aae9d66c` |
+| Headless core JAR | `ab5295e8ed8ef2057e054367a6102a8624bf1a4ee277378a4be2a123bee2d25b` |
+| Public POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+[Operations](operations.md) owns service/command semantics. Core/native checks do not qualify generic server recipients, integrated/remote authority, minimum feedback limits, all callback-failure branches, complete operation UI, recursive/promoted controls, cost/full-pack behavior or either real consumer migration. Phase 1 remains incomplete; no release or personal rollout occurred.
+
 ## Registered NeoForge owner and shared editor
 
 The full `./gradlew --no-daemon -Dorg.gradle.java.home=/path/to/jdk21 spotlessApply check build --warning-mode all` passes with 159 core tests, four generated properties/920 checks, two native-file unit tests, twelve tooling controls, the exact-public-artifact headless consumer and compiled independent native addon/probe. The final code build took six seconds with relevant cached inputs. These checks preserve the existing JSON owner/editor tests after extraction to the common owner interfaces.

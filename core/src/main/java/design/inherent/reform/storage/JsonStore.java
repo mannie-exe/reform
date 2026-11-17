@@ -118,6 +118,10 @@ public final class JsonStore<T> {
     return definition;
   }
 
+  public StorageBinding binding() {
+    return file.binding();
+  }
+
   /** Pure bounded preparation for this store's exact definition and serialization limits. */
   public DraftTree.Inspection<T> inspectDraft(DraftTree draft) {
     return new DraftTree(draft.root(), draftLimits).inspect(definition, jsonLimits);

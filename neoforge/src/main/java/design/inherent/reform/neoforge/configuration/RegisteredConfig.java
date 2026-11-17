@@ -16,6 +16,7 @@ import design.inherent.reform.owner.OwnerObservation;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.PreparedEdit;
 import design.inherent.reform.owner.SerialLane;
+import design.inherent.reform.owner.SourceInfo;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.validation.Issue;
@@ -107,6 +108,14 @@ public final class RegisteredConfig implements AutoCloseable {
 
     public ModConfig.Type nativeType() {
       return owner.config.getType();
+    }
+
+    @Override
+    public SourceInfo provenance() {
+      return new SourceInfo(
+          "neoforge",
+          "Registered " + nativeType().name() + " configuration",
+          Optional.of(path().toString()));
     }
 
     public Map<String, Object> nativeValues() {

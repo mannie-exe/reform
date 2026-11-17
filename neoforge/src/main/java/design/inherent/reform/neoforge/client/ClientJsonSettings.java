@@ -1,8 +1,12 @@
 package design.inherent.reform.neoforge.client;
 
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.neoforge.command.SettingsCommands;
+import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
@@ -28,10 +32,13 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -39,6 +46,8 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.client.ClientCommandSourceStack;
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
@@ -79,6 +88,8 @@ public final class ClientJsonSettings<T> {
           new State<>(Lifecycle.REGISTERED, null, null, null, ValidationReport.VALID, null));
   private final CompletableFuture<Status<T>> initialization = new CompletableFuture<>();
   private CompletableFuture<Status<T>> activeInitialization;
+  private DocumentActions<T> commandActions;
+  private Consumer<RegisterClientCommandsEvent> commandRegistration;
 
   private ClientJsonSettings(
       ModContainer container, DocumentDefinition<T> definition, StorageBinding binding) {
@@ -154,6 +165,15 @@ public final class ClientJsonSettings<T> {
     var current = state.get();
     if (current.lifecycle() != Lifecycle.READY) return new StatusScreen(parent, title);
     current.context().requireOwner();
+    return new SettingsScreen<>(
+        parent,
+        title,
+        text("client_context", "Client preferences · applies to this installation"),
+        definition,
+        editingActions(current));
+  }
+
+  private DocumentActions<T> editingActions(State<T> current) {
     var editor =
         new EditorActor<>(
             current.context(),
@@ -162,12 +182,85 @@ public final class ClientJsonSettings<T> {
             JSON,
             DraftLimits.CONFIGURATION,
             64);
-    return new SettingsScreen<>(
-        parent,
-        title,
-        text("client_context", "Client preferences · applies to this installation"),
-        definition,
-        editor);
+    return new DocumentActions<>(
+        current.context(),
+        current.access(),
+        editor,
+        new OperationScope.Limits(32, 64, 128, OperationScope.Limits.STANDARD.input()),
+        JSON.maximumBytes());
+  }
+
+  /** Explicit local command entry. Server permissions and server settings are never inferred. */
+  public LiteralArgumentBuilder<CommandSourceStack> commandBranch(
+      String literal, Consumer<SettingsCommands.Reply> output) {
+    Objects.requireNonNull(output);
+    var owner = this;
+    return SettingsCommands.branch(
+        literal,
+        definition.id(),
+        new SettingsCommands.Binding<CommandSourceStack, T>() {
+          @Override
+          public boolean available(CommandSourceStack source) {
+            return source instanceof ClientCommandSourceStack
+                && Minecraft.getInstance().isSameThread()
+                && source.getEntity() == Minecraft.getInstance().player
+                && state.get().lifecycle() == Lifecycle.READY;
+          }
+
+          @Override
+          public SettingsCommands.Target<T> target(CommandSourceStack source) {
+            requireClientThread();
+            var current = state.get();
+            if (!available(source))
+              throw new design.inherent.reform.owner.PolicyRefusal(
+                  "owner.unavailable", "Client settings are not ready");
+            if (commandActions == null) commandActions = editingActions(current);
+            return new SettingsCommands.Target<>(current.context(), commandActions);
+          }
+
+          @Override
+          public Optional<SettingsCommands.Target<T>> existing(CommandSourceStack source) {
+            if (!available(source) || owner.commandActions == null) return Optional.empty();
+            return Optional.of(
+                new SettingsCommands.Target<>(state.get().context(), owner.commandActions));
+          }
+
+          @Override
+          public void reply(CommandSourceStack source, SettingsCommands.Reply reply) {
+            output.accept(reply);
+          }
+        },
+        8192);
+  }
+
+  /** Register once during client construction. Existing native command roots are never replaced. */
+  public synchronized void registerCommands(String literal) {
+    if (commandRegistration != null || state.get().lifecycle() == Lifecycle.CLOSED)
+      throw new IllegalStateException("Client command entry is already registered or closed");
+    var branch =
+        commandBranch(
+            literal,
+            reply -> {
+              var client = Minecraft.getInstance();
+              if (client.player != null)
+                client.player.sendSystemMessage(
+                    reply
+                        .message()
+                        .copy()
+                        .withStyle(
+                            reply.level() == SettingsCommands.Level.ERROR
+                                ? ChatFormatting.RED
+                                : reply.level() == SettingsCommands.Level.WARNING
+                                    ? ChatFormatting.YELLOW
+                                    : ChatFormatting.GRAY));
+            });
+    commandRegistration =
+        event -> {
+          if (event.getDispatcher().getRoot().getChild(literal) != null)
+            throw new IllegalStateException("Client command root is already owned: " + literal);
+          event.getDispatcher().register(branch);
+        };
+    NeoForge.EVENT_BUS.addListener(RegisterClientCommandsEvent.class, commandRegistration);
   }
 
   /**
@@ -304,6 +397,7 @@ public final class ClientJsonSettings<T> {
     try {
       if (current.context() != null) current.context().close();
     } finally {
+      commandActions = null;
       state.set(
           new State<>(
               Lifecycle.CLOSED,
@@ -317,6 +411,9 @@ public final class ClientJsonSettings<T> {
         activeInitialization.complete(status());
         activeInitialization = null;
       }
+      var listener = commandRegistration;
+      commandRegistration = null;
+      if (listener != null) NeoForge.EVENT_BUS.unregister(listener);
     }
   }
 

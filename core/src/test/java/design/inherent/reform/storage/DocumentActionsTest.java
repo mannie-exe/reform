@@ -1,0 +1,371 @@
+package design.inherent.reform.storage;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.definition.FieldKey;
+import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.definition.RecordType;
+import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
+import design.inherent.reform.operation.OperationHandle;
+import design.inherent.reform.operation.OperationSnapshot;
+import design.inherent.reform.owner.CommitReceipt;
+import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.ValueTypes;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class DocumentActionsTest {
+  @TempDir Path root;
+
+  record Profile(int count, double scale, String label) {}
+
+  static final FieldKey<Integer> COUNT = FieldKey.of("count", ValueTypes.integer(0, 10));
+  static final FieldKey<Double> SCALE = FieldKey.of("scale", ValueTypes.decimal(0, 10));
+  static final FieldKey<String> LABEL = FieldKey.of("label", ValueTypes.text(128));
+  static final RecordType<Profile> TYPE =
+      RecordType.<Profile>builder(v -> new Profile(v.get(COUNT), v.get(SCALE), v.get(LABEL)))
+          .field(COUNT, Profile::count)
+          .field(SCALE, Profile::scale)
+          .field(LABEL, Profile::label)
+          .build();
+  static final JsonLimits JSON = new JsonLimits(8192, 32, 1024, 512, 64, 1024);
+
+  static <T> T await(CompletionStage<T> stage) throws Exception {
+    return stage.toCompletableFuture().get(5, TimeUnit.SECONDS);
+  }
+
+  static void waitFor(CountDownLatch latch) {
+    try {
+      assertTrue(latch.await(5, TimeUnit.SECONDS));
+    } catch (InterruptedException failed) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(failed);
+    }
+  }
+
+  final class Harness implements AutoCloseable {
+    final ExecutorService nativeExecutor = Executors.newSingleThreadExecutor(),
+        workers = Executors.newFixedThreadPool(2);
+    final AtomicBoolean read = new AtomicBoolean(true),
+        write = new AtomicBoolean(true),
+        revokeAfterWrite = new AtomicBoolean(),
+        pauseValidation = new AtomicBoolean();
+    final AtomicInteger writes = new AtomicInteger(), nativeValidators = new AtomicInteger();
+    final CountDownLatch reached = new CountDownLatch(1), release = new CountDownLatch(1);
+    final Path path = root.resolve("actions.json");
+    final OwnerContext context;
+    final OwnerContext.Access access;
+    final JsonOwner<Profile> owner;
+    final JsonOwner<Profile>.Session session;
+    final EditorActor<Profile> actor;
+    final DocumentActions<Profile> actions;
+
+    Harness() throws Exception {
+      var nativeThread = nativeCall(() -> Thread.currentThread().threadId());
+      var definition =
+          new DocumentDefinition<>(
+              DocumentId.parse("fixture:actions"),
+              1,
+              TYPE,
+              () -> new Profile(1, 1.0, "original"),
+              profile -> {
+                if (Thread.currentThread().threadId() == nativeThread)
+                  nativeValidators.incrementAndGet();
+                if (pauseValidation.get() && profile.count() == 3) {
+                  reached.countDown();
+                  waitFor(release);
+                }
+                return ValidationReport.VALID;
+              });
+      context =
+          new OwnerContext(
+              nativeExecutor,
+              workers,
+              () -> assertEquals(nativeThread, Thread.currentThread().threadId()),
+              OwnerContext.Limits.STANDARD);
+      var store =
+          new JsonStore<>(
+              definition,
+              new OwnedFile(
+                  StorageBinding.relative(root, "actions.json"),
+                  8192,
+                  4096,
+                  () -> {
+                    writes.incrementAndGet();
+                    if (revokeAfterWrite.getAndSet(false)) write.set(false);
+                  }),
+              JsonStore.Format.NEW_ENVELOPE,
+              JSON,
+              DraftLimits.CONFIGURATION);
+      owner = nativeCall(() -> new JsonOwner<>(context, store, 16));
+      access = nativeCall(() -> context.access(read::get, write::get));
+      session = nativeCall(() -> owner.open(access));
+      assertEquals(CommitReceipt.Persistence.SAVED, await(session.initialize()).persistence());
+      actor =
+          nativeCall(
+              () ->
+                  new EditorActor<>(
+                      context, session, definition, JSON, DraftLimits.CONFIGURATION, 32));
+      actions = nativeCall(() -> new DocumentActions<>(context, access, actor));
+    }
+
+    <T> T nativeCall(Callable<T> work) throws Exception {
+      return nativeExecutor.submit(work).get(5, TimeUnit.SECONDS);
+    }
+
+    <T> T run(Supplier<OperationHandle<T>> start) throws Exception {
+      return await(DocumentActions.result(nativeCall(start::get)));
+    }
+
+    void edit(String field, String value, EntryPoint entry) throws Exception {
+      run(() -> actions.edit(entry, field, value));
+    }
+
+    @Override
+    public void close() {
+      release.countDown();
+      try {
+        if (context.isOpen())
+          nativeCall(
+              () -> {
+                context.close();
+                return null;
+              });
+      } catch (Exception failed) {
+        if (failed instanceof InterruptedException) Thread.currentThread().interrupt();
+        throw new AssertionError(failed);
+      } finally {
+        workers.shutdownNow();
+        nativeExecutor.shutdownNow();
+        try {
+          assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS));
+          assertTrue(nativeExecutor.awaitTermination(5, TimeUnit.SECONDS));
+        } catch (InterruptedException failed) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError(failed);
+        }
+      }
+    }
+  }
+
+  @Test
+  void guiAndCommandActionsShareDraftValidationComparisonSourceAndExport() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var original = Files.readString(h.path);
+      var time = Files.getLastModifiedTime(h.path);
+      var description = h.run(() -> h.actions.describe(EntryPoint.COMMAND));
+      assertEquals(3, description.fields().size());
+      assertEquals(
+          "1",
+          description.fields().stream()
+              .filter(f -> f.selector().equals("count"))
+              .findFirst()
+              .orElseThrow()
+              .defaultText()
+              .orElseThrow());
+      h.edit("count", "2", EntryPoint.GUI);
+      var validation = h.run(() -> h.actions.validate(EntryPoint.COMMAND));
+      assertTrue(validation.report().valid());
+      assertEquals(h.actor.view().snapshot().orElseThrow().version(), validation.version());
+      var comparison = h.run(() -> h.actions.compare(EntryPoint.COMMAND));
+      assertEquals(1, comparison.changes().size());
+      assertTrue(comparison.authoredChanges());
+      assertEquals(
+          new DocumentActions.Change(FieldPath.ROOT.field("count"), "1", "2"),
+          comparison.changes().getFirst());
+      var explanation = h.run(() -> h.actions.explain(EntryPoint.GUI));
+      assertEquals("json", explanation.provenance().kind());
+      assertEquals(h.path.toString(), explanation.provenance().location().orElseThrow());
+      assertEquals(1, explanation.effective().orElseThrow().value().orElseThrow().count());
+      var artifact = h.run(() -> h.actions.export(EntryPoint.COMMAND));
+      assertEquals("document-value", artifact.representation());
+      assertTrue(artifact.text().contains("\"count\":2"));
+      assertFalse(artifact.text().contains("schemaVersion"));
+      assertEquals(
+          artifact.sha256(),
+          HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(artifact.bytes())));
+      var bytes = artifact.bytes();
+      bytes[0] = 0;
+      assertNotEquals(0, artifact.bytes()[0]);
+      assertEquals(original, Files.readString(h.path));
+      assertEquals(time, Files.getLastModifiedTime(h.path));
+      assertEquals(1, h.writes.get());
+      h.edit("count", "-", EntryPoint.COMMAND);
+      assertFalse(h.run(() -> h.actions.validate(EntryPoint.GUI)).report().valid());
+      assertFalse(h.run(() -> h.actions.compare(EntryPoint.COMMAND)).report().valid());
+      var refused = h.nativeCall(() -> h.actions.export(EntryPoint.COMMAND));
+      assertEquals(OperationSnapshot.State.REFUSED, await(refused.completion()).state());
+      assertEquals(
+          "-",
+          ((DraftNode.Scalar)
+                  h.actions
+                      .view()
+                      .snapshot()
+                      .orElseThrow()
+                      .draft()
+                      .at(FieldPath.ROOT.field("count")))
+              .raw());
+      assertEquals(original, Files.readString(h.path));
+      h.edit("count", "2", EntryPoint.COMMAND);
+      var saved = h.run(() -> h.actions.save(EntryPoint.GUI));
+      assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
+      assertFalse(h.actions.view().dirty());
+      h.edit("scale", "1", EntryPoint.GUI);
+      var spelling = h.run(() -> h.actions.compare(EntryPoint.COMMAND));
+      assertTrue(spelling.authoredChanges());
+      assertTrue(spelling.changes().isEmpty());
+      assertTrue(spelling.report().valid());
+      assertEquals(0, h.nativeValidators.get());
+    }
+  }
+
+  @Test
+  void readOnlyValidationDoesNotGrantWriteAndSavedApplicationPreservesLaterDrafts()
+      throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.COMMAND));
+      h.write.set(false);
+      h.edit("count", "2", EntryPoint.GUI);
+      assertTrue(h.run(() -> h.actions.validate(EntryPoint.COMMAND)).report().valid());
+      var observed = await(h.session.read());
+      var prepared =
+          await(h.session.prepare(observed, h.actor.view().snapshot().orElseThrow().draft()));
+      assertEquals(
+          CommitReceipt.Persistence.NOT_ATTEMPTED, await(h.session.commit(prepared)).persistence());
+      h.nativeCall(
+          () -> {
+            assertThrows(PolicyRefusal.class, () -> h.actions.save(EntryPoint.GUI));
+            return null;
+          });
+      assertEquals(1, h.writes.get());
+      h.write.set(true);
+      h.revokeAfterWrite.set(true);
+      var saved = h.run(() -> h.actions.save(EntryPoint.COMMAND));
+      assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
+      assertEquals(CommitReceipt.Application.REFUSED, saved.receipt().orElseThrow().application());
+      var actualBytes = Files.readString(h.path);
+      var time = Files.getLastModifiedTime(h.path);
+      h.edit("count", "4", EntryPoint.GUI);
+      var version = h.actor.view().snapshot().orElseThrow().version();
+      var undo = h.actor.view().canUndo();
+      h.write.set(true);
+      var applied = h.run(() -> h.actions.applySaved(EntryPoint.COMMAND));
+      assertEquals(
+          CommitReceipt.Persistence.NOT_ATTEMPTED, applied.receipt().orElseThrow().persistence());
+      assertEquals(
+          CommitReceipt.Application.APPLIED, applied.receipt().orElseThrow().application());
+      assertEquals(2, h.owner.handle().view().value().orElseThrow().count());
+      assertEquals(
+          "4",
+          ((DraftNode.Scalar)
+                  h.actor.view().snapshot().orElseThrow().draft().at(FieldPath.ROOT.field("count")))
+              .raw());
+      assertEquals(version, h.actor.view().snapshot().orElseThrow().version());
+      assertEquals(undo, h.actor.view().canUndo());
+      assertTrue(h.actor.view().dirty());
+      assertEquals(actualBytes, Files.readString(h.path));
+      assertEquals(time, Files.getLastModifiedTime(h.path));
+    }
+  }
+
+  @Test
+  void coldBurstKeepsEditingAndSaveOrderWhilePreservingTheLaterDraft() throws Exception {
+    try (var h = new Harness()) {
+      var entered = new CountDownLatch(2);
+      var release = new CountDownLatch(1);
+      try {
+        for (int worker = 0; worker < 2; worker++)
+          h.workers.submit(
+              () -> {
+                entered.countDown();
+                waitFor(release);
+              });
+        waitFor(entered);
+        var handles =
+            h.nativeCall(
+                () -> {
+                  assertEquals(EditorActor.Availability.LOADING, h.actions.view().availability());
+                  var first = h.actions.edit(EntryPoint.COMMAND, "count", "2");
+                  var second = h.actions.edit(EntryPoint.COMMAND, "count", "4");
+                  var saving = h.actions.save(EntryPoint.COMMAND);
+                  var later = h.actions.edit(EntryPoint.GUI, "count", "6");
+                  return java.util.List.of(first, second, saving, later);
+                });
+        release.countDown();
+        for (var handle : handles)
+          assertEquals(OperationSnapshot.State.COMPLETED, await(handle.completion()).state());
+        var saving = (EditorActor.Save<?>) handles.get(2).snapshot().result().orElseThrow();
+        assertEquals(CommitReceipt.Persistence.SAVED, saving.receipt().orElseThrow().persistence());
+        assertEquals(4, h.owner.handle().view().value().orElseThrow().count());
+        assertEquals(
+            4,
+            com.google.gson.JsonParser.parseString(Files.readString(h.path))
+                .getAsJsonObject()
+                .getAsJsonObject("values")
+                .get("count")
+                .getAsInt());
+        assertEquals(
+            "6",
+            ((DraftNode.Scalar)
+                    h.actions
+                        .view()
+                        .snapshot()
+                        .orElseThrow()
+                        .draft()
+                        .at(FieldPath.ROOT.field("count")))
+                .raw());
+        assertTrue(h.actions.view().dirty());
+        assertEquals(2, h.writes.get());
+      } finally {
+        release.countDown();
+      }
+    }
+  }
+
+  @Test
+  void cancellationDuringPreparationStopsBeforeCommitWithoutLosingTheDraft() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.COMMAND));
+      h.edit("count", "3", EntryPoint.GUI);
+      var original = Files.readString(h.path);
+      h.pauseValidation.set(true);
+      var saving = h.nativeCall(() -> h.actions.save(EntryPoint.COMMAND));
+      waitFor(h.reached);
+      await(saving.requestCancellation());
+      h.release.countDown();
+      var stopped = await(saving.completion());
+      assertEquals(OperationSnapshot.State.CANCELLED, stopped.state());
+      assertTrue(stopped.started());
+      assertTrue(stopped.cancellationRequested());
+      assertTrue(h.actor.view().pending().isEmpty());
+      assertTrue(h.actor.view().dirty());
+      assertEquals(original, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+      assertEquals(1, h.owner.handle().view().value().orElseThrow().count());
+    }
+  }
+}

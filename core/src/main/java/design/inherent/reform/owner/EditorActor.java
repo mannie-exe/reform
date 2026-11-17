@@ -4,6 +4,7 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
 import design.inherent.reform.edit.Submission;
 import design.inherent.reform.serialization.JsonLimits;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
@@ -48,6 +50,22 @@ public final class EditorActor<T> implements AutoCloseable {
   /** A receipt remains valid even if the editor closes before its acknowledgement can be shown. */
   public record Save<T>(Optional<CommitReceipt<T>> receipt, ValidationReport editorReport) {}
 
+  /** Identified draft validation; later typing does not turn this into a different result. */
+  public record Validation(
+      UUID context, long generation, long version, String savedRevision, ValidationReport report) {}
+
+  /** Immutable authoring/source observations, never an owner or file-writing capability. */
+  public record Inspection<T>(
+      EditSession.Snapshot<T> snapshot,
+      DraftTree baseline,
+      SourceInfo provenance,
+      Optional<SettingsHandle.View<T>> effective,
+      ValidationReport observationReport,
+      Optional<CommitReceipt<T>> lastReceipt) {}
+
+  private record Checked<T>(
+      EditSession.Snapshot<T> snapshot, OwnerObservation<T> source, ValidationReport report) {}
+
   private final class Model {
     final EditSession<T> editor;
     OwnerObservation<T> source;
@@ -73,6 +91,16 @@ public final class EditorActor<T> implements AutoCloseable {
       this.model = model;
       this.submission = submission;
       baseline = model.source;
+    }
+  }
+
+  private final class ApplyPlan {
+    final Model model;
+    final OwnerObservation<T> baseline;
+
+    ApplyPlan(Model selected) {
+      model = selected;
+      baseline = selected.source;
     }
   }
 
@@ -112,6 +140,121 @@ public final class EditorActor<T> implements AutoCloseable {
 
   public View<T> view() {
     return published.get();
+  }
+
+  public UUID context() {
+    return context.id();
+  }
+
+  public DocumentDefinition<T> definition() {
+    return definition;
+  }
+
+  /** Runs owner validation without saving, marking a submission or publishing effective values. */
+  public CompletionStage<Validation> validate() {
+    return act(() -> {
+          var selected = ready();
+          var snapshot = selected.editor.snapshot();
+          return new Checked<>(snapshot, selected.source, snapshot.inspect().report());
+        })
+        .thenCompose(
+            checked -> {
+              var snapshot = checked.snapshot();
+              if (!checked.report().valid())
+                return java.util.concurrent.CompletableFuture.completedStage(
+                    new Validation(
+                        snapshot.context(),
+                        snapshot.generation(),
+                        snapshot.version(),
+                        snapshot.savedRevision(),
+                        checked.report()));
+              return source
+                  .prepare(checked.source(), snapshot.draft())
+                  .handle(
+                      (prepared, failed) ->
+                          new Validation(
+                              snapshot.context(),
+                              snapshot.generation(),
+                              snapshot.version(),
+                              snapshot.savedRevision(),
+                              failed == null ? checked.report() : report(failed)));
+            });
+  }
+
+  public CompletionStage<Inspection<T>> inspect() {
+    return act(
+        () -> {
+          var selected = ready();
+          return new Inspection<>(
+              selected.editor.snapshot(),
+              selected.editor.baseline(),
+              selected.source.provenance(),
+              selected.source.effectiveView(),
+              selected.observationReport,
+              Optional.ofNullable(selected.lastReceipt));
+        });
+  }
+
+  /** Retry only the owner's actual saved-value application, retaining later drafts/history. */
+  public CompletionStage<Save<T>> applySaved(Runnable beforeApply) {
+    Objects.requireNonNull(beforeApply);
+    return act(() -> {
+          var selected = ready();
+          if (selected.pending != null || selected.editor.pendingState().isPresent())
+            throw new PolicyRefusal(
+                "editor.pending", "Reconcile the pending save before applying saved values");
+          beforeApply.run();
+          return new ApplyPlan(selected);
+        })
+        .thenCompose(
+            plan ->
+                source
+                    .applySaved(plan.baseline)
+                    .handle(
+                        (receipt, failed) ->
+                            act(() -> {
+                                  var selected = plan.model;
+                                  if (ready() != selected)
+                                    throw new PolicyRefusal(
+                                        "editor.changed", "Editing context changed");
+                                  selected.operationReport =
+                                      failed == null
+                                          ? receipt
+                                              .persistenceReport()
+                                              .and(receipt.applicationReport())
+                                          : report(failed);
+                                  if (receipt != null) {
+                                    selected.lastReceipt = receipt;
+                                    receipt
+                                        .observation()
+                                        .filter(observed -> selected.source == plan.baseline)
+                                        .ifPresent(
+                                            observed -> {
+                                              if (observed.document().draft().isPresent()) {
+                                                if (!observed
+                                                    .document()
+                                                    .revision()
+                                                    .equals(
+                                                        selected.editor.snapshot().savedRevision()))
+                                                  selected.editor.reviewConflict(
+                                                      observed.document().draft().orElseThrow(),
+                                                      observed.document().revision());
+                                                selected.source = observed;
+                                                selected.observationReport =
+                                                    observed.document().report();
+                                              }
+                                            });
+                                  }
+                                  publish(selected);
+                                  return new Save<>(
+                                      Optional.ofNullable(receipt),
+                                      failed == null ? ValidationReport.VALID : report(failed));
+                                })
+                                .exceptionally(
+                                    unavailable ->
+                                        new Save<>(
+                                            Optional.ofNullable(receipt), report(unavailable))))
+                    .thenCompose(stage -> stage));
   }
 
   private void current() {
@@ -297,7 +440,17 @@ public final class EditorActor<T> implements AutoCloseable {
   }
 
   public CompletionStage<Save<T>> save() {
+    return save(() -> {});
+  }
+
+  /**
+   * Synchronous worker-side safe-point checks before preparing and entering commit. Once commit is
+   * invoked its actual receipt is drained; cancellation must never abandon it or claim rollback.
+   */
+  public CompletionStage<Save<T>> save(Runnable beforeCommit) {
+    Objects.requireNonNull(beforeCommit);
     return act(() -> {
+          beforeCommit.run();
           var selected = ready();
           var prepared = selected.editor.prepareSubmission();
           publish(selected);
@@ -312,6 +465,7 @@ public final class EditorActor<T> implements AutoCloseable {
                     .thenCompose(
                         prepared ->
                             act(() -> {
+                                  beforeCommit.run();
                                   if (ready() != plan.model
                                       || !plan.model.editor.markInFlight(plan.submission))
                                     throw new PolicyRefusal(

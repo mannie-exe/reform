@@ -33,18 +33,21 @@ public final class JsonOwner<T> {
     private final UUID context, session;
     private final JsonStore.Read<T> saved;
     private final SettingsHandle.View<T> effective;
+    private final SourceInfo provenance;
 
     private Observation(
         Object owner,
         UUID context,
         UUID session,
         JsonStore.Read<T> saved,
-        SettingsHandle.View<T> effective) {
+        SettingsHandle.View<T> effective,
+        SourceInfo provenance) {
       this.owner = owner;
       this.context = context;
       this.session = session;
       this.saved = saved;
       this.effective = effective;
+      this.provenance = provenance;
     }
 
     public UUID context() {
@@ -66,6 +69,16 @@ public final class JsonOwner<T> {
 
     public SettingsHandle.View<T> effective() {
       return effective;
+    }
+
+    @Override
+    public SourceInfo provenance() {
+      return provenance;
+    }
+
+    @Override
+    public Optional<SettingsHandle.View<T>> effectiveView() {
+      return Optional.of(effective);
     }
   }
 
@@ -208,7 +221,11 @@ public final class JsonOwner<T> {
     }
 
     private void revision(SettingsHandle.Revision expected) {
-      require(OwnerContext.Right.WRITE);
+      revision(expected, OwnerContext.Right.WRITE);
+    }
+
+    private void revision(SettingsHandle.Revision expected, OwnerContext.Right right) {
+      require(right);
       if (expected != runtime.handle().view().revision())
         throw new PolicyRefusal("owner.revision", "Effective values changed; observe them again");
     }
@@ -246,7 +263,7 @@ public final class JsonOwner<T> {
           .onOwner(
               () -> {
                 baseline(observed);
-                revision(observed.effective.revision());
+                revision(observed.effective.revision(), OwnerContext.Right.READ);
                 return storage;
               })
           .thenCompose(
@@ -264,7 +281,7 @@ public final class JsonOwner<T> {
                   context.onOwner(
                       () -> {
                         baseline(observed);
-                        revision(observed.effective.revision());
+                        revision(observed.effective.revision(), OwnerContext.Right.READ);
                         return new Prepared<>(
                             identity,
                             id,
@@ -490,7 +507,14 @@ public final class JsonOwner<T> {
     }
 
     private Observation<T> observation(JsonStore.Read<T> saved) {
-      return new Observation<>(identity, context.id(), id, saved, runtime.handle().view());
+      return new Observation<>(
+          identity,
+          context.id(),
+          id,
+          saved,
+          runtime.handle().view(),
+          new SourceInfo(
+              "json", "Owned JSON source", Optional.of(storage.binding().path().toString())));
     }
 
     private Receipt<T> unattempted(Throwable failure) {

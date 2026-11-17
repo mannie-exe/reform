@@ -7,6 +7,7 @@
 - [Native settings](native-settings.md) owns qualified serializer/callback constraints.
 - [Publication](publication.md) owns effective handles and context/revision checks.
 - [Owners](owners.md) owns asynchronous actor sessions, shared admission and outcome receipts.
+- [Operations](operations.md) owns shared local GUI/command services, progress and cancellation.
 - [Client JSON](client-json.md) owns physical-client registration, initialization, entry and recovery defaults.
 - [Presentation](presentation.md) owns measured panel/geometry/navigation boundaries.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.

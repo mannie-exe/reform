@@ -57,6 +57,7 @@ public final class NativeFormProbe {
   private final String mode;
   private volatile Throwable registrationFailure;
   private java.nio.file.attribute.FileTime repairedTime;
+  private java.util.concurrent.CompletableFuture<JsonObject> commands;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -374,6 +375,11 @@ public final class NativeFormProbe {
           form.onClose();
           check(mc.screen == parent, "Clean close failed to restore parent");
           next("saved values reopened; native keyboard path and clean close");
+          commands = NativeCommandControls.run(path()).toCompletableFuture();
+        }
+        case 13 -> {
+          if (!commands.isDone()) return;
+          report.add("commands", commands.join());
           finish(null);
         }
         default -> throw new AssertionError("Unexpected stage " + stage);
