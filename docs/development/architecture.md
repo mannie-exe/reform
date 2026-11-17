@@ -2,7 +2,7 @@
 
 ## Current foundation
 
-The repository has two source modules and one installable NeoForge mod artifact. The bootstrap entry point registers only the mod identity; it creates no files, controls, menus, HUD or gameplay behavior. The [core definitions](api.md), [editing model](editing.md), [storage backend](storage.md), [effective publication](publication.md) and explicit [asynchronous JSON owners](owners.md) are implemented. Native owner gateways/backends, convenience factories, additional value families and consumer migrations remain implementation work.
+The repository has two source modules and one installable NeoForge mod artifact. The bootstrap entry point registers only the mod identity; it creates no files, controls, menus, HUD or gameplay behavior. The [core definitions](api.md), [editing model](editing.md), [storage backend](storage.md), [effective publication](publication.md) and explicit [asynchronous JSON owners](owners.md) are implemented. The [presentation extraction](presentation.md) provides measured baseline parts; generated screens, native owner gateways/backends, convenience factories, additional value families and consumer migrations remain implementation work.
 
 | Module     | Responsibility                                                              | Distribution                                                           |
 | ---------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |

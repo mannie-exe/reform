@@ -2,6 +2,22 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Measured presentation extraction
+
+The full Gradle `spotlessApply check build --warning-mode all` passes with 150 core tests, zero failures/errors/skips, 920 generated property cases, ten tooling controls and the exact-public-artifact headless consumer. The final check took five seconds with relevant cached inputs. The native client panel and text-reflow helper compile against Minecraft 1.21.1 / NeoForge 21.1.265. This increment launches no game process.
+
+The extraction retains the owned MIT geometry, section navigation, measured native panel and resize helper from Compat revision `56864b6ebd116149f1754e6ceca93e7a4a4cb482`; exact selected file digests are retained with the source receipt. Changes are packages/type names, library translation fallbacks and separation of the unchanged native sizing helper. Neither sibling source nor consumer behavior is changed by this cut.
+
+An isolated Java 21 driver compiles both original and extracted native-free classes directly and compares 1,000 control-layout outputs, 1,000 column-pair results and 400 section jump/bookmark/reflow scenarios with seed `602176`. All match; its own temporary class directory is removed. Seven existing geometry/navigation unit cases also pass in the library. The driver digest is `dc3799cb4d3183a46b9361a4ca919328569068c98d96bcdd106adfabeeb87c6a`; source, exact selected inputs/results and cleanup are retained in the adopted evidence store. This comparison does not execute or compare the native renderer.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `a8b29be3335cbfa5ba3690469f0b0446fe970e1e285c223761ffda7b337d8035` |
+| Source JAR       | `1250fed94044479bf8e7b8c9293057cc56c5058588cdd769f7b23b5769ea3b70` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+[Presentation](presentation.md) owns the scope. Generated screens, public composition/convenience factories, actual rendered focus/clipping/narration/resource-reload behavior and standalone native-addon/client/server tests remain required, alongside the rest of Phase 1. Core parity and native compilation are not native UX qualification or release readiness.
+
 ## Serialized editing actor
 
 The full Gradle `spotlessApply check build --warning-mode all` passes with 143 core tests, zero failures/errors/skips, 920 generated cases, ten tooling controls and the exact-artifact headless public consumer. The final check took five seconds with relevant cached inputs. No Minecraft client/server or native form is run by this increment.

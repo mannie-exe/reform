@@ -3,6 +3,11 @@ Copyright (c) 2026 mannie-exe
 
 Project code is distributed under the MIT License in LICENSE.
 
+Measured form geometry, section navigation, the native form panel and control sizing are adapted
+from Skyweave: Compatibility Patches, Copyright (c) 2026 mannie-exe, under the same
+MIT License. They are owned source extractions; neither that mod nor the modpack
+is a runtime dependency.
+
 The Gradle wrapper scripts and JAR are Gradle build tooling, distributed under
 Apache License 2.0. See LICENSE-GRADLE.txt. They are not mod runtime code.
 
