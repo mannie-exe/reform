@@ -1,0 +1,22 @@
+[versions]
+minecraft = "1.21.1"
+neoforge = "21.1.265"
+moddev = "2.0.148"
+spotless = "8.11.0"
+google-java-format = "1.35.0"
+dfu = "8.0.16"
+gson = "2.10.1"
+junit = "5.13.1"
+jqwik = "1.9.3"
+
+[libraries]
+dfu = { module = "com.mojang:datafixerupper", version.ref = "dfu" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
+
+[plugins]
+moddev = { id = "net.neoforged.moddev", version.ref = "moddev" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

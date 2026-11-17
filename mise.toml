@@ -1,0 +1,27 @@
+[tools]
+dprint = "0.51.1"
+actionlint = "1.7.12"
+
+[tasks.check]
+description = "Check formatting, docs, tests and packaged artifacts"
+run = ["dprint check", "actionlint .github/workflows/build.yml", "./gradlew --no-daemon check build"]
+
+[tasks.format]
+description = "Format Java and Markdown"
+run = ["./gradlew --no-daemon spotlessApply", "dprint fmt"]
+
+[tasks."format:markdown"]
+description = "Format Markdown without fixed-width prose wrapping"
+run = "dprint fmt"
+
+[tasks."format:markdown:check"]
+description = "Check Markdown formatting"
+run = "dprint check"
+
+[tasks."check:docs"]
+description = "Check Markdown formatting and local links"
+run = ["dprint check", "python3 tools/check_docs.py"]
+
+[tasks."check:ci"]
+description = "Validate GitHub Actions syntax and expressions"
+run = "actionlint .github/workflows/build.yml"

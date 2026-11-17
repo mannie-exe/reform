@@ -1,0 +1,91 @@
+plugins {
+    id 'base'
+    alias(libs.plugins.moddev) apply false
+    alias(libs.plugins.spotless) apply false
+}
+
+allprojects {
+    group = 'design.inherent'
+    version = providers.gradleProperty('mod_version').get()
+}
+
+def distributionPomName = "reform-${project.version}.pom"
+
+subprojects {
+    apply plugin: 'com.diffplug.spotless'
+
+    plugins.withId('java') {
+        java {
+            toolchain.languageVersion = JavaLanguageVersion.of(21)
+            withSourcesJar()
+        }
+        tasks.withType(JavaCompile).configureEach {
+            options.release = 21
+            options.encoding = 'UTF-8'
+            options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+        }
+        tasks.withType(Test).configureEach {
+            useJUnitPlatform()
+            maxParallelForks = 1
+        }
+        tasks.withType(AbstractArchiveTask).configureEach {
+            preserveFileTimestamps = false
+            reproducibleFileOrder = true
+        }
+        tasks.withType(Jar).configureEach {
+            from rootProject.file('LICENSE'), rootProject.file('NOTICE')
+        }
+        spotless {
+            java {
+                target 'src/**/*.java'
+                googleJavaFormat(rootProject.libs.versions.google.java.format.get())
+                removeUnusedImports()
+                trimTrailingWhitespace()
+                endWithNewline()
+            }
+        }
+    }
+}
+
+tasks.register('checkDocs', Exec) {
+    group = 'verification'
+    description = 'Check maintained Markdown links without network requests.'
+    commandLine 'python3', 'tools/check_docs.py'
+    inputs.files(fileTree('.') {
+        include '**/*.md'
+        exclude '**/build/**', '**/.gradle/**', '**/runs/**', '.git/**'
+    })
+    inputs.file 'tools/check_docs.py'
+}
+
+tasks.register('verifyDistribution', Exec) {
+    group = 'verification'
+    description = 'Check mod identity, Java baseline, bundled code and publication metadata.'
+    dependsOn ':core:jar', ':neoforge:jar', ':neoforge:sourcesJar'
+    dependsOn ':neoforge:generatePomFileForMavenJavaPublication'
+    commandLine 'python3', 'tools/verify_distribution.py', project.version.toString()
+}
+
+tasks.register('stageDistribution', Sync) {
+    group = 'distribution'
+    description = 'Stage the verified installable JAR, sources and Maven metadata.'
+    dependsOn 'verifyDistribution'
+    into layout.buildDirectory.dir('distributions')
+    from project(':neoforge').tasks.named('jar')
+    from project(':neoforge').tasks.named('sourcesJar')
+    from(project(':neoforge').layout.buildDirectory.file('publications/mavenJava/pom-default.xml')) {
+        rename { distributionPomName }
+    }
+}
+
+tasks.register('toolTests', Exec) {
+    group = 'verification'
+    description = 'Exercise artifact refusals and release staging without publishing.'
+    dependsOn 'verifyDistribution'
+    commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'tools/tests', '-v'
+}
+
+tasks.named('check') {
+    dependsOn ':core:check', ':neoforge:check', 'checkDocs', 'verifyDistribution', 'toolTests'
+}
+tasks.named('assemble') { dependsOn ':core:assemble', ':neoforge:assemble', 'stageDistribution' }

@@ -1,0 +1,20 @@
+plugins { id 'java-library' }
+
+base { archivesName = 'reform-core' }
+
+repositories {
+    mavenCentral()
+    maven {
+        url = 'https://libraries.minecraft.net/'
+        content { includeGroup 'com.mojang' }
+    }
+}
+
+dependencies {
+    api libs.dfu
+    implementation libs.gson
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testImplementation libs.jqwik
+    testRuntimeOnly libs.junit.launcher
+}

@@ -1,0 +1,96 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    alias(libs.plugins.moddev)
+}
+
+base { archivesName = 'reform' }
+
+repositories {
+    mavenCentral()
+    maven {
+        url = 'https://libraries.minecraft.net/'
+        content { includeGroup 'com.mojang' }
+    }
+}
+
+dependencies {
+    // Own core classes are bundled once, not published as a second runtime dependency.
+    compileOnly project(':core')
+    api libs.dfu
+    implementation libs.gson
+    testImplementation project(':core')
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.launcher
+}
+
+neoForge {
+    version = libs.versions.neoforge.get()
+    runs {
+        client { client(); gameDirectory = file('runs/client') }
+        server {
+            server()
+            gameDirectory = file('runs/server')
+            programArgument '--nogui'
+        }
+    }
+    mods {
+        reform {
+            sourceSet sourceSets.main
+            sourceSet project(':core').sourceSets.main
+        }
+    }
+}
+
+tasks.named('processResources') {
+    def metadata = [version: project.version.toString(), minecraft: libs.versions.minecraft.get(),
+                    neoforge: libs.versions.neoforge.get()]
+    inputs.properties metadata
+    filesMatching('META-INF/neoforge.mods.toml') { expand metadata }
+}
+
+tasks.named('jar', Jar) {
+    dependsOn ':core:classes'
+    archiveFileName = "reform-${project.version}-mc${libs.versions.minecraft.get()}-neoforge.jar"
+    from project(':core').sourceSets.main.output
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+tasks.named('sourcesJar', Jar) {
+    from project(':core').sourceSets.main.allSource
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = 'reform'
+            from components.java
+            pom {
+                name = 're:form'
+                description = 'Native Minecraft configuration editing and command services for mods'
+                url = 'https://github.com/mannie-exe/reform'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/license/mit/'
+                        distribution = 'repo'
+                    }
+                }
+                developers { developer { id = 'mannie-exe'; name = 'mannie-exe' } }
+                scm {
+                    url = 'https://github.com/mannie-exe/reform'
+                    connection = 'scm:git:https://github.com/mannie-exe/reform.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/mannie-exe/reform.git'
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'staging'
+            url = rootProject.layout.buildDirectory.dir('repository')
+        }
+    }
+}

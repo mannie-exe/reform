@@ -1,0 +1,15 @@
+re:form
+Copyright (c) 2026 mannie-exe
+
+Project code is distributed under the MIT License in LICENSE.
+
+The Gradle wrapper scripts and JAR are Gradle build tooling, distributed under
+Apache License 2.0. See LICENSE-GRADLE.txt. They are not mod runtime code.
+
+Minecraft, NeoForge, DataFixerUpper, Gson, Brigadier and other platform libraries
+retain their upstream licenses. They are resolved as dependencies, not copied
+into the installable mod. JUnit, jqwik, Spotless, Google Java Format and dprint
+are build/test tools, not mod runtime content.
+
+No Fzzy Config, YACL or other configuration framework implementation or assets
+are included. Design references do not grant permission to redistribute code.
