@@ -1,0 +1,15 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="reform_native_probe"
+version="0.0.0"
+displayName="re:form native probe"
+description='''Opt-in disposable settings fixture; never part of the library distribution.'''
+
+[[dependencies.reform_native_probe]]
+modId="reform"
+type="required"
+versionRange="[0.1.0-SNAPSHOT,)"
+side="BOTH"

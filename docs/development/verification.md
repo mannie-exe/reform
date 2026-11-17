@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Native registered callback contract
+
+`python3 tools/native_config_probe.py --java-home /path/to/jdk21` passes two sequential 2 GiB dedicated-server boots using Minecraft 1.21.1 / NeoForge 21.1.265 / FML 4.0.45 / Temurin 21.0.13 on Apple Silicon macOS. The first boot passed eighteen controls in 11.089 seconds; the second passed three in 9.250 seconds, including Gradle startup in each duration. The runner's preceding full build/check also passed: 81 core tests, ten tooling controls and the exact-artifact headless public consumer. Source-mode loading and library-native integration are separate claims.
+
+A real registered COMMON spec verifies loaded ownership, raw/live/world/game-restart distinctions, synchronous save/reload on `Server thread`, disk-before-callback order, native no-op reload dispatch, permission-denied persistence without reload but with already-mutated live state, and listener failure after intended persistence. A second JVM retains raw `[4,4,4]` and activates the restart-bound cached values. Initial loading used `modloading-sync-worker`. One warm save with the small probe spec took 763417 ns; that single observation is not a cost bound for arbitrary callbacks or the pack.
+
+The controls deliberately reproduce both sides of the receipt problem: NightConfig `WritingException` with unchanged disk and changed live values, and FML `ModLoadingException` after the intended file was saved. [Native settings](native-settings.md) owns the resulting executor, cache, context and lock constraints. The fixture does not qualify a re:form native owner, client/integrated execution, native SERVER synchronization, unknown type handling, watcher/reentrancy coordination, arbitrary listeners or pack migration.
+
+The opt-in probe JAR digest is `00334db1055cbc7942461f2d12cb70d09dcc7de90004c2f12f9584478edadb59`; its executed compiled class digest is `0ee85812a132f330039e67617db33a0cad16c6493e1e81bd55f7ff06f718371f`. The class bytes match that JAR, but launches use ModDev source containers rather than loading the packaged product/probe. The product/source/POM digests remain those of the storage slice. `check` compiles the source fixture; ordinary mod runs and distribution JARs exclude it. The runner refused-existing/exact-cleanup-token controls pass; its final receipt records both terminal native runs, removed fixture and removed raw logs. Compact exact source/dependency/call/result identities are retained in the adopted evidence store.
+
 ## Owned storage slice
 
 The storage slice passes the same full Gradle `spotlessApply check build --warning-mode all` command on Temurin 21.0.13 / Apple Silicon macOS. The final run took five seconds with relevant cached inputs: 81 core tests, zero failures/skips, eight packaging/tooling controls and the exact-artifact external consumer. No Minecraft game process or native settings callback is included.
