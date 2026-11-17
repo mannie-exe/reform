@@ -3,7 +3,7 @@ package example.reform;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
-import design.inherent.reform.definition.RecordType;
+import design.inherent.reform.definition.RecordTypes;
 import design.inherent.reform.value.ValueTypes;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -25,18 +25,12 @@ public final class NativeExample {
   }
 
   private static DocumentDefinition<Preferences> definition() {
-    var enabled = FieldKey.of("enabled", ValueTypes.bool());
-    var distance = FieldKey.of("distance", ValueTypes.integer(1, 512));
-    var label = FieldKey.of("label", ValueTypes.text(128));
     return new DocumentDefinition<>(
         DocumentId.parse(ID + ":preferences"),
         1,
-        RecordType.<Preferences>builder(
-                values ->
-                    new Preferences(values.get(enabled), values.get(distance), values.get(label)))
-            .field(enabled, Preferences::enabled)
-            .field(distance, Preferences::distance)
-            .field(label, Preferences::label)
+        RecordTypes.record(Preferences.class)
+            .field("distance", FieldKey.of("distance", ValueTypes.integer(1, 512)))
+            .field("label", FieldKey.of("label", ValueTypes.text(128)))
             .build(),
         () -> new Preferences(true, 64, "Example"));
   }

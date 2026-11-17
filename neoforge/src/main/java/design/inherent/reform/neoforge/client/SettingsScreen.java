@@ -69,6 +69,11 @@ public final class SettingsScreen<T> extends Screen {
     return Component.translatableWithFallback("reform.settings." + key, fallback);
   }
 
+  /** Cached read-only editing state for composed/native views; no validation or owner effect. */
+  public EditorActor.View<T> editorView() {
+    return actor.view();
+  }
+
   @Override
   protected void init() {
     float scroll = panel == null ? 0 : panel.scroll();

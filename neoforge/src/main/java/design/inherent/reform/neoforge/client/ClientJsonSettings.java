@@ -1,0 +1,490 @@
+package design.inherent.reform.neoforge.client;
+
+import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.owner.SettingsHandle;
+import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.storage.JsonStore;
+import design.inherent.reform.storage.OwnedFile;
+import design.inherent.reform.storage.StorageBinding;
+import design.inherent.reform.validation.Issue;
+import design.inherent.reform.validation.ValidationReport;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.GameShuttingDownEvent;
+
+/** New client JSON documents only; existing/native/world owners keep their actual bindings. */
+public final class ClientJsonSettings<T> {
+  public enum Lifecycle {
+    REGISTERED,
+    INITIALIZING,
+    READY,
+    UNAVAILABLE,
+    CLOSED
+  }
+
+  /** Registration state wraps the actual runtime view; it never supplies substitute defaults. */
+  public record Status<T>(
+      Lifecycle lifecycle,
+      Optional<SettingsHandle.View<T>> effective,
+      ValidationReport report,
+      Optional<JsonOwner.Receipt<T>> initializationReceipt) {}
+
+  private record State<T>(
+      Lifecycle lifecycle,
+      JsonOwner<T> owner,
+      OwnerContext context,
+      OwnerContext.Access access,
+      ValidationReport report,
+      JsonOwner.Receipt<T> receipt) {}
+
+  private static final JsonLimits JSON = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
+  private static final Registry REGISTRY = new Registry();
+
+  private final ModContainer container;
+  private final DocumentDefinition<T> definition;
+  private final StorageBinding binding;
+  private final AtomicReference<State<T>> state =
+      new AtomicReference<>(
+          new State<>(Lifecycle.REGISTERED, null, null, null, ValidationReport.VALID, null));
+  private final CompletableFuture<Status<T>> initialization = new CompletableFuture<>();
+  private CompletableFuture<Status<T>> activeInitialization;
+
+  private ClientJsonSettings(
+      ModContainer container, DocumentDefinition<T> definition, StorageBinding binding) {
+    this.container = container;
+    this.definition = definition;
+    this.binding = binding;
+  }
+
+  /** Call from the owning physical-client mod's constructor, before FML client setup. No IO. */
+  public static <T> ClientJsonSettings<T> clientJson(
+      IEventBus modBus, ModContainer container, DocumentDefinition<T> definition) {
+    Objects.requireNonNull(modBus);
+    Objects.requireNonNull(container);
+    Objects.requireNonNull(definition);
+    if (FMLEnvironment.dist != Dist.CLIENT)
+      throw new IllegalStateException("Client settings require physical-client registration");
+    if (!container.getModId().equals(definition.id().namespace()))
+      throw new IllegalArgumentException(
+          "New client JSON must belong to its declaring mod namespace");
+    // The loader declares the root. Binding construction validates metadata and performs no IO.
+    var binding =
+        StorageBinding.newJson(FMLPaths.CONFIGDIR.get().toAbsolutePath(), definition.id());
+    var registration = new ClientJsonSettings<>(container, definition, binding);
+    REGISTRY.add(registration);
+    try {
+      modBus.addListener(registration::setup);
+    } catch (RuntimeException rejected) {
+      REGISTRY.remove(registration);
+      throw rejected;
+    }
+    return registration;
+  }
+
+  public DocumentDefinition<T> definition() {
+    return definition;
+  }
+
+  public Status<T> status() {
+    var current = state.get();
+    return new Status<>(
+        current.lifecycle(),
+        current.owner() == null ? Optional.empty() : Optional.of(current.owner().handle().view()),
+        current.report(),
+        Optional.ofNullable(current.receipt()));
+  }
+
+  /**
+   * First admitted initialization attempt, including unavailable/closed outcomes. Never block a
+   * native thread.
+   */
+  public CompletionStage<Status<T>> initialization() {
+    return initialization.minimalCompletionStage();
+  }
+
+  /**
+   * Read the actual published handle only after the native owner exists. No IO or fallback value.
+   */
+  public Optional<SettingsHandle<T>> runtime() {
+    return Optional.ofNullable(state.get().owner()).map(JsonOwner::handle);
+  }
+
+  /** Explicit native menu registration; an existing owner factory is never replaced. */
+  public void registerMenu(Component title) {
+    Objects.requireNonNull(title);
+    if (container.getCustomExtension(IConfigScreenFactory.class).isPresent())
+      throw new IllegalStateException("This mod already declares a configuration screen");
+    IConfigScreenFactory factory = (ignored, parent) -> screen(parent, title);
+    container.registerExtensionPoint(IConfigScreenFactory.class, factory);
+  }
+
+  public Screen screen(Screen parent, Component title) {
+    requireClientThread();
+    var current = state.get();
+    if (current.lifecycle() != Lifecycle.READY) return new StatusScreen(parent, title);
+    current.context().requireOwner();
+    var editor =
+        new EditorActor<>(
+            current.context(),
+            current.owner().open(current.access()),
+            definition,
+            JSON,
+            DraftLimits.CONFIGURATION,
+            64);
+    return new SettingsScreen<>(
+        parent,
+        title,
+        text("client_context", "Client preferences · applies to this installation"),
+        definition,
+        editor);
+  }
+
+  /**
+   * Explicit recovery after a failed initialization; valid existing data is read, never defaulted
+   * over.
+   */
+  public CompletionStage<Status<T>> retryInitialization() {
+    requireClientThread();
+    var current = state.get();
+    if (current.lifecycle() != Lifecycle.UNAVAILABLE || current.context() == null)
+      return CompletableFuture.completedStage(status());
+    return initialize(current);
+  }
+
+  private void setup(FMLClientSetupEvent event) {
+    event.enqueueWork(
+        () -> {
+          requireClientThread();
+          if (state.get().lifecycle() != Lifecycle.REGISTERED) return;
+          var minecraft = Minecraft.getInstance();
+          OwnerContext context = null;
+          try {
+            context =
+                new OwnerContext(
+                    minecraft::execute,
+                    REGISTRY.workers(),
+                    ClientJsonSettings::requireClientThread,
+                    OwnerContext.Limits.STANDARD);
+            var store =
+                new JsonStore<>(
+                    definition,
+                    new OwnedFile(binding, JSON.maximumBytes()),
+                    JsonStore.Format.NEW_ENVELOPE,
+                    JSON,
+                    DraftLimits.CONFIGURATION);
+            var owner = new JsonOwner<>(context, store, 16);
+            var access = context.access(() -> true, () -> true);
+            initialize(
+                new State<>(
+                    Lifecycle.REGISTERED, owner, context, access, ValidationReport.VALID, null));
+          } catch (RuntimeException failure) {
+            if (context != null) context.close();
+            state.set(
+                new State<>(
+                    Lifecycle.UNAVAILABLE,
+                    null,
+                    null,
+                    null,
+                    failure(
+                        "client.initialization", "Client settings initialization could not start"),
+                    null));
+            initialization.complete(status());
+          }
+        });
+  }
+
+  private CompletionStage<Status<T>> initialize(State<T> before) {
+    var active =
+        new State<>(
+            Lifecycle.INITIALIZING,
+            before.owner(),
+            before.context(),
+            before.access(),
+            ValidationReport.VALID,
+            null);
+    state.set(active);
+    var result = new CompletableFuture<Status<T>>();
+    activeInitialization = result;
+    var session = active.owner().open(active.access());
+    session
+        .initialize()
+        .whenComplete(
+            (receipt, failed) -> {
+              session.close();
+              active
+                  .context()
+                  .onOwner(
+                      () -> {
+                        if (state.get() != active) {
+                          return status();
+                        }
+                        var report =
+                            failed == null
+                                ? receipt.persistenceReport().and(receipt.applicationReport())
+                                : failure(
+                                    "client.initialization",
+                                    "Client settings initialization did not complete");
+                        boolean available =
+                            failed == null
+                                && receipt.application() == JsonOwner.Application.APPLIED;
+                        state.set(
+                            new State<>(
+                                available ? Lifecycle.READY : Lifecycle.UNAVAILABLE,
+                                active.owner(),
+                                active.context(),
+                                active.access(),
+                                report,
+                                receipt));
+                        var observed = status();
+                        // A completion observer may immediately start another attempt.
+                        activeInitialization = null;
+                        initialization.complete(observed);
+                        return observed;
+                      })
+                  .whenComplete(
+                      (observed, dispatchFailure) -> {
+                        if (dispatchFailure == null) result.complete(observed);
+                        else if (active.context().isOpen()) {
+                          state.compareAndSet(
+                              active,
+                              new State<>(
+                                  Lifecycle.UNAVAILABLE,
+                                  active.owner(),
+                                  active.context(),
+                                  active.access(),
+                                  failure(
+                                      "client.observation",
+                                      "Client settings result could not be observed"),
+                                  receipt));
+                          var unavailable = status();
+                          initialization.complete(unavailable);
+                          result.complete(unavailable);
+                        } else if (state.get().lifecycle() == Lifecycle.CLOSED)
+                          result.complete(status());
+                      });
+            });
+    return result.minimalCompletionStage();
+  }
+
+  private void close() {
+    requireClientThread();
+    var current = state.get();
+    if (current.lifecycle() == Lifecycle.CLOSED) return;
+    try {
+      if (current.context() != null) current.context().close();
+    } finally {
+      state.set(
+          new State<>(
+              Lifecycle.CLOSED,
+              current.owner(),
+              null,
+              null,
+              failure("client.closed", "This client settings context is closed"),
+              current.receipt()));
+      initialization.complete(status());
+      if (activeInitialization != null) {
+        activeInitialization.complete(status());
+        activeInitialization = null;
+      }
+    }
+  }
+
+  private static void requireClientThread() {
+    if (!Minecraft.getInstance().isSameThread())
+      throw new IllegalStateException("Client settings require the native client thread");
+  }
+
+  private static Component text(String key, String fallback) {
+    return Component.translatableWithFallback("reform.settings." + key, fallback);
+  }
+
+  private static ValidationReport failure(String code, String fallback) {
+    return new ValidationReport(
+        List.of(Issue.error(code, design.inherent.reform.definition.FieldPath.ROOT, fallback)),
+        false);
+  }
+
+  private static final class Registry {
+    private final Map<DocumentId, ClientJsonSettings<?>> documents = new LinkedHashMap<>();
+    private ThreadPoolExecutor workers;
+    private boolean closing;
+
+    Registry() {
+      NeoForge.EVENT_BUS.addListener(this::shutdown);
+    }
+
+    synchronized void add(ClientJsonSettings<?> settings) {
+      if (closing) throw new IllegalStateException("Client settings registration is closed");
+      if (documents.size() >= 128)
+        throw new IllegalStateException("Client document registration limit reached");
+      if (documents.putIfAbsent(settings.definition.id(), settings) != null)
+        throw new IllegalArgumentException("This client document already has an owner");
+    }
+
+    synchronized void remove(ClientJsonSettings<?> settings) {
+      documents.remove(settings.definition.id(), settings);
+    }
+
+    synchronized ThreadPoolExecutor workers() {
+      requireClientThread();
+      if (closing) throw new IllegalStateException("Client settings workers are closed");
+      if (workers == null) {
+        var sequence = new AtomicInteger();
+        workers =
+            new ThreadPoolExecutor(
+                2,
+                2,
+                30,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(256),
+                task -> {
+                  var thread =
+                      new Thread(task, "reform-client-settings-" + sequence.incrementAndGet());
+                  thread.setDaemon(true);
+                  return thread;
+                });
+        workers.allowCoreThreadTimeOut(true);
+      }
+      return workers;
+    }
+
+    private void shutdown(GameShuttingDownEvent event) {
+      final List<ClientJsonSettings<?>> selected;
+      final ThreadPoolExecutor executor;
+      synchronized (this) {
+        closing = true;
+        selected = List.copyOf(documents.values());
+        documents.clear();
+        executor = workers;
+        workers = null;
+      }
+      try {
+        Throwable failure = null;
+        for (var settings : selected) {
+          try {
+            settings.close();
+          } catch (RuntimeException | Error failed) {
+            if (failure == null) failure = failed;
+            else if (failure != failed) failure.addSuppressed(failed);
+          }
+        }
+        if (failure instanceof RuntimeException failed) throw failed;
+        if (failure instanceof Error failed) throw failed;
+      } finally {
+        if (executor != null) executor.shutdown();
+      }
+    }
+  }
+
+  private final class StatusScreen extends Screen {
+    private final Screen parent;
+    private Status<T> displayed;
+    private FormPanel diagnostics;
+
+    StatusScreen(Screen parent, Component title) {
+      super(title);
+      this.parent = parent;
+    }
+
+    @Override
+    protected void init() {
+      displayed = status();
+      float scroll = diagnostics == null ? 0 : diagnostics.scroll();
+      var actions = new ArrayList<Button>();
+      if (displayed.lifecycle() == Lifecycle.UNAVAILABLE && state.get().context() != null)
+        actions.add(
+            Button.builder(text("retry", "Retry"), ignored -> retryInitialization())
+                .bounds(0, 0, Math.max(56, font.width(text("retry", "Retry")) + 20), 20)
+                .build());
+      actions.add(
+          Button.builder(text("back", "Back"), ignored -> onClose())
+              .bounds(0, 0, Math.max(56, font.width(text("back", "Back")) + 20), 20)
+              .build());
+      var geometry =
+          FormGeometry.controls(
+              actions.stream().map(button -> new FormGeometry.Size(button.getWidth(), 20)).toList(),
+              Math.max(1, width - 24),
+              4);
+      int top = height - 12 - geometry.height();
+      for (int i = 0; i < actions.size(); i++) {
+        var position = geometry.placements().get(i);
+        var button = actions.get(i);
+        button.setPosition(12 + position.x(), top + position.y());
+        button.setWidth(position.width());
+        addRenderableWidget(button);
+      }
+      diagnostics =
+          new FormPanel(minecraft, 12, 44, Math.max(1, width - 24), Math.max(1, top - 52), false);
+      diagnostics.row(Component.empty(), message());
+      diagnostics.finish(scroll);
+      addRenderableWidget(diagnostics);
+    }
+
+    @Override
+    public void tick() {
+      var current = status();
+      if (current.lifecycle() == Lifecycle.READY) minecraft.setScreen(screen(parent, title));
+      else if (!current.equals(displayed)) rebuildWidgets();
+    }
+
+    private Component message() {
+      var current = status();
+      if (current.lifecycle() == Lifecycle.REGISTERED
+          || current.lifecycle() == Lifecycle.INITIALIZING)
+        return text("initializing", "Loading client preferences…");
+      return Component.literal(
+          current.report().issues().stream()
+              .map(Issue::fallback)
+              .distinct()
+              .limit(4)
+              .reduce((first, second) -> first + "\n" + second)
+              .orElse("Client preferences are unavailable; existing data has been retained."));
+    }
+
+    @Override
+    public Component getNarrationMessage() {
+      return title.copy().append(". ").append(message());
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int x, int y, float delta) {
+      super.render(graphics, x, y, delta);
+      graphics.drawCenteredString(font, title, width / 2, 20, FormPanel.TITLE_TEXT);
+    }
+
+    @Override
+    public void onClose() {
+      minecraft.setScreen(parent);
+    }
+  }
+}

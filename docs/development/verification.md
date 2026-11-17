@@ -2,6 +2,26 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Derived records and client JSON lifecycle
+
+The full Gradle `spotlessApply check build --warning-mode all` passes with 159 core tests, zero failures/errors/skips, the retained generated property suite, twelve tooling controls, the exact-artifact independent headless consumer and compiled native addon/probe. The final code build took six seconds with relevant cached inputs. Markdown links/format and actionlint also pass.
+
+Nine new core controls cover derived ordered scalar/enum records, explicit serialized names/constraints, no construction from invalid fields, nested mutable-list ownership, ordinary public versus caller-declared private access, custom type registration, recursive/wildcard/unsupported/duplicate/unknown refusal, explicit derivation bounds and empty records. A retained failing float control reproduced `0.1F` rejected at its declared minimum after the bound was widened to double; using the float spelling fixes it and accepts both finite float extrema while retaining the below-minimum refusal.
+
+The independent native addon now uses `RecordTypes` and `ClientJsonSettings`; it supplies no executor, JSON writer or editing session. Four sequential 2 GiB clients pass in 13.098, 12.007, 11.950 and 11.921 seconds including Gradle startup. They verify pre-setup metadata without file/runtime defaults, cancelled-future-copy isolation, duplicate document/foreign namespace/nonportable path/menu replacement refusal, the earlier real native form/save/reflow/close controls, actual saved data reopened in another JVM, malformed bytes retained without effective defaults, an accessible unavailable screen, explicit external repair followed by Retry without byte/mtime changes, historical first-attempt failure and native shutdown closure.
+
+The fourth client first reproduced a real reentrant lifecycle bug: an initialization observer started a pending retry, then a later native game tick stopped the running client, leaving the retry future unsettled at `GameShuttingDownEvent`. The old completion cleared the new tracking slot after invoking observers. Releasing the old slot before completion preserves the pending retry; the same native assertion now observes its CLOSED result before the fixture releases its validation gate. Early-stop and filename-assumption probe mistakes are recorded separately and do not count as product negatives.
+
+One loopback-only 2 GiB dedicated-server run passes in 8.830 seconds on the same product JAR. It checks actual native startup, the public common derived-record codec and absence of the client document. It does not initialize a server settings owner. The library loads from the exact packaged Maven JAR in all five boots; example/probe loading remains ModDev source containers. The ordinary example JAR excludes the opt-in probes.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `e398c0fdab1fd7806f82b7ccd37d74c3de5a1db0b26b8cea9b867618e83716ea` |
+| Source JAR       | `c5bcf051d0f1980725322881779e614606478f5c75b65c29df37d8f096a47c0b` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+The new helper's registration/lifecycle/defaults are owned by [client JSON](client-json.md). Exact successful and product-negative receipts, sources and images are retained in the adopted evidence store. All five native processes terminate; marked fixtures/logs are removed and desktop focus released. No personal client, world, server or sibling source is changed. Full native registered/other owners, recursive/reference families, complete controls/operations/commands, both migrations, pack/absence/integrated contexts and cost qualification remain Phase 1 requirements. No release or publication is claimed.
+
 ## Native scalar/record JSON form
 
 The independent native addon loads the packaged Maven library in Minecraft 1.21.1 / NeoForge 21.1.265 / FML 4.0.45 on Java 21 / Apple Silicon macOS. Its opt-in fixture passes two sequential 2 GiB JVMs in 12.282 and 10.733 seconds, including Gradle startup. The library is an exact JAR dependency; the ordinary example/probe use ModDev source containers. Both in-game mod-file hashing and class code-source attribution identify the expected packaged library. These launches do not qualify a packaged example install in Prism.

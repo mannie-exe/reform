@@ -14,7 +14,7 @@ The internal native panel measures labels, summaries, widgets and group boundari
 
 ## Generated JSON form
 
-`SettingsScreen` takes its parent, title/context label, definition and an already admitted `EditorActor`. It has no implicit actor lookup, initialization or file ownership. The caller owns the shared document/context; closing the screen closes its editing actor/session. The [independent native example](../../examples/native/README.md) connects the actual native configuration-menu extension point to the packaged library. It is deliberately explicit wiring until the convenience lifecycle is qualified.
+`SettingsScreen` takes its parent, title/context label, definition and an already admitted `EditorActor`. It has no implicit actor lookup, initialization or file ownership. The caller owns the shared document/context; closing the screen closes its editing actor/session. The [client JSON factory](client-json.md) supplies that common wiring for the [independent native example](../../examples/native/README.md). `editorView()` exposes cached read-only state to composed/native observers without returning an editing or persistence capability.
 
 The form recursively exposes declared records and scalar text/number/choice controls. Unsupported shapes retain their data and show an unavailable editor; they do not become invented defaults. Invalid raw text remains in native inputs with field diagnostics, explicit invalid wording and narration. Drawing and narration read cached actor results rather than invoking complete-candidate validation or snapshot callbacks per frame.
 

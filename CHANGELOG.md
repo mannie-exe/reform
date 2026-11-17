@@ -18,6 +18,7 @@
 - Extract owned measured form geometry, section navigation and client panel with independent parity checks.
 - Connect a native scalar/record form to shared JSON editing and restore nested focus after native reflow.
 - Add an independent native addon and disposable save/reopen client fixture against the packaged library.
+- Supply client JSON registration, native initialization, unavailable-state recovery and reentrant shutdown handling.
 - Exercise the packaged public API in an independent headless consumer.
 
 No stable configuration API or consumer migration is released yet.

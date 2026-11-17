@@ -32,7 +32,7 @@ Explicit `load` reads through the actual owner. Missing data is reported without
 
 `save` freezes one submitted draft and lets later editing continue while authorization and IO are pending. Actual owner receipts drive acknowledgement and preserve later edits. Saved data without an authorized readback keeps observation-unavailable pending state; an unknown write remains blocked until actual reconciliation. Save returns the backend receipt independently of editor acknowledgement, including when the editor closes after replacement. Closing the actor invalidates its own session and queued edits, unregisters its lifecycle subscription and clears the published draft view; it does not close the shared document/runtime context or pretend an active save was undone.
 
-This actor currently connects the explicit JSON backend. Its native screen/command presenters, native backend adaptation, full operation/cancellation suite and convenience construction remain implementation work. A core worker actor is not a native UI qualification.
+This actor currently connects the explicit JSON backend and experimental [native form](presentation.md). The [client JSON factory](client-json.md) supplies common registration/lifecycle wiring. Native registered backend adaptation, complete command/operation/cancellation services and other owner factories remain required. Core worker qualification does not establish native lifecycle or UI behavior.
 
 ## Preserve truthful outcomes
 

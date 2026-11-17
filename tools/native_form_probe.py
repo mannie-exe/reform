@@ -15,10 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKER = ".reform-form-fixture.json"
 
 
-def create_fixture(fixture, token):
+def create_fixture(fixture, token, client=True):
     fixture.mkdir(parents=True, exist_ok=False)
     (fixture / MARKER).write_text(json.dumps({"token": token, "purpose": "independent-native-form"}))
-    (fixture / "options.txt").write_text("onboardAccessibility:false\nguiScale:2\nfullscreen:false\nmaxFps:60\n")
+    if client:
+        (fixture / "options.txt").write_text("onboardAccessibility:false\nguiScale:2\nfullscreen:false\nmaxFps:60\n")
 
 
 def cleanup_fixture(fixture, token):
@@ -30,7 +31,7 @@ def cleanup_fixture(fixture, token):
     shutil.rmtree(fixture)
 
 
-def run(java_home, timeout):
+def run(java_home, timeout, lifecycle_only=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
@@ -56,8 +57,17 @@ def run(java_home, timeout):
                           Path(__file__).resolve(), ROOT / "tools/native_config_probe.py"]):
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-form-client.log"
+    modes = ("reentrant",) if lifecycle_only else ("first", "reopen", "malformed", "reentrant")
     try:
-        for mode in ("first", "reopen"):
+        for mode in modes:
+            if mode == "malformed":
+                saved = fixture / "config/reform_native_example/preferences.json"
+                (fixture / "native-form-valid.json").write_bytes(saved.read_bytes())
+                saved.write_text("{invalid retained input")
+            if mode == "reentrant":
+                source = fixture / "config/reform_native_example_probe/lifecycle.json"
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("{invalid retained input")
             evidence = fixture / "native-form-report.json"
             evidence.unlink(missing_ok=True)
             (fixture / "native-form-mode.txt").write_text(mode + "\n")
@@ -67,6 +77,7 @@ def run(java_home, timeout):
             report["runs"].append(result)
             if (result["exitCode"] != 0 or result["termination"] is not None
                     or result.get("native", {}).get("status") != "PASS"
+                    or result["native"].get("nativeShutdownClosed") is not True
                     or result["native"].get("mode") != mode
                     or result["native"].get("librarySha256") != digest):
                 break
@@ -76,12 +87,13 @@ def run(java_home, timeout):
                 destination = report_dir / source.name
                 destination.write_bytes(data)
                 report["screenshots"][source.name] = hashlib.sha256(data).hexdigest()
-        if (len(report["runs"]) == 2
+        if (len(report["runs"]) == len(modes)
                 and all(result.get("native", {}).get("status") == "PASS"
                         and result["exitCode"] == 0 and result["termination"] is None
                         and result["native"].get("librarySha256") == digest
+                        and result["native"].get("nativeShutdownClosed") is True
                         and result["native"].get("mode") == mode
-                        for result, mode in zip(report["runs"], ("first", "reopen")))):
+                        for result, mode in zip(report["runs"], modes))):
             report["status"] = "PASS"
     except Exception as failure:
         report["failure"] = str(failure)
@@ -96,7 +108,7 @@ def run(java_home, timeout):
         output = report_dir / "native-form.json"
         output.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps({"status": report["status"], "report": str(output),
-                          "nativeFailures": [result.get("native", {}).get("failure") for result in report["runs"]],
+                          "nativeFailures": [result.get("native", {}).get("failure") or result.get("native", {}).get("shutdownFailure") for result in report["runs"]],
                           "fixtureRemoved": report.get("fixtureRemoved", False)}))
     return 0 if report["status"] == "PASS" else 1
 
@@ -105,7 +117,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--java-home", type=Path)
     parser.add_argument("--timeout", type=int, default=180, help="Client/build timeout in seconds (1..600)")
+    parser.add_argument("--lifecycle-only", action="store_true", help="Run only the held reentrant retry/shutdown control")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only))

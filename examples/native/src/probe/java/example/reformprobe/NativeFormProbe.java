@@ -4,6 +4,8 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import example.reform.ClientExample;
@@ -25,12 +27,17 @@ import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.GameShuttingDownEvent;
 import org.lwjgl.glfw.GLFW;
 
 /** Real widgets and owner/file roundtrips; no reflection into private library state. */
@@ -42,20 +49,31 @@ public final class NativeFormProbe {
   private int stage, ticks, stageTick;
   private boolean finished;
   private Screen parent, form;
-  private EditorActor<NativeExample.Preferences> actor;
   private EditBox distance, label;
   private String savedBytes, capture;
   private Runnable afterCapture;
   private int cursor;
   private String selected;
   private final String mode;
+  private volatile Throwable registrationFailure;
+  private java.nio.file.attribute.FileTime repairedTime;
 
-  public NativeFormProbe() {
+  public record LifecyclePreferences(boolean enabled) {}
+
+  private ClientJsonSettings<LifecyclePreferences> reentrantSettings;
+  private java.util.concurrent.CompletableFuture<ClientJsonSettings.Status<LifecyclePreferences>>
+      reentrantRetry;
+  private final java.util.concurrent.atomic.AtomicBoolean holdRetry =
+      new java.util.concurrent.atomic.AtomicBoolean();
+  private final java.util.concurrent.CountDownLatch releaseRetry =
+      new java.util.concurrent.CountDownLatch(1);
+
+  public NativeFormProbe(IEventBus bus, ModContainer probeContainer) {
     try {
       var modeFile = mc.gameDirectory.toPath().resolve("native-form-mode.txt");
       if (Files.size(modeFile) > 16) throw new IllegalStateException("Invalid form fixture mode");
       mode = Files.readString(modeFile).strip();
-      if (!List.of("first", "reopen").contains(mode))
+      if (!List.of("first", "reopen", "malformed", "reentrant").contains(mode))
         throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -63,8 +81,114 @@ public final class NativeFormProbe {
     report.addProperty("status", "RUNNING");
     report.addProperty("mode", mode);
     report.add("controls", controls);
+    if (mode.equals("reentrant")) registerReentrant(bus, probeContainer);
+    bus.addListener((FMLClientSetupEvent ignored) -> registration(bus, probeContainer));
     NeoForge.EVENT_BUS.addListener(this::tick);
     NeoForge.EVENT_BUS.addListener(this::rendered);
+    NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, this::shutdown);
+  }
+
+  private void registerReentrant(IEventBus bus, ModContainer probeContainer) {
+    var definition =
+        new design.inherent.reform.definition.DocumentDefinition<>(
+            design.inherent.reform.definition.DocumentId.parse(
+                probeContainer.getModId() + ":lifecycle"),
+            1,
+            design.inherent.reform.definition.RecordTypes.record(LifecyclePreferences.class)
+                .build(),
+            () -> new LifecyclePreferences(true),
+            value -> {
+              if (holdRetry.get()) {
+                try {
+                  if (!releaseRetry.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                    throw new IllegalStateException("Fixture retry hold timed out");
+                } catch (InterruptedException interrupted) {
+                  Thread.currentThread().interrupt();
+                  throw new IllegalStateException(interrupted);
+                }
+              }
+              return design.inherent.reform.validation.ValidationReport.VALID;
+            });
+    reentrantSettings = ClientJsonSettings.clientJson(bus, probeContainer, definition);
+    reentrantSettings
+        .initialization()
+        .whenComplete(
+            (observed, failed) -> {
+              try {
+                if (failed != null)
+                  throw new AssertionError("Initial lifecycle observation failed", failed);
+                check(mc.isSameThread(), "Expected native initialization completion");
+                check(
+                    observed.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE,
+                    "Expected the deliberately malformed lifecycle source");
+                var source =
+                    net.neoforged.fml.loading.FMLPaths.CONFIGDIR
+                        .get()
+                        .resolve(probeContainer.getModId())
+                        .resolve("lifecycle.json");
+                Files.writeString(source, "{\"schemaVersion\":1,\"values\":{\"enabled\":true}}");
+                holdRetry.set(true);
+                reentrantRetry = reentrantSettings.retryInitialization().toCompletableFuture();
+                recordArtifact();
+                controls.add(
+                    "initialization observer immediately starts a held retry; close is deferred to an actual game tick");
+              } catch (Throwable failure) {
+                finish(failure);
+              }
+            });
+  }
+
+  private void registration(IEventBus bus, ModContainer probeContainer) {
+    try {
+      var settings = ClientExample.settings();
+      check(
+          settings.status().lifecycle() == ClientJsonSettings.Lifecycle.REGISTERED,
+          "Settings started before admitted client setup");
+      check(
+          settings.runtime().isEmpty() && settings.status().effective().isEmpty(),
+          "Registration supplied an invented runtime value");
+      check(
+          !settings.initialization().toCompletableFuture().isDone(),
+          "Registration did not preserve pending initialization");
+      settings.initialization().toCompletableFuture().cancel(false);
+      if (mode.equals("first"))
+        check(Files.notExists(path()), "Registration initialized the JSON file");
+      controls.add(
+          "metadata registration has no file/runtime defaults; cancelled future copy does not cancel owner");
+      var actualContainer = ModList.get().getModContainerById(NativeExample.ID).orElseThrow();
+      expectRefusal(
+          () -> ClientJsonSettings.clientJson(bus, actualContainer, NativeExample.DEFINITION));
+      expectRefusal(
+          () -> ClientJsonSettings.clientJson(bus, probeContainer, NativeExample.DEFINITION));
+      for (String path : List.of("../escape", "double//slash", "trailing./leaf", "con")) {
+        var invalid =
+            new design.inherent.reform.definition.DocumentDefinition<>(
+                design.inherent.reform.definition.DocumentId.parse(NativeExample.ID + ":" + path),
+                1,
+                NativeExample.DEFINITION.type(),
+                NativeExample.DEFINITION::defaults);
+        expectRefusal(() -> ClientJsonSettings.clientJson(bus, actualContainer, invalid));
+      }
+      var existing = actualContainer.getCustomExtension(IConfigScreenFactory.class).orElseThrow();
+      expectRefusal(
+          () -> settings.registerMenu(net.minecraft.network.chat.Component.literal("Replacement")));
+      check(
+          actualContainer.getCustomExtension(IConfigScreenFactory.class).orElseThrow() == existing,
+          "Duplicate menu registration replaced another factory");
+      controls.add(
+          "duplicate document/foreign namespace/nonportable path/menu replacement refused before effects");
+    } catch (Throwable failure) {
+      registrationFailure = failure;
+    }
+  }
+
+  private static void expectRefusal(Runnable operation) {
+    try {
+      operation.run();
+    } catch (IllegalArgumentException | IllegalStateException expected) {
+      return;
+    }
+    throw new AssertionError("Invalid registration was accepted");
   }
 
   private void next(String control) {
@@ -77,6 +201,8 @@ public final class NativeFormProbe {
     if (finished) return;
     ticks++;
     try {
+      if (registrationFailure != null)
+        throw new AssertionError("Registration contract failed", registrationFailure);
       if (ticks > 2400 || ticks - stageTick > 600)
         throw new AssertionError("Native form stage timed out: " + stage);
       if (mc.getOverlay() != null) return;
@@ -87,29 +213,30 @@ public final class NativeFormProbe {
         action.run();
         return;
       }
+      if (mode.equals("malformed")) {
+        malformed();
+        return;
+      }
+      if (mode.equals("reentrant")) {
+        if (reentrantRetry != null) {
+          check(mc.isRunning(), "Expected a running native client for the shutdown control");
+          report.addProperty("nativeRunningBeforeClose", true);
+          finish(null);
+        }
+        return;
+      }
       switch (stage) {
         case 0 -> {
-          if (!(mc.screen instanceof TitleScreen) || !ClientExample.INSTANCE.initialized()) return;
-          var artifact = ModList.get().getModFileById("reform").getFile().getFilePath();
-          report.addProperty("libraryPath", artifact.toString());
-          report.addProperty(
-              "librarySha256",
-              HexFormat.of()
-                  .formatHex(
-                      MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(artifact))));
-          report.addProperty(
-              "libraryCodeSource",
-              design.inherent.reform.neoforge.client.SettingsScreen.class
-                  .getProtectionDomain()
-                  .getCodeSource()
-                  .getLocation()
-                  .toString());
+          if (!(mc.screen instanceof TitleScreen)
+              || ClientExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
           parent = mc.screen;
           open();
           next("packaged library loaded; actual registered config factory opened");
         }
         case 1 -> {
-          if (actor.view().snapshot().isEmpty()) return;
+          if (view().snapshot().isEmpty()) return;
           distance = input(form, "Distance");
           label = input(form, "Label");
           if (mode.equals("reopen")) {
@@ -117,7 +244,7 @@ public final class NativeFormProbe {
                 distance.getValue().equals("128") && label.getValue().equals("Example"),
                 "Second JVM did not retain saved preferences");
             check(
-                actor.view().validation().valid() && !actor.view().dirty(),
+                view().validation().valid() && !view().dirty(),
                 "Second JVM has an invalid/dirty baseline");
             form.onClose();
             next("actual saved file and effective values reopen in a second JVM");
@@ -127,9 +254,7 @@ public final class NativeFormProbe {
           check(
               distance.getValue().equals("64") && label.getValue().equals("Example"),
               "Initial factory values");
-          check(
-              !actor.view().dirty() && actor.view().validation().valid(),
-              "Initial editor observation");
+          check(!view().dirty() && view().validation().valid(), "Initial editor observation");
           savedBytes = Files.readString(path());
           geometry(form);
           capture = "form-initial.png";
@@ -137,13 +262,13 @@ public final class NativeFormProbe {
           next("native defaults/field controls/geometry");
         }
         case 2 -> {
-          if (actor.view().validation().valid()) return;
+          if (view().validation().valid()) return;
           check(
               distance.getValue().equals("-") && raw("distance").equals("-"),
               "Invalid raw draft retained");
           check(!button(form, "Save and apply").active, "Invalid submission disabled");
           check(Files.readString(path()).equals(savedBytes), "Invalid typing wrote the file");
-          var diagnostic = actor.view().validation().issues().getFirst().fallback();
+          var diagnostic = view().validation().issues().getFirst().fallback();
           check(
               form.getNarrationMessage().getString().contains(diagnostic),
               "Invalid diagnostic narration");
@@ -152,17 +277,16 @@ public final class NativeFormProbe {
           next("invalid native input retained; complete validation blocks saving");
         }
         case 3 -> {
-          if (!actor.view().validation().valid()
+          if (!view().validation().valid()
               || !raw("distance").equals("128")
               || !button(form, "Save and apply").active) return;
           click(button(form, "Save and apply"));
           next("native save control invoked");
         }
         case 4 -> {
-          if (actor.view().lastReceipt().isEmpty()
-              || actor.view().pending().isPresent()
-              || actor.view().dirty()) return;
-          var receipt = actor.view().lastReceipt().orElseThrow();
+          if (view().lastReceipt().isEmpty() || view().pending().isPresent() || view().dirty())
+            return;
+          var receipt = view().lastReceipt().orElseThrow();
           check(
               receipt.persistence() == JsonOwner.Persistence.SAVED
                   && receipt.application() == JsonOwner.Application.APPLIED,
@@ -208,14 +332,14 @@ public final class NativeFormProbe {
         case 8 -> {
           check(
               mc.screen == form
-                  && actor.view().availability() == EditorActor.Availability.READY
+                  && view().availability() == EditorActor.Availability.READY
                   && label.getValue().equals("Native label selection"),
               "Keep editing closed or replaced the draft");
           click(button(form, "Revert"));
           next("native revert requested");
         }
         case 9 -> {
-          if (actor.view().dirty() || !label.getValue().equals("Example")) return;
+          if (view().dirty() || !label.getValue().equals("Example")) return;
           check(
               distance.getValue().equals("128") && Files.readString(path()).equals(savedBytes),
               "Revert changed saved values");
@@ -223,7 +347,7 @@ public final class NativeFormProbe {
           next("revert retains actual saved baseline");
         }
         case 10 -> {
-          if (!distance.getValue().equals("64") || !actor.view().dirty()) return;
+          if (!distance.getValue().equals("64") || !view().dirty()) return;
           check(Files.readString(path()).equals(savedBytes), "Reset wrote factory defaults");
           form.onClose();
           next("defaults stage a dirty draft without writing");
@@ -232,13 +356,13 @@ public final class NativeFormProbe {
           check(mc.screen instanceof ConfirmScreen, "Default draft closed without review");
           click(button(mc.screen, "Discard draft"));
           check(
-              mc.screen == parent && actor.view().availability() == EditorActor.Availability.CLOSED,
+              mc.screen == parent && view().availability() == EditorActor.Availability.CLOSED,
               "Discard leaked editor or parent context");
           open();
           next("explicit discard closes actor; real factory reopened");
         }
         case 12 -> {
-          if (actor.view().snapshot().isEmpty()) return;
+          if (view().snapshot().isEmpty()) return;
           check(
               input(form, "Distance").getValue().equals("128"),
               "Reopen used unsaved factory defaults");
@@ -259,16 +383,110 @@ public final class NativeFormProbe {
     }
   }
 
+  private void recordArtifact() throws Exception {
+    var artifact = ModList.get().getModFileById("reform").getFile().getFilePath();
+    report.addProperty("libraryPath", artifact.toString());
+    report.addProperty(
+        "librarySha256",
+        HexFormat.of()
+            .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(artifact))));
+    report.addProperty(
+        "libraryCodeSource",
+        SettingsScreen.class.getProtectionDomain().getCodeSource().getLocation().toString());
+  }
+
+  private void malformed() throws Exception {
+    var settings = ClientExample.settings();
+    switch (stage) {
+      case 0 -> {
+        if (!(mc.screen instanceof TitleScreen)
+            || settings.status().lifecycle() != ClientJsonSettings.Lifecycle.UNAVAILABLE) return;
+        recordArtifact();
+        check(
+            Files.readString(path()).equals("{invalid retained input"),
+            "Malformed file was replaced during initialization");
+        check(
+            settings.runtime().orElseThrow().view().value().isEmpty()
+                && !settings.status().report().valid(),
+            "Malformed input became effective defaults");
+        check(
+            settings.initialization().toCompletableFuture().join().lifecycle()
+                == ClientJsonSettings.Lifecycle.UNAVAILABLE,
+            "Initialization future invented success");
+        parent = mc.screen;
+        open();
+        next(
+            "malformed saved bytes remain intact; no effective defaults and unavailable initialization receipt");
+      }
+      case 1 -> {
+        check(
+            !(form instanceof SettingsScreen<?>)
+                && widgets(form).stream().noneMatch(EditBox.class::isInstance),
+            "Unavailable owner exposed editable factory defaults");
+        check(
+            form.getNarrationMessage()
+                .getString()
+                .contains(settings.status().report().issues().getFirst().fallback()),
+            "Unavailable reason missing from narration");
+        geometry(form);
+        capture = "form-unavailable.png";
+        afterCapture =
+            () -> {
+              try {
+                // Simulate an explicit external repair with the first boot's actual saved bytes.
+                savedBytes =
+                    Files.readString(mc.gameDirectory.toPath().resolve("native-form-valid.json"));
+                Files.writeString(path(), savedBytes);
+                repairedTime = Files.getLastModifiedTime(path());
+                click(button(form, "Retry"));
+              } catch (java.io.IOException failure) {
+                throw new java.io.UncheckedIOException(failure);
+              }
+            };
+        next("unavailable native screen reports error with explicit recovery");
+      }
+      case 2 -> {
+        if (settings.status().lifecycle() != ClientJsonSettings.Lifecycle.READY
+            || !(mc.screen instanceof SettingsScreen<?>)) return;
+        form = mc.screen;
+        if (view().snapshot().isEmpty()) return;
+        check(
+            input(form, "Distance").getValue().equals("128"),
+            "Recovery published factory values instead of repaired saved data");
+        check(
+            Files.readString(path()).equals(savedBytes)
+                && Files.getLastModifiedTime(path()).equals(repairedTime),
+            "Recovery rewrote an already valid saved file");
+        check(
+            settings.status().initializationReceipt().orElseThrow().persistence()
+                == JsonOwner.Persistence.UNCHANGED,
+            "Recovery repeated persistence");
+        check(
+            settings.initialization().toCompletableFuture().join().lifecycle()
+                == ClientJsonSettings.Lifecycle.UNAVAILABLE,
+            "First-attempt history changed after retry");
+        form.onClose();
+        next(
+            "explicit retry reads repaired data without rewriting; first-attempt failure remains historical");
+        finish(null);
+      }
+      default -> throw new AssertionError("Unknown malformed stage");
+    }
+  }
+
   private void open() {
     var container = ModList.get().getModContainerById(NativeExample.ID).orElseThrow();
     var factory = container.getCustomExtension(IConfigScreenFactory.class).orElseThrow();
     form = factory.createScreen(container, parent);
     mc.setScreen(form);
-    actor = ClientExample.INSTANCE.editor();
+  }
+
+  private EditorActor.View<?> view() {
+    return ((SettingsScreen<?>) form).editorView();
   }
 
   private String raw(String name) {
-    var node = (DraftNode.ObjectValue) actor.view().snapshot().orElseThrow().draft().root();
+    var node = (DraftNode.ObjectValue) view().snapshot().orElseThrow().draft().root();
     return ((DraftNode.Scalar) node.fields().get(name)).raw();
   }
 
@@ -382,13 +600,56 @@ public final class NativeFormProbe {
       report.addProperty("stack", stack.toString());
     }
     try {
-      Files.writeString(
-          mc.gameDirectory.toPath().resolve("native-form-report.json"),
-          new GsonBuilder().setPrettyPrinting().create().toJson(report));
+      writeReport();
     } catch (Exception writeFailure) {
       throw new IllegalStateException("Cannot retain native form evidence", writeFailure);
     } finally {
       mc.stop();
+    }
+  }
+
+  private void writeReport() throws java.io.IOException {
+    Files.writeString(
+        mc.gameDirectory.toPath().resolve("native-form-report.json"),
+        new GsonBuilder().setPrettyPrinting().create().toJson(report));
+  }
+
+  private void shutdown(GameShuttingDownEvent event) {
+    try {
+      if (reentrantSettings != null) {
+        check(
+            reentrantSettings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
+            "Reentrant client context survived shutdown");
+        check(
+            reentrantRetry != null && reentrantRetry.isDone(),
+            "Reentrant retry future stranded at shutdown");
+        check(
+            reentrantRetry.join().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
+            "Held retry reported an invented effect instead of context closure");
+        report.addProperty("reentrantRetryClosed", true);
+      }
+      var settings = ClientExample.settings();
+      check(
+          settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
+          "Client settings context survived game shutdown");
+      check(
+          settings.runtime().orElseThrow().view().availability()
+              == design.inherent.reform.owner.SettingsHandle.Availability.CLOSED,
+          "Published runtime survived client shutdown");
+      check(
+          settings.initialization().toCompletableFuture().isDone(),
+          "Initialization future stranded at shutdown");
+      report.addProperty("nativeShutdownClosed", true);
+    } catch (Throwable failure) {
+      report.addProperty("status", "FAIL");
+      report.addProperty("shutdownFailure", failure.toString());
+    } finally {
+      releaseRetry.countDown();
+    }
+    try {
+      writeReport();
+    } catch (java.io.IOException failure) {
+      throw new java.io.UncheckedIOException(failure);
     }
   }
 
