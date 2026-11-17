@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
- * Serialized worker editing for a bound JSON session. Widgets/commands read immutable views; no
+ * Serialized worker editing for a bound document session. Widgets/commands read immutable views; no
  * editor validation, snapshot, history or acknowledgement callback runs on their native thread.
  */
 public final class EditorActor<T> implements AutoCloseable {
@@ -43,21 +43,21 @@ public final class EditorActor<T> implements AutoCloseable {
       ValidationReport validation,
       ValidationReport observationReport,
       ValidationReport operationReport,
-      Optional<JsonOwner.Receipt<T>> lastReceipt) {}
+      Optional<CommitReceipt<T>> lastReceipt) {}
 
   /** A receipt remains valid even if the editor closes before its acknowledgement can be shown. */
-  public record Save<T>(Optional<JsonOwner.Receipt<T>> receipt, ValidationReport editorReport) {}
+  public record Save<T>(Optional<CommitReceipt<T>> receipt, ValidationReport editorReport) {}
 
   private final class Model {
     final EditSession<T> editor;
-    JsonOwner.Observation<T> source;
+    OwnerObservation<T> source;
     Submission<T> pending;
-    JsonOwner.Receipt<T> lastReceipt;
+    CommitReceipt<T> lastReceipt;
     EditSession.EditGroup typing;
     ValidationReport observationReport = ValidationReport.VALID;
     ValidationReport operationReport = ValidationReport.VALID;
 
-    Model(EditSession<T> editor, JsonOwner.Observation<T> source) {
+    Model(EditSession<T> editor, OwnerObservation<T> source) {
       this.editor = editor;
       this.source = source;
     }
@@ -66,7 +66,7 @@ public final class EditorActor<T> implements AutoCloseable {
   private final class SavePlan {
     final Model model;
     final Submission<T> submission;
-    final JsonOwner.Observation<T> baseline;
+    final OwnerObservation<T> baseline;
     final AtomicBoolean commitInvoked = new AtomicBoolean();
 
     SavePlan(Model model, Submission<T> submission) {
@@ -78,7 +78,7 @@ public final class EditorActor<T> implements AutoCloseable {
 
   private final Object lifetime = new Object();
   private final OwnerContext context;
-  private final JsonOwner<T>.Session source;
+  private final DocumentSession<T> source;
   private final DocumentDefinition<T> definition;
   private final JsonLimits jsonLimits;
   private final DraftLimits draftLimits;
@@ -93,7 +93,7 @@ public final class EditorActor<T> implements AutoCloseable {
   /** Owns the supplied document session, but never the shared document or borrowed executors. */
   public EditorActor(
       OwnerContext context,
-      JsonOwner<T>.Session source,
+      DocumentSession<T> source,
       DocumentDefinition<T> definition,
       JsonLimits jsonLimits,
       DraftLimits draftLimits,
@@ -101,6 +101,8 @@ public final class EditorActor<T> implements AutoCloseable {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.source = Objects.requireNonNull(source);
+    if (!source.context().equals(context.id()) || source.definition() != definition)
+      throw new IllegalArgumentException("Editor requires its actual context and owner definition");
     this.definition = Objects.requireNonNull(definition);
     this.jsonLimits = Objects.requireNonNull(jsonLimits);
     this.draftLimits = Objects.requireNonNull(draftLimits);
@@ -197,14 +199,14 @@ public final class EditorActor<T> implements AutoCloseable {
                                     throw new PolicyRefusal(
                                         "editor.changed",
                                         "Draft changed while loading; retained it");
-                                  if (observed.saved().draft().isEmpty()) {
+                                  if (observed.document().draft().isEmpty()) {
                                     if (selected != null) {
-                                      selected.observationReport = observed.saved().report();
+                                      selected.observationReport = observed.document().report();
                                       return publish(selected);
                                     }
                                     var unavailable =
                                         EditorActor.<T>empty(
-                                            Availability.UNAVAILABLE, observed.saved().report());
+                                            Availability.UNAVAILABLE, observed.document().report());
                                     synchronized (lifetime) {
                                       current();
                                       published.set(unavailable);
@@ -215,21 +217,21 @@ public final class EditorActor<T> implements AutoCloseable {
                                     var accepted =
                                         selected.editor.acknowledge(
                                             selected.pending,
-                                            observed.saved().draft().orElseThrow(),
-                                            observed.saved().source().revision());
+                                            observed.document().draft().orElseThrow(),
+                                            observed.document().revision());
                                     if (accepted == EditSession.Acknowledgement.INVALID_OBSERVATION)
                                       return publish(selected);
                                     selected.pending = null;
                                     selected.source = observed;
-                                    selected.observationReport = observed.saved().report();
+                                    selected.observationReport = observed.document().report();
                                     return publish(selected);
                                   }
                                   if (selected != null && selected.editor.dirty()) {
                                     selected.editor.reviewConflict(
-                                        observed.saved().draft().orElseThrow(),
-                                        observed.saved().source().revision());
+                                        observed.document().draft().orElseThrow(),
+                                        observed.document().revision());
                                     selected.source = observed;
-                                    selected.observationReport = observed.saved().report();
+                                    selected.observationReport = observed.document().report();
                                     return publish(selected);
                                   }
                                   var created =
@@ -237,8 +239,8 @@ public final class EditorActor<T> implements AutoCloseable {
                                           EditSession.fromDraft(
                                               definition,
                                               observed.context(),
-                                              observed.saved().source().revision(),
-                                              observed.saved().draft().orElseThrow(),
+                                              observed.document().revision(),
+                                              observed.document().draft().orElseThrow(),
                                               jsonLimits,
                                               draftLimits,
                                               this::owningTask),
@@ -247,7 +249,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                     current();
                                     model = created;
                                   }
-                                  created.observationReport = observed.saved().report();
+                                  created.observationReport = observed.document().report();
                                   return publish(created);
                                 })));
   }
@@ -352,23 +354,23 @@ public final class EditorActor<T> implements AutoCloseable {
                     .thenCompose(stage -> stage));
   }
 
-  private void accept(Model selected, Submission<T> submission, JsonOwner.Receipt<T> receipt) {
+  private void accept(Model selected, Submission<T> submission, CommitReceipt<T> receipt) {
     selected.lastReceipt = receipt;
     selected.operationReport = receipt.persistenceReport().and(receipt.applicationReport());
     switch (receipt.persistence()) {
       case SAVED, UNCHANGED -> {
         var observed = receipt.observation();
-        if (observed.isPresent() && observed.orElseThrow().saved().draft().isPresent()) {
+        if (observed.isPresent() && observed.orElseThrow().document().draft().isPresent()) {
           var source = observed.orElseThrow();
           var accepted =
               selected.editor.acknowledge(
                   submission,
-                  source.saved().draft().orElseThrow(),
-                  source.saved().source().revision());
+                  source.document().draft().orElseThrow(),
+                  source.document().revision());
           if (accepted == EditSession.Acknowledgement.ACCEPTED
               || accepted == EditSession.Acknowledgement.REVIEW_REQUIRED) {
             selected.source = source;
-            selected.observationReport = source.saved().report();
+            selected.observationReport = source.document().report();
             selected.pending = null;
           }
         } else selected.editor.observationUnavailable(submission);
@@ -381,12 +383,11 @@ public final class EditorActor<T> implements AutoCloseable {
             .observation()
             .ifPresent(
                 observed -> {
-                  if (observed.saved().draft().isPresent()) {
+                  if (observed.document().draft().isPresent()) {
                     selected.editor.reviewConflict(
-                        observed.saved().draft().orElseThrow(),
-                        observed.saved().source().revision());
+                        observed.document().draft().orElseThrow(), observed.document().revision());
                     selected.source = observed;
-                    selected.observationReport = observed.saved().report();
+                    selected.observationReport = observed.document().report();
                   }
                 });
       }

@@ -9,6 +9,7 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
+import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
@@ -185,8 +186,8 @@ public final class ReviewProfile {
             || Files.exists(binding.path()))
           throw new IllegalStateException("Public browsing initialized storage implicitly");
         var initialized = await(bound.initialize());
-        if (initialized.persistence() != JsonOwner.Persistence.SAVED
-            || initialized.application() != JsonOwner.Application.APPLIED)
+        if (initialized.persistence() != CommitReceipt.Persistence.SAVED
+            || initialized.application() != CommitReceipt.Application.APPLIED)
           throw new IllegalStateException("Public owner initialization failed");
         var baseline = await(bound.read());
         var session =
@@ -204,8 +205,8 @@ public final class ReviewProfile {
         var committing = bound.commit(prepared);
         session.setRaw(FieldPath.ROOT.field("name"), "Later");
         var written = await(committing);
-        if (written.persistence() != JsonOwner.Persistence.SAVED
-            || written.application() != JsonOwner.Application.APPLIED)
+        if (written.persistence() != CommitReceipt.Persistence.SAVED
+            || written.application() != CommitReceipt.Application.APPLIED)
           throw new IllegalStateException("Public asynchronous commit did not save and publish");
         var observed = written.observation().orElseThrow();
         if (session.acknowledge(
@@ -228,14 +229,14 @@ public final class ReviewProfile {
         var modified = Files.getLastModifiedTime(binding.path());
         writable.set(false);
         var denied = await(bound.applySaved(observed));
-        if (denied.persistence() != JsonOwner.Persistence.NOT_ATTEMPTED
-            || denied.application() != JsonOwner.Application.NOT_ATTEMPTED
+        if (denied.persistence() != CommitReceipt.Persistence.NOT_ATTEMPTED
+            || denied.application() != CommitReceipt.Application.NOT_ATTEMPTED
             || !denied.persistenceReport().issues().getFirst().code().equals("owner.permission"))
           throw new IllegalStateException("Public owner accepted revoked authorization");
         writable.set(true);
         var applied = await(bound.applySaved(observed));
-        if (applied.persistence() != JsonOwner.Persistence.NOT_ATTEMPTED
-            || applied.application() != JsonOwner.Application.APPLIED
+        if (applied.persistence() != CommitReceipt.Persistence.NOT_ATTEMPTED
+            || applied.application() != CommitReceipt.Application.APPLIED
             || !Files.readString(binding.path()).equals(text)
             || !Files.getLastModifiedTime(binding.path()).equals(modified))
           throw new IllegalStateException("Public application-only retry wrote the file again");
@@ -251,7 +252,7 @@ public final class ReviewProfile {
           await(actor.load());
           await(actor.setRaw(FieldPath.ROOT.field("name"), "Actor"));
           var savedByActor = await(actor.save());
-          if (savedByActor.receipt().orElseThrow().persistence() != JsonOwner.Persistence.SAVED
+          if (savedByActor.receipt().orElseThrow().persistence() != CommitReceipt.Persistence.SAVED
               || actor.view().dirty()
               || !owner.handle().view().value().orElseThrow().name().equals("Actor"))
             throw new IllegalStateException(

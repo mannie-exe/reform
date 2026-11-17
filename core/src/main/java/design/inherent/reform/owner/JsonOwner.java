@@ -1,8 +1,12 @@
 package design.inherent.reform.owner;
 
+import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.CommitReceipt.Application;
+import design.inherent.reform.owner.CommitReceipt.Persistence;
 import design.inherent.reform.storage.JsonStore;
 import design.inherent.reform.storage.OwnedFile;
 import design.inherent.reform.validation.Issue;
@@ -10,6 +14,7 @@ import design.inherent.reform.validation.ValidationReport;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -22,24 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Native gateways supply actual actor access; a snapshot or proposal is never an authority grant.
  */
 public final class JsonOwner<T> {
-  public enum Persistence {
-    NOT_ATTEMPTED,
-    UNCHANGED,
-    SAVED,
-    REFUSED,
-    FAILED,
-    UNKNOWN
-  }
-
-  public enum Application {
-    NOT_ATTEMPTED,
-    APPLIED,
-    REFUSED,
-    UNAVAILABLE
-  }
-
   /** An authorized observation, bound to this document and this particular actor session. */
-  public static final class Observation<T> {
+  public static final class Observation<T> implements OwnerObservation<T> {
     private final Object owner;
     private final UUID context, session;
     private final JsonStore.Read<T> saved;
@@ -66,6 +55,11 @@ public final class JsonOwner<T> {
       return session;
     }
 
+    @Override
+    public DocumentRead<T> document() {
+      return saved;
+    }
+
     public JsonStore.Read<T> saved() {
       return saved;
     }
@@ -82,15 +76,34 @@ public final class JsonOwner<T> {
   private record Applied(Application state, ValidationReport report) {}
 
   /** A one-shot complete candidate; persistence and actual authorization still have to succeed. */
-  public static final class Prepared<T> {
+  public static final class Prepared<T> implements PreparedEdit<T> {
     private final Object owner;
-    private final UUID session;
+    private final UUID session, context;
+    private final DocumentId document;
     private Proposal<T> proposal;
 
-    private Prepared(Object owner, UUID session, Proposal<T> proposal) {
+    private Prepared(
+        Object owner, UUID session, UUID context, DocumentId document, Proposal<T> proposal) {
       this.owner = owner;
       this.session = session;
+      this.context = context;
+      this.document = document;
       this.proposal = proposal;
+    }
+
+    @Override
+    public UUID context() {
+      return context;
+    }
+
+    @Override
+    public UUID session() {
+      return session;
+    }
+
+    @Override
+    public DocumentId document() {
+      return document;
     }
 
     private synchronized Proposal<T> take(Object expectedOwner, UUID expectedSession) {
@@ -114,7 +127,8 @@ public final class JsonOwner<T> {
       Optional<String> savedRevision,
       Optional<Observation<T>> observation,
       ValidationReport persistenceReport,
-      ValidationReport applicationReport) {
+      ValidationReport applicationReport)
+      implements CommitReceipt<T> {
     public Receipt {
       Objects.requireNonNull(persistence);
       Objects.requireNonNull(application);
@@ -125,13 +139,34 @@ public final class JsonOwner<T> {
     }
   }
 
-  public final class Session implements AutoCloseable {
+  public final class Session implements DocumentSession<T> {
     private final UUID id = UUID.randomUUID();
     private final OwnerContext.Access access;
     private final AtomicBoolean open = new AtomicBoolean(true);
 
     private Session(OwnerContext.Access access) {
       this.access = access;
+    }
+
+    @Override
+    public DocumentId document() {
+      return runtime.handle().document();
+    }
+
+    @Override
+    public DocumentDefinition<T> definition() {
+      current();
+      return storage.definition();
+    }
+
+    @Override
+    public UUID context() {
+      return context.id();
+    }
+
+    @Override
+    public Set<Operation> operations() {
+      return Set.of(Operation.READ, Operation.COMMIT, Operation.APPLY_SAVED);
     }
 
     public UUID id() {
@@ -151,6 +186,17 @@ public final class JsonOwner<T> {
       current();
       access.require(right);
       current();
+    }
+
+    @SuppressWarnings(
+        "unchecked") // Identity and session are checked before the backend-specific cast.
+    private Observation<T> ownObservation(OwnerObservation<T> input) {
+      if (!(input instanceof Observation<?> observed)
+          || observed.owner != identity
+          || !observed.session.equals(id))
+        throw new PolicyRefusal(
+            "owner.session", "Observation belongs to another document or session");
+      return (Observation<T>) observed;
     }
 
     private void baseline(Observation<T> observed) {
@@ -188,7 +234,13 @@ public final class JsonOwner<T> {
     }
 
     /** Complete pure preparation runs on the explicit worker, not on the widget/native thread. */
-    public CompletionStage<Prepared<T>> prepare(Observation<T> observed, DraftTree draft) {
+    public CompletionStage<Prepared<T>> prepare(OwnerObservation<T> input, DraftTree draft) {
+      final Observation<T> observed;
+      try {
+        observed = ownObservation(input);
+      } catch (PolicyRefusal refused) {
+        return CompletableFuture.<Prepared<T>>failedFuture(refused).minimalCompletionStage();
+      }
       Objects.requireNonNull(draft);
       return context
           .onOwner(
@@ -213,13 +265,22 @@ public final class JsonOwner<T> {
                       () -> {
                         baseline(observed);
                         revision(observed.effective.revision());
-                        return new Prepared<>(identity, id, new Proposal<>(observed, candidate));
+                        return new Prepared<>(
+                            identity,
+                            id,
+                            context.id(),
+                            document(),
+                            new Proposal<>(observed, candidate));
                       }));
     }
 
     /** Commit admission checks actual WRITE permission after earlier document operations finish. */
-    public CompletionStage<Receipt<T>> commit(Prepared<T> prepared) {
-      var proposal = Objects.requireNonNull(prepared).take(identity, id);
+    public CompletionStage<Receipt<T>> commit(PreparedEdit<T> input) {
+      if (!(Objects.requireNonNull(input) instanceof Prepared<?> prepared))
+        throw new PolicyRefusal("owner.session", "Preparation belongs to another backend");
+      @SuppressWarnings(
+          "unchecked") // Exact owner/session is verified by take before returning the proposal.
+      var proposal = ((Prepared<T>) prepared).take(identity, id);
       return lane.submit(
           () ->
               context
@@ -270,7 +331,13 @@ public final class JsonOwner<T> {
      * Read saved bytes again and apply only that unchanged observation. This operation performs no
      * file write, even when a previous save succeeded but its application was refused.
      */
-    public CompletionStage<Receipt<T>> applySaved(Observation<T> observed) {
+    public CompletionStage<Receipt<T>> applySaved(OwnerObservation<T> input) {
+      final Observation<T> observed;
+      try {
+        observed = ownObservation(input);
+      } catch (PolicyRefusal refused) {
+        return CompletableFuture.<Receipt<T>>failedFuture(refused).minimalCompletionStage();
+      }
       return lane.submit(
           () ->
               context

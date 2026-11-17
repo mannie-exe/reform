@@ -6,8 +6,8 @@ import com.google.gson.JsonObject;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.neoforge.client.ClientJsonSettings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
+import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
 import example.reform.ClientExample;
 import example.reform.NativeExample;
 import java.nio.file.Files;
@@ -288,8 +288,8 @@ public final class NativeFormProbe {
             return;
           var receipt = view().lastReceipt().orElseThrow();
           check(
-              receipt.persistence() == JsonOwner.Persistence.SAVED
-                  && receipt.application() == JsonOwner.Application.APPLIED,
+              receipt.persistence() == CommitReceipt.Persistence.SAVED
+                  && receipt.application() == CommitReceipt.Application.APPLIED,
               "Actual save/application receipt");
           check(Files.readString(path()).contains("128"), "Saved numeric value absent");
           savedBytes = Files.readString(path());
@@ -459,7 +459,7 @@ public final class NativeFormProbe {
             "Recovery rewrote an already valid saved file");
         check(
             settings.status().initializationReceipt().orElseThrow().persistence()
-                == JsonOwner.Persistence.UNCHANGED,
+                == CommitReceipt.Persistence.UNCHANGED,
             "Recovery repeated persistence");
         check(
             settings.initialization().toCompletableFuture().join().lifecycle()

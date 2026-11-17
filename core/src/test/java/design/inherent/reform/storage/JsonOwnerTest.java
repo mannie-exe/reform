@@ -10,6 +10,7 @@ import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -147,8 +148,8 @@ class JsonOwnerTest {
 
     void initialize() throws Exception {
       var receipt = await(session.initialize());
-      assertEquals(JsonOwner.Persistence.SAVED, receipt.persistence());
-      assertEquals(JsonOwner.Application.APPLIED, receipt.application());
+      assertEquals(CommitReceipt.Persistence.SAVED, receipt.persistence());
+      assertEquals(CommitReceipt.Application.APPLIED, receipt.application());
     }
 
     @Override
@@ -219,11 +220,11 @@ class JsonOwnerTest {
       nativeThread.set(h.nativeCall(() -> Thread.currentThread().threadId()));
       int before = otherCallbacks.get();
       h.initialize();
-      assertEquals(JsonOwner.Application.APPLIED, await(h.session.initialize()).application());
+      assertEquals(CommitReceipt.Application.APPLIED, await(h.session.initialize()).application());
       assertTrue(otherCallbacks.get() > before);
       assertEquals(0, nativeCallbacks.get(), "Pure value callbacks ran on the native owner thread");
       Files.writeString(h.path, "not json");
-      assertEquals(JsonOwner.Application.REFUSED, await(h.session.initialize()).application());
+      assertEquals(CommitReceipt.Application.REFUSED, await(h.session.initialize()).application());
       assertEquals(
           0, nativeCallbacks.get(), "Failed observation copied runtime values on native thread");
     }
@@ -242,7 +243,7 @@ class JsonOwnerTest {
       assertEquals(new Profile(1), observed.effective().value().orElseThrow());
       var revision = observed.effective().revision();
       var unchanged = await(h.session.initialize());
-      assertEquals(JsonOwner.Persistence.UNCHANGED, unchanged.persistence());
+      assertEquals(CommitReceipt.Persistence.UNCHANGED, unchanged.persistence());
       assertSame(revision, h.owner.handle().view().revision());
       assertEquals(1, h.writes.get());
     }
@@ -255,8 +256,8 @@ class JsonOwnerTest {
       var observed = await(h.session.read());
       var prepared = await(h.session.prepare(observed, changed(observed, "7")));
       var result = await(h.session.commit(prepared));
-      assertEquals(JsonOwner.Persistence.SAVED, result.persistence());
-      assertEquals(JsonOwner.Application.APPLIED, result.application());
+      assertEquals(CommitReceipt.Persistence.SAVED, result.persistence());
+      assertEquals(CommitReceipt.Application.APPLIED, result.application());
       assertEquals(
           new Profile(7), result.observation().orElseThrow().effective().value().orElseThrow());
       assertEquals(
@@ -274,8 +275,8 @@ class JsonOwnerTest {
       var prepared = await(h.session.prepare(observed, changed(observed, "4")));
       h.revokeWrite.set(true);
       var refused = await(h.session.commit(prepared));
-      assertEquals(JsonOwner.Persistence.SAVED, refused.persistence());
-      assertEquals(JsonOwner.Application.REFUSED, refused.application());
+      assertEquals(CommitReceipt.Persistence.SAVED, refused.persistence());
+      assertEquals(CommitReceipt.Application.REFUSED, refused.application());
       assertEquals("owner.permission", refused.applicationReport().issues().getFirst().code());
       assertEquals(new Profile(1), h.owner.handle().view().value().orElseThrow());
       var saved = refused.observation().orElseThrow();
@@ -284,8 +285,8 @@ class JsonOwnerTest {
       var modified = Files.getLastModifiedTime(h.path);
       h.write.set(true);
       var applied = await(h.session.applySaved(saved));
-      assertEquals(JsonOwner.Persistence.NOT_ATTEMPTED, applied.persistence());
-      assertEquals(JsonOwner.Application.APPLIED, applied.application());
+      assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, applied.persistence());
+      assertEquals(CommitReceipt.Application.APPLIED, applied.application());
       assertEquals(new Profile(4), h.owner.handle().view().value().orElseThrow());
       assertEquals(text, Files.readString(h.path));
       assertEquals(modified, Files.getLastModifiedTime(h.path));
@@ -301,8 +302,8 @@ class JsonOwnerTest {
       var prepared = await(h.session.prepare(observed, changed(observed, "5")));
       h.closeOnRead.set(true);
       var result = await(h.session.commit(prepared));
-      assertEquals(JsonOwner.Persistence.SAVED, result.persistence());
-      assertEquals(JsonOwner.Application.APPLIED, result.application());
+      assertEquals(CommitReceipt.Persistence.SAVED, result.persistence());
+      assertEquals(CommitReceipt.Application.APPLIED, result.application());
       assertTrue(result.applicationReport().valid());
       assertTrue(result.observation().isEmpty());
       assertEquals(SettingsHandle.Availability.CLOSED, h.owner.handle().view().availability());
@@ -327,8 +328,8 @@ class JsonOwnerTest {
       assertFalse(result.toCompletableFuture().isDone());
       h.release.countDown();
       var receipt = await(result);
-      assertEquals(JsonOwner.Persistence.SAVED, receipt.persistence());
-      assertEquals(JsonOwner.Application.UNAVAILABLE, receipt.application());
+      assertEquals(CommitReceipt.Persistence.SAVED, receipt.persistence());
+      assertEquals(CommitReceipt.Application.UNAVAILABLE, receipt.application());
       assertTrue(receipt.observation().isEmpty());
       assertTrue(Files.readString(h.path).contains("\"count\": 5"));
       assertEquals(SettingsHandle.Availability.CLOSED, h.owner.handle().view().availability());
@@ -351,7 +352,7 @@ class JsonOwnerTest {
             return null;
           });
       h.release.countDown();
-      assertEquals(JsonOwner.Persistence.REFUSED, await(result).persistence());
+      assertEquals(CommitReceipt.Persistence.REFUSED, await(result).persistence());
       assertEquals(original, Files.readString(h.path));
       try (var entries = Files.list(root)) {
         assertEquals(1, entries.count());
@@ -375,9 +376,9 @@ class JsonOwnerTest {
       var queued = second.commit(next);
       assertFalse(queued.toCompletableFuture().isDone());
       h.release.countDown();
-      assertEquals(JsonOwner.Application.APPLIED, await(committing).application());
+      assertEquals(CommitReceipt.Application.APPLIED, await(committing).application());
       var stale = await(queued);
-      assertEquals(JsonOwner.Persistence.NOT_ATTEMPTED, stale.persistence());
+      assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, stale.persistence());
       assertEquals("owner.revision", stale.persistenceReport().issues().getFirst().code());
       assertEquals(new Profile(3), h.owner.handle().view().value().orElseThrow());
       assertEquals(2, h.writes.get());
@@ -396,7 +397,7 @@ class JsonOwnerTest {
       var prepared = await(h.session.prepare(observed, changed(observed, "8")));
       h.write.set(false);
       var refused = await(h.session.commit(prepared));
-      assertEquals(JsonOwner.Persistence.NOT_ATTEMPTED, refused.persistence());
+      assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, refused.persistence());
       assertEquals("owner.permission", refused.persistenceReport().issues().getFirst().code());
       assertEquals(text, Files.readString(h.path));
       assertEquals(1, h.writes.get());
@@ -412,10 +413,10 @@ class JsonOwnerTest {
       h.revokeRead.set(true);
       h.revokeWrite.set(true);
       var receipt = await(h.session.commit(prepared));
-      assertEquals(JsonOwner.Persistence.SAVED, receipt.persistence());
+      assertEquals(CommitReceipt.Persistence.SAVED, receipt.persistence());
       assertTrue(receipt.savedRevision().isPresent());
       assertTrue(receipt.observation().isEmpty());
-      assertEquals(JsonOwner.Application.REFUSED, receipt.application());
+      assertEquals(CommitReceipt.Application.REFUSED, receipt.application());
       assertThrows(ExecutionException.class, () -> await(h.session.read()));
     }
   }
@@ -425,15 +426,15 @@ class JsonOwnerTest {
     try (var h = new Harness()) {
       Files.writeString(h.path, "not json");
       var broken = await(h.session.initialize());
-      assertEquals(JsonOwner.Persistence.UNCHANGED, broken.persistence());
-      assertEquals(JsonOwner.Application.REFUSED, broken.application());
+      assertEquals(CommitReceipt.Persistence.UNCHANGED, broken.persistence());
+      assertEquals(CommitReceipt.Application.REFUSED, broken.application());
       assertTrue(h.owner.handle().view().value().isEmpty());
       assertEquals("not json", Files.readString(h.path));
       Files.delete(h.path);
       h.initialize();
       Files.writeString(h.path, "still not json");
       var reloaded = await(h.session.initialize());
-      assertEquals(JsonOwner.Application.REFUSED, reloaded.application());
+      assertEquals(CommitReceipt.Application.REFUSED, reloaded.application());
       assertEquals(new Profile(1), h.owner.handle().view().value().orElseThrow());
       assertFalse(h.owner.handle().view().observationReport().valid());
       assertEquals("still not json", Files.readString(h.path));
@@ -447,12 +448,12 @@ class JsonOwnerTest {
       var old = await(h.session.read());
       Files.writeString(h.path, "{\"schemaVersion\":1,\"values\":{\"count\":12}}");
       var changed = await(h.session.applySaved(old));
-      assertEquals(JsonOwner.Persistence.NOT_ATTEMPTED, changed.persistence());
-      assertEquals(JsonOwner.Application.REFUSED, changed.application());
+      assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, changed.persistence());
+      assertEquals(CommitReceipt.Application.REFUSED, changed.application());
       assertEquals("owner.saved_revision", changed.applicationReport().issues().getFirst().code());
       assertEquals(new Profile(1), h.owner.handle().view().value().orElseThrow());
       assertEquals(
-          JsonOwner.Application.APPLIED,
+          CommitReceipt.Application.APPLIED,
           await(h.session.applySaved(changed.observation().orElseThrow())).application());
       assertEquals(new Profile(12), h.owner.handle().view().value().orElseThrow());
       assertEquals(1, h.writes.get());
@@ -481,7 +482,7 @@ class JsonOwnerTest {
               h.context.close();
               return null;
             });
-        assertEquals(JsonOwner.Persistence.NOT_ATTEMPTED, await(commit).persistence());
+        assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, await(commit).persistence());
         assertEquals(1, h.writes.get());
         assertTrue(Files.readString(h.path).contains("\"count\": 1"));
       } finally {
@@ -500,8 +501,8 @@ class JsonOwnerTest {
       var external = "{\"schemaVersion\":1,\"values\":{\"count\":13}}";
       Files.writeString(h.path, external);
       var result = await(h.session.commit(prepared));
-      assertEquals(JsonOwner.Persistence.REFUSED, result.persistence());
-      assertNotEquals(JsonOwner.Application.APPLIED, result.application());
+      assertEquals(CommitReceipt.Persistence.REFUSED, result.persistence());
+      assertNotEquals(CommitReceipt.Application.APPLIED, result.application());
       assertEquals(new Profile(1), h.owner.handle().view().value().orElseThrow());
       assertEquals(
           new Profile(13),
@@ -523,7 +524,7 @@ class JsonOwnerTest {
       assertThrows(PolicyRefusal.class, () -> second.commit(prepared));
       h.session.close();
       assertEquals(
-          JsonOwner.Persistence.NOT_ATTEMPTED, await(h.session.commit(prepared)).persistence());
+          CommitReceipt.Persistence.NOT_ATTEMPTED, await(h.session.commit(prepared)).persistence());
       assertEquals(1, h.writes.get());
     }
   }

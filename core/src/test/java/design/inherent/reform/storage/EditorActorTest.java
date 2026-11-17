@@ -9,6 +9,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
@@ -127,7 +128,7 @@ class EditorActorTest {
                       () -> true));
       var source = nativeCall(() -> owner.open(access));
       if (initialize)
-        assertEquals(JsonOwner.Persistence.SAVED, await(source.initialize()).persistence());
+        assertEquals(CommitReceipt.Persistence.SAVED, await(source.initialize()).persistence());
       actor =
           nativeCall(
               () ->
@@ -218,7 +219,7 @@ class EditorActorTest {
       assertEquals(1, value(await(h.actor.reset())));
       await(h.actor.setRaw(COUNT_PATH, "7"));
       var saved = await(h.actor.save());
-      assertEquals(JsonOwner.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
+      assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
       assertFalse(h.actor.view().dirty());
       await(h.actor.setRaw(COUNT_PATH, "8"));
       assertEquals(7, value(await(h.actor.revert())));
@@ -237,8 +238,8 @@ class EditorActorTest {
       assertThrows(ExecutionException.class, () -> await(h.actor.save()));
       h.releaseWrite.countDown();
       var result = await(saving);
-      assertEquals(JsonOwner.Persistence.SAVED, result.receipt().orElseThrow().persistence());
-      assertEquals(JsonOwner.Application.APPLIED, result.receipt().orElseThrow().application());
+      assertEquals(CommitReceipt.Persistence.SAVED, result.receipt().orElseThrow().persistence());
+      assertEquals(CommitReceipt.Application.APPLIED, result.receipt().orElseThrow().application());
       assertEquals(8, value(h.actor.view()));
       assertTrue(h.actor.view().dirty());
       assertEquals(3, h.owner.handle().view().value().orElseThrow().count());
@@ -255,7 +256,7 @@ class EditorActorTest {
       h.actor.close();
       h.releaseWrite.countDown();
       assertEquals(
-          JsonOwner.Persistence.SAVED, await(saving).receipt().orElseThrow().persistence());
+          CommitReceipt.Persistence.SAVED, await(saving).receipt().orElseThrow().persistence());
       assertEquals(EditorActor.Availability.CLOSED, h.actor.view().availability());
       assertTrue(h.actor.view().snapshot().isEmpty());
       assertTrue(Files.readString(h.path).contains("\"count\": 3"));
@@ -276,7 +277,8 @@ class EditorActorTest {
                       ConflictReview.Entry::path, ignored -> ConflictReview.Choice.DRAFT));
       assertEquals(3, value(await(h.actor.resolve(conflict, choices))));
       assertEquals(
-          JsonOwner.Persistence.SAVED, await(h.actor.save()).receipt().orElseThrow().persistence());
+          CommitReceipt.Persistence.SAVED,
+          await(h.actor.save()).receipt().orElseThrow().persistence());
       assertEquals(3, h.owner.handle().view().value().orElseThrow().count());
     }
   }

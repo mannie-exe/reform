@@ -10,6 +10,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.DocumentRead;
 import design.inherent.reform.serialization.ExactCodecs;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonInputException;
@@ -36,7 +37,7 @@ public final class JsonStore<T> {
     READY
   }
 
-  public static final class Read<T> {
+  public static final class Read<T> implements DocumentRead<T> {
     private final Object store;
     private final State state;
     private final OwnedFile.Snapshot source;
@@ -61,6 +62,11 @@ public final class JsonStore<T> {
 
     public State state() {
       return state;
+    }
+
+    @Override
+    public String revision() {
+      return source.revision();
     }
 
     public OwnedFile.Snapshot source() {

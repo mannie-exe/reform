@@ -16,4 +16,6 @@ The runner refuses an existing `examples/native/runs/client`, creates its own ma
 
 The headless `python3 tools/native_addon_server_probe.py --java-home /path/to/jdk21` separately checks dedicated-side loading and the common derived record codec, with no client document initialized. Its marked loopback-only server uses an ephemeral port, flat seed 42 and a bounded 2 GiB JVM; it stops itself after the controls and removes the fixture/log.
 
-The launches use ModDev source containers for this ordinary example and its separate probe. The library itself loads from the exact packaged Maven JAR, checked both before launch and inside the game. This is not full Phase 1, a native TOML adapter, an integrated/remote-server test or a release.
+Add `--registered` to the server runner for the separate two-boot [registered native owner](../../docs/development/native-settings.md) controls. This opt-in probe registers its own COMMON spec and exercises the public native owner through the shared editor. It preserves the real native TOML serializer and reload listeners, tests failure/readback/restart behavior and reopens saved state in another JVM. Ordinary example launches do not register that fixture spec.
+
+The launches use ModDev source containers for this ordinary example and its separate probe. The library itself loads from the exact packaged Maven JAR, checked both before launch and inside the game. This is not full Phase 1, integrated/remote-server or pack qualification, or a release.

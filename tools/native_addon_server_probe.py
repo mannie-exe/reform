@@ -14,7 +14,7 @@ from native_form_probe import create_fixture, cleanup_fixture
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(java_home, timeout):
+def run(java_home, timeout, registered=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/server"
     if fixture.exists() or fixture.is_symlink():
@@ -41,18 +41,29 @@ def run(java_home, timeout):
               "gitHead": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
               "launch": "ModDev source-container addon/probe; exact packaged Maven library", "inputs": {}}
     for source in [Path(__file__).resolve(), ROOT / "tools/native_form_probe.py", ROOT / "tools/native_config_probe.py",
-                   example / "build.gradle", example / "src/probe/java/example/reformprobe/NativeAddonServerProbe.java"]:
+                   example / "build.gradle", example / "src/probe/java/example/reformprobe/NativeAddonServerProbe.java",
+                   example / "src/probe/java/example/reformprobe/RegisteredOwnerProbe.java"]:
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-addon-server.log"
     try:
-        result = execute(command, example, log, timeout)
-        report["run"] = result
-        observation = fixture / "native-addon-server.json"
-        if observation.is_file() and observation.stat().st_size <= 65536:
-            report["native"] = json.loads(observation.read_text())
-        if (result["exitCode"] == 0 and result["termination"] is None
-                and report.get("native", {}).get("status") == "PASS"
-                and report["native"].get("librarySha256") == digest):
+        boots = []
+        for mode in (["first", "reopen"] if registered else ["ordinary"]):
+            if registered:
+                (fixture / "registered-probe-mode.json").write_text(json.dumps({"mode": mode}))
+            observation = fixture / "native-addon-server.json"
+            observation.unlink(missing_ok=True)
+            result = execute(command, example, log, timeout)
+            native = (json.loads(observation.read_text())
+                      if observation.is_file() and observation.stat().st_size <= 65536 else {})
+            boots.append({"mode": mode, "run": result, "native": native})
+            if not (result["exitCode"] == 0 and result["termination"] is None
+                    and native.get("status") == "PASS" and native.get("librarySha256") == digest):
+                break
+        report["boots"] = boots
+        expected_boots = 2 if registered else 1
+        if len(boots) == expected_boots and all(boot["run"]["exitCode"] == 0
+                and boot["run"]["termination"] is None and boot["native"].get("status") == "PASS"
+                and boot["native"].get("librarySha256") == digest for boot in boots):
             report["status"] = "PASS"
     except Exception as failure:
         report["failure"] = str(failure)
@@ -64,7 +75,7 @@ def run(java_home, timeout):
             report["status"] = "FAIL"
             report["cleanupFailure"] = str(failure)
         log.unlink(missing_ok=True)
-        output = ROOT / "build/reports/native-addon-server.json"
+        output = ROOT / "build/reports" / ("native-registered-owner.json" if registered else "native-addon-server.json")
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps({"status": report["status"], "report": str(output), "fixtureRemoved": report.get("fixtureRemoved", False)}))
@@ -75,7 +86,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--java-home", type=Path)
     parser.add_argument("--timeout", type=int, default=150)
+    parser.add_argument("--registered", action="store_true", help="Exercise the native registered owner/editor across two boots")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 300:
         parser.error("Expected a bounded 1..300 second deadline")
-    raise SystemExit(run(args.java_home, args.timeout))
+    raise SystemExit(run(args.java_home, args.timeout, args.registered))

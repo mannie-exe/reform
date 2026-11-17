@@ -4,8 +4,8 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueShape;
@@ -30,7 +30,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
-/** Initial native scalar/record form over an admitted JSON editing actor. */
+/** Initial native scalar/record form over an admitted owner-backed editing actor. */
 public final class SettingsScreen<T> extends Screen {
   private record Control(AbstractWidget widget, Consumer<String> display, boolean editable) {}
 
@@ -556,13 +556,22 @@ public final class SettingsScreen<T> extends Screen {
     return Component.literal(Objects.toString(failed.getMessage(), "The operation is unavailable"));
   }
 
-  private static Component saved(JsonOwner.Receipt<?> receipt) {
-    if (receipt.persistence() == JsonOwner.Persistence.SAVED
-        || receipt.persistence() == JsonOwner.Persistence.UNCHANGED)
-      return receipt.application() == JsonOwner.Application.APPLIED
+  private static Component saved(CommitReceipt<?> receipt) {
+    if (receipt.persistence() == CommitReceipt.Persistence.SAVED
+        || receipt.persistence() == CommitReceipt.Persistence.UNCHANGED) {
+      if (receipt.application() == CommitReceipt.Application.STAGED)
+        return text(
+            "saved_staged", "Saved; review the owner's application and restart requirements.");
+      if (receipt.application() == CommitReceipt.Application.PARTIAL)
+        return text("saved_partial", "Saved; only part of the application was confirmed.");
+      if (receipt.persistence() == CommitReceipt.Persistence.UNCHANGED
+          && receipt.application() == CommitReceipt.Application.NOT_ATTEMPTED)
+        return text("unchanged", "No changes to save");
+      return receipt.application() == CommitReceipt.Application.APPLIED
           ? text("saved", "Saved and applied")
           : text(
               "saved_not_applied", "Saved; application did not complete. Review the owner result.");
+    }
     return first(receipt.persistenceReport());
   }
 }

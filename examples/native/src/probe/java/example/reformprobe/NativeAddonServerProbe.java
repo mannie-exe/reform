@@ -17,8 +17,11 @@ import net.neoforged.neoforge.event.server.ServerStartedEvent;
  */
 @Mod(value = "reform_native_example_probe", dist = Dist.DEDICATED_SERVER)
 public final class NativeAddonServerProbe {
-  public NativeAddonServerProbe() {
-    NeoForge.EVENT_BUS.addListener(this::started);
+  public NativeAddonServerProbe(
+      net.neoforged.bus.api.IEventBus bus, net.neoforged.fml.ModContainer container) {
+    if (Files.isRegularFile(java.nio.file.Path.of("registered-probe-mode.json")))
+      new RegisteredOwnerProbe(bus, container);
+    else NeoForge.EVENT_BUS.addListener(this::started);
   }
 
   private void started(ServerStartedEvent event) {

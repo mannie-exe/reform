@@ -1,6 +1,6 @@
 # Measured presentation
 
-The current presentation supplies native-free `FormGeometry`/`SectionNavigation`, an internal client-only `FormPanel`/`ControlSizing` and an experimental public `SettingsScreen<T>` for scalar/record JSON documents. Public composition/convenience factories, additional editors and command registration remain required. [Coverage](coverage.md) owns the complete Phase 1 remainder.
+The current presentation supplies native-free `FormGeometry`/`SectionNavigation`, an internal client-only `FormPanel`/`ControlSizing` and an experimental public `SettingsScreen<T>` over an admitted owner-backed scalar/record actor. Native client qualification uses JSON; native registered settings separately exercise the shared actor headlessly. Public composition/convenience factories, additional editors and command registration remain required. [Coverage](coverage.md) owns the complete Phase 1 remainder.
 
 These parts derive from the owned MIT implementation in Skyweave: Compatibility Patches, as identified in `NOTICE`. The extraction changes packages/type names, library translation fallbacks and the location of the native text-reflow helper. Compat still uses its original implementation until the actual consumer migration; that mod and the modpack are not library dependencies.
 
@@ -12,7 +12,7 @@ These parts derive from the owned MIT implementation in Skyweave: Compatibility 
 
 The internal native panel measures labels, summaries, widgets and group boundaries using the actual native font and widget dimensions. Rendering, clipping, hit testing, focus scrolling and section anchors use those positions. Native widgets retain their input and narration behavior. Control resizing triggers native text reflow without replacing its raw value/caret/selection. The panel has no document ownership, parser, settings writer or context authority.
 
-## Generated JSON form
+## Generated form
 
 `SettingsScreen` takes its parent, title/context label, definition and an already admitted `EditorActor`. It has no implicit actor lookup, initialization or file ownership. The caller owns the shared document/context; closing the screen closes its editing actor/session. The [client JSON factory](client-json.md) supplies that common wiring for the [independent native example](../../examples/native/README.md). `editorView()` exposes cached read-only state to composed/native observers without returning an editing or persistence capability.
 

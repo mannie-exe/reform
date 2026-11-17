@@ -2,6 +2,25 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Registered NeoForge owner and shared editor
+
+The full `./gradlew --no-daemon -Dorg.gradle.java.home=/path/to/jdk21 spotlessApply check build --warning-mode all` passes with 159 core tests, four generated properties/920 checks, two native-file unit tests, twelve tooling controls, the exact-public-artifact headless consumer and compiled independent native addon/probe. The final code build took six seconds with relevant cached inputs. These checks preserve the existing JSON owner/editor tests after extraction to the common owner interfaces.
+
+`python3 tools/native_addon_server_probe.py --registered --java-home /path/to/jdk21` passes two sequential 2 GiB dedicated-server boots on the pinned Minecraft/NeoForge/FML/Java environment. They took 8.765 and 8.588 seconds including Gradle startup. The independent addon/probe use ModDev source containers; the library loads from the exact packaged Maven JAR, checked before launch and in-game. No client, personal path or sibling source is used.
+
+The first boot passes 39 controls with a real registered COMMON spec: explicit ambiguous-list typing, exact native observations, no-op without serialization/reload, unsupported application-only retry, forged token/foreign session refusal, strict numeric and real native range validation, revoked writer without mutation, one-shot proposal consumption, native synchronous callback, saved/raw/restart separation, a cold gameplay cache left unwarmed, stale native/file refusal, actual listener failure after confirmed persistence, actual denied-directory persistence failure with retained native changes, shared actor loading/editing/saving, explicit preflight refusal retaining the draft without unknown-write pending state, malformed bytes retained, revoked readback and reentrant context closure. Actual native validators run only on the native owner thread. Six second-boot controls verify persisted data and restart activation.
+
+A matched consistency negative used the earlier `a0231765d59507b5776cf288fb27b899da4ffa066ae19c43cf0c50aa498f6fa6` product. After permission refusal, it reused the old native proposal and performed one actual save, failing the new consumed-proposal assertion. Moving consumption to submission matches existing JSON behavior; the same assertion passes on the final product. No test was weakened. Preflight refusals also return explicit unattempted receipts, so native-specific diagnostics cannot leave the generic actor incorrectly waiting on an unknown write.
+
+| Artifact          | SHA-256                                                            |
+| ----------------- | ------------------------------------------------------------------ |
+| Combined mod JAR  | `dc2fc927d3a91971e4439475e2d1beb8f13e7d76fb858bb5d18fd75a00d77213` |
+| Sources           | `2709382c0068d07cd40de4523fa2f246e79e95b48c21bdb81923070f194d6275` |
+| Headless core JAR | `84da18e15aa3ee954a7d2e4cd5622801d9fc4c73cdfba7df471555a7586773e7` |
+| Public POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+[Owners](owners.md) owns the common boundary; [native settings](native-settings.md) owns execution and receipt details. Concise exact successful/negative reports are retained in the adopted evidence store. All marked native fixtures and raw logs are removed. Native registered GUI/commands, CLIENT/SERVER/integrated/synchronized contexts, arbitrary watcher/listener coordination, full metadata/domain effects, remaining backends/value/control families, both consumer migrations and pack/cost qualification remain required. The earlier JSON client tests below retain their own artifact identities; they are not new client execution of this JAR. Phase 1 remains active and incomplete; Phase 2 remains deferred. Nothing is released or pushed.
+
 ## Derived records and client JSON lifecycle
 
 The full Gradle `spotlessApply check build --warning-mode all` passes with 159 core tests, zero failures/errors/skips, the retained generated property suite, twelve tooling controls, the exact-artifact independent headless consumer and compiled native addon/probe. The final code build took six seconds with relevant cached inputs. Markdown links/format and actionlint also pass.

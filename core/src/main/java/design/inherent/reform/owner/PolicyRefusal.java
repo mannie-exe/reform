@@ -10,21 +10,21 @@ import java.io.Serial;
 import java.util.List;
 
 /**
- * Structured refusal before effective publication. It says nothing about a separate file effect.
+ * Structured owner/operation refusal. It says nothing about a separate, already attempted effect.
  */
 public final class PolicyRefusal extends RuntimeException {
   private static final long serialVersionUID = 1L;
   private final transient ValidationReport report;
 
-  PolicyRefusal(String code, String message) {
+  public PolicyRefusal(String code, String message) {
     this(code, message, true);
   }
 
-  PolicyRefusal(String code, String message, boolean complete) {
+  public PolicyRefusal(String code, String message, boolean complete) {
     this(new ValidationReport(List.of(Issue.error(code, FieldPath.ROOT, message)), complete));
   }
 
-  PolicyRefusal(ValidationReport report) {
+  public PolicyRefusal(ValidationReport report) {
     super(
         report.issues().isEmpty()
             ? "Runtime publication refused"

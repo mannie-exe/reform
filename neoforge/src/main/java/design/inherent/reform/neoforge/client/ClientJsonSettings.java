@@ -3,6 +3,7 @@ package design.inherent.reform.neoforge.client;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
@@ -256,7 +257,7 @@ public final class ClientJsonSettings<T> {
                                     "Client settings initialization did not complete");
                         boolean available =
                             failed == null
-                                && receipt.application() == JsonOwner.Application.APPLIED;
+                                && receipt.application() == CommitReceipt.Application.APPLIED;
                         state.set(
                             new State<>(
                                 available ? Lifecycle.READY : Lifecycle.UNAVAILABLE,

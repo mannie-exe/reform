@@ -8,7 +8,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;
 
 /** One bounded logical operation at a time; no physical lock spans an asynchronous callback. */
-final class SerialLane implements AutoCloseable {
+public final class SerialLane implements AutoCloseable {
   private final class Pending<T> {
     private Supplier<CompletionStage<T>> action;
     private final CompletableFuture<T> result = new CompletableFuture<>();
@@ -45,12 +45,12 @@ final class SerialLane implements AutoCloseable {
   private Pending<?> active;
   private boolean open = true;
 
-  SerialLane(int maximum) {
+  public SerialLane(int maximum) {
     if (maximum < 1) throw new IllegalArgumentException("Operation bound must be positive");
     this.maximum = maximum;
   }
 
-  <T> CompletionStage<T> submit(Supplier<CompletionStage<T>> action) {
+  public <T> CompletionStage<T> submit(Supplier<CompletionStage<T>> action) {
     Objects.requireNonNull(action);
     final Pending<T> pending;
     final boolean start;
