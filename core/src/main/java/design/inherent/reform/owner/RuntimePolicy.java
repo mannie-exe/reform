@@ -106,6 +106,8 @@ public final class RuntimePolicy<T> implements AutoCloseable {
     final boolean admitted;
     try {
       admitted = Objects.requireNonNull(authorized).getAsBoolean();
+    } catch (PolicyRefusal refused) {
+      throw refused;
     } catch (RuntimeException unavailable) {
       throw new PolicyRefusal(
           "owner.authorization_unavailable",

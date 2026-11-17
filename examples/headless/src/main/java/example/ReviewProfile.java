@@ -9,8 +9,8 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
-import design.inherent.reform.owner.PolicyRefusal;
-import design.inherent.reform.owner.RuntimePolicy;
+import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.JsonStore;
@@ -25,6 +25,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -146,13 +149,14 @@ public final class ReviewProfile {
     session.close();
     verifyStorage(definition, limits);
     System.out.println(
-        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/publication; game classes absent");
+        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner; game classes absent");
   }
 
   private static void verifyStorage(DocumentDefinition<Profile> definition, JsonLimits limits)
       throws Exception {
     Path fixture = Files.createTempDirectory("reform-public-");
-    try {
+    try (var ownerExecutor = Executors.newSingleThreadExecutor();
+        var worker = Executors.newSingleThreadExecutor()) {
       var binding = StorageBinding.newJson(fixture, definition.id());
       var store =
           new JsonStore<>(
@@ -161,74 +165,84 @@ public final class ReviewProfile {
               JsonStore.Format.NEW_ENVELOPE,
               limits,
               DraftLimits.CONFIGURATION);
-      if (store.read().state() != JsonStore.State.MISSING || Files.exists(binding.path()))
-        throw new IllegalStateException("Public read initialized storage implicitly");
-      var initialized = store.initializeDefaultsIfMissing();
-      if (initialized.persistence().state() != OwnedFile.Persistence.SAVED)
-        throw new IllegalStateException("Public factory defaults did not initialize");
-      var baseline = initialized.observation().orElseThrow();
-      long ownerThread = Thread.currentThread().threadId();
-      var runtime =
-          new RuntimePolicy<>(
-              definition,
+      long nativeThread = ownerExecutor.submit(() -> Thread.currentThread().threadId()).get();
+      var context =
+          new OwnerContext(
+              ownerExecutor,
+              worker,
               () -> {
-                if (Thread.currentThread().threadId() != ownerThread)
-                  throw new IllegalStateException("Wrong publication thread");
-              });
-      runtime
-          .prepare(
-              runtime.handle().view().revision(), baseline.candidate().orElseThrow(), () -> true)
-          .publish(() -> true);
-      var session =
-          EditSession.fromDraft(
-              definition,
-              UUID.randomUUID(),
-              baseline.source().revision(),
-              baseline.draft().orElseThrow(),
-              limits,
-              DraftLimits.CONFIGURATION);
-      session.setRaw(FieldPath.ROOT.field("name"), "Stored");
-      var submission = session.prepareSubmission().submission().orElseThrow();
-      session.markInFlight(submission);
-      var written = store.write(baseline, submission.candidate());
-      if (written.persistence().state() != OwnedFile.Persistence.SAVED)
-        throw new IllegalStateException("Public file submission did not persist");
-      session.setRaw(FieldPath.ROOT.field("name"), "Later");
-      var observed = written.observation().orElseThrow();
-      var authorized = new AtomicBoolean(true);
-      var publication =
-          runtime.prepare(
-              runtime.handle().view().revision(),
-              observed.candidate().orElseThrow(),
-              authorized::get);
-      authorized.set(false);
+                if (Thread.currentThread().threadId() != nativeThread)
+                  throw new IllegalStateException("Wrong native owner thread");
+              },
+              OwnerContext.Limits.STANDARD);
       try {
-        publication.publish(authorized::get);
-        throw new IllegalStateException("Revoked publication was accepted");
-      } catch (PolicyRefusal refused) {
-        if (!refused.report().issues().getFirst().code().equals("owner.permission")) throw refused;
+        var owner = ownerExecutor.submit(() -> new JsonOwner<>(context, store, 8)).get();
+        var writable = new AtomicBoolean(true);
+        var bound =
+            ownerExecutor.submit(() -> owner.open(context.access(() -> true, writable::get))).get();
+        if (await(bound.read()).saved().state() != JsonStore.State.MISSING
+            || Files.exists(binding.path()))
+          throw new IllegalStateException("Public browsing initialized storage implicitly");
+        var initialized = await(bound.initialize());
+        if (initialized.persistence() != JsonOwner.Persistence.SAVED
+            || initialized.application() != JsonOwner.Application.APPLIED)
+          throw new IllegalStateException("Public owner initialization failed");
+        var baseline = await(bound.read());
+        var session =
+            EditSession.fromDraft(
+                definition,
+                baseline.context(),
+                baseline.saved().source().revision(),
+                baseline.saved().draft().orElseThrow(),
+                limits,
+                DraftLimits.CONFIGURATION);
+        session.setRaw(FieldPath.ROOT.field("name"), "Stored");
+        var submission = session.prepareSubmission().submission().orElseThrow();
+        var prepared = await(bound.prepare(baseline, submission.candidate().draft()));
+        session.markInFlight(submission);
+        var committing = bound.commit(prepared);
+        session.setRaw(FieldPath.ROOT.field("name"), "Later");
+        var written = await(committing);
+        if (written.persistence() != JsonOwner.Persistence.SAVED
+            || written.application() != JsonOwner.Application.APPLIED)
+          throw new IllegalStateException("Public asynchronous commit did not save and publish");
+        var observed = written.observation().orElseThrow();
+        if (session.acknowledge(
+                    submission,
+                    observed.saved().draft().orElseThrow(),
+                    observed.saved().source().revision())
+                != EditSession.Acknowledgement.ACCEPTED
+            || !session
+                .snapshot()
+                .inspect()
+                .candidate()
+                .orElseThrow()
+                .value()
+                .name()
+                .equals("Later")
+            || !observed.effective().value().orElseThrow().name().equals("Stored"))
+          throw new IllegalStateException(
+              "Public owner receipt lost saved/draft/effective separation");
+        var text = Files.readString(binding.path());
+        var modified = Files.getLastModifiedTime(binding.path());
+        writable.set(false);
+        var denied = await(bound.applySaved(observed));
+        if (denied.persistence() != JsonOwner.Persistence.NOT_ATTEMPTED
+            || denied.application() != JsonOwner.Application.NOT_ATTEMPTED
+            || !denied.persistenceReport().issues().getFirst().code().equals("owner.permission"))
+          throw new IllegalStateException("Public owner accepted revoked authorization");
+        writable.set(true);
+        var applied = await(bound.applySaved(observed));
+        if (applied.persistence() != JsonOwner.Persistence.NOT_ATTEMPTED
+            || applied.application() != JsonOwner.Application.APPLIED
+            || !Files.readString(binding.path()).equals(text)
+            || !Files.getLastModifiedTime(binding.path()).equals(modified))
+          throw new IllegalStateException("Public application-only retry wrote the file again");
+        session.close();
+        bound.close();
+      } finally {
+        ownerExecutor.submit(context::close).get(10, TimeUnit.SECONDS);
       }
-      if (!runtime.handle().view().value().orElseThrow().name().equals("Default"))
-        throw new IllegalStateException("Refused application changed effective values");
-      authorized.set(true);
-      var retrySource = store.read();
-      runtime
-          .prepare(
-              runtime.handle().view().revision(),
-              retrySource.candidate().orElseThrow(),
-              authorized::get)
-          .publish(authorized::get);
-      if (!runtime.handle().view().value().orElseThrow().name().equals("Stored")
-          || !store.read().source().revision().equals(retrySource.source().revision()))
-        throw new IllegalStateException("Application-only retry lost saved/effective separation");
-      if (session.acknowledge(
-                  submission, observed.draft().orElseThrow(), observed.source().revision())
-              != EditSession.Acknowledgement.ACCEPTED
-          || !session.snapshot().inspect().candidate().orElseThrow().value().name().equals("Later")
-          || !store.read().candidate().orElseThrow().value().name().equals("Stored"))
-        throw new IllegalStateException("Public file receipt lost saved/draft distinction");
-      session.close();
-      runtime.close();
     } finally {
       List<Path> owned;
       try (var paths = Files.walk(fixture)) {
@@ -236,6 +250,10 @@ public final class ReviewProfile {
       }
       for (var path : owned) Files.delete(path);
     }
+  }
+
+  private static <T> T await(CompletionStage<T> stage) throws Exception {
+    return stage.toCompletableFuture().get(10, TimeUnit.SECONDS);
   }
 
   private static void refuseGameClasspath(String name) {

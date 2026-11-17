@@ -2,6 +2,24 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Asynchronous JSON owner slice
+
+The full Gradle `spotlessApply check build --warning-mode all` passes with 128 core tests, zero failures/errors/skips, ten tooling controls and the exact-artifact independent headless consumer. Four properties retain 920 generated cases. The final build took five seconds with relevant cached inputs. These tests use real separate native-owner and worker Java executors with disposable files; no Minecraft process, personal instance or native actor gateway is involved.
+
+Twelve context controls exercise native/worker thread dispatch, current read/write authority, unavailable authorization, queued refusal without executor draining, active-result draining, bounded admission/access/hooks, repeated/rejected executor delivery, reentrant close and cleanup failure. Five document-lane controls cover the shared active/queued bound, release before terminal observers, action failure, queued cancellation at close and closure after selecting but before starting the next operation. The retained cleanup red/green case reproduced two hooks throwing the same exception preventing the remaining hook from running. A separate native-gate composition red/green case reproduced a structured permission refusal being mislabeled as unavailable authorization.
+
+Thirteen connected-owner controls cover explicit initialization, browse-without-creation, complete save/application, one-shot and session-bound proposals, invalid/revoked input without persistence, two actors serialized through publication, saved-but-refused application-only retry, changed saved-byte refusal/review, failed reload retaining only qualified active values, and revoked READ suppressing new contents. Latch-controlled actual file replacement cases close the native context immediately before and after replacement: the former refuses/cleans the temporary file; the latter drains and reports `SAVED` with unavailable application. Neither is reported as a rolled-back or unattempted save.
+
+The external Maven consumer now uses the public asynchronous owner, actual separate executors and file effects. It verifies browsing, initialization, save/application, later-draft acknowledgement, current authorization refusal and application-only retry preserving exact bytes and modification time. It still resolves the exact combined artifact without Minecraft/NeoForge classes; this is not the ordinary native addon/generated-form qualification.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `781690c66b2b12b2dcd50fa8ddbd04cb56536e6afce77e739d4e1b0947caf8ff` |
+| Source JAR       | `61b7c5fb6f47a8c8b610128cb9dcee3daada2dace6db69ddaf041805c73f7074` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+[Owners](owners.md) owns the actual admission/lifetime/receipt contract. No atomic native-permission/filesystem transaction, cross-process CAS, native backend, explicit operation cancellation, convenience factory, worker-prepared publication cost bound or complete Phase 1 readiness is claimed. GUI/Brigadier, richer types, native actor/connection qualification, both consumer migrations and selected-pack/cost checks remain required. The earlier FML fixture below remains evidence for its exact native contract, not this newer JSON service. This increment is local and unpublished.
+
 ## Effective publication slice
 
 The full Gradle `spotlessApply check build --warning-mode all` passes with 97 core tests, zero failures/skips, ten tooling controls and the independent exact-artifact headless consumer. Relevant cached inputs reduce the final check to five seconds. Four existing properties retain 920 generated cases. No new game/client run is included in this publication slice.
@@ -16,7 +34,7 @@ The external public consumer now demonstrates actual saved/effective/draft separ
 | Source JAR       | `8d87e7109f4d3f0c5cd725d9ba86c9089f7e7e670b42a3675eff099ab60891f4` |
 | Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
 
-[Publication](publication.md) owns the primitive's scope. Full asynchronous owners/receipts/operations, factory/native surfaces, richer types, both real consumer migrations and native/pack/cost qualification remain required. The native FML fixture below remains evidence for its pinned native contract, not qualification of this newer publication API or a completed framework native adapter. Phase 1 remains incomplete and unpublished.
+[Publication](publication.md) owns the primitive's scope. At that cut, full asynchronous owners/receipts/operations, factory/native surfaces, richer types, both real consumer migrations and native/pack/cost qualification remained required. The native FML fixture below is evidence for its pinned native contract, not qualification of that publication API or a completed framework native adapter.
 
 ## Native registered callback contract
 
@@ -44,7 +62,7 @@ Typed controls exercise the new schema envelope, explicit existing bare JSON, ex
 | Source JAR       | `5f8592c5174325a46358d8635c6f7042d1e467013e2cfe52a685e6ab4e39eab8` |
 | Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
 
-The storage API is synchronous worker-side code. Authorized asynchronous owners, actor/context checks, runtime publication, native TOML callbacks, registry collision admission and real migrations remain unimplemented. Linux/Windows filesystems, unsupported hard-link/atomic-move providers and hostile ancestor-directory replacement are not qualified by this local result. [Storage](storage.md) owns the actual guarantees and dependency-update checks; this increment is unpublished and Phase 1 remains incomplete.
+The storage API is synchronous worker-side code. At that cut, authorized asynchronous owners, actor/context checks, runtime publication, native TOML callbacks, registry collision admission and real migrations remained unimplemented. Linux/Windows filesystems, unsupported hard-link/atomic-move providers and hostile ancestor-directory replacement are not qualified by this local result. [Storage](storage.md) owns the actual guarantees and dependency-update checks.
 
 ## Draft/history slice
 

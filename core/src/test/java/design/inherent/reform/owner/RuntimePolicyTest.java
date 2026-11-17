@@ -60,6 +60,22 @@ class RuntimePolicyTest {
   }
 
   @Test
+  void aBoundNativeAuthorizationGateRetainsItsStructuredRefusal() {
+    var policy = policy(DEFINITION);
+    var denied = new PolicyRefusal("owner.permission", "Actual actor no longer has write access");
+    assertSame(
+        denied,
+        assertThrows(
+            PolicyRefusal.class,
+            () ->
+                policy.read(
+                    () -> {
+                      throw denied;
+                    })));
+    assertTrue(policy.handle().view().value().isEmpty());
+  }
+
+  @Test
   void noLoadedValueIsNotPresentedAsFactoryDefaults() {
     var policy = policy(DEFINITION);
     var initial = policy.handle().view();

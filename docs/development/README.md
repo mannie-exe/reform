@@ -6,6 +6,7 @@
 - [Owned storage](storage.md) owns bounded file and typed JSON backend behavior.
 - [Native settings](native-settings.md) owns qualified serializer/callback constraints.
 - [Publication](publication.md) owns effective handles and context/revision checks.
+- [JSON owners](owners.md) owns asynchronous actor sessions, shared admission and outcome receipts.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.
 - [Verification](verification.md) owns current evidence and material gaps.
 - [Publishing](../publishing.md) owns artifact/version/update procedures.

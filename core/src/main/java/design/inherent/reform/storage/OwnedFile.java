@@ -142,8 +142,17 @@ public final class OwnedFile {
    * This coordinates library writers, not arbitrary processes racing the final native move.
    */
   public Result write(Snapshot expected, String candidate) {
+    return write(expected, candidate, () -> {});
+  }
+
+  /**
+   * The synchronous, nonblocking guard verifies an already authorized operation's current lifetime.
+   * It runs under the file lock; it must never dispatch to or await a native executor.
+   */
+  public Result write(Snapshot expected, String candidate, Runnable currentLifetime) {
     Objects.requireNonNull(expected);
     Objects.requireNonNull(candidate);
+    Objects.requireNonNull(currentLifetime);
     if (expected.binding != identity)
       throw new IllegalArgumentException("Snapshot belongs to another file binding");
     final ByteBuffer encoded;
@@ -166,6 +175,7 @@ public final class OwnedFile {
                   Persistence.REFUSED,
                   current,
                   new IOException("Saved bytes changed; review them before saving"));
+            currentLifetime.run();
             if (current.present() && candidate.equals(current.text))
               return result(Persistence.UNCHANGED, current, null);
             Path parent = binding.parent(!current.present(), maximumDirectoryEntries).orElseThrow();
@@ -202,6 +212,7 @@ public final class OwnedFile {
                         new IOException("Saved bytes changed during preparation"));
               else {
                 writeProbe.before();
+                currentLifetime.run();
                 attempted = true;
                 if (current.present())
                   Files.move(

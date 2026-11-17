@@ -108,8 +108,22 @@ public final class JsonStore<T> {
     return inspect(file.read());
   }
 
+  public DocumentDefinition<T> definition() {
+    return definition;
+  }
+
+  /** Pure bounded preparation for this store's exact definition and serialization limits. */
+  public DraftTree.Inspection<T> inspectDraft(DraftTree draft) {
+    return new DraftTree(draft.root(), draftLimits).inspect(definition, jsonLimits);
+  }
+
   /** Explicit lifecycle initialization, never a side effect of opening or inspecting a form. */
   public Write<T> initializeDefaultsIfMissing() throws IOException {
+    return initializeDefaultsIfMissing(() -> {});
+  }
+
+  public Write<T> initializeDefaultsIfMissing(Runnable currentLifetime) throws IOException {
+    Objects.requireNonNull(currentLifetime);
     var current = read();
     if (current.source().present())
       return new Write<>(
@@ -122,21 +136,27 @@ public final class JsonStore<T> {
             .candidate()
             .orElseThrow(
                 () -> new IllegalStateException("Defaults exceed storage admission or validation"));
-    return write(current, candidate);
+    return write(current, candidate, currentLifetime);
   }
 
   /** A complete candidate is necessary but does not authorize this persistence operation. */
   public Write<T> write(Read<T> baseline, Candidate<T> candidate) {
+    return write(baseline, candidate, () -> {});
+  }
+
+  public Write<T> write(Read<T> baseline, Candidate<T> candidate, Runnable currentLifetime) {
+    Objects.requireNonNull(currentLifetime);
     if (baseline.store != identity)
       throw new IllegalArgumentException("Observation belongs to another store");
     if (candidate.definition() != definition)
       throw new IllegalArgumentException("Candidate belongs to another document definition");
-    var checked = candidate.draft().inspect(definition, jsonLimits);
+    var checked = inspectDraft(candidate.draft());
     if (checked.candidate().isEmpty())
       return refused("Complete candidate validation did not finish successfully");
     if (baseline.state() == State.READY
         && baseline.draft().orElseThrow().sameValue(candidate.draft())) {
-      var result = file.write(baseline.source(), baseline.source().text().orElseThrow());
+      var result =
+          file.write(baseline.source(), baseline.source().text().orElseThrow(), currentLifetime);
       return new Write<>(result, result.observed().map(this::inspect));
     }
     final String serialized;
@@ -152,7 +172,7 @@ public final class JsonStore<T> {
     } catch (JsonInputException | RuntimeException invalid) {
       return refused("Serialized candidate exceeds storage admission");
     }
-    var result = file.write(baseline.source(), serialized);
+    var result = file.write(baseline.source(), serialized, currentLifetime);
     return new Write<>(result, result.observed().map(this::inspect));
   }
 

@@ -1,6 +1,6 @@
 # Effective publication
 
-`RuntimePolicy<T>` and its read-only `SettingsHandle<T>` extract the useful context/revision behavior from the existing runtime settings policy. They are low-level publication primitives, not the complete asynchronous owner/operation facade. They perform no file IO, command registration, actor lookup or native configuration mutation. [Coverage](coverage.md) owns those remaining requirements.
+`RuntimePolicy<T>` and its read-only `SettingsHandle<T>` extract the useful context/revision behavior from the existing runtime settings policy. They are low-level publication primitives, used by the experimental [asynchronous JSON owner](owners.md). They perform no file IO, command registration, actor lookup or native configuration mutation. [Coverage](coverage.md) owns the remaining native/operation requirements.
 
 ## Bind values to a context
 
