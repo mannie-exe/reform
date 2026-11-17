@@ -8,6 +8,7 @@
 - Add typed definitions, strict JSON/numeric decoding, recursive snapshots and structured validation.
 - Add immutable raw drafts, stable row diagnostics, bounded undo/redo, context-bound submissions and explicit conflict review.
 - Preserve original number spelling through edits and protect pending/later edits during save acknowledgement.
+- Add admitted portable storage, bounded optimistic file effects, explicit JSON initialization and exact saved observations.
 - Exercise the packaged public API in an independent headless consumer.
 
 No stable configuration API or consumer migration is released yet.

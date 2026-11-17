@@ -3,6 +3,7 @@
 - [Architecture](architecture.md) owns modules and implementation boundaries.
 - [Core API](api.md) owns implemented definition/decoding/snapshot contracts.
 - [Editing](editing.md) owns raw drafts, history, submissions and conflict review.
+- [Owned storage](storage.md) owns bounded file and typed JSON backend behavior.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.
 - [Verification](verification.md) owns current evidence and material gaps.
 - [Publishing](../publishing.md) owns artifact/version/update procedures.

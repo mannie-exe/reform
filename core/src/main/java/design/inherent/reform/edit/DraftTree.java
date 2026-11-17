@@ -76,8 +76,25 @@ public final class DraftTree {
   /** Incomplete/unknown fields are retained. This does not invent a valid saved value. */
   public static DraftTree fromParsed(
       ValueType<?> type, JsonInput.Parsed source, DraftLimits limits) {
-    return new DraftTree(
-        build(type, source.copyTree(), SourcePath.ROOT, source.scalarText()), limits);
+    return fromParsed(type, source, SourcePath.ROOT, limits);
+  }
+
+  /** Select a declared storage envelope without losing the values' original scalar spelling. */
+  public static DraftTree fromParsed(
+      ValueType<?> type, JsonInput.Parsed source, SourcePath selection, DraftLimits limits) {
+    var selected = source.copyTree();
+    for (var segment : selection.segments()) {
+      if (segment instanceof SourcePath.Property property
+          && selected.isJsonObject()
+          && selected.getAsJsonObject().has(property.name()))
+        selected = selected.getAsJsonObject().get(property.name());
+      else if (segment instanceof SourcePath.Index index
+          && selected.isJsonArray()
+          && index.index() < selected.getAsJsonArray().size())
+        selected = selected.getAsJsonArray().get(index.index());
+      else throw new IllegalArgumentException("Selected source value does not exist");
+    }
+    return new DraftTree(build(type, selected, selection, source.scalarText()), limits);
   }
 
   private static DraftNode build(

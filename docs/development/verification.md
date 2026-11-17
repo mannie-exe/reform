@@ -2,6 +2,24 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Owned storage slice
+
+The storage slice passes the same full Gradle `spotlessApply check build --warning-mode all` command on Temurin 21.0.13 / Apple Silicon macOS. The final run took five seconds with relevant cached inputs: 81 core tests, zero failures/skips, eight packaging/tooling controls and the exact-artifact external consumer. No Minecraft game process or native settings callback is included.
+
+New controls exercise pure/default/invalid portable bindings, read-without-initialization, explicit complete-file creation, exact-byte conflicts, foreign snapshots, strict UTF-8 and byte limits, case/symlink/non-file refusal, two simultaneous library initializers, a controlled noncooperating creator after the final baseline check, native POSIX mode preservation, explicit read-only refusal, no-op saves and cleanup. After 1,024 distinct completed paths the shared lock table retains zero keys. This is a lifetime observation, not a heap or throughput benchmark.
+
+Fault controls retain intended saved evidence after checked, unchecked and exception-subtype failures; preserve a later external writer; and report unknown when post-replacement bytes are unreadable. Two initial failing controls showed the writer counting its own temporary file against directory admission and classifying an exception subtype after replacement as an unattempted conflict. Both pass after the correction. No test claims cross-process CAS for replacing an existing file.
+
+Typed controls exercise the new schema envelope, explicit existing bare JSON, exact integer schema admission, malformed/unknown/unsupported data retention, original numeric spelling through envelope selection, unchanged-byte preservation, serialized-bound refusal before directory creation, store-bound read observations and real file receipt acknowledgement preserving subsequent edits. The independent Maven consumer now initializes, saves and reads a disposable real file using the packaged artifact, then verifies distinct saved/current draft values and removes its fixture.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `d8b1d5ea1254da55062621beaa0a27b11e117aa2ecdb7f36e5c72b26c2c8f1aa` |
+| Source JAR       | `5f8592c5174325a46358d8635c6f7042d1e467013e2cfe52a685e6ab4e39eab8` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+The storage API is synchronous worker-side code. Authorized asynchronous owners, actor/context checks, runtime publication, native TOML callbacks, registry collision admission and real migrations remain unimplemented. Linux/Windows filesystems, unsupported hard-link/atomic-move providers and hostile ancestor-directory replacement are not qualified by this local result. [Storage](storage.md) owns the actual guarantees and dependency-update checks; this increment is unpublished and Phase 1 remains incomplete.
+
 ## Draft/history slice
 
 The experimental editing slice passes `./gradlew --no-daemon spotlessApply check build --warning-mode all` on the same pinned Java/native baseline. The final build took five seconds with relevant cached inputs: 59 core tests, eight artifact/release-tool controls and the exact-artifact independent public consumer pass. The native entry point remains unchanged; no client/server game run is included.

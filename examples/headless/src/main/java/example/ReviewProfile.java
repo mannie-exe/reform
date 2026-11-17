@@ -11,9 +11,15 @@ import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.storage.JsonStore;
+import design.inherent.reform.storage.OwnedFile;
+import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueTypes;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -135,8 +141,59 @@ public final class ReviewProfile {
         != EditSession.Acknowledgement.STALE)
       throw new IllegalStateException("Old acknowledgement crossed a reload");
     session.close();
+    verifyStorage(definition, limits);
     System.out.println(
-        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload; game classes absent");
+        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file; game classes absent");
+  }
+
+  private static void verifyStorage(DocumentDefinition<Profile> definition, JsonLimits limits)
+      throws Exception {
+    Path fixture = Files.createTempDirectory("reform-public-");
+    try {
+      var binding = StorageBinding.newJson(fixture, definition.id());
+      var store =
+          new JsonStore<>(
+              definition,
+              new OwnedFile(binding, limits.maximumBytes()),
+              JsonStore.Format.NEW_ENVELOPE,
+              limits,
+              DraftLimits.CONFIGURATION);
+      if (store.read().state() != JsonStore.State.MISSING || Files.exists(binding.path()))
+        throw new IllegalStateException("Public read initialized storage implicitly");
+      var initialized = store.initializeDefaultsIfMissing();
+      if (initialized.persistence().state() != OwnedFile.Persistence.SAVED)
+        throw new IllegalStateException("Public factory defaults did not initialize");
+      var baseline = initialized.observation().orElseThrow();
+      var session =
+          EditSession.fromDraft(
+              definition,
+              UUID.randomUUID(),
+              baseline.source().revision(),
+              baseline.draft().orElseThrow(),
+              limits,
+              DraftLimits.CONFIGURATION);
+      session.setRaw(FieldPath.ROOT.field("name"), "Stored");
+      var submission = session.prepareSubmission().submission().orElseThrow();
+      session.markInFlight(submission);
+      var written = store.write(baseline, submission.candidate());
+      if (written.persistence().state() != OwnedFile.Persistence.SAVED)
+        throw new IllegalStateException("Public file submission did not persist");
+      session.setRaw(FieldPath.ROOT.field("name"), "Later");
+      var observed = written.observation().orElseThrow();
+      if (session.acknowledge(
+                  submission, observed.draft().orElseThrow(), observed.source().revision())
+              != EditSession.Acknowledgement.ACCEPTED
+          || !session.snapshot().inspect().candidate().orElseThrow().value().name().equals("Later")
+          || !store.read().candidate().orElseThrow().value().name().equals("Stored"))
+        throw new IllegalStateException("Public file receipt lost saved/draft distinction");
+      session.close();
+    } finally {
+      List<Path> owned;
+      try (var paths = Files.walk(fixture)) {
+        owned = paths.sorted(Comparator.reverseOrder()).toList();
+      }
+      for (var path : owned) Files.delete(path);
+    }
   }
 
   private static void refuseGameClasspath(String name) {

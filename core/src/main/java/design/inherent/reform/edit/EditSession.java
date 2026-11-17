@@ -142,6 +142,22 @@ public final class EditSession<T> implements AutoCloseable {
         limits);
   }
 
+  public static <T> EditSession<T> fromDraft(
+      DocumentDefinition<T> definition,
+      UUID context,
+      String savedRevision,
+      DraftTree saved,
+      JsonLimits jsonLimits,
+      DraftLimits limits) {
+    return new EditSession<>(
+        definition,
+        context,
+        savedRevision,
+        new DraftTree(saved.root(), limits),
+        jsonLimits,
+        limits);
+  }
+
   private EditSession(
       DocumentDefinition<T> definition,
       UUID context,
