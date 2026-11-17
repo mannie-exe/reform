@@ -9,6 +9,8 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
+import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.owner.RuntimePolicy;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.JsonStore;
@@ -23,6 +25,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Public packaged API only. This is a headless fixture, not a production world/profile compiler.
@@ -143,7 +146,7 @@ public final class ReviewProfile {
     session.close();
     verifyStorage(definition, limits);
     System.out.println(
-        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file; game classes absent");
+        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/publication; game classes absent");
   }
 
   private static void verifyStorage(DocumentDefinition<Profile> definition, JsonLimits limits)
@@ -164,6 +167,18 @@ public final class ReviewProfile {
       if (initialized.persistence().state() != OwnedFile.Persistence.SAVED)
         throw new IllegalStateException("Public factory defaults did not initialize");
       var baseline = initialized.observation().orElseThrow();
+      long ownerThread = Thread.currentThread().threadId();
+      var runtime =
+          new RuntimePolicy<>(
+              definition,
+              () -> {
+                if (Thread.currentThread().threadId() != ownerThread)
+                  throw new IllegalStateException("Wrong publication thread");
+              });
+      runtime
+          .prepare(
+              runtime.handle().view().revision(), baseline.candidate().orElseThrow(), () -> true)
+          .publish(() -> true);
       var session =
           EditSession.fromDraft(
               definition,
@@ -180,6 +195,32 @@ public final class ReviewProfile {
         throw new IllegalStateException("Public file submission did not persist");
       session.setRaw(FieldPath.ROOT.field("name"), "Later");
       var observed = written.observation().orElseThrow();
+      var authorized = new AtomicBoolean(true);
+      var publication =
+          runtime.prepare(
+              runtime.handle().view().revision(),
+              observed.candidate().orElseThrow(),
+              authorized::get);
+      authorized.set(false);
+      try {
+        publication.publish(authorized::get);
+        throw new IllegalStateException("Revoked publication was accepted");
+      } catch (PolicyRefusal refused) {
+        if (!refused.report().issues().getFirst().code().equals("owner.permission")) throw refused;
+      }
+      if (!runtime.handle().view().value().orElseThrow().name().equals("Default"))
+        throw new IllegalStateException("Refused application changed effective values");
+      authorized.set(true);
+      var retrySource = store.read();
+      runtime
+          .prepare(
+              runtime.handle().view().revision(),
+              retrySource.candidate().orElseThrow(),
+              authorized::get)
+          .publish(authorized::get);
+      if (!runtime.handle().view().value().orElseThrow().name().equals("Stored")
+          || !store.read().source().revision().equals(retrySource.source().revision()))
+        throw new IllegalStateException("Application-only retry lost saved/effective separation");
       if (session.acknowledge(
                   submission, observed.draft().orElseThrow(), observed.source().revision())
               != EditSession.Acknowledgement.ACCEPTED
@@ -187,6 +228,7 @@ public final class ReviewProfile {
           || !store.read().candidate().orElseThrow().value().name().equals("Stored"))
         throw new IllegalStateException("Public file receipt lost saved/draft distinction");
       session.close();
+      runtime.close();
     } finally {
       List<Path> owned;
       try (var paths = Files.walk(fixture)) {

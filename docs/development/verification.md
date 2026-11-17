@@ -2,6 +2,22 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Effective publication slice
+
+The full Gradle `spotlessApply check build --warning-mode all` passes with 97 core tests, zero failures/skips, ten tooling controls and the independent exact-artifact headless consumer. Relevant cached inputs reduce the final check to five seconds. Four existing properties retain 920 generated cases. No new game/client run is included in this publication slice.
+
+Sixteen publication controls cover explicit uninitialized/unavailable state, current permission checks through the final effect boundary, consumed attempts, exact definition/foreign/stale revision refusal, semantic no-op identity/value retention, failed reload with qualified retained values, closure, mutable-value isolation, repeated validation and owner-thread confinement. Retained red/green controls reproduced reentrant validation overwriting a newer value, an actor callback returning after closing its context, unavailable authorization marked complete, and equal semantic input replacing the published representation. They now pass without weakening the controls. Additional callback-failure and close-during-validation controls preserve publication state or honest closed state.
+
+The external public consumer now demonstrates actual saved/effective/draft separation: a file save succeeds, later typing survives acknowledgement, a changed authorization result refuses publication, and a fresh saved read supports publication-only retry without another file write. That callback is controlled local fixture state; actual native actor resolution, server/connection lifetime, service queues and native adapter application are not implied.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `7b0620b4835c81bd9a66321ccdda8d3f2ed0d975d93a14b30778ad7dd549e47b` |
+| Source JAR       | `8d87e7109f4d3f0c5cd725d9ba86c9089f7e7e670b42a3675eff099ab60891f4` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+[Publication](publication.md) owns the primitive's scope. Full asynchronous owners/receipts/operations, factory/native surfaces, richer types, both real consumer migrations and native/pack/cost qualification remain required. The native FML fixture below remains evidence for its pinned native contract, not qualification of this newer publication API or a completed framework native adapter. Phase 1 remains incomplete and unpublished.
+
 ## Native registered callback contract
 
 `python3 tools/native_config_probe.py --java-home /path/to/jdk21` passes two sequential 2 GiB dedicated-server boots using Minecraft 1.21.1 / NeoForge 21.1.265 / FML 4.0.45 / Temurin 21.0.13 on Apple Silicon macOS. The first boot passed eighteen controls in 11.089 seconds; the second passed three in 9.250 seconds, including Gradle startup in each duration. The runner's preceding full build/check also passed: 81 core tests, ten tooling controls and the exact-artifact headless public consumer. Source-mode loading and library-native integration are separate claims.
@@ -10,7 +26,7 @@ A real registered COMMON spec verifies loaded ownership, raw/live/world/game-res
 
 The controls deliberately reproduce both sides of the receipt problem: NightConfig `WritingException` with unchanged disk and changed live values, and FML `ModLoadingException` after the intended file was saved. [Native settings](native-settings.md) owns the resulting executor, cache, context and lock constraints. The fixture does not qualify a re:form native owner, client/integrated execution, native SERVER synchronization, unknown type handling, watcher/reentrancy coordination, arbitrary listeners or pack migration.
 
-The opt-in probe JAR digest is `00334db1055cbc7942461f2d12cb70d09dcc7de90004c2f12f9584478edadb59`; its executed compiled class digest is `0ee85812a132f330039e67617db33a0cad16c6493e1e81bd55f7ff06f718371f`. The class bytes match that JAR, but launches use ModDev source containers rather than loading the packaged product/probe. The product/source/POM digests remain those of the storage slice. `check` compiles the source fixture; ordinary mod runs and distribution JARs exclude it. The runner refused-existing/exact-cleanup-token controls pass; its final receipt records both terminal native runs, removed fixture and removed raw logs. Compact exact source/dependency/call/result identities are retained in the adopted evidence store.
+The opt-in probe JAR digest is `00334db1055cbc7942461f2d12cb70d09dcc7de90004c2f12f9584478edadb59`; its executed compiled class digest is `0ee85812a132f330039e67617db33a0cad16c6493e1e81bd55f7ff06f718371f`. The class bytes match that JAR, but launches use ModDev source containers rather than loading the packaged product/probe. At this native fixture cut, product/source/POM digests matched the storage slice. `check` compiles the source fixture; ordinary mod runs and distribution JARs exclude it. The runner refused-existing/exact-cleanup-token controls pass; its final receipt records both terminal native runs, removed fixture and removed raw logs. Compact exact source/dependency/call/result identities are retained in the adopted evidence store.
 
 ## Owned storage slice
 
