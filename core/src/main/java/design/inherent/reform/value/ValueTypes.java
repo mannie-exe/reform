@@ -17,6 +17,30 @@ public final class ValueTypes {
     return scalar(ExactCodecs.BOOL, ValueShape.ScalarKind.BOOLEAN, null, null, -1, List.of());
   }
 
+  public static ValueType<Byte> byteInteger(byte minimum, byte maximum) {
+    return number(
+        ExactCodecs.BYTE,
+        ValueShape.ScalarKind.BYTE,
+        BigDecimal.valueOf(minimum),
+        BigDecimal.valueOf(maximum));
+  }
+
+  public static ValueType<Short> shortInteger(short minimum, short maximum) {
+    return number(
+        ExactCodecs.SHORT,
+        ValueShape.ScalarKind.SHORT,
+        BigDecimal.valueOf(minimum),
+        BigDecimal.valueOf(maximum));
+  }
+
+  public static ValueType<Float> floating(float minimum, float maximum) {
+    return number(
+        ExactCodecs.FLOAT,
+        ValueShape.ScalarKind.FLOAT,
+        new BigDecimal(Float.toString(minimum)),
+        new BigDecimal(Float.toString(maximum)));
+  }
+
   public static ValueType<Integer> integer(int minimum, int maximum) {
     return number(
         ExactCodecs.INT,

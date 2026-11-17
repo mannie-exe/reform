@@ -6,6 +6,7 @@
 - Add reproducible combined/source JARs and Maven staging metadata.
 - Add formatting, documentation/artifact checks and CI/release preparation.
 - Add typed definitions, strict JSON/numeric decoding, recursive snapshots and structured validation.
+- Derive explicitly registered records with bounded built-in types and ordinary caller-declared access.
 - Add immutable raw drafts, stable row diagnostics, bounded undo/redo, context-bound submissions and explicit conflict review.
 - Preserve original number spelling through edits and protect pending/later edits during save acknowledgement.
 - Add admitted portable storage, bounded optimistic file effects, explicit JSON initialization and exact saved observations.

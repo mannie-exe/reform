@@ -4,9 +4,15 @@ The current API is experimental. It supplies typed values, explicit record defin
 
 ## Declare values once
 
-`ValueType<T>` combines a DFU `Codec<T>`, explicit `ValueShape` and `SnapshotPolicy<T>`. Codec implementation details are not inspected to infer an editor. `ValueTypes` currently supplies booleans, bounded integers/longs/doubles, bounded text, enums and bounded recursive lists.
+`ValueType<T>` combines a DFU `Codec<T>`, explicit `ValueShape` and `SnapshotPolicy<T>`. Codec implementation details are not inspected to infer an editor. `ValueTypes` currently supplies booleans, bounded bytes/shorts/integers/longs/floats/doubles, bounded text, enums and bounded recursive lists. Float bounds use their declared float spelling rather than a widened double approximation.
 
 `FieldKey<T>` pairs a serialized field ID with its type. `RecordType.builder` binds those keys to typed getters and one constructor. The resulting type supplies ordered field metadata, a strict object codec and a recursive snapshot policy. Serialized field IDs can differ from Java component names and translated labels. Duplicate declared IDs are rejected. Current explicit record fields are required; missing, unknown or invalid fields prevent construction. Optional/default field policies remain required follow-up work.
+
+`RecordTypes.record(MyRecord.class).build()` derives that same `RecordType` for explicitly selected accessible records. It binds the canonical constructor/getters using ordinary method-handle access and supplies common scalar, enum, nested record and typed `List` codecs/snapshots. It scans no classpath and opens no foreign module. Nonpublic owned records can receive the caller's actual `MethodHandles.Lookup`; the library does not use an access override.
+
+The derivation defaults to 32 type-depth levels, 1,024 compiled record fields, 4,096 text characters and 256 collection entries. `limits` declares different bounds. Custom/unsupported Java types use explicit `register(Class, ValueType)` bindings; recursive/wildcard/raw/unknown types are refused instead of guessed. Maps, sets, optionals and tagged alternatives remain additional Phase 1 work.
+
+`field("javaComponent", FieldKey.of("serialized_id", type))` supplies an explicit root-field identity/constraint override. Duplicate or unknown overrides fail. Default component names become serialized IDs and must be treated as persistent names; a Java rename keeps the prior explicit serialized ID. Nested customized records can be built separately and registered. Definitions still declare owner defaults and meaningful cross-field constraints; derivation infers no units, permissions, application effects or semantic bounds from a member name.
 
 `DocumentDefinition<T>` supplies a namespaced `DocumentId`, positive owner-declared schema version, defaults and an optional pure validator. Defaults are copied and validated at registration. A schema version is metadata here; this type does not inject an envelope into an existing file, initialize storage or interpret world-generation identity.
 
