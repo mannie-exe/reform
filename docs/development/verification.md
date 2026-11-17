@@ -2,7 +2,25 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
-## Bootstrap
+## Initial core definition slice
+
+The experimental definition/decoding slice passes `./gradlew --no-daemon spotlessApply check build --warning-mode all` on Temurin 21.0.13 / Apple Silicon macOS. The final build took five seconds with relevant cached inputs. It includes 30 core tests, eight distribution/release-tool controls and the independent headless consumer. No native game run or GUI is included.
+
+The three jqwik properties exercise 800 generated cases. The final run used `fractionNeverBecomesAnInteger`: `-5826370259910023940`, `integralDecimalSpellingRetainsValue`: `-615484575818841307`, `signedLongRoundTrip`: `4307583556652066820`. The native DFU controls reproduce integer truncation, overflow wrapping and error-with-partial behavior before the stricter guards.
+
+Controls cover strict duplicate/encoding/trailing/depth/node/string/number admission, original source retention, negative zero, floating overflow/underflow, exact authored range checks, failed partial rejection, decoder tree isolation, nested defaults/snapshots, cycle/limit refusal, related-field diagnostics, invalid defaults/unknown/missing fields, unavailable validators and one encoder invocation per complete encode. A native-codec lifecycle regression was reproduced with a failing test, then fixed by retaining the original complete result; its regression passes. These tests do not qualify arbitrary consumer callbacks or native serializers.
+
+`verifyPublicConsumer` builds a separate Java application using only the staged Maven publication, with an exact resolved-JAR SHA-256 check against the current candidate. It exercises valid/invalid/fraction/default paths and proves Minecraft/NeoForge classes are absent from that process's classpath. Both DFU and Gson are declared public compile dependencies because the API exposes their types. This is a headless API slice, not the required normal-mod/editor or real-consumer qualification.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `7ba35a7172df1e90a39a7874868e509479ff45ad49ac11323a3122a1bf2f122c` |
+| Source JAR       | `b2cf208195328fca18d23f59ff80e27666ebabe32ab9efdce3e3cbc1e5ed1f70` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+Drafts/history, file/native owners, native UI/commands, remaining recursive type families and all Compat/Skyweave migrations remain required. [Coverage](coverage.md) is the current capability index. The artifact is an unpublished development increment, not a Phase 1 release candidate.
+
+## Bootstrap at 250c20f
 
 Verified the `0.1.0-SNAPSHOT` foundation on Apple Silicon macOS with Temurin 21.0.13, Gradle 9.2.1, Minecraft 1.21.1 and NeoForge 21.1.265.
 

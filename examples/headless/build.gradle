@@ -1,0 +1,41 @@
+plugins { id 'application' }
+
+repositories {
+    maven {
+        url = uri('../../build/repository')
+        content { includeGroup 'design.inherent' }
+    }
+    mavenCentral()
+    maven {
+        url = 'https://libraries.minecraft.net/'
+        content { includeGroup 'com.mojang' }
+    }
+}
+
+java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+
+// This separate build has no source-set/project dependency on the library or either consumer.
+dependencies { implementation "design.inherent:reform:${providers.gradleProperty('reformVersion').get()}" }
+application { mainClass = 'example.ReviewProfile' }
+
+def expectedSha256 = providers.gradleProperty('reformSha256')
+def consumerRuntime = configurations.runtimeClasspath
+tasks.named('run', JavaExec) {
+    doFirst {
+        def artifacts = consumerRuntime.incoming.artifacts.artifacts.findAll { artifact ->
+            def id = artifact.id.componentIdentifier
+            id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier &&
+                id.group == 'design.inherent' && id.module == 'reform'
+        }
+        if (artifacts.size() != 1) throw new GradleException('Expected one packaged reform artifact')
+        def actual = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(artifacts.first().file.bytes).encodeHex().toString()
+        if (actual != expectedSha256.get()) throw new GradleException('Public consumer resolved a different candidate JAR')
+        println "Public consumer artifact SHA-256: ${actual}"
+    }
+}

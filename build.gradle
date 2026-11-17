@@ -1,8 +1,10 @@
 plugins {
     id 'base'
     alias(libs.plugins.moddev) apply false
-    alias(libs.plugins.spotless) apply false
+    alias(libs.plugins.spotless)
 }
+
+repositories { mavenCentral() }
 
 allprojects {
     group = 'design.inherent'
@@ -10,6 +12,16 @@ allprojects {
 }
 
 def distributionPomName = "reform-${project.version}.pom"
+
+spotless {
+    java {
+        target 'examples/**/src/**/*.java'
+        googleJavaFormat(libs.versions.google.java.format.get())
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
 
 subprojects {
     apply plugin: 'com.diffplug.spotless'
@@ -85,7 +97,22 @@ tasks.register('toolTests', Exec) {
     commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'tools/tests', '-v'
 }
 
+tasks.register('verifyPublicConsumer', GradleBuild) {
+    group = 'verification'
+    description = 'Compile/run an independent headless consumer against published local artifacts.'
+    dependsOn ':neoforge:publishMavenJavaPublicationToStagingRepository'
+    dir = file('examples/headless')
+    tasks = ['run']
+    def artifact = project(':neoforge').tasks.named('jar').flatMap { it.archiveFile }
+    def releaseVersion = project.version.toString()
+    doFirst {
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(artifact.get().asFile.bytes).encodeHex().toString()
+        startParameter.projectProperties = [reformVersion: releaseVersion, reformSha256: digest]
+    }
+}
+
 tasks.named('check') {
-    dependsOn ':core:check', ':neoforge:check', 'checkDocs', 'verifyDistribution', 'toolTests'
+    dependsOn ':core:check', ':neoforge:check', 'checkDocs', 'verifyDistribution', 'toolTests', 'verifyPublicConsumer'
 }
 tasks.named('assemble') { dependsOn ':core:assemble', ':neoforge:assemble', 'stageDistribution' }

@@ -2,7 +2,7 @@
 
 Shared native configuration editing and command services for Minecraft mods.
 
-This repository is under development. The current foundation provides a Java 21 core module, NeoForge 1.21.1 bootstrap, reproducible packaging, formatting and build/release tooling. It does not yet provide a usable configuration API, settings screen or consumer migration. No stable release is available.
+This repository is under development. The current core supplies typed definitions, strict decoding, snapshots and validation alongside the Java 21 / NeoForge 1.21.1 foundation. Editable sessions, persistence services, settings screens and consumer migrations remain under development. No stable release is available.
 
 re:form is an independent library. Skyweave, Skyweave: Compatibility Patches and the Create: Skyweave modpack are intended consumers, not dependencies.
 
@@ -23,4 +23,4 @@ The installable mod JAR, source JAR and Maven POM are staged in `build/distribut
 
 The core stays independent of Minecraft and loaders. NeoForge owns platform and physical-side adapters. The intended library separates definitions, drafts, persistence, effective values and application effects; a saved file must not imply a running world has changed. Consumers retain their domain rules, paths, authority and generation identities. Settings use declared files or native owners, with no environment-variable override layer.
 
-See [architecture](docs/development/architecture.md), [contributing](CONTRIBUTING.md), [verification](docs/development/verification.md) and [publishing](docs/publishing.md). [MIT](LICENSE) covers the project's code; [NOTICE](NOTICE) identifies bundled tooling and external dependencies.
+See [architecture](docs/development/architecture.md), [core API](docs/development/api.md), [coverage](docs/development/coverage.md), [contributing](CONTRIBUTING.md), [verification](docs/development/verification.md) and [publishing](docs/publishing.md). [MIT](LICENSE) covers the project's code; [NOTICE](NOTICE) identifies bundled tooling and external dependencies.

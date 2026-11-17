@@ -1,0 +1,20 @@
+# Implementation coverage
+
+This is the implementation/evidence index. The selected execution intent owns scope; this file does not reduce its Phase 1 requirements. Phase 1 is active and incomplete. Phase 2 remains deferred.
+
+| Capability                          | Current implementation                                                                          | Qualification / remaining work                                                                                           |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Build and distribution foundation   | Core/NeoForge modules, MIT, formatters, metadata, Maven staging, artifact/release checks and CI | Local bootstrap checks pass; remote CI and native loading still need qualification                                       |
+| Typed scalars and input admission   | Exact numeric guards, bounded common types, strict JSON and complete-result handling            | Core tests and native DFU coercion controls; qualify real consumer formats/bounds                                        |
+| Records and lists                   | Explicit typed record builder, nested lists, deep copies and ordered structure                  | Core tests; automatic owned-record derivation and full recursive families remain                                         |
+| Diagnostics and identities          | Stable document/field paths, issue/related locations and complete/unavailable reports           | Core tests; richer context/source traces and native presentation remain                                                  |
+| Packaged public API                 | Independent headless example using Maven publication only                                       | Valid/invalid/fraction/default paths pass without game classes; ordinary factory/editor and normal mod examples remain   |
+| Drafts and history                  | Not implemented                                                                                 | Invalid/inactive drafts, row identity, undo/revert, submissions and conflict review required                             |
+| Additional value families           | Not implemented as built-ins                                                                    | Sets, maps, optionals/inheritance, alternatives and references/selectors required                                        |
+| Owners and operations               | Not implemented                                                                                 | File/native/new-world authority, lifecycle, execution, truthful receipts and shared services required                    |
+| Native interface and commands       | Not implemented                                                                                 | Generated and catalog/detail views, accessibility, input rules and Brigadier integration required                        |
+| Promoted Phase 1 controls/workflows | Not implemented                                                                                 | Units/ranges, local dependencies, multi-select, import, manual conflicts, native keybinding and feedback/review required |
+| Compat/Skyweave migration           | Not started                                                                                     | All applicable current settings, original new-world editor and locator presentation/accounting repairs required          |
+| Full Phase 1 qualification          | Not complete                                                                                    | Minimum/absence/sides, real native callbacks, clients/servers, public addons, both consumers and selected pack required  |
+
+[API](api.md) owns current contracts. [Verification](verification.md) owns actual commands, artifacts and scope limits. Do not represent a green core build or this index as release completion.

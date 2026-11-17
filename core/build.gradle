@@ -12,7 +12,7 @@ repositories {
 
 dependencies {
     api libs.dfu
-    implementation libs.gson
+    api libs.gson
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit.jupiter
     testImplementation libs.jqwik

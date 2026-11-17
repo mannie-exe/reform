@@ -18,7 +18,7 @@ dependencies {
     // Own core classes are bundled once, not published as a second runtime dependency.
     compileOnly project(':core')
     api libs.dfu
-    implementation libs.gson
+    api libs.gson
     testImplementation project(':core')
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit.jupiter

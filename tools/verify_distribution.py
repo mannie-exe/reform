@@ -83,6 +83,9 @@ def verify(root, version):
                  for d in xml.findall("m:dependencies/m:dependency", ns)}
     require(("com.mojang", "datafixerupper") in published, "Missing public codec dependency metadata")
     require(("com.google.code.gson", "gson") in published, "Missing JSON dependency metadata")
+    for dependency in xml.findall("m:dependencies/m:dependency", ns):
+        if dependency.findtext("m:artifactId", namespaces=ns) in {"datafixerupper", "gson"}:
+            require(dependency.findtext("m:scope", namespaces=ns) == "compile", "Public codec/JSON types need compile-scope dependencies")
     require(not any(g == "design.inherent" or g.startswith(("org.junit", "net.jqwik", "com.diffplug"))
                     for g, _ in published), "Owned-core or build/test runtime dependency in POM")
     return {"version": version, "platformClasses": len(classes), "coreClasses": len(core_classes),
