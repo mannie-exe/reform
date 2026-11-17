@@ -79,6 +79,8 @@ public final class JsonOwner<T> {
 
   private record Initialization<T>(JsonStore<T> storage, SettingsHandle.Revision expected) {}
 
+  private record Applied(Application state, ValidationReport report) {}
+
   /** A one-shot complete candidate; persistence and actual authorization still have to succeed. */
   public static final class Prepared<T> {
     private final Object owner;
@@ -356,56 +358,63 @@ public final class JsonOwner<T> {
         ValidationReport persistenceReport,
         SettingsHandle.Revision expected,
         ValidationReport prevented) {
-      return context
-          .onOwner(
-              () -> {
-                Application application;
-                ValidationReport applicationReport;
-                try {
-                  if (prevented != null) throw new PolicyRefusal(prevented);
+      return application(saved, expected, prevented)
+          .thenCompose(
+              applied ->
+                  context
+                      .onOwner(
+                          () -> {
+                            Optional<Observation<T>> observed = Optional.empty();
+                            if (saved != null)
+                              try {
+                                require(OwnerContext.Right.READ);
+                                observed = Optional.of(observation(saved));
+                              } catch (PolicyRefusal hidden) {
+                                // Retain the receipt without disclosing newly observed private
+                                // data.
+                              }
+                            return receipt(
+                                persistence,
+                                applied.state(),
+                                savedRevision,
+                                observed,
+                                persistenceReport,
+                                applied.report());
+                          })
+                      .exceptionally(
+                          failure ->
+                              receipt(
+                                  persistence,
+                                  applied.state(),
+                                  savedRevision,
+                                  Optional.empty(),
+                                  persistenceReport,
+                                  applied.report())));
+    }
+
+    private CompletionStage<Applied> application(
+        JsonStore.Read<T> saved, SettingsHandle.Revision expected, ValidationReport prevented) {
+      if (prevented != null) return CompletableFuture.completedStage(applicationFailure(prevented));
+      if (saved == null)
+        return CompletableFuture.completedStage(
+            applicationFailure(
+                problem("owner.observation", "Saved values are unavailable", false)));
+      if (saved.candidate().isEmpty())
+        return context
+            .onOwner(
+                () -> {
                   require(OwnerContext.Right.WRITE);
-                  if (saved == null)
-                    throw new PolicyRefusal(
-                        "owner.observation", "Saved values are unavailable", false);
-                  if (saved.candidate().isEmpty()) {
-                    runtime.observationFailed(saved.report());
-                    throw new PolicyRefusal(saved.report());
-                  }
-                  runtime
-                      .prepare(expected, saved.candidate().orElseThrow(), this::authorizedWrite)
-                      .publish(this::authorizedWrite);
-                  application = Application.APPLIED;
-                  applicationReport = ValidationReport.VALID;
-                } catch (RuntimeException failure) {
-                  applicationReport = report(failure);
-                  application =
-                      applicationReport.complete() ? Application.REFUSED : Application.UNAVAILABLE;
-                }
-                Optional<Observation<T>> observed = Optional.empty();
-                if (saved != null)
-                  try {
-                    require(OwnerContext.Right.READ);
-                    observed = Optional.of(observation(saved));
-                  } catch (PolicyRefusal hidden) {
-                    // The receipt remains useful without disclosing newly observed private data.
-                  }
-                return receipt(
-                    persistence,
-                    application,
-                    savedRevision,
-                    observed,
-                    persistenceReport,
-                    applicationReport);
-              })
-          .exceptionally(
-              failure ->
-                  receipt(
-                      persistence,
-                      Application.UNAVAILABLE,
-                      savedRevision,
-                      Optional.empty(),
-                      persistenceReport,
-                      report(failure)));
+                  runtime.observationFailed(saved.report());
+                  return applicationFailure(saved.report());
+                })
+            .exceptionally(failure -> applicationFailure(report(failure)));
+      return runtime
+          .publishAsync(context, expected, saved.candidate().orElseThrow(), this::authorizedWrite)
+          .handle(
+              (view, failure) ->
+                  failure == null
+                      ? new Applied(Application.APPLIED, ValidationReport.VALID)
+                      : applicationFailure(report(failure)));
     }
 
     private boolean authorizedWrite() {
@@ -477,6 +486,13 @@ public final class JsonOwner<T> {
     return failure instanceof PolicyRefusal refused
         ? refused.report()
         : problem("owner.unavailable", "The owner operation could not complete", false);
+  }
+
+  private static Applied applicationFailure(ValidationReport report) {
+    boolean unavailable =
+        !report.complete()
+            || report.issues().stream().anyMatch(issue -> issue.code().equals("owner.closed"));
+    return new Applied(unavailable ? Application.UNAVAILABLE : Application.REFUSED, report);
   }
 
   private static ValidationReport persistenceReport(OwnedFile.Result result) {

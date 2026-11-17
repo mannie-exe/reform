@@ -5,6 +5,7 @@ import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletionStage;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -12,6 +13,11 @@ import java.util.function.BooleanSupplier;
  * execution; no GUI/client payload may provide its own authorization callback.
  */
 public final class RuntimePolicy<T> implements AutoCloseable {
+  private record PublicationInput<T>(
+      DocumentDefinition<T> definition, Candidate<T> candidate, SettingsHandle.View<T> before) {}
+
+  private record Ready<T>(SettingsHandle.View<T> before, SettingsHandle.View<T> view) {}
+
   public final class Prepared {
     private final SettingsHandle.Revision expected;
     private Candidate<T> candidate;
@@ -28,45 +34,15 @@ public final class RuntimePolicy<T> implements AutoCloseable {
       consumed = true;
       var submitted = candidate;
       candidate = null;
-      try {
-        require(authorized);
-        var before = handle.view();
-        requireRevision(expected);
-        var descriptor = definition;
-        var proposed = submitted.value();
-        activeThread();
-        requireRevision(expected);
-        var validated = descriptor.validate(proposed);
-        activeThread();
-        requireRevision(expected);
-        if (validated.value().isEmpty()) throw new PolicyRefusal(validated.report());
-        var next = validated.value().orElseThrow();
-        var previous = before.value();
-        boolean equal =
-            previous.isPresent() && descriptor.type().equivalent(previous.orElseThrow(), next);
-        // Finish every consumer-supplied copy/equality callback before changing the publication.
-        var frozen = descriptor.type().freeze(equal ? previous.orElseThrow() : next);
-        var view =
-            new SettingsHandle.View<>(
-                context,
-                equal
-                    ? before.revision()
-                    : new SettingsHandle.Revision(before.revision().sequence() + 1),
-                SettingsHandle.Availability.AVAILABLE,
-                descriptor.type(),
-                frozen,
-                ValidationReport.VALID);
-        // Native callbacks can reenter a service. Never overwrite a newer or closed publication.
-        require(authorized);
-        requireRevision(expected);
-        handle.publish(view);
-        return view;
-      } catch (PolicyRefusal refused) {
-        throw refused;
-      } catch (RuntimeException unavailable) {
-        throw new PolicyRefusal(
-            "owner.publication_unavailable", "Publication preparation could not complete", false);
-      }
+      var input = capture(expected, submitted, authorized);
+      var ready =
+          compute(
+              input,
+              () -> {
+                activeThread();
+                requireRevision(expected);
+              });
+      return publishReady(expected, ready, authorized);
     }
   }
 
@@ -94,6 +70,80 @@ public final class RuntimePolicy<T> implements AutoCloseable {
 
   public SettingsHandle<T> handle() {
     return handle;
+  }
+
+  /**
+   * Capture/gate and publish on the native executor; all pure value callbacks run on the explicit
+   * worker. This is a publication operation, not file persistence or domain compilation.
+   */
+  public CompletionStage<SettingsHandle.View<T>> publishAsync(
+      OwnerContext execution,
+      SettingsHandle.Revision expected,
+      Candidate<T> candidate,
+      BooleanSupplier authorized) {
+    Objects.requireNonNull(execution);
+    return execution
+        .onOwner(() -> capture(expected, candidate, authorized))
+        .thenCompose(input -> execution.onWorker(() -> compute(input, execution::requireCurrent)))
+        .thenCompose(ready -> execution.onOwner(() -> publishReady(expected, ready, authorized)))
+        .toCompletableFuture()
+        .minimalCompletionStage();
+  }
+
+  private PublicationInput<T> capture(
+      SettingsHandle.Revision expected, Candidate<T> candidate, BooleanSupplier authorized) {
+    require(authorized);
+    requireRevision(expected);
+    if (Objects.requireNonNull(candidate).definition() != definition)
+      throw new PolicyRefusal("owner.definition", "Candidate belongs to another definition");
+    return new PublicationInput<>(definition, candidate, handle.view());
+  }
+
+  private SettingsHandle.View<T> publishReady(
+      SettingsHandle.Revision expected, Ready<T> ready, BooleanSupplier authorized) {
+    require(authorized);
+    requireRevision(expected);
+    if (handle.view() != ready.before())
+      throw new PolicyRefusal(
+          "owner.observation_changed", "Runtime observation changed while preparing publication");
+    handle.publish(ready.view());
+    return ready.view();
+  }
+
+  private static <T> Ready<T> compute(PublicationInput<T> input, Runnable current) {
+    try {
+      current.run();
+      var descriptor = input.definition();
+      var proposed = input.candidate().value();
+      current.run();
+      var validated = descriptor.validate(proposed);
+      current.run();
+      if (validated.value().isEmpty()) throw new PolicyRefusal(validated.report());
+      var next = validated.value().orElseThrow();
+      var before = input.before();
+      var previous = before.value();
+      current.run();
+      boolean equal =
+          previous.isPresent() && descriptor.type().equivalent(previous.orElseThrow(), next);
+      var frozen = descriptor.type().freeze(equal ? previous.orElseThrow() : next);
+      current.run();
+      return new Ready<>(
+          before,
+          new SettingsHandle.View<>(
+              before.context(),
+              equal
+                  ? before.revision()
+                  : new SettingsHandle.Revision(before.revision().sequence() + 1),
+              SettingsHandle.Availability.AVAILABLE,
+              descriptor.type(),
+              frozen,
+              ValidationReport.VALID));
+    } catch (PolicyRefusal refused) {
+      throw refused;
+    } catch (RuntimeException unavailable) {
+      throw new PolicyRefusal(
+          "owner.publication_unavailable", "Publication preparation could not complete", false);
+    }
   }
 
   private void activeThread() {
@@ -151,22 +201,7 @@ public final class RuntimePolicy<T> implements AutoCloseable {
     activeThread();
     if (Objects.requireNonNull(report).valid())
       throw new IllegalArgumentException("Expected an unsuccessful observation report");
-    var current = handle.view();
-    var type = definition.type();
-    var value = current.value();
-    var replacement =
-        new SettingsHandle.View<>(
-            context,
-            current.revision(),
-            value.isPresent()
-                ? SettingsHandle.Availability.AVAILABLE
-                : SettingsHandle.Availability.UNAVAILABLE,
-            value.isPresent() ? type : null,
-            value.orElse(null),
-            report);
-    activeThread();
-    requireRevision(current.revision());
-    handle.publish(replacement);
+    handle.publish(handle.view().withObservation(report));
   }
 
   @Override

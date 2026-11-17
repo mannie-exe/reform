@@ -1,6 +1,6 @@
 # Asynchronous owned JSON
 
-`JsonOwner<T>` connects the owned JSON backend, context lifetime, actor-bound editing sessions and runtime publication. It is an experimental explicit-infrastructure API. Native actor gateways, convenience factories, native backend adapters, complete operation/cancellation views and real consumer migrations remain required by [coverage](coverage.md).
+`JsonOwner<T>` connects the owned JSON backend, context lifetime, actor-bound editing sessions and worker-prepared runtime publication. It is an experimental explicit-infrastructure API. Native actor gateways, convenience factories, native backend adapters, complete operation/cancellation views and real consumer migrations remain required by [coverage](coverage.md).
 
 ## Construct one document owner
 
@@ -32,6 +32,6 @@ Unstarted native/worker calls are detached before context-close completions run,
 
 ## Boundaries and updates
 
-Owned JSON IO and raw candidate preparation use the worker. Current publication still uses `RuntimePolicy`'s native-thread validation/copy/equality contract; expensive callback costs and worker-prepared publication require further work before release qualification. Domain compilation, application requirements, native TOML serialization and new-world admission are not generic JSON publication.
+Owned JSON IO, raw preparation and pure publication validation/copy/equality use the worker. The native executor captures authority/context/immutable inputs and performs final current checks plus the prepared-state swap. A newer runtime observation invalidates older worker preparation even when its effective revision is unchanged. A completed application remains an application fact if context loss later prevents returning an authorized readback. Actual callback costs and GUI/pack responsiveness still require measured qualification. Domain compilation, application requirements, native TOML serialization and new-world admission are not generic JSON publication.
 
 [Storage](storage.md) owns byte/path/atomicity guarantees. [Publication](publication.md) owns effective revision and immutable handle rules. Recheck those contracts, native actor resolution, close ordering and shared-lane/failure controls when changing an executor, owner backend or permission provider. The headless checks do not qualify server/connection gateways, native GUI responsiveness, pack behavior or complete Phase 1 readiness.

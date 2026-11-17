@@ -74,6 +74,17 @@ public final class SettingsHandle<T> {
     public ValidationReport observationReport() {
       return observationReport;
     }
+
+    /** Reuse already owned immutable state; reporting a load failure needs no copy callback. */
+    View<T> withObservation(ValidationReport report) {
+      return new View<>(
+          context,
+          revision,
+          value == null ? Availability.UNAVAILABLE : Availability.AVAILABLE,
+          type,
+          value,
+          report);
+    }
   }
 
   private final DocumentId document;

@@ -15,6 +15,10 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
 import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.SnapshotContext;
+import design.inherent.reform.value.SnapshotPolicy;
+import design.inherent.reform.value.ValueType;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -72,6 +77,7 @@ class JsonOwnerTest {
     final AtomicInteger writes = new AtomicInteger();
     final AtomicBoolean pauseBefore = new AtomicBoolean(), pauseAfter = new AtomicBoolean();
     final AtomicBoolean revokeWrite = new AtomicBoolean(), revokeRead = new AtomicBoolean();
+    final AtomicBoolean closeOnRead = new AtomicBoolean();
     final CountDownLatch reached = new CountDownLatch(1), release = new CountDownLatch(1);
     final OwnerContext context;
     final JsonOwner<Profile> owner;
@@ -79,10 +85,14 @@ class JsonOwnerTest {
     final Path path = root.resolve("preferences.json");
 
     Harness() throws Exception {
+      this(DEFINITION);
+    }
+
+    Harness(DocumentDefinition<Profile> definition) throws Exception {
       long nativeThread = nativeCall(() -> Thread.currentThread().threadId());
       var source =
           new JsonStore<>(
-              DEFINITION,
+              definition,
               new OwnedFile(
                   StorageBinding.relative(root, "preferences.json"),
                   8192,
@@ -119,7 +129,16 @@ class JsonOwnerTest {
               },
               OwnerContext.Limits.STANDARD);
       owner = nativeCall(() -> new JsonOwner<>(context, source, 8));
-      session = nativeCall(() -> owner.open(context.access(read::get, write::get)));
+      session =
+          nativeCall(
+              () ->
+                  owner.open(
+                      context.access(
+                          () -> {
+                            if (closeOnRead.getAndSet(false)) context.close();
+                            return read.get();
+                          },
+                          write::get)));
     }
 
     <T> T nativeCall(Callable<T> work) throws Exception {
@@ -154,6 +173,59 @@ class JsonOwnerTest {
           throw new AssertionError(interrupted);
         }
       }
+    }
+  }
+
+  @Test
+  void jsonPublicationRunsEveryPureValidatorSnapshotAndEqualityCallbackOffTheNativeThread()
+      throws Exception {
+    var nativeThread = new AtomicLong(-1);
+    var nativeCallbacks = new AtomicInteger();
+    var otherCallbacks = new AtomicInteger();
+    Runnable track =
+        () -> {
+          if (Thread.currentThread().threadId() == nativeThread.get())
+            nativeCallbacks.incrementAndGet();
+          else otherCallbacks.incrementAndGet();
+        };
+    var type =
+        ValueType.of(
+            TYPE.codec(),
+            TYPE.shape(),
+            new SnapshotPolicy<Profile>() {
+              @Override
+              public Profile freeze(Profile value, SnapshotContext context) {
+                track.run();
+                return TYPE.freeze(value);
+              }
+
+              @Override
+              public boolean equivalent(Profile first, Profile second) {
+                track.run();
+                return TYPE.equivalent(first, second);
+              }
+            });
+    var definition =
+        new DocumentDefinition<>(
+            DEFINITION.id(),
+            1,
+            type,
+            () -> new Profile(1),
+            value -> {
+              track.run();
+              return ValidationReport.VALID;
+            });
+    try (var h = new Harness(definition)) {
+      nativeThread.set(h.nativeCall(() -> Thread.currentThread().threadId()));
+      int before = otherCallbacks.get();
+      h.initialize();
+      assertEquals(JsonOwner.Application.APPLIED, await(h.session.initialize()).application());
+      assertTrue(otherCallbacks.get() > before);
+      assertEquals(0, nativeCallbacks.get(), "Pure value callbacks ran on the native owner thread");
+      Files.writeString(h.path, "not json");
+      assertEquals(JsonOwner.Application.REFUSED, await(h.session.initialize()).application());
+      assertEquals(
+          0, nativeCallbacks.get(), "Failed observation copied runtime values on native thread");
     }
   }
 
@@ -218,6 +290,23 @@ class JsonOwnerTest {
       assertEquals(text, Files.readString(h.path));
       assertEquals(modified, Files.getLastModifiedTime(h.path));
       assertEquals(2, h.writes.get());
+    }
+  }
+
+  @Test
+  void closureWhileBuildingTheReadbackDoesNotEraseAnAlreadyAppliedFact() throws Exception {
+    try (var h = new Harness()) {
+      h.initialize();
+      var observed = await(h.session.read());
+      var prepared = await(h.session.prepare(observed, changed(observed, "5")));
+      h.closeOnRead.set(true);
+      var result = await(h.session.commit(prepared));
+      assertEquals(JsonOwner.Persistence.SAVED, result.persistence());
+      assertEquals(JsonOwner.Application.APPLIED, result.application());
+      assertTrue(result.applicationReport().valid());
+      assertTrue(result.observation().isEmpty());
+      assertEquals(SettingsHandle.Availability.CLOSED, h.owner.handle().view().availability());
+      assertTrue(Files.readString(h.path).contains("\"count\": 5"));
     }
   }
 

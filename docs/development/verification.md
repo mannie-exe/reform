@@ -2,6 +2,22 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Worker-prepared publication
+
+The full Gradle `spotlessApply check build --warning-mode all` passes with 134 core tests, zero failures/errors/skips, 920 generated cases, ten tooling controls and the exact-artifact headless consumer. The final check took five seconds with relevant cached inputs. No new Minecraft game process or native actor gateway is included.
+
+The connected-owner callback witness reproduced sixteen pure validator/snapshot/equality callbacks on the native executor before the change. It now observes zero there across initialization, semantic no-op and failed reload. Pure preparation uses the actual separate Java worker; the native side captures and checks current authority/context/revision/observation before the prepared-state swap. This is executor-placement evidence, not an FPS, latency, heap or throughput benchmark.
+
+Four latch-controlled asynchronous publication cases exercise permission loss, context closure and competing publication during worker preparation. The fourth first failed because an older worker result erased a newer failed observation with an unchanged effective revision; it now refuses `owner.observation_changed` and preserves both the earlier effective value and newer error report. Another connected-owner case closes the context during authorized readback after publication and retains the historical `SAVED`/`APPLIED` facts while omitting the unavailable observation. The earlier synchronous publication controls remain passing, including repeat validation and reentrant callbacks.
+
+| Artifact         | SHA-256                                                            |
+| ---------------- | ------------------------------------------------------------------ |
+| Combined mod JAR | `8424848aaa8530d6ca08058734eeb5da81f27c08d206da36a3561cb2cd8329ca` |
+| Source JAR       | `abcdf620b8d32f13711e590c4a65b7b53f8a87fd815fe826201c3428cc684177` |
+| Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
+
+[Publication](publication.md) owns the asynchronous versus explicit synchronous contract. Native spec predicates/serializers are not declared worker-safe by this test. Convenience factories, actual native actor/backend/operation/UI/command services, richer types, both migrations and selected-pack/cost checks remain Phase 1 requirements. The increment is local and unpublished.
+
 ## Asynchronous JSON owner slice
 
 The full Gradle `spotlessApply check build --warning-mode all` passes with 128 core tests, zero failures/errors/skips, ten tooling controls and the exact-artifact independent headless consumer. Four properties retain 920 generated cases. The final build took five seconds with relevant cached inputs. These tests use real separate native-owner and worker Java executors with disposable files; no Minecraft process, personal instance or native actor gateway is involved.
