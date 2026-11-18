@@ -18,6 +18,7 @@ import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.NumericInput;
+import design.inherent.reform.reference.CollectionSelection;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.reference.ReferenceSelection;
 import design.inherent.reform.validation.ValidationReport;
@@ -128,7 +129,8 @@ public final class SettingsScreen<T> extends FormScreen {
   private long formGeneration;
   private FormPanel panel;
   private EditorActor.View<T> displayed;
-  private Button save, revert, defaults, reload, done;
+  private Button save, undo, redo, revert, defaults, reload, done;
+  private Object widgetGeneration;
   private int bodyTop, statusTop, pendingEdits;
   private long version;
   private boolean requested, updating, saving, loading, handoff, closed, formUnavailable;
@@ -228,6 +230,7 @@ public final class SettingsScreen<T> extends FormScreen {
 
   @Override
   protected void init() {
+    widgetGeneration = new Object();
     float scroll = panel == null ? 0 : panel.scroll();
     String focus = panel == null ? null : panel.focusKey();
     footer.clear();
@@ -238,6 +241,8 @@ public final class SettingsScreen<T> extends FormScreen {
     var current = actions.view();
     bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
     save = button(commitLabel(), this::requestSave);
+    undo = button(text("undo", "Undo"), () -> requestHistory(false));
+    redo = button(text("redo", "Redo"), () -> requestHistory(true));
     revert =
         button(
             text("revert", "Revert"),
@@ -334,11 +339,13 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private Button button(Component label, Runnable action) {
+    var generation = widgetGeneration;
     var result =
         Button.builder(
                 label,
                 ignored -> {
-                  if (!closed && minecraft.screen == this) action.run();
+                  if (!closed && minecraft.screen == this && widgetGeneration == generation)
+                    action.run();
                 })
             .bounds(0, 0, Math.max(56, font.width(label) + 20), 20)
             .build();
@@ -376,12 +383,34 @@ public final class SettingsScreen<T> extends FormScreen {
               new DraftEdit.InsertRow(Optional.empty()));
       add.setTooltip(Tooltip.create(text("add_entry_help", "Add a blank entry for editing")));
       structureButtons.put(add, size < maximum);
+      var collectionControls = new ArrayList<AbstractWidget>();
+      collectionControls.add(add);
+      if (shape instanceof ValueShape.Sequence sequence) {
+        var element = sequence.element().shape();
+        if (element instanceof ValueShape.Reference<?> reference)
+          element = reference.element().shape();
+        if (element instanceof ValueShape.Scalar scalar
+            && (sequence.element().shape() instanceof ValueShape.Reference<?>
+                || scalar.kind() == ValueShape.ScalarKind.BOOLEAN
+                || scalar.kind() == ValueShape.ScalarKind.CHOICE)) {
+          var choose =
+              Button.builder(
+                      text("choose_values", "Choose values…"),
+                      ignored -> openCollection(path, label))
+                  .bounds(0, 0, 120, 20)
+                  .createNarration(original -> label.copy().append(": ").append(original.get()))
+                  .build();
+          structureButtons.put(choose, true);
+          structurePaths.put(choose, path);
+          collectionControls.add(choose);
+        }
+      }
       panel.row(
           FormModel.key(path) + ":collection",
           label,
           Component.translatableWithFallback(
               "reform.settings.entry_count", "%s entries (limit %s)", size, maximum),
-          add);
+          collectionControls.toArray(AbstractWidget[]::new));
       for (int i = 0; i < size; i++) {
         var child = field.children().get(i);
         var row = ((FieldPath.Row) child.path().segments().getLast()).id();
@@ -701,6 +730,40 @@ public final class SettingsScreen<T> extends FormScreen {
       minecraft.setScreen(screen);
     } finally {
       handoff = false;
+    }
+  }
+
+  private void openCollection(FieldPath path, Component label) {
+    if (closed
+        || minecraft.screen != this
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()
+        || !locallyAvailable(path)) return;
+    try {
+      var selection = new CollectionSelection<>(actions, path);
+      var source = selection.view().referenceSource().map(sources::get).orElse(null);
+      var screen =
+          new CollectionScreen<>(
+              label,
+              selection,
+              source,
+              labelKey(path) + "/choices/",
+              () -> locallyAvailable(path),
+              () -> {
+                synchronize(Map.copyOf(versions));
+                minecraft.setScreen(this);
+              },
+              actions::close);
+      handoff = true;
+      try {
+        minecraft.setScreen(screen);
+      } finally {
+        handoff = false;
+      }
+    } catch (design.inherent.reform.owner.PolicyRefusal | IllegalArgumentException refused) {
+      notice = failure(refused);
     }
   }
 
@@ -1215,6 +1278,14 @@ public final class SettingsScreen<T> extends FormScreen {
     var current = actions.view();
     if (save == null) return;
     boolean unaccepted = unsent();
+    boolean historyReady =
+        current.availability() == EditorActor.Availability.READY
+            && !saving
+            && !loading
+            && pendingEdits == 0
+            && !unaccepted;
+    undo.active = historyReady && current.canUndo();
+    redo.active = historyReady && current.canRedo();
     save.setMessage(unaccepted ? text("retry_edits", "Retry edits") : commitLabel());
     save.active =
         current.snapshot().isPresent()
@@ -1404,19 +1475,22 @@ public final class SettingsScreen<T> extends FormScreen {
         return true;
       }
       if (key == GLFW.GLFW_KEY_Z) {
-        perform(
-            hasShiftDown()
-                ? action(() -> actions.redo(EntryPoint.GUI))
-                : action(() -> actions.undo(EntryPoint.GUI)),
-            true);
+        requestHistory(hasShiftDown());
         return true;
       }
       if (key == GLFW.GLFW_KEY_Y) {
-        perform(action(() -> actions.redo(EntryPoint.GUI)), true);
+        requestHistory(true);
         return true;
       }
     }
     return false;
+  }
+
+  private void requestHistory(boolean forward) {
+    var view = actions.view();
+    if (forward ? !view.canRedo() : !view.canUndo()) return;
+    perform(
+        action(() -> forward ? actions.redo(EntryPoint.GUI) : actions.undo(EntryPoint.GUI)), true);
   }
 
   @Override

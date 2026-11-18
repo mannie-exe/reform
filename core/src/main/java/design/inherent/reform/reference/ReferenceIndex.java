@@ -11,7 +11,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -108,7 +107,7 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
         characters += (long) preview.getKey().length() + preview.getValue().length();
       if (characters > limits.maximumTextCharacters())
         throw new IllegalArgumentException("Reference index text budget exceeded");
-      String search = entry.searchText().toLowerCase(Locale.ROOT);
+      String search = SearchText.fold(entry.searchText());
       characters += Math.max(0, search.length() - entry.searchText().length());
       if (characters > limits.maximumTextCharacters())
         throw new IllegalArgumentException("Reference index text budget exceeded");
@@ -192,7 +191,7 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
           "reference.cursor", "Reference cursor does not address this snapshot/filter");
     if (availability != ReferencePage.Availability.READY)
       return ReferencePage.unavailable(stamp, availability, reason);
-    String needle = query.filter().toLowerCase(Locale.ROOT);
+    String needle = SearchText.fold(query.filter());
     var choices = new ArrayList<ReferencePage.Choice<K>>();
     int position = offset, examined = 0;
     var snapshots = new SnapshotContext(this.snapshots);

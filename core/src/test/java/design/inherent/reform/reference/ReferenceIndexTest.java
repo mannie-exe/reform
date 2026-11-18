@@ -47,6 +47,29 @@ class ReferenceIndexTest {
   }
 
   @Test
+  void accentCaseAndCanonicalSpellingFoldForSearchOnlyAndCursorsRemainExact() {
+    var index =
+        index(
+            stamp(),
+            List.of(
+                new ReferenceIndex.Entry<>(
+                    "fixture:a", List.of("fixture:a"), "CAFÉ", "CAFÉ", Map.of()),
+                entry("fixture:b", "cafe\u0301"),
+                entry("fixture:c", "\u0130STANBUL"),
+                entry("fixture:d", "\uD83C\uDF0A reef")));
+    var first = index.search(new ReferenceQuery("cafe", 1));
+    assertEquals("fixture:a", first.choices().getFirst().key());
+    var next = index.search(new ReferenceQuery("cafe", 1, first.next()));
+    assertEquals("fixture:b", next.choices().getFirst().key());
+    assertThrows(
+        PolicyRefusal.class, () -> index.search(new ReferenceQuery("CAFÉ", 1, first.next())));
+    assertEquals("istanbul", SearchText.fold("\u0130STANBUL"));
+    assertEquals("\uD83C\uDF0A reef", SearchText.fold("\uD83C\uDF0A REEF"));
+    assertEquals(ReferenceResolution.Status.MALFORMED, index.resolve("fixture:A").status());
+    assertEquals("CAFÉ", first.choices().getFirst().label());
+  }
+
+  @Test
   void resolvedEmptyUnknownMalformedAndUnavailableStatesRemainDistinct() {
     var stamp = stamp();
     var index =

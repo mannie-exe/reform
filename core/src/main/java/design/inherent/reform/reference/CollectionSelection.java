@@ -66,6 +66,7 @@ public final class CollectionSelection<T> implements AutoCloseable {
   private final FieldPath path;
   private View view;
   private Edit<T> pending;
+  private boolean admitting;
   private boolean closed;
 
   public CollectionSelection(DocumentActions<T> document, FieldPath path) {
@@ -97,7 +98,7 @@ public final class CollectionSelection<T> implements AutoCloseable {
   public void refresh() {
     thread();
     requireOpen();
-    if (pending != null)
+    if (pending != null || admitting)
       throw new PolicyRefusal("selection.pending", "Wait for the issued selection edit to finish");
     bind(document.view());
   }
@@ -105,13 +106,19 @@ public final class CollectionSelection<T> implements AutoCloseable {
   public Edit<T> change(EntryPoint entry, DraftTarget expected, DraftEdit.ChangeScalarRows change) {
     thread();
     requireOpen();
-    if (pending != null)
+    if (pending != null || admitting)
       throw new PolicyRefusal("selection.pending", "Wait for the issued selection edit to finish");
     if (!view.target().equals(expected) || !current())
       throw new PolicyRefusal("selection.stale", "The collection changed; refresh its selection");
-    var operation = document.edit(entry, new DraftEdit(expected, change));
-    pending = new Edit<>(expected, operation);
-    return pending;
+    admitting = true;
+    try {
+      var operation = document.edit(entry, new DraftEdit(expected, change));
+      var issued = new Edit<>(expected, operation);
+      if (!closed) pending = issued;
+      return issued;
+    } finally {
+      admitting = false;
+    }
   }
 
   /** Only this controller's issued completion can advance its target after its own edit. */

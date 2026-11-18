@@ -15,6 +15,7 @@ import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.reference.CollectionSelection;
 import design.inherent.reform.serialization.JsonLimits;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -91,12 +92,36 @@ final class NativeDraftChecks {
             ignored -> {
               var before =
                   (DraftNode.Sequence) actions.view().snapshot().orElseThrow().draft().at(names);
-              return edit(
-                      context,
-                      actions,
-                      names,
-                      new DraftEdit.ChangeScalarRows(
-                          List.of("choice-a", "choice-b"), Set.of(before.rows().getFirst().id())))
+              return context
+                  .onOwner(() -> new CollectionSelection<>(actions, names))
+                  .thenCompose(
+                      selection ->
+                          context
+                              .onOwner(
+                                  () ->
+                                      selection.change(
+                                          EntryPoint.GUI,
+                                          selection.view().target(),
+                                          new DraftEdit.ChangeScalarRows(
+                                              List.of("choice-a", "choice-b"),
+                                              Set.of(before.rows().getFirst().id()))))
+                              .thenCompose(
+                                  request ->
+                                      request
+                                          .operation()
+                                          .completion()
+                                          .thenCompose(
+                                              result ->
+                                                  context.onOwner(
+                                                      () -> {
+                                                        check.accept(
+                                                            "native collection controller accepts its actual issued edit",
+                                                            selection.accept(request)
+                                                                == CollectionSelection.Acceptance
+                                                                    .ACCEPTED);
+                                                        selection.close();
+                                                        return actions.view();
+                                                      }))))
                   .thenApply(
                       view -> {
                         var changed =

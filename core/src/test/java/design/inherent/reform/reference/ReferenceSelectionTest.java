@@ -94,6 +94,7 @@ class ReferenceSelectionTest {
         documentRead = new AtomicBoolean(true),
         write = new AtomicBoolean(true);
     final AtomicReference<Runnable> beforeSourceRead = new AtomicReference<>();
+    final AtomicReference<Runnable> beforeDocumentRead = new AtomicReference<>();
     final OwnerContext context;
     final JsonOwner<Profile> owner;
     final DocumentActions<Profile> actions;
@@ -117,7 +118,16 @@ class ReferenceSelectionTest {
               json,
               DraftLimits.CONFIGURATION);
       owner = nativeCall(() -> new JsonOwner<>(context, store, 16));
-      var access = nativeCall(() -> context.access(documentRead::get, write::get));
+      var access =
+          nativeCall(
+              () ->
+                  context.access(
+                      () -> {
+                        var callback = beforeDocumentRead.getAndSet(null);
+                        if (callback != null) callback.run();
+                        return documentRead.get();
+                      },
+                      write::get));
       var session = nativeCall(() -> owner.open(access));
       await(session.initialize());
       var actor =
@@ -392,6 +402,71 @@ class ReferenceSelectionTest {
             selector.close();
             return null;
           });
+    }
+  }
+
+  @Test
+  void reentrantReadCannotIssueASecondMembershipEditDuringAdmission() throws Exception {
+    try (var h = new Harness()) {
+      var selector =
+          h.nativeCall(() -> new CollectionSelection<>(h.actions, FieldPath.ROOT.field("donors")));
+      var target = h.nativeCall(selector::view).target();
+      var nested = new AtomicReference<Throwable>();
+      h.beforeDocumentRead.set(
+          () -> {
+            try {
+              selector.change(
+                  EntryPoint.GUI,
+                  target,
+                  new DraftEdit.ChangeScalarRows(List.of("fixture:empty"), Set.of()));
+            } catch (PolicyRefusal refused) {
+              nested.set(refused);
+            }
+          });
+      var edit =
+          h.nativeCall(
+              () ->
+                  selector.change(
+                      EntryPoint.GUI,
+                      target,
+                      new DraftEdit.ChangeScalarRows(List.of("fixture:a"), Set.of())));
+      await(edit.operation().completion());
+      assertInstanceOf(PolicyRefusal.class, nested.get());
+      assertEquals(
+          CollectionSelection.Acceptance.ACCEPTED, h.nativeCall(() -> selector.accept(edit)));
+      assertEquals(
+          List.of("fixture:missing", "fixture:b", "fixture:a"),
+          h.nativeCall(selector::view).items().stream()
+              .map(item -> item.raw().orElseThrow())
+              .toList());
+      h.nativeCall(
+          () -> {
+            selector.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void closingCollectionDuringReadDoesNotRetainOrPretendToUndoAnIssuedEdit() throws Exception {
+    try (var h = new Harness()) {
+      var selector =
+          h.nativeCall(() -> new CollectionSelection<>(h.actions, FieldPath.ROOT.field("donors")));
+      var target = h.nativeCall(selector::view).target();
+      h.beforeDocumentRead.set(selector::close);
+      var edit =
+          h.nativeCall(
+              () ->
+                  selector.change(
+                      EntryPoint.GUI,
+                      target,
+                      new DraftEdit.ChangeScalarRows(List.of("fixture:a"), Set.of())));
+      await(edit.operation().completion());
+      assertTrue(h.nativeCall(selector::pending).isEmpty());
+      assertEquals(CollectionSelection.Acceptance.STALE, h.nativeCall(() -> selector.accept(edit)));
+      assertFalse(h.nativeCall(selector::current));
+      assertTrue(h.actions.view().dirty());
+      assertTrue(h.references.isOpen());
     }
   }
 

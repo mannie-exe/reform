@@ -63,6 +63,7 @@ public final class NativeFormProbe {
   private NativeReferenceControls references;
   private NativeNumericControls numeric;
   private NativeDependencyControls dependencies;
+  private NativeCollectionControls collections;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -92,7 +93,9 @@ public final class NativeFormProbe {
               "numeric",
               "numeric-reopen",
               "dependencies",
-              "dependencies-reopen")
+              "dependencies-reopen",
+              "collections",
+              "collections-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -230,6 +233,32 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("collections")) {
+        if (collections == null) {
+          var status = example.reform.CollectionExample.settings().status();
+          if (status.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE)
+            throw new AssertionError("Collection initialization unavailable: " + status.report());
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.CollectionExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY
+              || example.reform.ReferenceExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          collections =
+              new NativeCollectionControls(
+                  mode.equals("collections-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (collections.tick()) {
+          report.add("collections", collections.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("dependencies")) {
@@ -748,6 +777,7 @@ public final class NativeFormProbe {
     report.addProperty("status", failure == null ? "PASS" : "FAIL");
     if (numeric != null) report.add("numeric", numeric.report());
     if (dependencies != null) report.add("dependencies", dependencies.report());
+    if (collections != null) report.add("collections", collections.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -799,6 +829,10 @@ public final class NativeFormProbe {
           example.reform.ReferenceExample.settings().status().lifecycle()
               == ClientJsonSettings.Lifecycle.CLOSED,
           "Reference settings context survived shutdown");
+      check(
+          example.reform.CollectionExample.settings().status().lifecycle()
+              == ClientJsonSettings.Lifecycle.CLOSED,
+          "Collection settings context survived shutdown");
       var settings = ClientExample.settings();
       check(
           settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
