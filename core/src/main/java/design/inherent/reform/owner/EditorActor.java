@@ -48,7 +48,40 @@ public final class EditorActor<T> implements AutoCloseable {
       ValidationReport validation,
       ValidationReport observationReport,
       ValidationReport operationReport,
-      Optional<CommitReceipt<T>> lastReceipt) {}
+      Optional<CommitReceipt<T>> lastReceipt,
+      Map<FieldPath, DraftTree.InputState> inputs) {
+    public View {
+      inputs = Map.copyOf(inputs);
+    }
+
+    /** Older observers supply no per-input evidence; local dependencies remain unknown. */
+    public View(
+        Availability availability,
+        Optional<EditSession.Snapshot<T>> snapshot,
+        boolean dirty,
+        boolean canUndo,
+        boolean canRedo,
+        Optional<EditSession.PendingState> pending,
+        Optional<ConflictReview> review,
+        ValidationReport validation,
+        ValidationReport observationReport,
+        ValidationReport operationReport,
+        Optional<CommitReceipt<T>> lastReceipt) {
+      this(
+          availability,
+          snapshot,
+          dirty,
+          canUndo,
+          canRedo,
+          pending,
+          review,
+          validation,
+          observationReport,
+          operationReport,
+          lastReceipt,
+          Map.of());
+    }
+  }
 
   /** A receipt remains valid even if the editor closes before its acknowledgement can be shown. */
   public record Commit<T>(Optional<CommitReceipt<T>> receipt, ValidationReport editorReport) {}
@@ -316,6 +349,7 @@ public final class EditorActor<T> implements AutoCloseable {
 
   private View<T> publish(Model selected) {
     var snapshot = selected.editor.snapshot();
+    var inspection = snapshot.inspect();
     var next =
         new View<>(
             Availability.READY,
@@ -325,10 +359,11 @@ public final class EditorActor<T> implements AutoCloseable {
             selected.editor.canRedo(),
             selected.editor.pendingState(),
             selected.editor.review(),
-            snapshot.inspect().report(),
+            inspection.report(),
             selected.observationReport,
             selected.operationReport,
-            Optional.ofNullable(selected.lastReceipt));
+            Optional.ofNullable(selected.lastReceipt),
+            inspection.inputs());
     synchronized (lifetime) {
       current();
       if (model != selected) throw new PolicyRefusal("editor.changed", "Editing context changed");

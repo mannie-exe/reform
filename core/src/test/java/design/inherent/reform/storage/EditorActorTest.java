@@ -213,7 +213,12 @@ class EditorActorTest {
   void invalidTypingHistoryDefaultsAndSaveStayOffTheNativeThreadAcrossTwoWorkers()
       throws Exception {
     try (var h = new Harness(true)) {
-      assertFalse(await(h.actor.setRaw(COUNT_PATH, "-")).validation().valid());
+      var invalid = await(h.actor.setRaw(COUNT_PATH, "-"));
+      assertFalse(invalid.validation().valid());
+      assertEquals(
+          design.inherent.reform.edit.DraftTree.InputState.INCOMPLETE,
+          invalid.inputs().get(COUNT_PATH));
+      assertThrows(UnsupportedOperationException.class, () -> invalid.inputs().clear());
       assertEquals(1, value(await(h.actor.undo())));
       assertFalse(await(h.actor.redo()).validation().valid());
       assertEquals(1, value(await(h.actor.reset())));
@@ -221,6 +226,9 @@ class EditorActorTest {
       var saved = await(h.actor.save());
       assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
       assertFalse(h.actor.view().dirty());
+      assertEquals(
+          design.inherent.reform.edit.DraftTree.InputState.VALID,
+          h.actor.view().inputs().get(COUNT_PATH));
       await(h.actor.setRaw(COUNT_PATH, "8"));
       assertEquals(7, value(await(h.actor.revert())));
       assertEquals(0, h.nativeValidators.get());

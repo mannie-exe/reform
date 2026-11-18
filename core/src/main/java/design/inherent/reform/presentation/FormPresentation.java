@@ -48,9 +48,15 @@ public final class FormPresentation {
 
   private final List<Range> ranges;
   private final Map<FieldPath, Range> endpoints;
+  private final FormDependencies dependencies;
 
   public FormPresentation(List<Range> ranges) {
+    this(ranges, FormDependencies.NONE);
+  }
+
+  public FormPresentation(List<Range> ranges, FormDependencies dependencies) {
     this.ranges = List.copyOf(ranges);
+    this.dependencies = Objects.requireNonNull(dependencies);
     if (ranges.size() > 128) throw new IllegalArgumentException("Too many form relationships");
     var ids = new HashSet<String>();
     var fields = new LinkedHashMap<FieldPath, Range>();
@@ -71,15 +77,24 @@ public final class FormPresentation {
     return Optional.ofNullable(endpoints.get(endpoint));
   }
 
+  public FormDependencies dependencies() {
+    return dependencies;
+  }
+
   /**
    * Checks declared shapes only, without decoding defaults, reading a source or constructing
    * values.
    */
   public void requireCompatible(ValueType<?> root) {
+    bind(root);
+  }
+
+  public FormDependencies.Bound bind(ValueType<?> root) {
     for (var range : ranges) {
       requireNumeric(DraftTypes.declaredAt(root, range.minimum()));
       requireNumeric(DraftTypes.declaredAt(root, range.maximum()));
     }
+    return dependencies.bind(root);
   }
 
   private static void requireNumeric(ValueType<?> type) {

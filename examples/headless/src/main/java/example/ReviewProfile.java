@@ -159,6 +159,7 @@ public final class ReviewProfile {
     CompositionEditing.verify();
     UnitsEditing.verify();
     RangeEditing.verify();
+    DependentEditing.verify();
     System.out.println(
         "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe/typed-maps/sets/field-defaults/optionals/variants/composition/units; game classes absent");
   }

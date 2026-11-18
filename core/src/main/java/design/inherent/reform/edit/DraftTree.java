@@ -344,7 +344,8 @@ public final class DraftTree {
     }
   }
 
-  boolean activeAt(FieldPath path) {
+  /** Structural presence/selection only; this grants neither input validity nor edit authority. */
+  public boolean activeAt(FieldPath path) {
     try {
       at(path, true);
       return true;

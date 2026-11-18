@@ -62,6 +62,7 @@ public final class NativeFormProbe {
   private NativeStructuredControls structured;
   private NativeReferenceControls references;
   private NativeNumericControls numeric;
+  private NativeDependencyControls dependencies;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -89,7 +90,9 @@ public final class NativeFormProbe {
               "references",
               "references-reopen",
               "numeric",
-              "numeric-reopen")
+              "numeric-reopen",
+              "dependencies",
+              "dependencies-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -227,6 +230,31 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("dependencies")) {
+        if (dependencies == null) {
+          var status = example.reform.DependencyExample.settings().status();
+          if (status.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE)
+            throw new AssertionError(
+                "Dependent fixture initialization unavailable: " + status.report());
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.DependencyExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          dependencies =
+              new NativeDependencyControls(
+                  mode.equals("dependencies-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (dependencies.tick()) {
+          report.add("dependencies", dependencies.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("numeric")) {
@@ -719,6 +747,12 @@ public final class NativeFormProbe {
     report.addProperty("ticks", ticks);
     report.addProperty("status", failure == null ? "PASS" : "FAIL");
     if (numeric != null) report.add("numeric", numeric.report());
+    if (dependencies != null) report.add("dependencies", dependencies.report());
+    if (mode.startsWith("dependencies")) {
+      var status = example.reform.DependencyExample.settings().status();
+      report.addProperty("dependencyLifecycle", status.lifecycle().name());
+      report.addProperty("dependencyInitialization", status.report().toString());
+    }
     if (structured != null) report.add("structured", structured.report());
     if (references != null) report.add("references", references.report());
     if (failure != null) {

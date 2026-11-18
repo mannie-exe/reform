@@ -13,6 +13,7 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.presentation.FormDependencies;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.presentation.FormPresentation;
@@ -109,12 +110,19 @@ public final class SettingsScreen<T> extends FormScreen {
   private final DocumentActions<T> actions;
   private final Map<DocumentId, ReferenceActions<String, ?>> sources;
   private final FormPresentation presentation;
+  private final FormDependencies.Bound dependencies;
   private final Map<FieldPath, Control> controls = new LinkedHashMap<>();
   private final Map<FieldPath, String> local = new LinkedHashMap<>();
   private final Map<FieldPath, Long> versions = new LinkedHashMap<>();
   private final List<AbstractWidget> footer = new ArrayList<>();
   private final List<FieldPath> visibleFields = new ArrayList<>();
   private final Map<AbstractWidget, Boolean> structureButtons = new LinkedHashMap<>();
+  private final Map<AbstractWidget, FieldPath> structurePaths = new LinkedHashMap<>();
+  private final Map<FieldPath, Button> availabilityButtons = new LinkedHashMap<>();
+  private final Map<FieldPath, String> availabilityRows = new LinkedHashMap<>();
+  private EditorActor.View<T> dependencyView;
+  private long dependencyVersion = -1;
+  private FormDependencies.Evaluation dependencyEvaluation;
   private List<FormModel.Layout> formLayout = List.of();
   private UUID formSession;
   private long formGeneration;
@@ -169,7 +177,7 @@ public final class SettingsScreen<T> extends FormScreen {
         });
     this.sources = Map.copyOf(admitted);
     this.presentation = Objects.requireNonNull(presentation);
-    presentation.requireCompatible(definition.type());
+    dependencies = presentation.bind(definition.type());
     if (definition != actions.definition())
       throw new IllegalArgumentException("A form requires its actual owner definition");
   }
@@ -224,6 +232,9 @@ public final class SettingsScreen<T> extends FormScreen {
     String focus = panel == null ? null : panel.focusKey();
     footer.clear();
     structureButtons.clear();
+    structurePaths.clear();
+    availabilityButtons.clear();
+    availabilityRows.clear();
     var current = actions.view();
     bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
     save = button(commitLabel(), this::requestSave);
@@ -339,6 +350,12 @@ public final class SettingsScreen<T> extends FormScreen {
     var path = field.path();
     var node = field.input();
     var shape = field.type().orElseThrow().shape();
+    if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>)
+        && dependencies.affects(path)) {
+      String key = FormModel.key(path) + ":availability";
+      availabilityRows.put(path, key);
+      panel.row(key, label, dependencyText(path), availabilityButton(path, label));
+    }
     if (shape instanceof ValueShape.ObjectValue && node instanceof DraftNode.ObjectValue) {
       if (!path.equals(FieldPath.ROOT)) panel.heading(label);
       children(field);
@@ -487,6 +504,7 @@ public final class SettingsScreen<T> extends FormScreen {
                   label,
                   (widget, id) -> structural(path, new DraftEdit.SelectVariant(id)));
       structureButtons.put(choice, true);
+      structurePaths.put(choice, path);
       panel.row(FormModel.key(path) + ":variant", label, Component.empty(), choice);
       for (var branch : value.branches().keySet())
         if (!branch.equals(value.selected()))
@@ -555,6 +573,7 @@ public final class SettingsScreen<T> extends FormScreen {
               .build();
       browse.setTooltip(Tooltip.create(Component.literal(reference.source().toString())));
       structureButtons.put(browse, source != null);
+      structurePaths.put(browse, path);
       fieldRow(path, label, control.widget(), browse);
     } else if (control.quantity() != null) {
       var quantity = control.quantity();
@@ -573,12 +592,78 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private void fieldRow(FieldPath path, Component label, AbstractWidget... widgets) {
+    var row = new ArrayList<>(List.of(widgets));
+    if (dependencies.affects(path)) row.add(availabilityButton(path, label));
     panel.relatedField(
         FormModel.key(path),
         presentation.range(path).map(range -> "range:" + range.id()).orElse(null),
         label,
         Component.empty(),
-        widgets);
+        row.toArray(AbstractWidget[]::new));
+  }
+
+  private Button availabilityButton(FieldPath path, Component label) {
+    var button =
+        Button.builder(
+                text("availability", "Availability"),
+                ignored -> {
+                  if (!closed && minecraft.screen == this) notice = dependencyText(path);
+                })
+            .bounds(0, 0, Math.max(80, font.width(text("availability", "Availability")) + 16), 20)
+            .createNarration(original -> label.copy().append(": ").append(dependencyText(path)))
+            .build();
+    availabilityButtons.put(path, button);
+    return button;
+  }
+
+  private FormDependencies.Decision dependency(FieldPath path) {
+    if (!dependencies.affects(path)) return FormDependencies.Decision.AVAILABLE;
+    var current = actions.view();
+    if (current.availability() != EditorActor.Availability.READY || current.snapshot().isEmpty())
+      return new FormDependencies.Decision(FormDependencies.State.UNKNOWN, List.of());
+    if (dependencyView != current || dependencyVersion != version || dependencyEvaluation == null) {
+      var draft = current.snapshot().orElseThrow().draft();
+      var pending = new java.util.HashSet<FieldPath>();
+      for (var input : dependencies.inputs()) {
+        var control = controls.get(input);
+        if (control != null && !matches(input, control, draft)) pending.add(input);
+      }
+      dependencyEvaluation = dependencies.evaluate(draft, current.inputs(), pending);
+      dependencyView = current;
+      dependencyVersion = version;
+    }
+    return dependencyEvaluation.at(path);
+  }
+
+  private boolean locallyAvailable(FieldPath path) {
+    return dependency(path).state() == FormDependencies.State.AVAILABLE;
+  }
+
+  private Component dependencyText(FieldPath path) {
+    var decision = dependency(path);
+    MutableComponent result =
+        switch (decision.state()) {
+          case AVAILABLE -> text("available", "Available").copy();
+          case DISABLED -> text("inactive", "Inactive").copy();
+          case UNKNOWN -> text("availability_unknown", "Availability unknown").copy();
+        };
+    for (var reason : decision.reasons())
+      result
+          .append("\n")
+          .append(Component.translatableWithFallback(reason.translationKey(), reason.fallback()))
+          .append(" (")
+          .append(inputLabel(reason.input()))
+          .append(")");
+    return result;
+  }
+
+  private Component inputLabel(FieldPath path) {
+    // Optional/default payloads use their actual declaring field's caption even while absent.
+    for (int i = path.segments().size() - 1; i >= 0; i--)
+      if (path.segments().get(i) instanceof FieldPath.Field field)
+        return Component.translatableWithFallback(
+            labelKey(new FieldPath(path.segments().subList(0, i + 1))), readable(field.id()));
+    return title.copy();
   }
 
   private <V> void openReference(
@@ -590,6 +675,7 @@ public final class SettingsScreen<T> extends FormScreen {
         || loading
         || pendingEdits > 0
         || unsent()) return;
+    if (!locallyAvailable(path)) return;
     Supplier<ReferenceSelection<T, V>> factory =
         () -> new ReferenceSelection<>(actions, path, source);
     final ReferenceSelection<T, V> selection;
@@ -694,11 +780,12 @@ public final class SettingsScreen<T> extends FormScreen {
             .createNarration(original -> context.copy().append(": ").append(original.get()))
             .build();
     structureButtons.put(button, true);
+    structurePaths.put(button, path);
     return button;
   }
 
   private void structural(FieldPath path, DraftEdit.Action edit) {
-    if (closed || minecraft.screen != this) return;
+    if (closed || minecraft.screen != this || !locallyAvailable(path)) return;
     var current = actions.view();
     if (pendingEdits > 0
         || saving
@@ -908,6 +995,7 @@ public final class SettingsScreen<T> extends FormScreen {
         || control == null
         || control.token() != token
         || control.quantity() == null
+        || !locallyAvailable(path)
         || saving
         || loading
         || !continuous && (pendingEdits > 0 || unsent())) return;
@@ -947,6 +1035,7 @@ public final class SettingsScreen<T> extends FormScreen {
     if (closed || minecraft.screen != this) return;
     var current = controls.get(path);
     if (current == null || current.token() != token) return;
+    if (!locallyAvailable(path)) return;
     if (updating || value.equals(local.get(path))) return;
     if (current.quantity() != null) {
       current.quantity().input = current.quantity().input.edit(value);
@@ -997,7 +1086,7 @@ public final class SettingsScreen<T> extends FormScreen {
     var draft = actions.view().snapshot().orElseThrow().draft();
     for (var entry : controls.entrySet()) {
       var quantity = entry.getValue().quantity();
-      if (quantity != null && quantity.deferred) {
+      if (quantity != null && quantity.deferred && locallyAvailable(entry.getKey())) {
         quantity.deferred = false;
         if (!matches(entry.getKey(), entry.getValue(), draft)) {
           submit(entry.getKey(), local.get(entry.getKey()));
@@ -1145,6 +1234,7 @@ public final class SettingsScreen<T> extends FormScreen {
         (button, enabled) ->
             button.active =
                 enabled
+                    && locallyAvailable(structurePaths.get(button))
                     && current.availability() == EditorActor.Availability.READY
                     && !loading
                     && !saving
@@ -1152,9 +1242,11 @@ public final class SettingsScreen<T> extends FormScreen {
                     && !unaccepted);
     controls.forEach(
         (path, control) -> {
+          boolean availableHere = locallyAvailable(path);
           if (control.widget() instanceof EditBox input)
             input.setEditable(
                 control.editable()
+                    && availableHere
                     && !loading
                     && current.availability() == EditorActor.Availability.READY
                     && (control.quantity() == null
@@ -1162,11 +1254,14 @@ public final class SettingsScreen<T> extends FormScreen {
                             .anyMatch(unit -> unit.id().equals(control.quantity().input.unit()))));
           else
             control.widget().active =
-                !loading && current.availability() == EditorActor.Availability.READY;
+                availableHere
+                    && !loading
+                    && current.availability() == EditorActor.Availability.READY;
           if (control.quantity() != null) {
             var quantity = control.quantity();
             boolean available =
                 current.availability() == EditorActor.Availability.READY
+                    && availableHere
                     && !saving
                     && !loading
                     && pendingEdits == 0
@@ -1190,6 +1285,7 @@ public final class SettingsScreen<T> extends FormScreen {
               quantity.slider.display(quantity.input, quantity.units.getMessage());
               quantity.slider.active =
                   !saving
+                      && availableHere
                       && !loading
                       && current.availability() == EditorActor.Availability.READY
                       && quantity.input.position().isPresent();
@@ -1209,13 +1305,24 @@ public final class SettingsScreen<T> extends FormScreen {
                           control.quantity() == null
                               ? Component.empty()
                               : Component.literal(control.quantity().input.notice()));
+          if (!availableHere) {
+            var explanation = dependencyText(path).copy();
+            if (!summary.getString().isEmpty()) explanation.append("\n").append(summary);
+            summary = explanation;
+          }
           panel.summary(FormModel.key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
             input.setTextColor(
                 issue.isEmpty() ? FormPanel.TITLE_TEXT : ChatFormatting.RED.getColor());
-            input.setTooltip(issue.isEmpty() ? null : Tooltip.create(summary));
+            input.setTooltip(issue.isEmpty() && availableHere ? null : Tooltip.create(summary));
           }
         });
+    availabilityButtons.forEach(
+        (path, button) -> {
+          button.active = current.availability() == EditorActor.Availability.READY && !loading;
+          button.setTooltip(Tooltip.create(dependencyText(path)));
+        });
+    availabilityRows.forEach((path, key) -> panel.summary(key, dependencyText(path)));
   }
 
   @Override
@@ -1358,6 +1465,9 @@ public final class SettingsScreen<T> extends FormScreen {
 
   @Override
   public void removed() {
+    dependencyView = null;
+    dependencyEvaluation = null;
+    dependencyVersion = -1;
     if (!handoff && !closed) actions.close();
   }
 
