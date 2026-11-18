@@ -20,7 +20,7 @@ Build with `./gradlew --no-daemon check build`. Gradle checks Java formatting, d
 
 `core` uses Java 21 and the pinned DFU/Gson dependencies without game classes. `neoforge` builds against Minecraft 1.21.1 / NeoForge 21.1.265. The version catalog owns dependency pins; `gradle.properties` owns the project version. Gradle's wrapper pins the distribution and checksum.
 
-`verifyPublicConsumer` runs the separate `examples/headless` build against the staged Maven publication. It must retain no source-set/project or native-game dependency. The combined JAR's core API is consumed directly; no second core runtime JAR is installed.
+`verifyPublicConsumer` runs the separate [headless examples](../../examples/headless/README.md) against the staged Maven publication. It must retain no source-set/project or native-game dependency. The compound example combines nested roles, maps/lists, tagged references, a missing optional source, diagnostics, provenance and validate/compare/explain/export with actual bare-profile persistence. The combined JAR's core API is consumed directly; no second core runtime JAR is installed.
 
 `verifyNativeConsumer` compiles the separate [native addon and opt-in client probe](../../examples/native/README.md) against the exact same packaged Maven artifact. It launches no game as part of ordinary `check`. The explicit disposable client runner separately exercises that library JAR in Minecraft; source-container loading of the example/probe remains distinct from the packaged dependency.
 

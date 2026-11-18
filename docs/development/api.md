@@ -4,7 +4,7 @@ The current API is experimental. It supplies typed values, explicit record defin
 
 ## Declare values once
 
-`ValueType<T>` combines a DFU `Codec<T>`, explicit `ValueShape` and `SnapshotPolicy<T>`. Codec implementation details are not inspected to infer an editor. `ValueTypes` currently supplies booleans, bounded bytes/shorts/integers/longs/floats/doubles, bounded text, enums, bounded recursive lists/sets and explicitly encoded maps. Float bounds use their declared float spelling rather than a widened double approximation.
+`ValueType<T>` combines a DFU `Codec<T>`, explicit `ValueShape` and `SnapshotPolicy<T>`. Codec implementation details are not inspected to infer an editor. `ValueTypes` currently supplies booleans, bounded bytes/shorts/integers/longs/floats/doubles, bounded text, exact complete UUIDs, enums, bounded recursive lists/sets and explicitly encoded maps. Float bounds use their declared float spelling rather than a widened double approximation.
 
 `FieldKey<T>` pairs a serialized field ID with its type. `RecordType.builder` binds those keys to typed getters and one constructor. The resulting type supplies ordered field metadata, a strict object codec and a recursive snapshot policy. Serialized field IDs can differ from Java component names and translated labels. Duplicate declared IDs are rejected. Record fields are required unless their type explicitly declares an omission policy. Unknown and invalid fields prevent construction. Broader profile inheritance remains required.
 

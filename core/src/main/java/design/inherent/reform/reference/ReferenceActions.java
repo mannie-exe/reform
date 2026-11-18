@@ -1,6 +1,5 @@
 package design.inherent.reform.reference;
 
-import com.mojang.serialization.DataResult;
 import com.mojang.serialization.JsonOps;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
@@ -10,7 +9,6 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
-import design.inherent.reform.serialization.ExactCodecs;
 import design.inherent.reform.value.SnapshotContext;
 import design.inherent.reform.value.SnapshotPolicy;
 import design.inherent.reform.value.ValueShape;
@@ -326,22 +324,7 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
     closeHook.close();
   }
 
-  private static final ValueType<UUID> UUID_TYPE =
-      ValueType.of(
-          ExactCodecs.STRING.flatXmap(
-              text -> {
-                try {
-                  var id = UUID.fromString(text);
-                  return text.length() == 36 && text.equalsIgnoreCase(id.toString())
-                      ? DataResult.success(id)
-                      : DataResult.error(() -> "Expected a complete UUID");
-                } catch (IllegalArgumentException invalid) {
-                  return DataResult.error(() -> "Expected a complete UUID");
-                }
-              },
-              id -> DataResult.success(id.toString())),
-          ValueTypes.text(36).shape(),
-          SnapshotPolicy.immutable());
+  private static final ValueType<UUID> UUID_TYPE = ValueTypes.uuid();
 
   private static <K> ValueType<Request<K>> requestType(ValueType<K> keys) {
     var key = FieldKey.of("key", keys);

@@ -11,11 +11,31 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Common codec/snapshot/editor definitions. No consumer implements a writer or snapshot for these.
  */
 public final class ValueTypes {
+  /** Exact UUID text, suitable for owned identities rather than abbreviated native parsing. */
+  public static ValueType<UUID> uuid() {
+    return ValueType.of(
+        ExactCodecs.STRING.flatXmap(
+            text -> {
+              try {
+                var id = UUID.fromString(text);
+                return text.length() == 36 && text.equalsIgnoreCase(id.toString())
+                    ? DataResult.success(id)
+                    : DataResult.error(() -> "Expected a complete UUID");
+              } catch (IllegalArgumentException invalid) {
+                return DataResult.error(() -> "Expected a complete UUID");
+              }
+            },
+            id -> DataResult.success(id.toString())),
+        text(36).shape(),
+        SnapshotPolicy.immutable());
+  }
+
   public static ValueType<Boolean> bool() {
     return scalar(ExactCodecs.BOOL, ValueShape.ScalarKind.BOOLEAN, null, null, -1, List.of());
   }

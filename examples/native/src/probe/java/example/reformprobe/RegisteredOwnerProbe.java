@@ -222,6 +222,12 @@ final class RegisteredOwnerProbe {
     }
     CompletionStage<Void> work =
         NativeReferenceChecks.verify(server, context, report)
+            .thenCompose(
+                ignored ->
+                    context.onOwner(
+                        () ->
+                            NativeDraftChecks.verify(context, owner, config.getFullPath(), report)))
+            .thenCompose(stage -> stage)
             .thenCompose(ignored -> reopen ? reopened() : first());
     work.whenComplete((ignored, failure) -> server.execute(() -> finish(server, failure)));
   }

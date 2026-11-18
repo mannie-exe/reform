@@ -7,6 +7,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
+import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.operation.DocumentActions;
@@ -65,6 +66,89 @@ class DocumentActionsTest {
     } catch (InterruptedException failed) {
       Thread.currentThread().interrupt();
       throw new AssertionError(failed);
+    }
+  }
+
+  @Test
+  void structuralServicesEditDynamicFieldsReadOnlyAndRefuseStaleTargetsWithFieldDiagnostics()
+      throws Exception {
+    var type =
+        TaggedType.<Profile>builder("kind", "settings")
+            .variant("profile", Profile.class, TYPE)
+            .build();
+    try (var h = new Harness(type)) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var path = FieldPath.ROOT.variant("profile").field("count");
+      var target = h.actions.view().snapshot().orElseThrow().target(path);
+      String before = Files.readString(h.path);
+      h.write.set(false);
+      h.run(() -> h.actions.edit(EntryPoint.GUI, new DraftEdit(target, new DraftEdit.SetRaw("2"))));
+      var stale =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.COMMAND, new DraftEdit(target, new DraftEdit.SetRaw("3"))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.REFUSED, stale.state());
+      assertEquals("edit.stale_target", stale.report().issues().getFirst().code());
+      assertEquals(path, stale.report().issues().getFirst().path());
+      assertEquals(
+          "2",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path)).raw());
+      assertEquals(before, Files.readString(h.path));
+      var actual = h.actions.view().snapshot().orElseThrow().target(path);
+      var invalid =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.GUI, new DraftEdit(actual, new DraftEdit.Presence(false))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.REFUSED, invalid.state());
+      assertEquals("edit.invalid_action", invalid.report().issues().getFirst().code());
+      assertEquals(path, invalid.report().issues().getFirst().path());
+      h.read.set(false);
+      h.nativeCall(
+          () -> {
+            assertThrows(
+                PolicyRefusal.class,
+                () ->
+                    h.actions.edit(
+                        EntryPoint.GUI, new DraftEdit(actual, new DraftEdit.SetRaw("7"))));
+            return null;
+          });
+      assertEquals(before, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
+  void typedTypingCoalescesUndoAndCannotResumeAfterReload() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var path = FieldPath.ROOT.field("count");
+      var typing = h.actions.view().snapshot().orElseThrow().target(path).typing();
+      for (var text : java.util.List.of("2", "4", "6"))
+        h.run(
+            () ->
+                h.actions.edit(EntryPoint.GUI, new DraftEdit(typing, new DraftEdit.SetRaw(text))));
+      assertEquals(
+          "6",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path)).raw());
+      h.run(() -> h.actions.undo(EntryPoint.GUI));
+      assertFalse(h.actions.view().dirty());
+      h.run(() -> h.actions.load(EntryPoint.COMMAND));
+      var stale =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.GUI, new DraftEdit(typing, new DraftEdit.SetRaw("8"))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.REFUSED, stale.state());
+      assertEquals("edit.stale_target", stale.report().issues().getFirst().code());
+      assertFalse(h.actions.view().dirty());
     }
   }
 

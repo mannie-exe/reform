@@ -4,6 +4,8 @@
 
 The current services cover reload, cached inspection, raw scalar editing, undo/redo, revert/defaults, validation, source/effective inspection, semantic comparison, value export, save and application-only retry. GUI and command editors retain separate drafts over the same shared owner. Recursive controls, full operation presentation, conflict/import workflows, domain operations and migrations remain required by [coverage](coverage.md).
 
+`DocumentActions.edit(entry, DraftEdit)` additionally exposes [shape-checked structural editing](editing.md#public-structural-edits) through typed local inputs. This service addresses actual editor/row/variant identities and requires READ; it changes a draft only. The native Brigadier tree below retains its declared-field scalar syntax. A custom frontend can use the shared structural service without introducing an arbitrary patch operation.
+
 [Reference actions](references.md) use the same local operation services for explicit source lookup and filtering. They bind source/context freshness and admit only bounded owned results; frontend draft/request identity remains a separate presentation requirement.
 
 ## Registration and execution
@@ -14,7 +16,7 @@ Inputs remain immutable during admission. Workers freeze, encode and strictly de
 
 An optional prerequisite gates entry, not authority. Native rights are checked again after it completes. `DocumentActions` coalesces first-use loading and preserves edit/save order while a baseline loads. An unavailable source never substitutes factory defaults or silently retries; reload is explicit.
 
-Standard scope bounds are 64 definitions, 16 active operations and 64 retained operations. Input admission allows 64 KiB, 64 depth levels, 16,384 nodes, 32,768 string characters, 128 numeric characters and absolute decimal scale 4,096. Only terminal operations can be evicted. These local limits are independent of files, networking and domain workloads. `DocumentActions` needs room for all fifteen definitions.
+Standard scope bounds are 64 definitions, 16 active operations and 64 retained operations. Input admission allows 64 KiB, 64 depth levels, 16,384 nodes, 32,768 string characters, 128 numeric characters and absolute decimal scale 4,096. Only terminal operations can be evicted. These local limits are independent of files, networking and domain workloads. `DocumentActions` needs room for all sixteen definitions.
 
 `OperationHandle` exposes immutable snapshots and a completion stage. Snapshots identify the context/target and carry revision, phase, completed count, optional total, cancellation request and result/report. Progress cannot retreat in the same phase. Unknown totals stay unknown. `COMPLETED` means the provider produced a result; its save receipt may still report refused, partial, unknown or unapplied effects.
 

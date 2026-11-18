@@ -75,11 +75,17 @@ public final class EditSession<T> implements AutoCloseable {
   public record Snapshot<T>(
       DocumentDefinition<T> definition,
       UUID context,
+      UUID session,
       long generation,
       long version,
       String sourceRevision,
       DraftTree draft,
       JsonLimits jsonLimits) {
+    public DraftTarget target(FieldPath path) {
+      DraftTypes.at(definition.type(), draft, path);
+      return new DraftTarget(session, generation, Optional.of(version), path);
+    }
+
     public DraftTree.Inspection<T> inspect() {
       return draft.inspect(definition, jsonLimits);
     }
@@ -231,7 +237,7 @@ public final class EditSession<T> implements AutoCloseable {
   public Snapshot<T> snapshot() {
     thread();
     return new Snapshot<>(
-        definition, context, generation, version, sourceRevision, current, jsonLimits);
+        definition, context, id, generation, version, sourceRevision, current, jsonLimits);
   }
 
   public DraftTree baseline() {
@@ -308,6 +314,29 @@ public final class EditSession<T> implements AutoCloseable {
 
   public void setRaw(FieldPath path, String raw) {
     setRaw(path, raw, null);
+  }
+
+  /** Apply an explicit shape-checked action against its actual editor lifetime/draft. */
+  public void execute(DraftEdit edit) {
+    execute(edit, null);
+  }
+
+  public void execute(DraftEdit edit, EditGroup group) {
+    active();
+    var target = Objects.requireNonNull(edit).target();
+    if (!target.session().equals(id)
+        || target.generation() != generation
+        || target.version().filter(expected -> expected != version).isPresent())
+      throw new DraftEditRefusal(
+          "edit.stale_target", target.path(), "Edit target belongs to a stale or foreign draft");
+    if (group != null
+        && (!(edit.action() instanceof DraftEdit.SetRaw) || !group.path().equals(target.path())))
+      throw new IllegalArgumentException("Only matching scalar typing may share an edit group");
+    try {
+      apply(DraftEdits.apply(definition.type(), current, edit), "Edit structure", group);
+    } catch (IllegalArgumentException refusal) {
+      throw new DraftEditRefusal("edit.invalid_action", target.path(), refusal.getMessage());
+    }
   }
 
   public void stage(DraftTree imported, String label) {

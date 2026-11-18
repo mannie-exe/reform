@@ -1,0 +1,11 @@
+# Public headless examples
+
+This separate Java 21 application consumes only the staged `design.inherent:reform` Maven artifact and its declared Java dependencies. It has no library source-set/project, Minecraft, NeoForge or optional-mod dependency. The runner checks the exact packaged artifact hash and refuses native game classes on its classpath.
+
+Run `./gradlew --no-daemon check build` from the repository root. `verifyPublicConsumer` stages the candidate and executes these examples with the matching version/hash. This performs no upload and launches no game. Temporary JSON fixtures use independently created directories and are removed after their checks.
+
+`ReviewProfile` exercises core decoding, diagnostics, drafts/history, submissions, conflicts, actual JSON storage, asynchronous owners and effective publication. Additional examples cover creation-context recipes, map/set editing, field defaults, optional membership and inactive tagged branches.
+
+`CompositionEditing` combines a profile containing named roles, nested records, lists/maps, tagged donor references and an unresolved optional donor. It supplies a small admitted reference index and its own bounded validation. It checks missing-dependency versus unknown-reference results without changing raw authored data, invalid nested drafts, branch retention, stable map-row identity, collection repair, related field diagnostics, source/effective inspection and validate/compare/explain/export through the same public operation services. Only explicit Save changes its bare JSON profile and published local value; no donor compilation, resources or world effects occur.
+
+These are packaged headless/API and real-file controls. They do not qualify recursive native forms, actual registry codecs, integrated/server recipients, either real consumer migration or full Phase 1. [Native examples](../native/README.md) and [verification](../../docs/development/verification.md) retain their separate artifacts and scope.

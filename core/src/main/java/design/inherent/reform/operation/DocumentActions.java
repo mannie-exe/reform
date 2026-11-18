@@ -7,6 +7,8 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
+import design.inherent.reform.edit.DraftEdit;
+import design.inherent.reform.edit.DraftEdits;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
@@ -43,7 +45,12 @@ public final class DocumentActions<T> implements AutoCloseable {
   public record FieldInput(String selector, String text) {}
 
   public record DraftRef(
-      DocumentId document, UUID context, long generation, long version, String sourceRevision) {}
+      DocumentId document,
+      UUID context,
+      UUID session,
+      long generation,
+      long version,
+      String sourceRevision) {}
 
   public record FieldDescription(
       FieldPath path, String selector, ValueShape shape, Optional<String> defaultText) {}
@@ -140,6 +147,7 @@ public final class DocumentActions<T> implements AutoCloseable {
       defaults,
       inspect;
   private final OperationDescriptor<FieldInput, EditorActor.View<T>> edit;
+  private final OperationDescriptor<DraftEdit, EditorActor.View<T>> structure;
   private final OperationDescriptor<Empty, EditorActor.Commit<T>> save, apply, admit;
   private final OperationDescriptor<Empty, EditorActor.Validation> validate;
   private final OperationDescriptor<Empty, EditorActor.Inspection<T>> explain;
@@ -156,7 +164,7 @@ public final class DocumentActions<T> implements AutoCloseable {
     context.requireOwner();
     if (!context.id().equals(actor.context())
         || maximumExportBytes < 1
-        || limits.maximumDefinitions() < 15)
+        || limits.maximumDefinitions() < 16)
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
     this.context = context;
@@ -191,6 +199,18 @@ public final class DocumentActions<T> implements AutoCloseable {
                           new PolicyRefusal(
                               "field.unavailable", "Select a declared editable scalar field"));
           return actor.setRaw(selected.path(), request.text());
+        });
+    structure =
+        descriptor(
+            "structure",
+            DraftEdits.type(),
+            OwnerContext.Right.READ,
+            Set.of(OperationDescriptor.Effect.EDIT_DRAFT));
+    scope.register(
+        structure,
+        (execution, request) -> {
+          execution.checkpoint();
+          return actor.edit(request);
         });
     save =
         descriptor(
@@ -402,6 +422,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     return scope.submit(edit, entry, new FieldInput(selector, text), readiness(entry));
   }
 
+  public OperationHandle<EditorActor.View<T>> edit(
+      OperationDescriptor.EntryPoint entry, DraftEdit request) {
+    return scope.submit(structure, entry, request, readiness(entry));
+  }
+
   public OperationHandle<EditorActor.Commit<T>> save(OperationDescriptor.EntryPoint entry) {
     return scope.submit(save, entry, Empty.VALUE, readiness(entry));
   }
@@ -474,6 +499,7 @@ public final class DocumentActions<T> implements AutoCloseable {
     return new DraftRef(
         definition.id(),
         snapshot.context(),
+        snapshot.session(),
         snapshot.generation(),
         snapshot.version(),
         snapshot.sourceRevision());

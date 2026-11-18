@@ -3,6 +3,8 @@ package design.inherent.reform.owner;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.ConflictReview;
+import design.inherent.reform.edit.DraftEdit;
+import design.inherent.reform.edit.DraftEditRefusal;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
@@ -53,6 +55,7 @@ public final class EditorActor<T> implements AutoCloseable {
   /** Identified draft validation; later typing does not turn this into a different result. */
   public record Validation(
       UUID context,
+      UUID session,
       long generation,
       long version,
       String sourceRevision,
@@ -174,6 +177,7 @@ public final class EditorActor<T> implements AutoCloseable {
                 return java.util.concurrent.CompletableFuture.completedStage(
                     new Validation(
                         snapshot.context(),
+                        snapshot.session(),
                         snapshot.generation(),
                         snapshot.version(),
                         snapshot.sourceRevision(),
@@ -184,6 +188,7 @@ public final class EditorActor<T> implements AutoCloseable {
                       (prepared, failed) ->
                           new Validation(
                               snapshot.context(),
+                              snapshot.session(),
                               snapshot.generation(),
                               snapshot.version(),
                               snapshot.sourceRevision(),
@@ -427,6 +432,26 @@ public final class EditorActor<T> implements AutoCloseable {
           if (selected.typing == null || !selected.typing.path().equals(path))
             selected.typing = selected.editor.beginGroup(path);
           selected.editor.setRaw(path, text, selected.typing);
+        });
+  }
+
+  public CompletionStage<View<T>> edit(DraftEdit edit) {
+    Objects.requireNonNull(edit);
+    return change(
+        selected -> {
+          try {
+            if (edit.action() instanceof DraftEdit.SetRaw) {
+              var path = edit.target().path();
+              if (selected.typing == null || !selected.typing.path().equals(path))
+                selected.typing = new EditSession.EditGroup(path, UUID.randomUUID());
+              selected.editor.execute(edit, selected.typing);
+            } else {
+              selected.typing = null;
+              selected.editor.execute(edit);
+            }
+          } catch (DraftEditRefusal refusal) {
+            throw new PolicyRefusal(refusal.report());
+          }
         });
   }
 

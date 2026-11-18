@@ -43,7 +43,8 @@ def run(java_home, timeout, registered=False):
     for source in [Path(__file__).resolve(), ROOT / "tools/native_form_probe.py", ROOT / "tools/native_config_probe.py",
                    example / "build.gradle", example / "src/probe/java/example/reformprobe/NativeAddonServerProbe.java",
                    example / "src/probe/java/example/reformprobe/RegisteredOwnerProbe.java",
-                   example / "src/probe/java/example/reformprobe/NativeReferenceChecks.java"]:
+                   example / "src/probe/java/example/reformprobe/NativeReferenceChecks.java",
+                   example / "src/probe/java/example/reformprobe/NativeDraftChecks.java"]:
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-addon-server.log"
     try:

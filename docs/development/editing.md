@@ -1,6 +1,6 @@
 # Editing model
 
-The experimental core provides pure edit sessions for current scalar, record, list, set, map and custom value types. This model performs no persistence, authorization, runtime publication or game operation. The [JSON owner and editing actor](owners.md) connect it to those services. [Coverage](coverage.md) owns the remaining Phase 1 scope, including richer value families, native gateways and presentation.
+The experimental core provides pure edit sessions for scalar, record, list, set, map, optional, defaulted, tagged and custom value types. This model performs no persistence, authorization, runtime publication or game operation. The [JSON owner and editing actor](owners.md) connect it to those services. [Coverage](coverage.md) owns the remaining Phase 1 scope, including native gateways and presentation.
 
 ## Drafts and candidates
 
@@ -43,6 +43,18 @@ Malformed encodings remain opaque repairable drafts; they never silently become 
 `select(id, seed)` creates a missing branch from an explicit seed and restores an existing branch unchanged. It does not infer a valid default, reinterpret unknown payloads or replace unfinished input with a supplied seed. Unknown tags retain opaque payloads; unknown fields remain errors until explicitly repaired. A malformed envelope/tag retains the complete opaque input for repair rather than selecting a fallback.
 
 Equal-value acknowledgement normalizes the actual saved branch while retaining private branches and their later edits. A later selection retains its own payload. Old diagnostics retain their branch target and become stale when that branch is inactive. Whole-alternative conflict choices cannot pair one selector with another branch's payload. Native branch controls and repair/recovery presentation remain required.
+
+## Public structural edits
+
+An immutable session snapshot exposes its actual editor UUID separately from its owner context. `snapshot.target(path)` creates a `DraftTarget` containing that editor, baseline generation, exact draft version and declared stable path. `EditSession.execute(DraftEdit)` refuses foreign, reloaded or stale targets before changing history. This is identity/consistency checking, not authority. Native providers still check their actual actor and rights.
+
+`DraftEdit` is data, with explicit actions for raw scalar input, insert/duplicate/remove/move rows, optional membership, default override, selected/inactive branches, retained-override recovery/discard, unknown-field removal and blank repair. Collection operations use row UUIDs and optional before-row anchors; an absent anchor appends. They never retarget a visible numeric index after reordering. Copies receive fresh identities throughout nested rows and retained payloads. Raw duplicate set members/map keys remain present with diagnostics until repaired. Collection growth respects the declared bound, while oversized imported collections remain removable.
+
+`DraftTypes.at` resolves the declared type at an actual active record/row/map-part/variant path. An inactive payload or unknown field cannot become an editable declared leaf. Unknown fields require explicit removal at their owning record/envelope. A malformed subtree requires explicit `Repair`; replacing it with its blank shape is undoable. Blank numeric/boolean/choice leaves remain incomplete instead of inventing a valid value. Blank required text can be valid under its declared codec. Blank construction is depth/node/text bounded and performs no domain compilation or external lookup. Enabling a missing override uses its actual declared fallback; re-enabling retained input restores it unchanged.
+
+Exact-version targets are required for structural/destructive actions. `target.typing()` explicitly permits an ordered raw-input stream to follow edits within the same editor generation; reload or loss/inactivation of the target still refuses it. The actor coalesces matching scalar typing for undo. Frontends must dispose obsolete streams and retain their request/draft identities rather than installing a late input event into a replacement screen. Asynchronous choice application should use the exact-version target, together with its reference-source epoch.
+
+`DraftEdits.type()` admits these requests through the normal strict record/tagged codecs and snapshot limits. It is a local operation input, not a generic JSON patch or remote protocol. `EditorActor.edit` maps a `DraftEditRefusal` to field-attributed policy diagnostics; `DocumentActions.edit(entry, request)` shares that service across frontends without granting Save. Snapshots, validation and comparison/export references retain the actual editor UUID. Native collection services and the public compound example are qualified separately from recursive widgets, which remain required.
 
 ## History and lifecycle
 
