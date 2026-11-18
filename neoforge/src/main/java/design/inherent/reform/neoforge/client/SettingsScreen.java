@@ -15,6 +15,7 @@ import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
+import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.NumericInput;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.reference.ReferenceSelection;
@@ -30,9 +31,11 @@ import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
+import java.util.function.DoubleConsumer;
 import java.util.function.Supplier;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
@@ -41,10 +44,11 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import org.lwjgl.glfw.GLFW;
 
 /** Generated recursive native form over the same admitted owner/operation services. */
-public final class SettingsScreen<T> extends Screen {
+public final class SettingsScreen<T> extends FormScreen {
   private record Control(
       AbstractWidget widget,
       Consumer<String> display,
@@ -59,9 +63,43 @@ public final class SettingsScreen<T> extends Screen {
     NumericInput input;
     CycleButton<String> units;
     Button less, more;
+    QuantitySlider slider;
+    boolean deferred;
 
     Quantity(NumericInput input) {
       this.input = input;
+    }
+  }
+
+  private static final class QuantitySlider extends AbstractSliderButton {
+    private final Component label;
+    private final DoubleConsumer edits;
+
+    QuantitySlider(Component label, DoubleConsumer edits) {
+      super(0, 0, 160, 20, label, 0);
+      this.label = label;
+      this.edits = edits;
+    }
+
+    void display(NumericInput input, Component unit) {
+      input.position().ifPresent(position -> value = position);
+      setMessage(Component.literal(input.text()).append(" ").append(unit));
+    }
+
+    @Override
+    protected void applyValue() {
+      edits.accept(value);
+    }
+
+    @Override
+    protected void updateMessage() {
+      /* The mapped display supplies the selected value. */
+    }
+
+    @Override
+    protected MutableComponent createNarrationMessage() {
+      return Component.translatable(
+          "gui.narrate.slider", label.copy().append(": ").append(getMessage()));
     }
   }
 
@@ -70,6 +108,7 @@ public final class SettingsScreen<T> extends Screen {
   private final DocumentDefinition<T> definition;
   private final DocumentActions<T> actions;
   private final Map<DocumentId, ReferenceActions<String, ?>> sources;
+  private final FormPresentation presentation;
   private final Map<FieldPath, Control> controls = new LinkedHashMap<>();
   private final Map<FieldPath, String> local = new LinkedHashMap<>();
   private final Map<FieldPath, Long> versions = new LinkedHashMap<>();
@@ -104,6 +143,17 @@ public final class SettingsScreen<T> extends Screen {
       DocumentDefinition<T> definition,
       DocumentActions<T> actions,
       Map<DocumentId, ? extends ReferenceActions<String, ?>> sources) {
+    this(parent, title, contextLabel, definition, actions, sources, FormPresentation.EMPTY);
+  }
+
+  public SettingsScreen(
+      Screen parent,
+      Component title,
+      Component contextLabel,
+      DocumentDefinition<T> definition,
+      DocumentActions<T> actions,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+      FormPresentation presentation) {
     super(title);
     this.parent = parent;
     this.contextLabel = Objects.requireNonNull(contextLabel);
@@ -118,6 +168,8 @@ public final class SettingsScreen<T> extends Screen {
           admitted.put(id, source);
         });
     this.sources = Map.copyOf(admitted);
+    this.presentation = Objects.requireNonNull(presentation);
+    presentation.requireCompatible(definition.type());
     if (definition != actions.definition())
       throw new IllegalArgumentException("A form requires its actual owner definition");
   }
@@ -503,18 +555,30 @@ public final class SettingsScreen<T> extends Screen {
               .build();
       browse.setTooltip(Tooltip.create(Component.literal(reference.source().toString())));
       structureButtons.put(browse, source != null);
-      panel.field(FormModel.key(path), label, Component.empty(), control.widget(), browse);
+      fieldRow(path, label, control.widget(), browse);
     } else if (control.quantity() != null) {
       var quantity = control.quantity();
-      panel.field(
-          FormModel.key(path),
-          label,
-          Component.empty(),
-          control.widget(),
-          quantity.less,
-          quantity.more,
-          quantity.units);
-    } else panel.field(FormModel.key(path), label, Component.empty(), control.widget());
+      if (quantity.slider == null)
+        fieldRow(path, label, control.widget(), quantity.less, quantity.more, quantity.units);
+      else
+        fieldRow(
+            path,
+            label,
+            control.widget(),
+            quantity.less,
+            quantity.more,
+            quantity.units,
+            quantity.slider);
+    } else fieldRow(path, label, control.widget());
+  }
+
+  private void fieldRow(FieldPath path, Component label, AbstractWidget... widgets) {
+    panel.relatedField(
+        FormModel.key(path),
+        presentation.range(path).map(range -> "range:" + range.id()).orElse(null),
+        label,
+        Component.empty(),
+        widgets);
   }
 
   private <V> void openReference(
@@ -555,7 +619,36 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private void children(FormModel.Node parent) {
+    var grouped = new java.util.HashSet<FieldPath>();
     for (var child : parent.children()) {
+      if (grouped.contains(child.path())) continue;
+      var range = presentation.range(child.path());
+      if (range.isPresent()) {
+        var pair = range.orElseThrow();
+        var minimum =
+            parent.children().stream()
+                .filter(node -> node.path().equals(pair.minimum()))
+                .findFirst();
+        var maximum =
+            parent.children().stream()
+                .filter(node -> node.path().equals(pair.maximum()))
+                .findFirst();
+        if (minimum.isPresent() && maximum.isPresent()) {
+          panel.beginGroup(
+              "range:" + pair.id(),
+              Component.translatableWithFallback(pair.translationKey(), pair.label()));
+          if (!pair.help().isBlank())
+            panel.row(
+                Component.empty(),
+                Component.translatableWithFallback(pair.translationKey() + ".help", pair.help()));
+          fields(minimum.orElseThrow(), label(minimum.orElseThrow()));
+          fields(maximum.orElseThrow(), label(maximum.orElseThrow()));
+          panel.endGroup();
+          grouped.add(pair.minimum());
+          grouped.add(pair.maximum());
+          continue;
+        }
+      }
       if (child.role() == FormModel.Role.UNKNOWN) {
         var label =
             Component.translatableWithFallback(
@@ -788,11 +881,27 @@ public final class SettingsScreen<T> extends Screen {
                     .append(text("nominal_tick_rate", "nominal ticks per second"))
                     .append(": " + rate));
     quantity.units.setTooltip(Tooltip.create(hint));
+    if (mapping.slider().isPresent()) {
+      quantity.slider =
+          new QuantitySlider(
+              label,
+              position -> changeQuantity(path, token, quantity.input.slide(position), true, true));
+      quantity.slider.setTooltip(
+          Tooltip.create(
+              text(
+                  "slider_step_help",
+                  "Dragging selects the nearest declared step. Exact text entry is not rounded.")));
+    }
     return quantity;
   }
 
   private void changeQuantity(
       FieldPath path, Object token, NumericInput.Change change, boolean stage) {
+    changeQuantity(path, token, change, stage, false);
+  }
+
+  private void changeQuantity(
+      FieldPath path, Object token, NumericInput.Change change, boolean stage, boolean continuous) {
     var control = controls.get(path);
     if (closed
         || minecraft.screen != this
@@ -801,9 +910,11 @@ public final class SettingsScreen<T> extends Screen {
         || control.quantity() == null
         || saving
         || loading
-        || pendingEdits > 0
-        || unsent()) return;
+        || !continuous && (pendingEdits > 0 || unsent())) return;
     var quantity = control.quantity();
+    boolean changed =
+        !quantity.input.expected().equals(change.input().expected())
+            || !Objects.equals(local.get(path), change.input().text());
     updating = true;
     try {
       if (change.accepted()) {
@@ -817,8 +928,18 @@ public final class SettingsScreen<T> extends Screen {
       updating = false;
     }
     if (change.accepted() && stage) {
+      if (continuous && !changed) {
+        feedback();
+        return;
+      }
       versions.put(path, ++version);
-      submit(path, quantity.input.text());
+      if (continuous && pendingEdits > 0) {
+        quantity.deferred = true;
+        feedback();
+      } else {
+        quantity.deferred = false;
+        submit(path, quantity.input.text());
+      }
     } else feedback();
   }
 
@@ -827,7 +948,10 @@ public final class SettingsScreen<T> extends Screen {
     var current = controls.get(path);
     if (current == null || current.token() != token) return;
     if (updating || value.equals(local.get(path))) return;
-    if (current.quantity() != null) current.quantity().input = current.quantity().input.edit(value);
+    if (current.quantity() != null) {
+      current.quantity().input = current.quantity().input.edit(value);
+      current.quantity().deferred = false;
+    }
     local.put(path, value);
     versions.put(path, ++version);
     submit(path, value);
@@ -848,10 +972,39 @@ public final class SettingsScreen<T> extends Screen {
                 minecraft.execute(
                     () -> {
                       pendingEdits--;
-                      if (failed != null) notice = failure(failed);
-                      if (minecraft.screen == this) feedback();
+                      if (failed != null) {
+                        notice = failure(failed);
+                        controls
+                            .values()
+                            .forEach(
+                                item -> {
+                                  if (item.quantity() != null) item.quantity().deferred = false;
+                                });
+                      }
+                      if (minecraft.screen == this) {
+                        feedback();
+                        if (failed == null) flushContinuous();
+                      }
                     }));
     feedback();
+  }
+
+  private void flushContinuous() {
+    if (closed
+        || pendingEdits > 0
+        || actions.view().availability() != EditorActor.Availability.READY
+        || actions.view().snapshot().isEmpty()) return;
+    var draft = actions.view().snapshot().orElseThrow().draft();
+    for (var entry : controls.entrySet()) {
+      var quantity = entry.getValue().quantity();
+      if (quantity != null && quantity.deferred) {
+        quantity.deferred = false;
+        if (!matches(entry.getKey(), entry.getValue(), draft)) {
+          submit(entry.getKey(), local.get(entry.getKey()));
+          return;
+        }
+      }
+    }
   }
 
   private boolean unsent() {
@@ -956,6 +1109,7 @@ public final class SettingsScreen<T> extends Screen {
               if (control.quantity() != null && node instanceof DraftNode.Scalar scalar) {
                 var quantity = control.quantity();
                 quantity.input = quantity.input.synchronize(scalar);
+                quantity.deferred = false;
                 quantity.units.setValue(quantity.input.unit());
                 raw = quantity.input.text();
               }
@@ -1032,6 +1186,14 @@ public final class SettingsScreen<T> extends Screen {
                     more.accepted()
                         ? text("increase", "Increase")
                         : Component.literal(more.reason())));
+            if (quantity.slider != null) {
+              quantity.slider.display(quantity.input, quantity.units.getMessage());
+              quantity.slider.active =
+                  !saving
+                      && !loading
+                      && current.availability() == EditorActor.Availability.READY
+                      && quantity.input.position().isPresent();
+            }
           }
           var issue =
               current.validation().issues().stream()

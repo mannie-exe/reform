@@ -52,6 +52,10 @@ public sealed interface ValueShape
       if (numericDisplay.isPresent()
           && (kind == ScalarKind.BOOLEAN || kind == ScalarKind.TEXT || kind == ScalarKind.CHOICE))
         throw new IllegalArgumentException("Numeric display metadata needs a numeric scalar");
+      numericDisplay.ifPresent(
+          display ->
+              display.requireSliderBounds(
+                  minimum, maximum, kind != ScalarKind.FLOAT && kind != ScalarKind.DOUBLE));
     }
   }
 

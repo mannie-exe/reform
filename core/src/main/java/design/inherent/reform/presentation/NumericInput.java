@@ -4,8 +4,11 @@ import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.value.ValueShape;
 import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalDouble;
 
 /** Local display state over an exact draft; no codecs, owner callbacks or effects. */
 public final class NumericInput {
@@ -129,6 +132,53 @@ public final class NumericInput {
     if (shape.maximum() != null && next.compareTo(shape.maximum()) > 0)
       return refused("The step would exceed the declared maximum");
     var converted = display.fromStored(next.toString(), unit);
+    if (converted.convertedText().isEmpty()) return refused(converted.reason());
+    return new Change(edit(converted.text()), true, "");
+  }
+
+  /** Approximate thumb position only; observing it never edits or rounds the stored number. */
+  public OptionalDouble position() {
+    if (display.slider().isEmpty()) return OptionalDouble.empty();
+    try {
+      var mapped = display.toStored(text, unit);
+      if (mapped.convertedText().isEmpty()) return OptionalDouble.empty();
+      var number = display.limits().parse(mapped.text());
+      if (number.compareTo(shape.minimum()) < 0 || number.compareTo(shape.maximum()) > 0)
+        return OptionalDouble.empty();
+      return OptionalDouble.of(
+          number
+              .subtract(shape.minimum())
+              .divide(shape.maximum().subtract(shape.minimum()), MathContext.DECIMAL64)
+              .doubleValue());
+    } catch (IllegalArgumentException unavailable) {
+      return OptionalDouble.empty();
+    }
+  }
+
+  /** Only an explicitly declared slider quantizes a pointer to the nearest canonical step. */
+  public Change slide(double position) {
+    if (display.slider().isEmpty()) return refused("This field declares no slider policy");
+    if (!Double.isFinite(position) || position < 0 || position > 1)
+      return refused("A slider position must be finite and within its declared track");
+    final BigDecimal number;
+    try {
+      var span = shape.maximum().subtract(shape.minimum());
+      var index =
+          span.multiply(BigDecimal.valueOf(position))
+              .divide(display.step(), 0, RoundingMode.HALF_UP);
+      number = shape.minimum().add(index.multiply(display.step())).stripTrailingZeros();
+      display.limits().check(number);
+    } catch (IllegalArgumentException | ArithmeticException unavailable) {
+      return refused("The slider value exceeds the declared numeric representation budget");
+    }
+    if (number.compareTo(shape.minimum()) < 0 || number.compareTo(shape.maximum()) > 0)
+      return refused("The slider value is outside its declared bounds");
+    final NumericDisplay.Conversion converted;
+    try {
+      converted = display.fromStored(number.toString(), unit);
+    } catch (IllegalArgumentException unavailable) {
+      return refused("The input unit is unavailable");
+    }
     if (converted.convertedText().isEmpty()) return refused(converted.reason());
     return new Change(edit(converted.text()), true, "");
   }

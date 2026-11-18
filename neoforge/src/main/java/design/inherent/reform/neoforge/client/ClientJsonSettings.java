@@ -14,6 +14,7 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.reference.ReferenceLimits;
 import design.inherent.reform.serialization.JsonLimits;
@@ -158,10 +159,15 @@ public final class ClientJsonSettings<T> {
 
   /** Explicit native menu registration; an existing owner factory is never replaced. */
   public void registerMenu(Component title) {
+    registerMenu(title, FormPresentation.EMPTY);
+  }
+
+  public void registerMenu(Component title, FormPresentation presentation) {
     Objects.requireNonNull(title);
+    Objects.requireNonNull(presentation).requireCompatible(definition.type());
     if (container.getCustomExtension(IConfigScreenFactory.class).isPresent())
       throw new IllegalStateException("This mod already declares a configuration screen");
-    IConfigScreenFactory factory = (ignored, parent) -> screen(parent, title);
+    IConfigScreenFactory factory = (ignored, parent) -> screen(parent, title, presentation);
     container.registerExtensionPoint(IConfigScreenFactory.class, factory);
   }
 
@@ -169,14 +175,28 @@ public final class ClientJsonSettings<T> {
     return screen(parent, title, Map.of());
   }
 
+  public Screen screen(Screen parent, Component title, FormPresentation presentation) {
+    return screen(parent, title, Map.of(), presentation);
+  }
+
   /** Borrowed context-owned sources; no capture, lookup or source replacement occurs here. */
   public Screen screen(
       Screen parent,
       Component title,
       Map<DocumentId, ? extends ReferenceActions<String, ?>> sources) {
+    return screen(parent, title, sources, FormPresentation.EMPTY);
+  }
+
+  public Screen screen(
+      Screen parent,
+      Component title,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+      FormPresentation presentation) {
     requireClientThread();
+    Objects.requireNonNull(presentation).requireCompatible(definition.type());
     var current = state.get();
-    if (current.lifecycle() != Lifecycle.READY) return new StatusScreen(parent, title);
+    if (current.lifecycle() != Lifecycle.READY)
+      return new StatusScreen(parent, title, sources, presentation);
     current.context().requireOwner();
     return new SettingsScreen<>(
         parent,
@@ -184,7 +204,8 @@ public final class ClientJsonSettings<T> {
         text("client_context", "Client preferences · applies to this installation"),
         definition,
         editingActions(current),
-        sources);
+        sources,
+        presentation);
   }
 
   /** Explicit source registration on this ready owner; caller supplies capture/reload policy. */
@@ -569,14 +590,23 @@ public final class ClientJsonSettings<T> {
     }
   }
 
-  private final class StatusScreen extends Screen {
+  private final class StatusScreen extends FormScreen {
     private final Screen parent;
+    private final Map<DocumentId, ? extends ReferenceActions<String, ?>> sources;
+    private final FormPresentation presentation;
+    private boolean closed;
     private Status<T> displayed;
     private FormPanel diagnostics;
 
-    StatusScreen(Screen parent, Component title) {
+    StatusScreen(
+        Screen parent,
+        Component title,
+        Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+        FormPresentation presentation) {
       super(title);
       this.parent = parent;
+      this.sources = Map.copyOf(sources);
+      this.presentation = presentation;
     }
 
     @Override
@@ -586,7 +616,11 @@ public final class ClientJsonSettings<T> {
       var actions = new ArrayList<Button>();
       if (displayed.lifecycle() == Lifecycle.UNAVAILABLE && state.get().context() != null)
         actions.add(
-            Button.builder(text("retry", "Retry"), ignored -> retryInitialization())
+            Button.builder(
+                    text("retry", "Retry"),
+                    ignored -> {
+                      if (!closed && minecraft.screen == this) retryInitialization();
+                    })
                 .bounds(0, 0, Math.max(56, font.width(text("retry", "Retry")) + 20), 20)
                 .build());
       actions.add(
@@ -615,8 +649,10 @@ public final class ClientJsonSettings<T> {
 
     @Override
     public void tick() {
+      if (closed || minecraft.screen != this) return;
       var current = status();
-      if (current.lifecycle() == Lifecycle.READY) minecraft.setScreen(screen(parent, title));
+      if (current.lifecycle() == Lifecycle.READY)
+        minecraft.setScreen(screen(parent, title, sources, presentation));
       else if (!current.equals(displayed)) rebuildWidgets();
     }
 
@@ -647,7 +683,14 @@ public final class ClientJsonSettings<T> {
 
     @Override
     public void onClose() {
+      if (closed || minecraft.screen != this) return;
+      closed = true;
       minecraft.setScreen(parent);
+    }
+
+    @Override
+    public void removed() {
+      closed = true;
     }
   }
 }

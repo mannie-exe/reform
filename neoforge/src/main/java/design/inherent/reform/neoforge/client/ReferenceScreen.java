@@ -18,12 +18,11 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 /** Explicit bounded native lookup. Borrowed source/document lifetimes remain with their owners. */
-final class ReferenceScreen<T, V> extends Screen {
+final class ReferenceScreen<T, V> extends FormScreen {
   private ReferenceSelection<T, V> selection;
   private final ReferenceLimits limits;
   private final Supplier<ReferenceSelection<T, V>> refresh;

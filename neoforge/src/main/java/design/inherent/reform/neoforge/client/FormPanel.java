@@ -556,6 +556,17 @@ final class FormPanel extends ScrollPanel {
   }
 
   @Override
+  public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+    if (getFocused() != null
+        && isDragging()
+        && button == 0
+        && getFocused().mouseDragged(x, y, button, dx, dy)) return true;
+    boolean handled = super.mouseDragged(x, y, button, dx, dy);
+    if (handled) position();
+    return handled;
+  }
+
+  @Override
   public boolean mouseScrolled(double x, double y, double dx, double dy) {
     if (!isMouseOver(x, y) || extent <= height - border) return false;
     boolean result = super.mouseScrolled(x, y, dx, dy);

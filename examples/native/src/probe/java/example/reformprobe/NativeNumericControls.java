@@ -6,6 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.neoforge.client.ClientJsonSettings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.NumericExample;
@@ -15,10 +16,12 @@ import java.nio.file.Path;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
 
@@ -31,13 +34,18 @@ final class NativeNumericControls {
   private final Consumer<String> progress;
   private final BiConsumer<String, Runnable> capture;
   private final Screen parent;
-  private final SettingsScreen<NumericExample.Profile> form;
+  private SettingsScreen<NumericExample.Profile> form;
+  private final Screen opening;
+  private boolean recoveryRequested;
+  private Button retiredBack, retiredRetry;
   private int stage, cursor;
   private long version;
   private String original, saved, selected;
   private EditBox duration;
+  private EditBox rangeMinimum, rangeMaximum;
   private CycleButton<?> retiredUnits;
   private Button retiredStep;
+  private AbstractSliderButton retiredSlider;
 
   @SuppressWarnings("unchecked") // Actual typed public registration supplies this generated screen.
   NativeNumericControls(
@@ -46,16 +54,17 @@ final class NativeNumericControls {
     this.progress = progress;
     this.capture = capture;
     parent = client.screen;
-    form =
-        (SettingsScreen<NumericExample.Profile>)
-            NumericExample.settings()
-                .screen(
-                    parent,
-                    net.minecraft.network.chat.Component.literal(
-                        "Numeric public settings example"));
+    opening =
+        NumericExample.settings()
+            .screen(
+                parent,
+                net.minecraft.network.chat.Component.literal("Numeric public settings example"),
+                NumericExample.PRESENTATION);
+    if (opening instanceof SettingsScreen<?> ready)
+      form = (SettingsScreen<NumericExample.Profile>) ready;
     report.add("checks", checks);
     report.addProperty("status", "RUNNING");
-    client.setScreen(form);
+    client.setScreen(opening);
   }
 
   private void verify(String name, boolean condition) {
@@ -109,6 +118,68 @@ final class NativeNumericControls {
         .orElseThrow();
   }
 
+  private AbstractSliderButton slider(String label) {
+    return widgets(form).stream()
+        .filter(AbstractSliderButton.class::isInstance)
+        .map(AbstractSliderButton.class::cast)
+        .filter(widget -> NativeStructuredControls.narration(widget).contains(label + ": "))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private void dragProbability() {
+    var slider = slider("Probability");
+    verify("declared native probability slider is active", slider.active && focus(form, slider));
+    double x = slider.getX() + slider.getWidth() / 2.0;
+    double y = slider.getY() + slider.getHeight() / 2.0;
+    report.add("dragBefore", dragState(slider, x, y));
+    verify("native slider pointer down consumed", form.mouseClicked(x, y, 0));
+    report.add("dragCaptured", dragState(slider, x, y));
+    for (int i = 0; i < 20; i++) {
+      double next = slider.getX() + 4 + (slider.getWidth() - 8) * (0.51 + i * 0.01);
+      boolean consumed = form.mouseDragged(next, y, 0, next - x, 0);
+      if (!consumed) report.add("dragRefused", dragState(slider, next, y));
+      verify("native slider drag consumed", consumed);
+      x = next;
+    }
+    form.mouseReleased(x, y, 0);
+  }
+
+  private JsonObject dragState(AbstractWidget slider, double x, double y) {
+    var state = new JsonObject();
+    state.addProperty("pointerX", x);
+    state.addProperty("pointerY", y);
+    state.addProperty("sliderX", slider.getX());
+    state.addProperty("sliderY", slider.getY());
+    state.addProperty("sliderWidth", slider.getWidth());
+    state.addProperty("sliderHeight", slider.getHeight());
+    state.addProperty("active", slider.active);
+    state.addProperty("visible", slider.visible);
+    var chain = new JsonArray();
+    ContainerEventHandler current = form;
+    for (int depth = 0; depth < 5; depth++) {
+      var item = new JsonObject();
+      item.addProperty("class", current.getClass().getName());
+      item.addProperty("dragging", current.isDragging());
+      var focused = current.getFocused();
+      item.addProperty("focused", focused == null ? "none" : focused.getClass().getName());
+      item.addProperty("expectedSlider", focused == slider);
+      chain.add(item);
+      if (!(focused instanceof ContainerEventHandler child)) break;
+      current = child;
+    }
+    state.add("chain", chain);
+    var under = new JsonArray();
+    widgets(form).stream()
+        .filter(widget -> widget.isMouseOver(x, y))
+        .forEach(
+            widget ->
+                under.add(
+                    widget.getClass().getSimpleName() + ":" + widget.getMessage().getString()));
+    state.add("underPointer", under);
+    return state;
+  }
+
   private void press(AbstractWidget widget) {
     verify("native quantity widget is in focus tree", focus(form, widget));
     verify("native quantity widget active and visible", widget.active && widget.visible);
@@ -130,10 +201,14 @@ final class NativeNumericControls {
     var actual = NumericExample.settings().runtime().orElseThrow().view().value().orElseThrow();
     verify(
         "canonical native numeric profile saved and published",
-        actual.equals(new NumericExample.Profile(4, 80, 0.3, 40, 3, 0.1)));
+        actual.equals(new NumericExample.Profile(4, 80, 0.3, 40, 3, 0.1, 50, 60)));
   }
 
   boolean tick() throws Exception {
+    if (form == null) {
+      recover();
+      return false;
+    }
     if (!ready()) return false;
     switch (stage) {
       case 0 -> {
@@ -153,6 +228,11 @@ final class NativeNumericControls {
         }
         original = Files.readString(source());
         duration = field("duration");
+        press(duration);
+        verify("native mouse click retains text-input focus", duration.isFocused());
+        verify(
+            "native keyboard navigation follows the clicked field",
+            form.keyPressed(GLFW.GLFW_KEY_LEFT, 0, 0));
         version = form.editorView().snapshot().orElseThrow().version();
         capture.accept("form-numeric-initial.png", () -> press(units("Duration")));
         next("duration display switched through native unit control");
@@ -236,10 +316,24 @@ final class NativeNumericControls {
         verify(
             "stored probability displays percent",
             new BigDecimal(field("probability").getValue()).intValueExact() == 35);
-        replace(form, field("probability"), "30");
-        next("probability edited as percent");
+        version = form.editorView().snapshot().orElseThrow().version();
+        dragProbability();
+        next("native probability slider dragged with latest-value coalescing");
       }
       case 7 -> {
+        if (number("probability").compareTo(new BigDecimal("0.7")) != 0) return false;
+        long admitted = form.editorView().snapshot().orElseThrow().version() - version;
+        verify(
+            "twenty native drag events admit at most two draft changes",
+            admitted > 0 && admitted <= 2);
+        verify(
+            "slider retains final display value without file effects",
+            field("probability").getValue().equals("70")
+                && Files.readString(source()).equals(saved));
+        replace(form, field("probability"), "30");
+        next("probability exactly edited as percent after slider");
+      }
+      case 8 -> {
         if (number("probability").compareTo(new BigDecimal("0.3")) != 0) return false;
         press(units("Percent"));
         verify(
@@ -248,7 +342,7 @@ final class NativeNumericControls {
         replace(form, field("percent"), "0.4");
         next("already stored percent edited as probability");
       }
-      case 8 -> {
+      case 9 -> {
         if (number("percent").intValueExact() != 40) return false;
         press(units("Thirds"));
         verify(
@@ -258,7 +352,7 @@ final class NativeNumericControls {
         replace(form, field("thirds"), "1");
         next("canonical value without finite alternate representation authored");
       }
-      case 9 -> {
+      case 10 -> {
         if (number("thirds").intValueExact() != 1) return false;
         version = form.editorView().snapshot().orElseThrow().version();
         press(units("Thirds"));
@@ -270,13 +364,13 @@ final class NativeNumericControls {
         replace(form, field("thirds"), "3");
         next("alternate-unit refusal repaired in canonical unit");
       }
-      case 10 -> {
+      case 11 -> {
         if (number("thirds").intValueExact() != 3) return false;
         press(units("Tiny"));
         replace(form, field("tiny"), "0.1");
         next("scale-limited conversion with canonical-looking text authored");
       }
-      case 11 -> {
+      case 12 -> {
         if (form.editorView().validation().valid()) return false;
         verify(
             "native failed mapping cannot save a differently meaningful canonical number",
@@ -295,18 +389,72 @@ final class NativeNumericControls {
         capture.accept("form-numeric-invalid.png", () -> replace(form, field("tiny"), "0"));
         next("invalid mapped input retained for review before explicit repair");
       }
-      case 12 -> {
+      case 13 -> {
         if (!form.editorView().validation().valid()) return false;
         press(units("Tiny"));
         replace(form, field("tiny"), "0.1");
         next("tiny value explicitly repaired in canonical storage unit");
       }
-      case 13 -> {
+      case 14 -> {
         if (!form.editorView().validation().valid()
             || number("tiny").compareTo(new BigDecimal("0.1")) != 0) return false;
+        rangeMinimum = field("minimum");
+        rangeMaximum = field("maximum");
+        verify(
+            "paired range exposes two actual native field identities",
+            rangeMinimum != rangeMaximum);
+        if (form.width >= 720)
+          verify(
+              "wide range fields share measured columns",
+              rangeMinimum.getY() == rangeMaximum.getY()
+                  && rangeMinimum.getX() < rangeMaximum.getX());
+        replace(form, rangeMinimum, "50");
+        next("inverted range staged without moving maximum");
+      }
+      case 15 -> {
+        if (form.editorView().validation().valid()) return false;
+        verify(
+            "owner range validator reports both identities without changing the other input",
+            number("minimum").intValueExact() == 50
+                && number("maximum").intValueExact() == 40
+                && form.editorView().validation().issues().stream()
+                    .anyMatch(
+                        issue ->
+                            issue.path().equals(path("minimum"))
+                                && issue.related().contains(path("maximum")))
+                && !button(form, "Save and apply").active);
+        verify(
+            "cross-field error does not disable repair of maximum", step("Maximum", true).active);
+        press(step("Maximum", true));
+        next("maximum explicitly incremented while range remains invalid");
+      }
+      case 16 -> {
+        if (number("maximum").intValueExact() != 41) return false;
+        verify(
+            "range increment never clamps or swaps minimum",
+            number("minimum").intValueExact() == 50
+                && !form.editorView().validation().valid()
+                && Files.readString(source()).equals(saved));
+        replace(form, rangeMaximum, "60");
+        next("range repaired through its second native field");
+      }
+      case 17 -> {
+        if (!form.editorView().validation().valid()) return false;
+        version = form.editorView().snapshot().orElseThrow().version();
+        press(units("Minimum"));
+        verify(
+            "range endpoint display units remain independent and do not edit",
+            rangeMinimum.getValue().equals("2.5")
+                && rangeMaximum.getValue().equals("60")
+                && version == form.editorView().snapshot().orElseThrow().version());
+        capture.accept("form-numeric-range.png", () -> {});
+        next("paired range ready before narrow reflow");
+      }
+      case 18 -> {
         retiredUnits = units("Duration");
         retiredStep = step("Duration", true);
-        form.focusField(path("duration"));
+        retiredSlider = slider("Probability");
+        form.focusField(path("minimum"));
         duration.setCursorPosition(2);
         duration.setHighlightPos(0);
         cursor = duration.getCursorPosition();
@@ -316,7 +464,7 @@ final class NativeNumericControls {
         client.resizeDisplay();
         next("narrow numeric reflow requested");
       }
-      case 14 -> {
+      case 19 -> {
         if (form.width > 340) return false;
         report.addProperty("narrowWidth", form.width);
         report.addProperty("narrowHeight", form.height);
@@ -327,12 +475,19 @@ final class NativeNumericControls {
                 && duration.getValue().equals("0.2")
                 && duration.getCursorPosition() == cursor
                 && duration.getHighlighted().equals(selected));
+        verify(
+            "narrow range retains both fields and stacks their measured controls",
+            field("minimum") == rangeMinimum
+                && field("maximum") == rangeMaximum
+                && rangeMinimum.getValue().equals("2.5")
+                && rangeMaximum.getValue().equals("60")
+                && rangeMinimum.getY() < rangeMaximum.getY());
         geometry(form);
         capture.accept(
             "form-numeric-narrow.png", () -> click(form, button(form, "Save and apply")));
         next("narrow canonical save requested");
       }
-      case 15 -> {
+      case 20 -> {
         if (form.editorView().dirty() || form.editorView().pending().isPresent()) return false;
         expectedSaved();
         saved = Files.readString(source());
@@ -344,6 +499,7 @@ final class NativeNumericControls {
         form.onClose();
         retiredUnits.onPress();
         retiredStep.onPress();
+        retiredSlider.onClick(retiredSlider.getX() + 8, retiredSlider.getY() + 8);
         verify(
             "retired unit and step callbacks cannot reopen or write",
             client.screen == parent && Files.readString(source()).equals(saved));
@@ -353,6 +509,55 @@ final class NativeNumericControls {
       default -> throw new AssertionError("Unknown numeric fixture stage");
     }
     return false;
+  }
+
+  @SuppressWarnings(
+      "unchecked") // A ready screen from this registration has its actual profile type.
+  private void recover() throws Exception {
+    if (!recoveryRequested) {
+      if (NumericExample.settings().status().lifecycle()
+          != ClientJsonSettings.Lifecycle.UNAVAILABLE) return;
+      verify(
+          "malformed numeric source retained without an editor",
+          Files.readString(source()).equals("{invalid numeric fixture")
+              && widgets(opening).stream().noneMatch(EditBox.class::isInstance));
+      retiredBack = button(opening, "Back");
+      retiredRetry = button(opening, "Retry");
+      var replacement = new JsonObject();
+      replacement.addProperty("schemaVersion", 1);
+      replacement.add(
+          "values",
+          NumericExample.DEFINITION
+              .type()
+              .codec()
+              .encodeStart(
+                  com.mojang.serialization.JsonOps.INSTANCE, NumericExample.DEFINITION.defaults())
+              .getOrThrow());
+      Files.writeString(source(), replacement.toString());
+      click(opening, retiredRetry);
+      recoveryRequested = true;
+      progress.accept("native numeric initialization retry requested with exact presentation");
+      return;
+    }
+    if (NumericExample.settings().status().lifecycle() != ClientJsonSettings.Lifecycle.READY
+        || !(client.screen instanceof SettingsScreen<?> ready)) return;
+    if (ready.editorView().snapshot().isEmpty()
+        || ready.editorView().availability() != EditorActor.Availability.READY) return;
+    form = (SettingsScreen<NumericExample.Profile>) ready;
+    verify(
+        "native recovery opens the actual ready owner", form.editorView().snapshot().isPresent());
+    retiredBack.onPress();
+    retiredRetry.onPress();
+    opening.tick();
+    verify(
+        "retired initialization screen cannot replace or close its successor",
+        client.screen == form);
+    if (form.width < 720) {
+      client.options.guiScale().set(2);
+      GLFW.glfwSetWindowSize(client.getWindow().getWindow(), 1000, 720);
+      client.resizeDisplay();
+    }
+    progress.accept("recovered numeric form retains owner-declared range presentation");
   }
 
   JsonObject report() {

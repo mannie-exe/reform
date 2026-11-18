@@ -33,6 +33,23 @@ public final class DecimalText {
       check(value);
       return value;
     }
+
+    /** Prefer short ordinary decimals; test expansion length before creating plain text. */
+    public String format(BigDecimal value) {
+      check(value);
+      var normalized = value.stripTrailingZeros();
+      if (Math.abs((long) normalized.scale()) > maximumAbsoluteScale) normalized = value;
+      long plainLength =
+          (normalized.signum() < 0 ? 1L : 0L)
+              + (normalized.scale() <= 0
+                  ? (long) normalized.precision() - normalized.scale()
+                  : normalized.precision() > normalized.scale()
+                      ? normalized.precision() + 1L
+                      : 2L + normalized.scale());
+      return plainLength <= Math.min(64, maximumCharacters)
+          ? normalized.toPlainString()
+          : normalized.toString();
+    }
   }
 
   /**

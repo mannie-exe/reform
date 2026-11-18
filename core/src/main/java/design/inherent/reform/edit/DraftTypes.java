@@ -15,6 +15,13 @@ public final class DraftTypes {
   public static ValueType<?> at(ValueType<?> root, DraftTree draft, FieldPath path) {
     if (!draft.activeAt(path))
       throw new IllegalArgumentException("Target is absent or inactive in this draft");
+    return declaredAt(root, path);
+  }
+
+  /**
+   * Type metadata only; this establishes neither row existence, active input nor edit authority.
+   */
+  public static ValueType<?> declaredAt(ValueType<?> root, FieldPath path) {
     ValueType<?> type = root;
     var segments = path.segments();
     for (int i = 0; i < segments.size(); i++) {

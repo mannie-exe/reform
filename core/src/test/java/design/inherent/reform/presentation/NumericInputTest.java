@@ -33,7 +33,7 @@ class NumericInputTest {
     var typed = seconds.input().edit("0.15");
     assertEquals(Optional.of(new DraftEdit.SetUnitRaw("seconds", "0.15")), typed.action());
     var millis = typed.select("milliseconds").input();
-    assertEquals("1.5E+2", millis.text());
+    assertEquals("150", millis.text());
     assertSame(typed.expected(), millis.expected());
     assertEquals(typed.action(), millis.action(), "Retry the actual input, not a relabelled value");
     assertEquals("3", millis.expected().raw());

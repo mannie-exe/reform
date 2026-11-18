@@ -231,9 +231,11 @@ public final class NativeFormProbe {
       }
       if (mode.startsWith("numeric")) {
         if (numeric == null) {
+          var lifecycle = example.reform.NumericExample.settings().status().lifecycle();
           if (!(mc.screen instanceof TitleScreen)
-              || example.reform.NumericExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+              || lifecycle != ClientJsonSettings.Lifecycle.READY
+                  && (mode.equals("numeric-reopen")
+                      || lifecycle != ClientJsonSettings.Lifecycle.UNAVAILABLE)) return;
           recordArtifact();
           numeric =
               new NativeNumericControls(

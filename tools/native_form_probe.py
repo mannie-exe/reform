@@ -83,6 +83,10 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                  "structured-reopen", "references", "references-reopen", "numeric", "numeric-reopen")
     try:
         for mode in modes:
+            if mode == "numeric":
+                source = fixture / "config/reform_native_example/numeric.json"
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("{invalid numeric fixture")
             if mode == "malformed":
                 saved = fixture / "config/reform_native_example/preferences.json"
                 (fixture / "native-form-valid.json").write_bytes(saved.read_bytes())

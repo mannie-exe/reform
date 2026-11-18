@@ -10,6 +10,8 @@ DFU/serialization updates must retain exact coercion/partial-result controls, dy
 
 Native registry/resource and executor updates also require the [reference-source controls](development/references.md): use the actual owner registry, preserve raw codec semantics and complete-source bounds, invalidate reload epochs and retain empty/missing/unknown distinctions. Do not infer full-pack source admission from the small native fixture or substitute resource enumeration into ordinary rendering/editing.
 
+Native control updates must review the pinned `AbstractContainerEventHandler` focus transitions, NeoForge `ScrollPanel` drag/release behavior and `AbstractSliderButton` input semantics. Requalify actual mouse-selected text focus, captured child dragging, scrollbar fallback, narrow related-field layout and initialization retry. Numeric display/slider metadata is separate from the owner's codec and file schema; retain exact text entry, explicit pointer quantization and the old constructor defaults when updating these APIs.
+
 Editor/operation updates must preserve actual session/generation/version identities, stable row anchors, inactive drafts and typed structural-input admission. Requalify the combined public profile workflow and native read-only COMMON service before consumer migration; a successfully compiled new command input does not qualify its native widgets or serializer effects.
 
 `./gradlew check build` stages the combined mod JAR, sources and POM under `build/distributions/`. `./gradlew :neoforge:publishMavenJavaPublicationToStagingRepository` creates a local Maven repository under `build/repository/` for public-consumer checks. Neither command uploads anything. Do not install the separate development core JAR alongside the combined mod.

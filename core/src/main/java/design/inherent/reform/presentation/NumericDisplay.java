@@ -13,7 +13,53 @@ public record NumericDisplay(
     List<Unit> units,
     BigDecimal step,
     Optional<BigDecimal> referenceTicksPerSecond,
-    DecimalText.Limits limits) {
+    DecimalText.Limits limits,
+    Optional<Slider> slider) {
+  public enum Slider {
+    LINEAR_NEAREST_STEP
+  }
+
+  public NumericDisplay(
+      String canonicalUnit,
+      List<Unit> units,
+      BigDecimal step,
+      Optional<BigDecimal> referenceTicksPerSecond,
+      DecimalText.Limits limits) {
+    this(canonicalUnit, units, step, referenceTicksPerSecond, limits, Optional.empty());
+  }
+
+  /** Explicit pointer quantization; typed input and ordinary steps stay exact and unrounded. */
+  public NumericDisplay withSlider() {
+    return new NumericDisplay(
+        canonicalUnit,
+        units,
+        step,
+        referenceTicksPerSecond,
+        limits,
+        Optional.of(Slider.LINEAR_NEAREST_STEP));
+  }
+
+  /** Validate explicit slider metadata against its declared scalar, without invoking a codec. */
+  public void requireSliderBounds(BigDecimal minimum, BigDecimal maximum, boolean integral) {
+    if (slider.isEmpty()) return;
+    if (minimum == null || maximum == null || minimum.compareTo(maximum) >= 0)
+      throw new IllegalArgumentException("Numeric sliders need distinct bounded endpoints");
+    limits.check(minimum);
+    limits.check(maximum);
+    try {
+      var count = maximum.subtract(minimum).divide(step).stripTrailingZeros();
+      limits.check(count);
+      if (count.scale() > 0)
+        throw new IllegalArgumentException("Slider bounds must align to their declared step");
+      if (integral
+          && (minimum.stripTrailingZeros().scale() > 0 || step.stripTrailingZeros().scale() > 0))
+        throw new IllegalArgumentException("An integer slider needs whole canonical steps");
+    } catch (ArithmeticException nonuniform) {
+      throw new IllegalArgumentException(
+          "Slider bounds must align to their declared step", nonuniform);
+    }
+  }
+
   public record Unit(
       String id, String translationKey, String fallback, BigDecimal canonicalPerUnit) {
     public Unit(String id, String fallback, BigDecimal canonicalPerUnit) {
@@ -64,6 +110,7 @@ public record NumericDisplay(
     Objects.requireNonNull(step);
     Objects.requireNonNull(referenceTicksPerSecond);
     Objects.requireNonNull(limits);
+    Objects.requireNonNull(slider);
     if (units.isEmpty() || units.size() > 16 || step.signum() <= 0)
       throw new IllegalArgumentException(
           "Numeric display requires bounded units and a positive step");
@@ -137,7 +184,7 @@ public record NumericDisplay(
       return failed(
           raw, State.LIMIT, "Converted number exceeds the declared precision/scale budget");
     }
-    String text = converted.stripTrailingZeros().toString();
+    String text = limits.format(converted);
     if (converted.signum() == 0 && stripped.startsWith("-") && !text.startsWith("-"))
       text = "-" + text;
     if (text.length() > limits.maximumCharacters())
