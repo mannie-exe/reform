@@ -4,9 +4,12 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordType;
+import design.inherent.reform.importing.ImportInput;
+import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.neoforge.client.ClientJsonSettings;
 import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueTypes;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.client.gui.screens.Screen;
@@ -42,6 +45,15 @@ public final class ImportExample {
 
   static void register(IEventBus bus, ModContainer container) {
     settings = ClientJsonSettings.clientJson(bus, container, DEFINITION);
+    var preset =
+        ImportSource.snapshot(
+            DocumentId.parse(NativeExample.ID + ":sample_profile"),
+            new ImportInput(
+                "Example profile",
+                "{\"count\":3,\"label\":\"Example\",\"roles\":[],\"note\":[]}"
+                    .getBytes(StandardCharsets.UTF_8),
+                1024));
+    settings.registerCommands("reformimports", settings.importCatalog(List.of(preset)));
   }
 
   public static ClientJsonSettings<Profile> settings() {

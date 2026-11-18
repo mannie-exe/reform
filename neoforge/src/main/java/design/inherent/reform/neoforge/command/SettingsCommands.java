@@ -67,6 +67,14 @@ public final class SettingsCommands {
     /** Read-only lookup for suggestions and late delivery; it must not create another session. */
     Optional<Target<T>> existing(S source);
 
+    /**
+     * Visible registered import metadata only; no session creation, capture or IO. Retain the same
+     * catalog instance while admission is unchanged. Replacement invalidates earlier reviews.
+     */
+    default Optional<ImportCatalog<T>> imports(S source) {
+      return Optional.empty();
+    }
+
     /** Called on the target's native executor, after current availability/context checks. */
     void reply(S source, Reply reply);
   }
@@ -80,10 +88,10 @@ public final class SettingsCommands {
     return new Bridge<>(document, binding, maximumMessageCharacters).tree(literal);
   }
 
-  private static final class Bridge<S, T> {
-    private final DocumentId document;
-    private final Binding<S, T> binding;
-    private final int maximum;
+  static final class Bridge<S, T> {
+    final DocumentId document;
+    final Binding<S, T> binding;
+    final int maximum;
 
     Bridge(DocumentId document, Binding<S, T> binding, int maximum) {
       this.document = Objects.requireNonNull(document);
@@ -190,6 +198,7 @@ public final class SettingsCommands {
       root.then(command("save", actions -> actions.save(EntryPoint.COMMAND)));
       root.then(command("admit", actions -> actions.admit(EntryPoint.COMMAND)));
       root.then(command("apply", actions -> actions.applySaved(EntryPoint.COMMAND)));
+      root.then(new ImportCommands<>(this).tree());
       for (String action : List.of("status", "cancel"))
         root.then(
             LiteralArgumentBuilder.<S>literal(action)
@@ -236,6 +245,15 @@ public final class SettingsCommands {
         Target<T> target,
         Function<DocumentActions<T>, OperationHandle<O>> action,
         String selected) {
+      return begin(source, target, action, selected, () -> {});
+    }
+
+    <O> int begin(
+        S source,
+        Target<T> target,
+        Function<DocumentActions<T>, OperationHandle<O>> action,
+        String selected,
+        Runnable beforeReply) {
       try {
         if (selected != null && target.actions().fields().field(selected).isEmpty())
           throw new PolicyRefusal("field.unavailable", "Select a declared field");
@@ -250,11 +268,17 @@ public final class SettingsCommands {
                         .onOwner(
                             () -> {
                               if (current(source, target)) {
-                                if (failed != null) error(source, failed);
-                                else
-                                  deliver(
-                                      source,
-                                      reply(Kind.COMPLETED, observed, target.actions(), selected));
+                                try {
+                                  beforeReply.run();
+                                  if (failed != null) error(source, failed);
+                                  else
+                                    deliver(
+                                        source,
+                                        reply(
+                                            Kind.COMPLETED, observed, target.actions(), selected));
+                                } catch (RuntimeException refused) {
+                                  error(source, refused);
+                                }
                               }
                               return null;
                             }));
@@ -375,6 +399,8 @@ public final class SettingsCommands {
               ? Level.ERROR
               : Level.INFO;
       var result = snapshot.result().orElse(null);
+      if (result instanceof design.inherent.reform.operation.DocumentImports.Preview preview)
+        return ImportCommands.previewReply(this, kind, preview, actions, Optional.of(snapshot));
       if (result instanceof EditorActor.Commit<?> saved) {
         if (saved.receipt().isPresent()) {
           var receipt = saved.receipt().orElseThrow();
@@ -458,6 +484,8 @@ public final class SettingsCommands {
             .append("; validation=")
             .append(view.validation().valid());
         if (!view.validation().valid()) level = Level.WARNING;
+        if (snapshot.operation().equals(DocumentId.parse("reform:import/stage")))
+          text.append("; draft only; Save is separate");
       } else if (!snapshot.report().issues().isEmpty()) text.append(first(snapshot.report()));
       else
         text.append(

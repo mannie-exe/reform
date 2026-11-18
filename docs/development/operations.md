@@ -40,6 +40,8 @@ Export produces bounded in-memory **document-value JSON**, with document/schema/
 
 Commands are `describe`, `get [field]`, `set <field> <value>`, `reload`, `undo`, `redo`, `revert`, `defaults`, `validate`, `compare`, `explain`, `export`, `save`, `admit`, `apply`, `status <uuid>` and `cancel <uuid>`. Native quoting supports spaces. `set` stages a draft; saving is explicit. Context sources use explicit `admit` and refuse file `save`. Return value `1` means accepted asynchronous invocation, not completed mutation count. Bounded feedback reports persistence and application separately.
 
+An explicitly supplied `ImportCatalog` adds the [registered import branch](imports.md#registered-native-commands). Source/format listing and native suggestions read admitted metadata without opening an editor. Preview/review and strict stage use the same attached import service; source names and review/operation UUIDs cannot grant cross-source or cross-editor authority. Import status/cancellation address that bounded review scope, not the document scope.
+
 Bindings resolve actual actors, provide noncreating availability/lookup and route feedback on the current native executor. Late delivery requires the same context and actions instance. A UUID looks up only that scope's retained work. Feedback failure cannot replay an effect or change its acceptance. The generic bridge introduces no command root, server gateway or remote protocol.
 
 Updates to Brigadier, Components, executors or lifecycle require rechecking quoting/suggestions, bounded feedback, revoked/stale recipients, cold bursts and actual receipt semantics. [Verification](verification.md) records native execution and its limits.

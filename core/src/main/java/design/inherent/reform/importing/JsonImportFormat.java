@@ -9,6 +9,7 @@ import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonInputException;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.serialization.SourcePath;
+import java.util.List;
 import java.util.Objects;
 import java.util.OptionalInt;
 
@@ -25,6 +26,29 @@ public final class JsonImportFormat<T> implements ImportFormat<T> {
   private final JsonLimits json;
   private final DraftLimits drafts;
   private final InvalidDraftPolicy invalid;
+
+  /** Standard value/envelope choices; caller declares the actual definition, limits and policy. */
+  public static <T> List<ImportFormat<T>> documentFormats(
+      DocumentDefinition<T> definition,
+      JsonLimits json,
+      DraftLimits drafts,
+      InvalidDraftPolicy invalid) {
+    return List.of(
+        new JsonImportFormat<>(
+            DocumentId.parse("reform:import/value_json"),
+            definition,
+            Mode.VALUE_JSON,
+            json,
+            drafts,
+            invalid),
+        new JsonImportFormat<>(
+            DocumentId.parse("reform:import/schema_json"),
+            definition,
+            Mode.SCHEMA_ENVELOPE,
+            json,
+            drafts,
+            invalid));
+  }
 
   public JsonImportFormat(
       DocumentId id,

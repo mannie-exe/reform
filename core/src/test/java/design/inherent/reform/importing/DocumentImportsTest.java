@@ -92,6 +92,77 @@ class DocumentImportsTest {
   }
 
   @Test
+  void activeReviewAndOperationLookupPreserveActualSourceAndFreshRead() throws Exception {
+    try (var h = new Harness()) {
+      assertTrue(h.owner(() -> h.actions.activeImports().isEmpty()));
+      var captures = new AtomicInteger();
+      var source =
+          h.source(
+              () -> {
+                captures.incrementAndGet();
+                return input("{\"count\":3,\"name\":\"lookup\"}");
+              },
+              () -> {});
+      var review = h.imports(source);
+      h.owner(
+          () -> {
+            assertSame(review, h.actions.activeImports().orElseThrow());
+            assertSame(source, review.admittedSource());
+            assertTrue(review.operation(java.util.UUID.randomUUID()).isEmpty());
+            return null;
+          });
+      assertEquals(0, captures.get());
+      var handle = h.owner(() -> review.preview(EntryPoint.COMMAND, FORMAT));
+      await(handle.completion());
+      assertSame(handle, h.owner(() -> review.operation(handle.snapshot().id()).orElseThrow()));
+      h.read.set(false);
+      h.owner(
+          () -> {
+            assertThrows(PolicyRefusal.class, review::admittedSource);
+            assertThrows(PolicyRefusal.class, () -> review.operation(handle.snapshot().id()));
+            assertThrows(PolicyRefusal.class, h.actions::activeImports);
+            return null;
+          });
+      h.read.set(true);
+      h.owner(
+          () -> {
+            review.close();
+            assertTrue(h.actions.activeImports().isEmpty());
+            return null;
+          });
+      assertFalse(review.isOpen());
+      assertEquals(1, captures.get());
+    }
+  }
+
+  @Test
+  void coldCommandPreviewsCoalesceTheActualBaselineLoad() throws Exception {
+    try (var h = new Harness(DraftLimits.CONFIGURATION, false)) {
+      var review = h.imports(snapshot("{\"count\":3,\"name\":\"loaded once\"}"));
+      var handles =
+          h.owner(
+              () ->
+                  List.of(
+                      review.preview(EntryPoint.COMMAND, FORMAT),
+                      review.preview(EntryPoint.COMMAND, FORMAT)));
+      for (var handle : handles)
+        assertEquals(OperationSnapshot.State.COMPLETED, await(handle.completion()).state());
+      assertEquals(
+          1,
+          h.owner(
+              () ->
+                  h.actions.operations().stream()
+                      .filter(
+                          operation ->
+                              operation
+                                  .operation()
+                                  .equals(DocumentId.parse("reform:document/reload")))
+                      .count()));
+      assertEquals("original", h.raw("name"));
+    }
+  }
+
+  @Test
   void actualPreviewStagesOnceWithSharedUndoAndNoFileOrRuntimeEffect() throws Exception {
     try (var h = new Harness()) {
       h.run(() -> h.actions.edit(EntryPoint.GUI, "name", "prior work"));
@@ -141,6 +212,44 @@ class DocumentImportsTest {
       assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
       assertTrue(Files.readString(h.path).contains("imported"));
       assertEquals(new Profile(3, "imported"), h.settings.handle().view().value().orElseThrow());
+    }
+  }
+
+  @Test
+  void coldPreviewUsesTheExistingDocumentLoadBeforeCapturingAnImport() throws Exception {
+    try (var h = new Harness(DraftLimits.CONFIGURATION, false)) {
+      assertEquals(EditorActor.Availability.LOADING, h.actions.view().availability());
+      String file = Files.readString(h.path);
+      var imports = h.imports(snapshot("{\"count\":3,\"name\":\"cold import\"}"));
+      var preview = h.run(() -> imports.preview(EntryPoint.COMMAND, FORMAT));
+      assertTrue(preview.stageable());
+      assertEquals(EditorActor.Availability.READY, h.actions.view().availability());
+      assertEquals("1", h.raw("count"));
+      assertEquals(file, Files.readString(h.path));
+      h.run(() -> imports.stage(EntryPoint.COMMAND, preview));
+      assertEquals("cold import", h.raw("name"));
+      assertEquals(file, Files.readString(h.path));
+    }
+  }
+
+  @Test
+  void coldPreviewNeverInitializesAMissingTargetOrEntersItsImportReader() throws Exception {
+    try (var h = new Harness(DraftLimits.CONFIGURATION, false)) {
+      Files.delete(h.path);
+      var reads = new AtomicInteger();
+      var imports =
+          h.imports(
+              h.source(
+                  () -> {
+                    reads.incrementAndGet();
+                    return input("{\"count\":3,\"name\":\"not read\"}");
+                  },
+                  () -> {}));
+      var result = await(h.owner(() -> imports.preview(EntryPoint.COMMAND, FORMAT)).completion());
+      assertEquals(OperationSnapshot.State.REFUSED, result.state());
+      assertEquals(EditorActor.Availability.UNAVAILABLE, h.actions.view().availability());
+      assertEquals(0, reads.get());
+      assertFalse(Files.exists(h.path));
     }
   }
 
@@ -622,6 +731,10 @@ class DocumentImportsTest {
     }
 
     Harness(DraftLimits draftLimits) throws Exception {
+      this(draftLimits, true);
+    }
+
+    Harness(DraftLimits draftLimits, boolean load) throws Exception {
       ownerThread = owner(() -> Thread.currentThread().threadId());
       context =
           new OwnerContext(
@@ -643,7 +756,7 @@ class DocumentImportsTest {
       var actor =
           owner(() -> new EditorActor<>(context, session, DEFINITION, JSON, draftLimits, 32));
       actions = owner(() -> new DocumentActions<>(context, access, actor));
-      run(() -> actions.load(EntryPoint.GUI));
+      if (load) run(() -> actions.load(EntryPoint.GUI));
     }
 
     ImportSource source(ImportSource.Capture reader, Runnable guard) {

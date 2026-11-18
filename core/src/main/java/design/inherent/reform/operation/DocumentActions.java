@@ -339,7 +339,8 @@ public final class DocumentActions<T> implements AutoCloseable {
     imports = null;
     if (previous != null) previous.close();
     requireImportEpoch(epoch);
-    var requested = new DocumentImports<>(context, access, actor, source, formats, limits);
+    var requested =
+        new DocumentImports<>(context, access, actor, source, formats, limits, this::readiness);
     try {
       requireImportEpoch(epoch);
       imports = requested;
@@ -357,6 +358,14 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   public DocumentImports<T> imports(ImportSource source, List<? extends ImportFormat<T>> formats) {
     return imports(source, formats, DocumentImports.Limits.STANDARD);
+  }
+
+  /** Current borrowed-source review only; no lookup creates an editor or grants source access. */
+  public Optional<DocumentImports<T>> activeImports() {
+    context.requireOwner();
+    access.require(OwnerContext.Right.READ);
+    if (closed) throw new PolicyRefusal("editor.closed", "This editing workflow is closed");
+    return Optional.ofNullable(imports).filter(DocumentImports::isOpen);
   }
 
   public DocumentSession.CommitKind commitKind() {

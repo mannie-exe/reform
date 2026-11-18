@@ -28,6 +28,7 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
+import java.util.function.Function;
 
 /** Local import review over one actual editor and admitted source; never a save or world effect. */
 public final class DocumentImports<T> implements AutoCloseable {
@@ -168,6 +169,7 @@ public final class DocumentImports<T> implements AutoCloseable {
   private final DocumentId sourceId;
   private final int sourceMaximumBytes;
   private final Limits limits;
+  private final Function<OperationDescriptor.EntryPoint, CompletionStage<?>> readiness;
   private final Map<DocumentId, Parser<T>> parsers;
   private final Map<UUID, Prepared> prepared = new LinkedHashMap<>();
   private final OperationScope scope;
@@ -182,13 +184,15 @@ public final class DocumentImports<T> implements AutoCloseable {
       EditorActor<T> actor,
       ImportSource source,
       List<? extends ImportFormat<T>> formats,
-      Limits limits) {
+      Limits limits,
+      Function<OperationDescriptor.EntryPoint, CompletionStage<?>> readiness) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.access = Objects.requireNonNull(access);
     this.actor = Objects.requireNonNull(actor);
     this.source = Objects.requireNonNull(source);
     this.limits = Objects.requireNonNull(limits);
+    this.readiness = Objects.requireNonNull(readiness);
     access.require(OwnerContext.Right.READ);
     if (!actor.context().equals(context.id()) || !access.context().equals(context.id()))
       throw new IllegalArgumentException("Import requires its actual editor context/access");
@@ -259,7 +263,8 @@ public final class DocumentImports<T> implements AutoCloseable {
 
   public OperationHandle<Preview> preview(OperationDescriptor.EntryPoint entry, DocumentId format) {
     requireSource();
-    return scope.submit(preview, entry, Objects.requireNonNull(format).toString());
+    return scope.submit(
+        preview, entry, Objects.requireNonNull(format).toString(), readiness.apply(entry));
   }
 
   public OperationHandle<EditorActor.View<T>> stage(
@@ -284,6 +289,24 @@ public final class DocumentImports<T> implements AutoCloseable {
 
   public List<OperationSnapshot<?>> operations() {
     return scope.snapshots();
+  }
+
+  /** Cached lifetime only. Every actual lookup or operation rechecks document/source READ. */
+  public boolean isOpen() {
+    return !closed && context.isOpen() && access.isOpen();
+  }
+
+  /** Actual borrowed capability, for adapters checking provenance; no capture or IO occurs here. */
+  public ImportSource admittedSource() {
+    requireSource();
+    return source;
+  }
+
+  public Optional<OperationHandle<?>> operation(UUID id) {
+    requireSource();
+    var found = scope.find(Objects.requireNonNull(id));
+    requireSource();
+    return found;
   }
 
   private CompletionStage<Preview> prepare(OperationScope.Execution execution, String requested) {

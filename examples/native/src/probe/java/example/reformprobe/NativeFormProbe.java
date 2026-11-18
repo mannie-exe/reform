@@ -65,6 +65,8 @@ public final class NativeFormProbe {
   private NativeDependencyControls dependencies;
   private NativeCollectionControls collections;
   private NativeImportControls imports;
+  private NativeImportCommandControls commandImports;
+  private java.util.concurrent.CompletableFuture<JsonObject> importCommands;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -98,7 +100,9 @@ public final class NativeFormProbe {
               "collections",
               "collections-reopen",
               "imports",
-              "imports-reopen")
+              "imports-reopen",
+              "command-imports",
+              "command-imports-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -236,6 +240,22 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("command-imports")) {
+        if (commandImports == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.ImportExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          commandImports = new NativeImportCommandControls();
+          importCommands =
+              commandImports.run(mode.equals("command-imports-reopen")).toCompletableFuture();
+        }
+        if (importCommands.isDone()) {
+          report.add("commandImports", importCommands.join());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("imports")) {
@@ -805,6 +825,7 @@ public final class NativeFormProbe {
     if (dependencies != null) report.add("dependencies", dependencies.report());
     if (collections != null) report.add("collections", collections.report());
     if (imports != null) report.add("imports", imports.report());
+    if (commandImports != null) report.add("commandImports", commandImports.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -835,6 +856,10 @@ public final class NativeFormProbe {
 
   private void shutdown(GameShuttingDownEvent event) {
     if (imports != null) imports.shutdown();
+    if (commandImports != null) {
+      commandImports.shutdown();
+      report.add("commandImports", commandImports.report());
+    }
     try {
       if (reentrantSettings != null) {
         check(

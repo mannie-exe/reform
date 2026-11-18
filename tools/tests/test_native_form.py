@@ -58,3 +58,15 @@ class NativeFormFixtureGuards(unittest.TestCase):
         PROBE.cleanup_fixture(self.fixture, "own-token")
         self.assertFalse(self.fixture.exists())
         self.assertEqual(external.read_text(), "outside fixture")
+
+    def test_command_import_success_requires_actual_controls_and_context_cleanup(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "command-imports",
+            "librarySha256": "exact-jar"}}
+        self.assertFalse(PROBE.successful_run(result, "command-imports", "exact-jar"))
+        result["native"]["commandImports"] = {"status": "PASS", "contextClosed": False}
+        self.assertFalse(PROBE.successful_run(result, "command-imports", "exact-jar"))
+        result["native"]["commandImports"]["contextClosed"] = True
+        self.assertTrue(PROBE.successful_run(result, "command-imports", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "command-imports-reopen", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "command-imports", "foreign-jar"))

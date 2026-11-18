@@ -780,28 +780,16 @@ public final class SettingsScreen<T> extends FormScreen {
         || view.pending().isPresent()
         || view.review().isPresent()) return;
     var snapshot = view.snapshot().orElseThrow();
-    var value =
-        new JsonImportFormat<>(
-            DocumentId.parse("reform:import/value_json"),
-            definition,
-            JsonImportFormat.Mode.VALUE_JSON,
-            snapshot.jsonLimits(),
-            snapshot.draft().limits(),
-            ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE);
-    var versioned =
-        new JsonImportFormat<>(
-            DocumentId.parse("reform:import/schema_json"),
-            definition,
-            JsonImportFormat.Mode.SCHEMA_ENVELOPE,
-            snapshot.jsonLimits(),
-            snapshot.draft().limits(),
-            ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE);
     var screen =
         new ImportScreen<>(
             text("import_title", "Import profile"),
             contextLabel,
             actions,
-            List.of(value, versioned),
+            JsonImportFormat.documentFormats(
+                definition,
+                snapshot.jsonLimits(),
+                snapshot.draft().limits(),
+                ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE),
             () -> !closed,
             () -> {
               synchronize(Map.copyOf(versions));

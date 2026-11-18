@@ -4,6 +4,10 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.importing.ImportFormat;
+import design.inherent.reform.importing.ImportSource;
+import design.inherent.reform.importing.JsonImportFormat;
+import design.inherent.reform.neoforge.command.ImportCatalog;
 import design.inherent.reform.neoforge.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationScope;
@@ -239,6 +243,30 @@ public final class ClientJsonSettings<T> {
   /** Explicit local command entry. Server permissions and server settings are never inferred. */
   public LiteralArgumentBuilder<CommandSourceStack> commandBranch(
       String literal, Consumer<SettingsCommands.Reply> output) {
+    return commandBranch(literal, Optional.empty(), output);
+  }
+
+  /** Explicit registered sources with the same value/envelope formats as the generated form. */
+  public ImportCatalog<T> importCatalog(List<? extends ImportSource> sources) {
+    return new ImportCatalog<>(
+        definition,
+        sources,
+        JsonImportFormat.documentFormats(
+            definition,
+            JSON,
+            DraftLimits.CONFIGURATION,
+            ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE));
+  }
+
+  public LiteralArgumentBuilder<CommandSourceStack> commandBranch(
+      String literal, ImportCatalog<T> imports, Consumer<SettingsCommands.Reply> output) {
+    if (Objects.requireNonNull(imports).definition() != definition)
+      throw new IllegalArgumentException("Command imports require the actual client definition");
+    return commandBranch(literal, Optional.of(imports), output);
+  }
+
+  private LiteralArgumentBuilder<CommandSourceStack> commandBranch(
+      String literal, Optional<ImportCatalog<T>> imports, Consumer<SettingsCommands.Reply> output) {
     Objects.requireNonNull(output);
     var owner = this;
     return SettingsCommands.branch(
@@ -272,6 +300,11 @@ public final class ClientJsonSettings<T> {
           }
 
           @Override
+          public Optional<ImportCatalog<T>> imports(CommandSourceStack source) {
+            return available(source) ? imports : Optional.empty();
+          }
+
+          @Override
           public void reply(CommandSourceStack source, SettingsCommands.Reply reply) {
             output.accept(reply);
           }
@@ -281,11 +314,22 @@ public final class ClientJsonSettings<T> {
 
   /** Register once during client construction. Existing native command roots are never replaced. */
   public synchronized void registerCommands(String literal) {
+    registerCommands(literal, Optional.empty());
+  }
+
+  public synchronized void registerCommands(String literal, ImportCatalog<T> imports) {
+    if (Objects.requireNonNull(imports).definition() != definition)
+      throw new IllegalArgumentException("Command imports require the actual client definition");
+    registerCommands(literal, Optional.of(imports));
+  }
+
+  private void registerCommands(String literal, Optional<ImportCatalog<T>> imports) {
     if (commandRegistration != null || state.get().lifecycle() == Lifecycle.CLOSED)
       throw new IllegalStateException("Client command entry is already registered or closed");
     var branch =
         commandBranch(
             literal,
+            imports,
             reply -> {
               var client = Minecraft.getInstance();
               if (client.player != null)
