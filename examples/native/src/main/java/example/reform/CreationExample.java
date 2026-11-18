@@ -48,37 +48,36 @@ public final class CreationExample {
       CreateWorldScreen parent, WorldCreationContext original) {
     flat(original);
     return WorldRecipe.worldRecipe(
-        parent,
-        original,
-        DEFINITION,
-        new WorldRecipe.Domain<Recipe, Integer>() {
-          @Override
-          public Recipe read(WorldCreationContext source) {
-            return new Recipe(flat(source).settings().getLayersInfo().get(1).getHeight());
-          }
+        parent, original, DEFINITION, domain(), SnapshotPolicy.immutable());
+  }
 
-          @Override
-          public Integer compile(WorldCreationContext source, Recipe recipe) {
-            return recipe.soilDepth();
-          }
+  /** Public domain policy reused by the isolated native callback/identity controls. */
+  public static WorldRecipe.Domain<Recipe, Integer> domain() {
+    return new WorldRecipe.Domain<Recipe, Integer>() {
+      @Override
+      public Recipe read(WorldCreationContext source) {
+        return new Recipe(flat(source).settings().getLayersInfo().get(1).getHeight());
+      }
 
-          @Override
-          public WorldDimensions dimensions(
-              WorldCreationContext source,
-              RegistryAccess.Frozen registries,
-              WorldDimensions dimensions,
-              Integer soilDepth) {
-            var settings = flat(source).settings();
-            var layers = new ArrayList<>(settings.getLayersInfo());
-            layers.set(1, new FlatLayerInfo(soilDepth, Blocks.DIRT));
-            var replacement =
-                settings.withBiomeAndLayers(
-                    layers, settings.structureOverrides(), settings.getBiome());
-            return dimensions.replaceOverworldGenerator(
-                registries, new FlatLevelSource(replacement));
-          }
-        },
-        SnapshotPolicy.immutable());
+      @Override
+      public Integer compile(WorldCreationContext source, Recipe recipe) {
+        return recipe.soilDepth();
+      }
+
+      @Override
+      public WorldDimensions dimensions(
+          WorldCreationContext source,
+          RegistryAccess.Frozen registries,
+          WorldDimensions dimensions,
+          Integer soilDepth) {
+        var settings = flat(source).settings();
+        var layers = new ArrayList<>(settings.getLayersInfo());
+        layers.set(1, new FlatLayerInfo(soilDepth, Blocks.DIRT));
+        var replacement =
+            settings.withBiomeAndLayers(layers, settings.structureOverrides(), settings.getBiome());
+        return dimensions.replaceOverworldGenerator(registries, new FlatLevelSource(replacement));
+      }
+    };
   }
 
   private CreationExample() {}

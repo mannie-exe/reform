@@ -58,6 +58,7 @@ public final class NativeFormProbe {
   private volatile Throwable registrationFailure;
   private java.nio.file.attribute.FileTime repairedTime;
   private java.util.concurrent.CompletableFuture<JsonObject> commands;
+  private NativeWorldRecipeControls recipe;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -74,7 +75,7 @@ public final class NativeFormProbe {
       var modeFile = mc.gameDirectory.toPath().resolve("native-form-mode.txt");
       if (Files.size(modeFile) > 16) throw new IllegalStateException("Invalid form fixture mode");
       mode = Files.readString(modeFile).strip();
-      if (!List.of("first", "reopen", "malformed", "reentrant").contains(mode))
+      if (!List.of("first", "reopen", "malformed", "reentrant", "recipe").contains(mode))
         throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -214,6 +215,28 @@ public final class NativeFormProbe {
         action.run();
         return;
       }
+      if (mode.equals("recipe")) {
+        if (recipe == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || ClientExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          recipe =
+              new NativeWorldRecipeControls(
+                  this::next,
+                  (name, action) -> {
+                    if (capture != null || afterCapture != null)
+                      throw new IllegalStateException("Capture already pending");
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (recipe.tick()) {
+          report.add("recipe", recipe.report());
+          finish(null);
+        }
+        return;
+      }
       if (mode.equals("malformed")) {
         malformed();
         return;
@@ -237,7 +260,7 @@ public final class NativeFormProbe {
           next("packaged library loaded; actual registered config factory opened");
         }
         case 1 -> {
-          if (view().snapshot().isEmpty()) return;
+          if (!controlsReady()) return;
           distance = input(form, "Distance");
           label = input(form, "Label");
           if (mode.equals("reopen")) {
@@ -363,7 +386,7 @@ public final class NativeFormProbe {
           next("explicit discard closes actor; real factory reopened");
         }
         case 12 -> {
-          if (view().snapshot().isEmpty()) return;
+          if (!controlsReady()) return;
           check(
               input(form, "Distance").getValue().equals("128"),
               "Reopen used unsaved factory defaults");
@@ -455,7 +478,7 @@ public final class NativeFormProbe {
         if (settings.status().lifecycle() != ClientJsonSettings.Lifecycle.READY
             || !(mc.screen instanceof SettingsScreen<?>)) return;
         form = mc.screen;
-        if (view().snapshot().isEmpty()) return;
+        if (!controlsReady()) return;
         check(
             input(form, "Distance").getValue().equals("128"),
             "Recovery published factory values instead of repaired saved data");
@@ -487,6 +510,15 @@ public final class NativeFormProbe {
     mc.setScreen(form);
   }
 
+  private boolean controlsReady() {
+    return view().snapshot().isPresent()
+        && widgets(form).stream()
+            .anyMatch(
+                widget ->
+                    widget instanceof EditBox && widget.getMessage().getString().equals("Distance"))
+        && button(form, "Done").active;
+  }
+
   private EditorActor.View<?> view() {
     return ((SettingsScreen<?>) form).editorView();
   }
@@ -504,6 +536,10 @@ public final class NativeFormProbe {
   }
 
   private void replace(EditBox input, String value) {
+    replace(form, input, value);
+  }
+
+  static void replace(Screen form, EditBox input, String value) {
     check(focus(form, input), "Input not in the native focus tree");
     input.moveCursorToEnd(false);
     input.setHighlightPos(0);
@@ -526,17 +562,21 @@ public final class NativeFormProbe {
   }
 
   private void click(Button button) {
+    click(mc.screen, button);
+  }
+
+  static void click(Screen screen, Button button) {
     check(
         button.active && button.visible,
         "Inactive native control " + button.getMessage().getString());
     check(
-        mc.screen.mouseClicked(
+        screen.mouseClicked(
             button.getX() + button.getWidth() / 2.0, button.getY() + button.getHeight() / 2.0, 0),
         "Native mouse event not consumed");
-    mc.screen.mouseReleased(button.getX() + 1, button.getY() + 1, 0);
+    screen.mouseReleased(button.getX() + 1, button.getY() + 1, 0);
   }
 
-  private static EditBox input(ContainerEventHandler parent, String label) {
+  static EditBox input(ContainerEventHandler parent, String label) {
     return widgets(parent).stream()
         .filter(EditBox.class::isInstance)
         .map(EditBox.class::cast)
@@ -545,7 +585,7 @@ public final class NativeFormProbe {
         .orElseThrow();
   }
 
-  private static Button button(ContainerEventHandler parent, String label) {
+  static Button button(ContainerEventHandler parent, String label) {
     return widgets(parent).stream()
         .filter(Button.class::isInstance)
         .map(Button.class::cast)
@@ -563,7 +603,7 @@ public final class NativeFormProbe {
     return found;
   }
 
-  private static void geometry(Screen screen) {
+  static void geometry(Screen screen) {
     var buttons =
         screen.children().stream()
             .filter(Button.class::isInstance)
@@ -634,6 +674,7 @@ public final class NativeFormProbe {
             "Held retry reported an invented effect instead of context closure");
         report.addProperty("reentrantRetryClosed", true);
       }
+      if (recipe != null) recipe.shutdown();
       var settings = ClientExample.settings();
       check(
           settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,

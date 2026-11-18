@@ -31,7 +31,15 @@ def cleanup_fixture(fixture, token):
     shutil.rmtree(fixture)
 
 
-def run(java_home, timeout, lifecycle_only=False):
+def successful_run(result, mode, digest):
+    native = result.get("native", {})
+    return (result["exitCode"] == 0 and result["termination"] is None
+            and native.get("status") == "PASS" and native.get("nativeShutdownClosed") is True
+            and native.get("mode") == mode and native.get("librarySha256") == digest
+            and (mode != "recipe" or native.get("recipe", {}).get("managedShutdownClosed") is True))
+
+
+def run(java_home, timeout, lifecycle_only=False, recipe_only=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
@@ -57,7 +65,7 @@ def run(java_home, timeout, lifecycle_only=False):
                           Path(__file__).resolve(), ROOT / "tools/native_config_probe.py"]):
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-form-client.log"
-    modes = ("reentrant",) if lifecycle_only else ("first", "reopen", "malformed", "reentrant")
+    modes = ("recipe",) if recipe_only else (("reentrant",) if lifecycle_only else ("first", "reopen", "malformed", "recipe", "reentrant"))
     try:
         for mode in modes:
             if mode == "malformed":
@@ -75,11 +83,7 @@ def run(java_home, timeout, lifecycle_only=False):
             if evidence.is_file() and evidence.stat().st_size <= 131072:
                 result["native"] = json.loads(evidence.read_text())
             report["runs"].append(result)
-            if (result["exitCode"] != 0 or result["termination"] is not None
-                    or result.get("native", {}).get("status") != "PASS"
-                    or result["native"].get("nativeShutdownClosed") is not True
-                    or result["native"].get("mode") != mode
-                    or result["native"].get("librarySha256") != digest):
+            if not successful_run(result, mode, digest):
                 break
         for source in sorted((fixture / "screenshots").glob("form-*.png")):
             if source.is_file() and source.stat().st_size <= 8 * 1024 * 1024:
@@ -88,11 +92,7 @@ def run(java_home, timeout, lifecycle_only=False):
                 destination.write_bytes(data)
                 report["screenshots"][source.name] = hashlib.sha256(data).hexdigest()
         if (len(report["runs"]) == len(modes)
-                and all(result.get("native", {}).get("status") == "PASS"
-                        and result["exitCode"] == 0 and result["termination"] is None
-                        and result["native"].get("librarySha256") == digest
-                        and result["native"].get("nativeShutdownClosed") is True
-                        and result["native"].get("mode") == mode
+                and all(successful_run(result, mode, digest)
                         for result, mode in zip(report["runs"], modes))):
             report["status"] = "PASS"
     except Exception as failure:
@@ -117,8 +117,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--java-home", type=Path)
     parser.add_argument("--timeout", type=int, default=180, help="Client/build timeout in seconds (1..600)")
-    parser.add_argument("--lifecycle-only", action="store_true", help="Run only the held reentrant retry/shutdown control")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--recipe-only", action="store_true", help="Run only native unsaved creation recipe controls")
+    modes.add_argument("--lifecycle-only", action="store_true", help="Run only the held reentrant retry/shutdown control")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only))

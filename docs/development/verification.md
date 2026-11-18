@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Native creation and current client regression
+
+The full Gradle build, 180 core tests, four generated properties/920 checks, two native-file tests, twelve tooling controls, public packaged headless API and native-addon compilation pass. `python3 tools/native_form_probe.py --java-home /path/to/jdk21 --timeout 150` additionally passes five sequential disposable 2 GiB clients in 14.022, 11.686, 11.797, 12.516 and 11.326 seconds including Gradle startup. They exercise initial native JSON/Brigadier editing, saved reopen, malformed recovery, actual creation admission and pending reentrant shutdown.
+
+The creation run uses actual `CreateWorldScreen`, `WorldCreationContext`, native flat generator, widgets and dimension update. Thirty-five assertions cover invalid raw text/disabled Apply, soil depth 2 to 8, no file-persistence claim, preserved original generator/layers, unchanged other dimensions and non-dimension creation inputs, admitted-value reopen rather than factory defaults, same-value foreign-context refusal, retained raw draft, actual post-update callback failure/unknown outcome, explicit discard without rollback and a live managed context closed at native shutdown. The client has no playable level, server or connection. The library creates no recipe JSON source. All native fixture directories and raw logs are removed; exact reports and inspected images are retained in the adopted evidence store.
+
+Two initial harness failures attempted input/field lookup after the worker's actor view became ready but before native controls finished loading. The fixture now waits for the actual controls/availability signal; its original value, validation, effect and refusal assertions are retained. No production change was made to obtain this native pass.
+
+The library is the exact packaged `5f30de5597f6f71d454086e239778a6f2daabdea420b9d3a3d3f50649d16bc14` artifact (sources `15da27b496d321d8dfc33ebe8682808e1cc4f31e0f4a23c2d2097744515dfe4b`, core `857c41a9fbf0cec4f479d05b153a8cbd2ae81a7bb3105e51dd71bbf2cb3bcbe5`). Example/probe launches remain ModDev source containers. This qualifies the bounded flat/creation and local-client paths, not real server/world recipients, reconnect, pending recipe compilation at shutdown, arbitrary native/domain callbacks, a real generator migration, complete controls, full-pack behavior or cost. Phase 1 remains incomplete.
+
 ## Unsaved creation-context owner
 
 The full Gradle build/check passes with 180 core tests, four generated properties/920 checks, two native-file tests and twelve tooling controls. The independent Maven consumer additionally exercises context-recipe construction, cold editing, admission, actual context replacement, preserved unedited state, refused file Save and transferred context disposal with Minecraft/NeoForge absent from its classpath. The native world-recipe factory compiles against the pinned actual `WorldCreationContext`/`DimensionsUpdater` APIs.
@@ -10,7 +20,7 @@ Eight new core controls use immutable headless creation contexts and real separa
 
 The registered-owner two-boot regression passes on `7c6757456119a6cbc4ccb9b0570163003a05f47929df38633242c11708609bbe`, before later context-UI wording and the independent native creation example. That exercises the generalized common receipt/editor path; it does not exercise the creation factory. The final headless/public/native-addon compile candidate is `5f30de5597f6f71d454086e239778a6f2daabdea420b9d3a3d3f50649d16bc14` (sources `15da27b496d321d8dfc33ebe8682808e1cc4f31e0f4a23c2d2097744515dfe4b`, core `857c41a9fbf0cec4f479d05b153a8cbd2ae81a7bb3105e51dd71bbf2cb3bcbe5`).
 
-The native creation factory, its actual parent/screen/context lifecycle, dimensions preservation, real callback/reload ordering and managed-recipe shutdown have not yet been executed in a client. This increment is headless/API qualification and native linkage, not actual world-creation or consumer migration qualification. Existing JSON/native-owner controls remain separate evidence. [World recipes](world-recipes.md) owns contracts and update checks.
+These headless checks alone do not qualify the native parent/screen/context lifecycle, dimension update or managed shutdown. The bounded native flat example is qualified separately above; arbitrary domain/native behavior and real consumer migration remain required. Existing JSON/native-owner controls remain separate evidence. [World recipes](world-recipes.md) owns contracts and update checks.
 
 ## Shared local operations and native commands
 

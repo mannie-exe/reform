@@ -1,6 +1,6 @@
 # Unsaved world recipes
 
-`WorldRecipe.worldRecipe(parent, original, definition, domain, compiledSnapshots)` constructs an editor for an actual native `CreateWorldScreen` and its original `WorldCreationContext`. It is physically client-only. It creates no file, initializes no world and grants no authority over an existing world. The factory and native linkage compile; [verification](verification.md) distinguishes headless behavior from the still-required real native creation/client checks and consumer migration.
+`WorldRecipe.worldRecipe(parent, original, definition, domain, compiledSnapshots)` constructs an editor for an actual native `CreateWorldScreen` and its original `WorldCreationContext`. It is physically client-only. It creates no file, initializes no world and grants no authority over an existing world. The independent flat-world example passes actual native creation/widget/admission/shutdown checks. [Verification](verification.md) distinguishes that bounded fixture from arbitrary generators, remaining native cases and real consumer migration.
 
 ## Domain and source ownership
 
