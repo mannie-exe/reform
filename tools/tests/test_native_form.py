@@ -70,3 +70,12 @@ class NativeFormFixtureGuards(unittest.TestCase):
         self.assertTrue(PROBE.successful_run(result, "command-imports", "exact-jar"))
         self.assertFalse(PROBE.successful_run(result, "command-imports-reopen", "exact-jar"))
         self.assertFalse(PROBE.successful_run(result, "command-imports", "foreign-jar"))
+
+    def test_chooser_success_requires_actual_native_ui_receipt(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "chooser",
+            "librarySha256": "exact-jar", "chooser": {"status": "PASS"}}}
+        self.assertFalse(PROBE.successful_run(result, "chooser", "exact-jar"))
+        result["native"]["chooser"]["nativeFileDialogExercised"] = True
+        self.assertTrue(PROBE.successful_run(result, "chooser", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "chooser", "different-jar"))

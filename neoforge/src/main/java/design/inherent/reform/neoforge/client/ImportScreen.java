@@ -46,7 +46,7 @@ public final class ImportScreen<T> extends FormScreen {
   private FormPanel panel;
   private Component sourceLabel, notice;
   private Object widgetGeneration, selectionEpoch;
-  private AtomicBoolean dialogRequest;
+  private FileDialogRequest dialogRequest;
   private boolean picker, staging, closed, returning, wasCurrent = true;
   private int statusTop;
 
@@ -339,7 +339,7 @@ public final class ImportScreen<T> extends FormScreen {
     picker = true;
     var epoch = new Object();
     selectionEpoch = epoch;
-    var request = new AtomicBoolean(true);
+    var request = new FileDialogRequest();
     dialogRequest = request;
     String dialogTitle = text("choose_title", "Import profile").getString();
     notice =
@@ -349,10 +349,11 @@ public final class ImportScreen<T> extends FormScreen {
     rebuildWidgets();
     try {
       CompletableFuture.supplyAsync(
-              () -> {
-                if (!request.get()) return null;
-                return TinyFileDialogs.tinyfd_openFileDialog(dialogTitle, null, null, null, false);
-              },
+              () ->
+                  request.select(
+                      () ->
+                          TinyFileDialogs.tinyfd_openFileDialog(
+                              dialogTitle, null, null, null, false)),
               Util.ioPool())
           .whenComplete(
               (chosen, failed) -> {
@@ -379,7 +380,7 @@ public final class ImportScreen<T> extends FormScreen {
               });
     } catch (RuntimeException rejected) {
       FILE_DIALOG.set(false);
-      request.set(false);
+      request.abandonQueued();
       picker = false;
       notice = failure(rejected);
       rebuildWidgets();
@@ -551,7 +552,7 @@ public final class ImportScreen<T> extends FormScreen {
   private void release() {
     closed = true;
     selectionEpoch = new Object();
-    if (dialogRequest != null) dialogRequest.set(false);
+    if (dialogRequest != null) dialogRequest.abandonQueued();
     discardReview();
   }
 

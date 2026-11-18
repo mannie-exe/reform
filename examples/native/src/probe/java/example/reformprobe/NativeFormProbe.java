@@ -65,6 +65,7 @@ public final class NativeFormProbe {
   private NativeDependencyControls dependencies;
   private NativeCollectionControls collections;
   private NativeImportControls imports;
+  private NativeChooserControls chooser;
   private NativeImportCommandControls commandImports;
   private java.util.concurrent.CompletableFuture<JsonObject> importCommands;
 
@@ -102,7 +103,8 @@ public final class NativeFormProbe {
               "imports",
               "imports-reopen",
               "command-imports",
-              "command-imports-reopen")
+              "command-imports-reopen",
+              "chooser")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -232,7 +234,8 @@ public final class NativeFormProbe {
     try {
       if (registrationFailure != null)
         throw new AssertionError("Registration contract failed", registrationFailure);
-      if (ticks > 2400 || ticks - stageTick > 600)
+      if (ticks > (mode.equals("chooser") ? 6000 : 2400)
+          || ticks - stageTick > (mode.equals("chooser") ? 1800 : 600))
         throw new AssertionError("Native form stage timed out: " + stage);
       if (mc.getOverlay() != null) return;
       if (capture != null) return;
@@ -254,6 +257,20 @@ public final class NativeFormProbe {
         }
         if (importCommands.isDone()) {
           report.add("commandImports", importCommands.join());
+          finish(null);
+        }
+        return;
+      }
+      if (mode.equals("chooser")) {
+        if (chooser == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.ImportExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          chooser = new NativeChooserControls(this::next);
+        }
+        if (chooser.tick()) {
+          report.add("chooser", chooser.report());
           finish(null);
         }
         return;
@@ -825,6 +842,7 @@ public final class NativeFormProbe {
     if (dependencies != null) report.add("dependencies", dependencies.report());
     if (collections != null) report.add("collections", collections.report());
     if (imports != null) report.add("imports", imports.report());
+    if (chooser != null) report.add("chooser", chooser.report());
     if (commandImports != null) report.add("commandImports", commandImports.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
