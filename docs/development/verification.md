@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Reference-source increment
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 292 core cases, including eleven generated properties/1,600 checks, two native-file tests and twelve tooling controls. Public Maven consumer checks and native-addon/probe compilation pass. All 79 main Java files match the source JAR. Markdown/link and workflow checks pass separately.
+
+Core controls cover complete bounded producer admission, owned key/value snapshots, deterministic filtered pagination, zero-match continuations, malformed/unknown/empty/missing distinctions, codec-preserving raw metadata, READ-only service admission, revoked permissions, reload stamps/cursors, cancellation/drain, reentrant or failed producers, worker compilation, late publication and closed contexts. One hundred generated corpus/filter/page/scan cases use seed `2026111804` and an independent complete-search model. A new negative reproduced a custom provider skipping candidates without reporting them as examined. The service now requires exact cursor progress and rejects accounting beyond the complete-source budget; the original negative passes.
+
+`python3 tools/native_addon_server_probe.py --registered --java-home /path/to/jdk21 --timeout 150` passes two sequential disposable 2 GiB dedicated boots in 8.109 and 7.886 seconds, including Gradle startup. Each passes 27 public reference checks using the actual 1,060 block IDs, 302 block tags and 1,004 admitted resource names. Controls include default namespace lookup, unknown ID versus native default-air behavior, malformed syntax, actual tag membership, an isolated native registry's empty tag, bounded search, missing optional supplier, producer exhaustion, raw storage spelling and off-thread index compilation. Synchronous block/tag capture preserves the loaded-chunk count. The fixture explicitly enumerates resource names; the library factory does not enumerate or read resource content. Capture measured 2.86/3.22 ms and worker compilation 9.35/15.03 ms for these two small native observations; these are not full-pack latency/heap limits.
+
+The prior registered COMMON owner also retains its 39 first-boot/six reopen controls, six first-boot native saves and zero off-thread validators. Addon/probe use ModDev source containers while the library loads from the exact packaged Maven JAR. Marked worlds/logs are removed.
+
+The final combined library is `7002ba5fad754980bc0ea3ce4c7d7a8e8645039d913cb008b74e6eabe289a912`, sources `9e74f8a1886860b2986c6167ffbe8b20e498d3ddd38bd60b174eec77477e798d` and core `2a242bd37ea4c87a48a1d896af38220c0ca5880bbd2a10945444a8423af44551`. [Reference sources](references.md) owns APIs and update obligations. Native picker/draft-response presentation, searchable multi-selection, arbitrary optional class-linkage absence, integrated/client reload, actual large-pack source admission, consumer-specific registry codecs and both real migrations remain unqualified. Phase 1 is incomplete; nothing is published or installed into personal instances.
+
 ## Tagged-alternative increment
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 272 core cases, including ten generated properties/1,500 checks, two native-file tests and twelve tooling controls. The independent Maven consumer persists only the selected variant through a real bare JSON file and restores its invalid inactive branch. Native-addon/probe compilation passes; all 69 main Java sources match the source JAR.

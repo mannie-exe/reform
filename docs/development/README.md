@@ -8,6 +8,7 @@
 - [Publication](publication.md) owns effective handles and context/revision checks.
 - [Owners](owners.md) owns asynchronous actor sessions, shared admission and outcome receipts.
 - [Operations](operations.md) owns shared local GUI/command services, progress and cancellation.
+- [Reference sources](references.md) owns admitted registry/tag/resource data, bounded lookup and reload freshness.
 - [Client JSON](client-json.md) owns physical-client registration, initialization, entry and recovery defaults.
 - [World recipes](world-recipes.md) owns unsaved creation-context admission and domain compilation.
 - [Presentation](presentation.md) owns measured panel/geometry/navigation boundaries.

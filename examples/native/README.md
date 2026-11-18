@@ -20,4 +20,6 @@ The headless `python3 tools/native_addon_server_probe.py --java-home /path/to/jd
 
 Add `--registered` to the server runner for the separate two-boot [registered native owner](../../docs/development/native-settings.md) controls. This opt-in probe registers its own COMMON spec and exercises the public native owner through the shared editor. It preserves the real native TOML serializer and reload listeners, tests failure/readback/restart behavior and reopens saved state in another JVM. Ordinary example launches do not register that fixture spec.
 
+Both registered boots also exercise the public [reference-source APIs](../../docs/development/references.md): actual block/tag capture and worker index compilation, identifier syntax/default namespace, unknown-versus-default-air behavior, an actual isolated registry's empty tag, whole-producer exhaustion, missing optional supplier and explicitly admitted server resource names. These are common-side lookup controls, without a native picker GUI or full-pack admission claim.
+
 The launches use ModDev source containers for this ordinary example and its separate probe. The library itself loads from the exact packaged Maven JAR, checked both before launch and inside the game. This is not full Phase 1, integrated/remote-server or pack qualification, or a release.

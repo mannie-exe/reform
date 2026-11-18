@@ -224,6 +224,8 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private Control createControl(ValueShape shape, FieldPath path, String raw, Component label) {
+    if (shape instanceof ValueShape.Reference<?> reference)
+      return createControl(reference.element().shape(), path, raw, label);
     if (shape instanceof ValueShape.Scalar scalar) {
       var choices =
           scalar.kind() == ValueShape.ScalarKind.BOOLEAN

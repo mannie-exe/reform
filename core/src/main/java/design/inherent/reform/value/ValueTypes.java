@@ -157,6 +157,11 @@ public final class ValueTypes {
     return new OptionalType<>(element, encoding);
   }
 
+  public static <T> ValueType<T> reference(
+      ValueType<T> element, design.inherent.reform.definition.DocumentId source) {
+    return new ReferenceType<>(element, source);
+  }
+
   private static <N extends Number> ValueType<N> number(
       Codec<N> codec, ValueShape.ScalarKind kind, BigDecimal minimum, BigDecimal maximum) {
     return scalar(

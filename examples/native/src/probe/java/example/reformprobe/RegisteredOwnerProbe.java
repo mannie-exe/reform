@@ -220,7 +220,9 @@ final class RegisteredOwnerProbe {
       finish(server, failure);
       return;
     }
-    CompletionStage<Void> work = reopen ? reopened() : first();
+    CompletionStage<Void> work =
+        NativeReferenceChecks.verify(server, context, report)
+            .thenCompose(ignored -> reopen ? reopened() : first());
     work.whenComplete((ignored, failure) -> server.execute(() -> finish(server, failure)));
   }
 

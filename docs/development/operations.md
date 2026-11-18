@@ -4,6 +4,8 @@
 
 The current services cover reload, cached inspection, raw scalar editing, undo/redo, revert/defaults, validation, source/effective inspection, semantic comparison, value export, save and application-only retry. GUI and command editors retain separate drafts over the same shared owner. Recursive controls, full operation presentation, conflict/import workflows, domain operations and migrations remain required by [coverage](coverage.md).
 
+[Reference actions](references.md) use the same local operation services for explicit source lookup and filtering. They bind source/context freshness and admit only bounded owned results; frontend draft/request identity remains a separate presentation requirement.
+
 ## Registration and execution
 
 `OperationDescriptor<I, O>` declares a typed input, required right, effect labels, entry points and optional logical target. Explicitly register handlers in an actor-bound `OperationScope`, then freeze registration. Submission checks the exact registered descriptor instance and fresh authority; matching names do not make a foreign descriptor a capability. Effect labels describe intent, not completed effects.

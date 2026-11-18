@@ -14,6 +14,7 @@ public sealed interface ValueShape
         ValueShape.Defaulted,
         ValueShape.OptionalValue,
         ValueShape.Alternative,
+        ValueShape.Reference,
         ValueShape.Custom {
   enum ScalarKind {
     BOOLEAN,
@@ -135,6 +136,18 @@ public sealed interface ValueShape
       Objects.requireNonNull(value);
       Objects.requireNonNull(encoding);
       if (maximumSize < 0) throw new IllegalArgumentException("Negative map bound");
+    }
+  }
+
+  /** A selector source decorates syntax/storage metadata; it is not invoked by decoding. */
+  record Reference<T>(ValueType<T> element, design.inherent.reform.definition.DocumentId source)
+      implements ValueShape {
+    public Reference {
+      Objects.requireNonNull(element);
+      Objects.requireNonNull(source);
+      if (!(element.shape() instanceof Scalar scalar)
+          || scalar.kind() != ScalarKind.TEXT && scalar.kind() != ScalarKind.CHOICE)
+        throw new IllegalArgumentException("Reference selectors need declared text/choice storage");
     }
   }
 

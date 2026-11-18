@@ -14,7 +14,8 @@ import java.util.Optional;
 public final class FieldIndex {
   public record Field(FieldPath path, String selector, ValueType<?> type) {
     public boolean scalar() {
-      return type.shape() instanceof ValueShape.Scalar;
+      return type.shape() instanceof ValueShape.Scalar
+          || type.shape() instanceof ValueShape.Reference<?>;
     }
   }
 

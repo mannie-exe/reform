@@ -100,6 +100,8 @@ public final class DraftTree {
 
   private static DraftNode build(
       ValueType<?> type, JsonElement value, SourcePath path, Map<SourcePath, String> text) {
+    if (type.shape() instanceof ValueShape.Reference<?> reference)
+      return build(reference.element(), value, path, text);
     if (type.shape() instanceof ValueShape.Defaulted<?> defaults) {
       return new DraftNode.Defaulted(
           value != null,
@@ -682,6 +684,8 @@ public final class DraftTree {
     }
 
     private String render(DraftNode node, ValueType<?> type, FieldPath path, SourcePath source) {
+      if (type.shape() instanceof ValueShape.Reference<?> reference)
+        return render(node, reference.element(), path, source);
       addresses.put(source, path);
       if (node instanceof DraftNode.Missing)
         return fail(path, InputState.EMPTY, "input.required", "Enter a required value");
