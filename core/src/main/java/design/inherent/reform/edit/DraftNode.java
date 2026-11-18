@@ -511,6 +511,41 @@ public sealed interface DraftNode
   }
 
   /** Authored equality ignores session IDs; identical user data must not become a fake edit. */
+  /** Complete session input (including inactive data/order), ignoring only generated row IDs. */
+  static boolean sameInput(DraftNode first, DraftNode second) {
+    if (first instanceof ObjectValue a && second instanceof ObjectValue b)
+      return sameInputFields(a.fields(), b.fields());
+    if (first instanceof Sequence a && second instanceof Sequence b)
+      return a.unordered() == b.unordered() && sameInputRows(a.rows(), b.rows());
+    if (first instanceof Mapping a && second instanceof Mapping b)
+      return sameInputRows(a.rows(), b.rows());
+    if (first instanceof OptionalValue a && second instanceof OptionalValue b)
+      return a.present() == b.present() && sameInput(a.value(), b.value());
+    if (first instanceof Defaulted a && second instanceof Defaulted b)
+      return a.overridden() == b.overridden()
+          && sameInput(a.value(), b.value())
+          && sameInputRows(a.retainedOverrides(), b.retainedOverrides());
+    if (first instanceof Alternative a && second instanceof Alternative b)
+      return a.selector().equals(b.selector())
+          && sameInputFields(a.branches(), b.branches())
+          && sameInputFields(a.unknownFields(), b.unknownFields());
+    return first.equals(second);
+  }
+
+  private static boolean sameInputRows(List<Row> first, List<Row> second) {
+    if (first.size() != second.size()) return false;
+    for (int i = 0; i < first.size(); i++)
+      if (!sameInput(first.get(i).value(), second.get(i).value())) return false;
+    return true;
+  }
+
+  private static boolean sameInputFields(
+      Map<String, DraftNode> first, Map<String, DraftNode> second) {
+    return first.keySet().equals(second.keySet())
+        && first.entrySet().stream()
+            .allMatch(entry -> sameInput(entry.getValue(), second.get(entry.getKey())));
+  }
+
   static boolean sameValue(DraftNode first, DraftNode second) {
     if (first instanceof Scalar a && second instanceof Scalar b) {
       boolean failed =
@@ -574,6 +609,13 @@ public sealed interface DraftNode
   }
 
   private static int authoredHash(DraftNode node) {
+    if (node instanceof Scalar scalar)
+      return scalar
+              .unitInput()
+              .filter(input -> input.state() != NumericDisplay.State.EXACT)
+              .isPresent()
+          ? scalar.hashCode()
+          : scalar.raw().hashCode();
     if (node instanceof Alternative value)
       return Objects.hash(
           value.selected(), authoredHash(value.selectedValue()), authoredHash(value.unknownFields));

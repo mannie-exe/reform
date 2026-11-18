@@ -519,6 +519,27 @@ public final class EditorActor<T> implements AutoCloseable {
     return change(selected -> selected.editor.undo());
   }
 
+  /** Stage a reviewed replacement only. Source parsing/admission and actual saving are separate. */
+  public CompletionStage<View<T>> stage(DraftTarget target, DraftTree imported, String label) {
+    Objects.requireNonNull(target);
+    Objects.requireNonNull(imported);
+    Objects.requireNonNull(label);
+    return change(
+        selected -> {
+          try {
+            long generation = selected.editor.snapshot().generation();
+            selected.editor.stage(target, imported, label);
+            long current = selected.editor.snapshot().generation();
+            if (current != generation) {
+              selected.typingFloor = current;
+              selected.typing = null;
+            }
+          } catch (DraftEditRefusal refusal) {
+            throw new PolicyRefusal(refusal.report());
+          }
+        });
+  }
+
   public CompletionStage<View<T>> redo() {
     return change(selected -> selected.editor.redo());
   }

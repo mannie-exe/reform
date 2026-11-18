@@ -267,6 +267,52 @@ public final class ReviewProfile {
               || !owner.handle().view().value().orElseThrow().name().equals("Actor"))
             throw new IllegalStateException(
                 "Public serialized editor did not acknowledge its real save");
+          var beforeStage = actor.view().snapshot().orElseThrow();
+          String sourceBeforeStage = Files.readString(binding.path());
+          var staged =
+              await(
+                  actor.stage(
+                      beforeStage.target(FieldPath.ROOT),
+                      beforeStage
+                          .draft()
+                          .change(
+                              FieldPath.ROOT.field("name"),
+                              ignored ->
+                                  new design.inherent.reform.edit.DraftNode.Scalar(
+                                      "Imported draft")),
+                      "Stage reviewed profile"));
+          if (!staged
+                  .snapshot()
+                  .orElseThrow()
+                  .inspect()
+                  .candidate()
+                  .orElseThrow()
+                  .value()
+                  .name()
+                  .equals("Imported draft")
+              || !Files.readString(binding.path()).equals(sourceBeforeStage)
+              || !owner.handle().view().value().orElseThrow().name().equals("Actor"))
+            throw new IllegalStateException("Public reviewed stage saved or published its draft");
+          if (!await(actor.undo())
+                  .snapshot()
+                  .orElseThrow()
+                  .inspect()
+                  .candidate()
+                  .orElseThrow()
+                  .value()
+                  .name()
+                  .equals("Actor")
+              || !await(actor.redo())
+                  .snapshot()
+                  .orElseThrow()
+                  .inspect()
+                  .candidate()
+                  .orElseThrow()
+                  .value()
+                  .name()
+                  .equals("Imported draft"))
+            throw new IllegalStateException(
+                "Public reviewed stage lost its single history boundary");
         } finally {
           actor.close();
         }

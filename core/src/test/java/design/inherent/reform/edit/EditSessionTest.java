@@ -2,8 +2,12 @@ package design.inherent.reform.edit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.serialization.SourcePath;
+import design.inherent.reform.value.ValueShape;
+import design.inherent.reform.value.ValueTypes;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +74,145 @@ class EditSessionTest {
     assertEquals(2, value(session).count());
     session.redo();
     assertTrue(session.snapshot().inspect().candidate().isEmpty());
+  }
+
+  @Test
+  void reviewedImportUsesExactRootRetiresOldInputAndPreservesUnchangedRowIdentity() {
+    var session = session();
+    session.setRaw(NAME, "Earlier work");
+    var before = session.snapshot();
+    var imported =
+        DraftTree.from(
+            DraftTreeTest.DEFINITION.type(),
+            new DraftTreeTest.Profile("Imported", 7, value(session).entries()),
+            DraftTreeTest.DRAFT);
+    session.stage(before.target(FieldPath.ROOT), imported, "Import reviewed profile");
+    var after = session.snapshot();
+    assertEquals(before.generation() + 1, after.generation());
+    assertEquals(before.draft().at(ENTRIES), after.draft().at(ENTRIES));
+    assertEquals(7, value(session).count());
+    assertThrows(
+        DraftEditRefusal.class,
+        () ->
+            session.execute(
+                new DraftEdit(before.target(NAME).typing(), new DraftEdit.SetRaw("late"))));
+    assertTrue(session.undo());
+    assertEquals("Earlier work", value(session).name());
+    assertEquals(2, value(session).count());
+    assertTrue(session.redo());
+    assertEquals("Imported", value(session).name());
+  }
+
+  @Test
+  void reviewedImportRefusesStaleForeignVersionlessAndNonRootTargetsWithoutChanges() {
+    var session = session();
+    var original = session.snapshot();
+    var imported = original.draft().change(NAME, ignored -> new DraftNode.Scalar("Imported"));
+    for (var target :
+        List.of(
+            original.target(NAME),
+            original.target(FieldPath.ROOT).typing(),
+            new DraftTarget(
+                UUID.randomUUID(),
+                original.generation(),
+                java.util.Optional.of(original.version()),
+                FieldPath.ROOT))) {
+      assertThrows(DraftEditRefusal.class, () -> session.stage(target, imported, "Import"));
+      assertEquals(original.version(), session.snapshot().version());
+      assertEquals(0, session.historySize());
+    }
+    session.setRaw(NAME, "Newer work");
+    assertThrows(
+        DraftEditRefusal.class,
+        () -> session.stage(original.target(FieldPath.ROOT), imported, "Import"));
+    assertEquals("Newer work", value(session).name());
+  }
+
+  @Test
+  void reviewedImportNoopPreservesRedoAndPendingSaveRemainsAcknowledgable() {
+    var session = session();
+    session.setRaw(NAME, "Other");
+    session.undo();
+    var before = session.snapshot();
+    var equal =
+        DraftTree.from(DraftTreeTest.DEFINITION.type(), value(session), DraftTreeTest.DRAFT);
+    session.stage(before.target(FieldPath.ROOT), equal, "No change");
+    assertEquals(before.generation(), session.snapshot().generation());
+    assertEquals(before.version(), session.snapshot().version());
+    assertTrue(session.canRedo());
+    var pending = submit(session);
+    var replacement = equal.change(NAME, ignored -> new DraftNode.Scalar("Imported"));
+    assertThrows(
+        DraftEditRefusal.class,
+        () -> session.stage(session.snapshot().target(FieldPath.ROOT), replacement, "Import"));
+    assertEquals(
+        EditSession.Acknowledgement.ACCEPTED,
+        session.acknowledge(pending, pending.candidate().draft(), "saved-2"));
+    assertTrue(session.canRedo());
+  }
+
+  @Test
+  void reviewedImportRetainsInvalidSourceAsDraftButRefusesBudgetLabelAndConflictBoundaries() {
+    var session = session();
+    var before = session.snapshot();
+    var oversized =
+        new DraftTree(
+            new DraftNode.Scalar("x".repeat(DraftTreeTest.DRAFT.maximumCharacters() + 1)),
+            new DraftLimits(128, 16384, 262144, 128, 1048576));
+    assertThrows(
+        DraftEditRefusal.class,
+        () -> session.stage(before.target(FieldPath.ROOT), oversized, "Import"));
+    assertThrows(
+        DraftEditRefusal.class,
+        () -> session.stage(before.target(FieldPath.ROOT), before.draft(), ""));
+    assertEquals(before.version(), session.snapshot().version());
+    assertEquals(0, session.historySize());
+    var invalid = before.draft().change(COUNT, ignored -> new DraftNode.Scalar("-"));
+    session.stage(before.target(FieldPath.ROOT), invalid, "Import repairable input");
+    assertTrue(session.snapshot().inspect().candidate().isEmpty());
+    assertEquals(EditSession.PreparationState.INVALID, session.prepareSubmission().state());
+    var current = session.snapshot();
+    var review = session.reviewConflict(before.draft(), "saved-2");
+    assertThrows(
+        DraftEditRefusal.class,
+        () -> session.stage(current.target(FieldPath.ROOT), before.draft(), "Import"));
+    assertSame(review, session.review().orElseThrow());
+    assertEquals(current.version(), session.snapshot().version());
+    assertEquals(current.draft(), session.snapshot().draft());
+  }
+
+  @Test
+  void reviewedReplacementDoesNotDiscardSuppliedInactiveInputAsAnAuthoredNoop() {
+    var definition =
+        new DocumentDefinition<>(
+            DocumentId.parse("fixture:inactive_import"),
+            1,
+            ValueTypes.optional(ValueTypes.text(32), ValueShape.OptionalEncoding.NULL_OR_VALUE),
+            java.util.Optional::<String>empty);
+    var session =
+        new EditSession<>(
+            definition,
+            UUID.randomUUID(),
+            "saved-1",
+            java.util.Optional.empty(),
+            DraftTreeTest.JSON,
+            DraftTreeTest.DRAFT);
+    var earlier =
+        new DraftTree(
+            new DraftNode.OptionalValue(false, new DraftNode.Scalar("Earlier inactive")),
+            DraftTreeTest.DRAFT);
+    session.stage(earlier, "Previous input");
+    var incoming =
+        new DraftTree(
+            new DraftNode.OptionalValue(false, new DraftNode.Scalar("Imported inactive")),
+            DraftTreeTest.DRAFT);
+    var before = session.snapshot();
+    session.stage(before.target(FieldPath.ROOT), incoming, "Import inactive input");
+    assertEquals(incoming.root(), session.snapshot().draft().root());
+    assertEquals(before.generation() + 1, session.snapshot().generation());
+    assertFalse(session.dirty());
+    assertTrue(session.undo());
+    assertEquals(earlier.root(), session.snapshot().draft().root());
   }
 
   @Test

@@ -7,6 +7,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
+import design.inherent.reform.presentation.NumericDisplay;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.serialization.SourcePath;
@@ -176,6 +177,82 @@ class DraftTreeTest {
         UnsupportedOperationException.class,
         () -> ((DraftNode.ObjectValue) candidate.draft().root()).fields().clear());
     assertThrows(UnsupportedOperationException.class, () -> candidate.value().entries().clear());
+  }
+
+  @Test
+  void completeInputEqualityRetainsInactiveAndMappedStateWhileIgnoringOnlyRowIds() {
+    var earlier = new DraftNode.Scalar("earlier");
+    var imported = new DraftNode.Scalar("imported");
+    var same = new DraftNode.Scalar("same");
+    var pairs =
+        List.<Map.Entry<DraftNode, DraftNode>>of(
+            Map.entry(
+                new DraftNode.OptionalValue(false, earlier),
+                new DraftNode.OptionalValue(false, imported)),
+            Map.entry(
+                new DraftNode.Defaulted(false, earlier), new DraftNode.Defaulted(false, imported)),
+            Map.entry(
+                new DraftNode.Defaulted(true, same, List.of(DraftNode.Row.create(earlier))),
+                new DraftNode.Defaulted(true, same, List.of(DraftNode.Row.create(imported)))),
+            Map.entry(
+                new DraftNode.Alternative(
+                    "selected", Map.of("selected", same, "inactive", earlier), Map.of()),
+                new DraftNode.Alternative(
+                    "selected", Map.of("selected", same, "inactive", imported), Map.of())),
+            Map.entry(
+                new DraftNode.Scalar(
+                    "20", new DraftNode.UnitInput("seconds", "1", NumericDisplay.State.EXACT)),
+                new DraftNode.Scalar(
+                    "20", new DraftNode.UnitInput("ticks", "20", NumericDisplay.State.EXACT))));
+    for (var pair : pairs) {
+      assertTrue(DraftNode.sameValue(pair.getKey(), pair.getValue()));
+      assertFalse(DraftNode.sameInput(pair.getKey(), pair.getValue()));
+      var first =
+          new DraftNode.Mapping(
+              List.of(
+                  DraftNode.Row.create(
+                      new DraftNode.ObjectValue(Map.of("key", same, "value", pair.getKey())))));
+      var second =
+          new DraftNode.Mapping(
+              List.of(
+                  DraftNode.Row.create(
+                      new DraftNode.ObjectValue(Map.of("key", same, "value", pair.getValue())))));
+      assertTrue(DraftNode.sameValue(first, second));
+      assertFalse(DraftNode.sameInput(first, second));
+    }
+    var exact =
+        new DraftNode.Scalar(
+            "20", new DraftNode.UnitInput("seconds", "1", NumericDisplay.State.EXACT));
+    var failed =
+        new DraftNode.Scalar(
+            "20", new DraftNode.UnitInput("seconds", "bad", NumericDisplay.State.INVALID));
+    var literalSet =
+        new DraftNode.Sequence(List.of(DraftNode.Row.create(new DraftNode.Scalar("20"))), true);
+    var exactSet = new DraftNode.Sequence(List.of(DraftNode.Row.create(exact)), true);
+    var failedSet = new DraftNode.Sequence(List.of(DraftNode.Row.create(failed)), true);
+    var equalFailureSet =
+        new DraftNode.Sequence(
+            List.of(
+                DraftNode.Row.create(
+                    new DraftNode.Scalar(
+                        "20",
+                        new DraftNode.UnitInput("seconds", "bad", NumericDisplay.State.INVALID)))),
+            true);
+    assertTrue(DraftNode.sameValue(literalSet, exactSet));
+    assertFalse(DraftNode.sameValue(exactSet, failedSet));
+    assertTrue(DraftNode.sameValue(failedSet, equalFailureSet));
+    var first =
+        new DraftNode.Sequence(
+            List.of(DraftNode.Row.create(earlier), DraftNode.Row.create(imported)), true);
+    var copied =
+        new DraftNode.Sequence(
+            List.of(DraftNode.Row.create(earlier), DraftNode.Row.create(imported)), true);
+    var reordered =
+        new DraftNode.Sequence(
+            List.of(DraftNode.Row.create(imported), DraftNode.Row.create(earlier)), true);
+    assertTrue(DraftNode.sameInput(first, copied));
+    assertTrue(DraftNode.sameValue(first, reordered));
+    assertFalse(DraftNode.sameInput(first, reordered));
   }
 
   @Test

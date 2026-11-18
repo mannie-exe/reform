@@ -424,17 +424,26 @@ public final class DraftTree {
 
   /** Preserve identities only within branches whose authored values are unchanged. */
   DraftTree reuseUnchangedFrom(DraftTree previous) {
-    return new DraftTree(reuseUnchanged(root, previous.root), limits);
+    return new DraftTree(reuseUnchanged(root, previous.root, DraftNode::sameValue), limits);
   }
 
-  private static DraftNode reuseUnchanged(DraftNode next, DraftNode previous) {
-    if (DraftNode.sameValue(next, previous)) return previous;
+  /** A full draft replacement cannot discard explicitly supplied inactive or mapped input. */
+  DraftTree reuseIdenticalInputFrom(DraftTree previous) {
+    return new DraftTree(reuseUnchanged(root, previous.root, DraftNode::sameInput), limits);
+  }
+
+  private static DraftNode reuseUnchanged(
+      DraftNode next,
+      DraftNode previous,
+      java.util.function.BiPredicate<DraftNode, DraftNode> same) {
+    if (same.test(next, previous)) return previous;
     if (next instanceof DraftNode.ObjectValue n
         && previous instanceof DraftNode.ObjectValue p
         && n.fields().keySet().equals(p.fields().keySet())) {
       var fields = new LinkedHashMap<String, DraftNode>();
       n.fields()
-          .forEach((key, value) -> fields.put(key, reuseUnchanged(value, p.fields().get(key))));
+          .forEach(
+              (key, value) -> fields.put(key, reuseUnchanged(value, p.fields().get(key), same)));
       return new DraftNode.ObjectValue(fields);
     }
     return next;

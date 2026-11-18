@@ -8,7 +8,9 @@ import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.ConflictReview;
+import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
@@ -232,6 +234,72 @@ class EditorActorTest {
       await(h.actor.setRaw(COUNT_PATH, "8"));
       assertEquals(7, value(await(h.actor.revert())));
       assertEquals(0, h.nativeValidators.get());
+    }
+  }
+
+  @Test
+  void reviewedStageRetainsEarlierWorkAsOneUndoAndRefusesOldTypingWithoutWriting()
+      throws Exception {
+    try (var h = new Harness(true)) {
+      String file = Files.readString(h.path);
+      await(h.actor.setRaw(COUNT_PATH, "5"));
+      var before = h.actor.view().snapshot().orElseThrow();
+      var imported = DraftTree.from(TYPE, new Profile(9), DraftLimits.CONFIGURATION);
+      var changed = await(h.actor.stage(before.target(FieldPath.ROOT), imported, "Import profile"));
+      assertEquals(9, value(changed));
+      var rejected =
+          assertThrows(
+              ExecutionException.class,
+              () ->
+                  await(
+                      h.actor.edit(
+                          new DraftEdit(
+                              before.target(COUNT_PATH).typing(), new DraftEdit.SetRaw("6")))));
+      assertInstanceOf(design.inherent.reform.owner.PolicyRefusal.class, rejected.getCause());
+      assertEquals(9, value(h.actor.view()));
+      assertEquals(5, value(await(h.actor.undo())));
+      assertEquals(9, value(await(h.actor.redo())));
+      assertEquals(file, Files.readString(h.path));
+      assertEquals(0, h.nativeValidators.get());
+    }
+  }
+
+  @Test
+  void reviewedStageWaitsForActualSaveAndDoesNotDropItsReceipt() throws Exception {
+    try (var h = new Harness(true)) {
+      await(h.actor.setRaw(COUNT_PATH, "3"));
+      h.delayWrite.set(true);
+      var saving = h.actor.save();
+      waitFor(h.written);
+      var before = h.actor.view().snapshot().orElseThrow();
+      var rejected =
+          assertThrows(
+              ExecutionException.class,
+              () ->
+                  await(
+                      h.actor.stage(
+                          before.target(FieldPath.ROOT),
+                          DraftTree.from(TYPE, new Profile(9), DraftLimits.CONFIGURATION),
+                          "Import")));
+      assertInstanceOf(design.inherent.reform.owner.PolicyRefusal.class, rejected.getCause());
+      assertEquals(3, value(h.actor.view()));
+      h.releaseWrite.countDown();
+      assertEquals(
+          CommitReceipt.Persistence.SAVED, await(saving).receipt().orElseThrow().persistence());
+      assertFalse(h.actor.view().dirty());
+      assertEquals(3, h.owner.handle().view().value().orElseThrow().count());
+    }
+  }
+
+  @Test
+  void noopReviewedStageDoesNotRetireTheTypingStreamRetainedAcrossOwnSave() throws Exception {
+    try (var h = new Harness(true)) {
+      var typing = h.actor.view().snapshot().orElseThrow().target(COUNT_PATH).typing();
+      await(h.actor.edit(new DraftEdit(typing, new DraftEdit.SetRaw("3"))));
+      await(h.actor.save());
+      var current = h.actor.view().snapshot().orElseThrow();
+      await(h.actor.stage(current.target(FieldPath.ROOT), current.draft(), "No change"));
+      assertEquals(4, value(await(h.actor.edit(new DraftEdit(typing, new DraftEdit.SetRaw("4"))))));
     }
   }
 

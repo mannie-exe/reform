@@ -346,6 +346,38 @@ public final class EditSession<T> implements AutoCloseable {
     apply(new DraftTree(imported.root(), limits), label, null);
   }
 
+  /** Reviewed whole-draft replacement; pending writes and unresolved conflicts remain separate. */
+  public void stage(DraftTarget target, DraftTree imported, String label) {
+    active();
+    Objects.requireNonNull(target);
+    if (!target.path().equals(FieldPath.ROOT) || target.version().isEmpty())
+      throw new DraftEditRefusal(
+          "import.target", target.path(), "Import requires an exact root target");
+    if (!target.session().equals(id)
+        || target.generation() != generation
+        || target.version().orElseThrow() != version)
+      throw new DraftEditRefusal(
+          "import.stale_target",
+          FieldPath.ROOT,
+          "The reviewed draft changed; compare the import again");
+    if (pending != null || review != null)
+      throw new DraftEditRefusal(
+          "import.pending",
+          FieldPath.ROOT,
+          "Complete the pending submission or conflict review before replacing this draft");
+    Objects.requireNonNull(imported);
+    long before = version;
+    try {
+      var next = new DraftTree(imported.root(), limits).reuseIdenticalInputFrom(current);
+      apply(next, label, null);
+    } catch (IllegalArgumentException refusal) {
+      throw new DraftEditRefusal("import.invalid_draft", FieldPath.ROOT, refusal.getMessage());
+    }
+    // A reviewed replacement retires old input streams, without invalidating an in-flight save.
+    // Pending submissions were refused above; ordinary low-level stage remains caller-managed.
+    if (version != before) generation++;
+  }
+
   public void revert() {
     active();
     apply(baseline, "Revert to observed", null);

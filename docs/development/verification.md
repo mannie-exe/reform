@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Reviewed replacement foundation
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 402 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. The public Maven consumer stages a reviewed whole draft on its actual actor, restores it with one undo/redo, and verifies unchanged file bytes and runtime publication. Native examples compile; this slice has no additional native runtime run.
+
+The combined artifact is `82ae0d2269fad71ede135cee0ab42f481de4f87e0a9af08eddcff4fd575bcfa3`, sources `4bdb88b7b47f43b58942dd5f4a66fecf7e0a976a4ee4c08695932c99bff303f4` and core `8936ea1f79a27f9f66d8f521eee5d7abc0fbea47f58a8376d20b72a3452ec056`. New controls cover exact root/session/generation/version, stale typing after a real replacement, retained earlier work, unchanged row identity, no-op redo/typing preservation, invalid repairable input and budget/label/conflict refusal. A real blocked file save refuses replacement and still yields its actual saved receipt after release.
+
+An initial implementation unnecessarily retired a valid typing stream after a no-op; its original actor control passes after restricting retirement to actual replacement. A corrected root-content control also reproduces active-only identity reuse discarding supplied inactive input; complete input comparison fixes it. The earlier DraftTree-wrapper identity assertion was nondiscriminating and is not evidence of that defect. Complete input tests cover inactive optional/default/variant payloads, retained overrides, mapped input and session row order, while ignoring only generated row UUIDs.
+
+Those controls independently expose an existing scalar hash/equality mismatch inside maps/sets: active-equivalent exact unit input had different hashes. Authored hashing now ignores exact presentation metadata consistently with authored equality, while failed input retains its full identity. Literal/exact, differing exact units, failed-versus-exact and identical failed-input controls pass.
+
+[Editing](editing.md#history-and-lifecycle) owns the primitive. Bounded source/format admission, import preview/comparison, shared GUI/command orchestration and native import/recovery UI remain required; this is not a completed import workflow or a new native qualification of the preceding collection slice.
+
 ## Native collection selection and history
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 393 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. All 99 main Java sources match the packaged source JAR. Public Maven consumers and the native addon/probe compile against the same standalone publication. New core controls distinguish search-only case/accent folding from exact keys/cursors and reproduce/refuse reentrant collection admission and pending-token retention after closure. An already-issued edit remains document-owned after the controller closes; no rollback is claimed.
