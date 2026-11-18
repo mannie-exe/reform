@@ -9,12 +9,16 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
 import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +47,88 @@ class JsonStoreTest {
         format,
         LIMITS,
         DraftLimits.CONFIGURATION);
+  }
+
+  record Nullable(Optional<Boolean> flag, Map<String, Optional<Boolean>> roles) {}
+
+  @Test
+  void declaredNullFieldsAndMapValuesSurviveInitializationUpdatesAndReopen() throws Exception {
+    var optional =
+        ValueTypes.optional(ValueTypes.bool(), ValueShape.OptionalEncoding.NULL_OR_VALUE);
+    var flag = FieldKey.of("flag", optional);
+    var roles = FieldKey.of("roles", ValueTypes.objectMap(ValueTypes.text(32), optional, 8));
+    var type =
+        RecordType.<Nullable>builder(v -> new Nullable(v.get(flag), v.get(roles)))
+            .field(flag, Nullable::flag)
+            .field(roles, Nullable::roles)
+            .build();
+    var defaults = new Nullable(Optional.empty(), Map.of("quiet", Optional.empty()));
+    var definition =
+        new DocumentDefinition<>(DocumentId.parse("fixture:nullable"), 1, type, () -> defaults);
+    for (var format : JsonStore.Format.values()) {
+      var binding = StorageBinding.relative(root, "null-" + format.name() + ".json");
+      var store =
+          new JsonStore<>(
+              definition, new OwnedFile(binding, 8192), format, LIMITS, DraftLimits.CONFIGURATION);
+      var initialized = store.initializeDefaultsIfMissing();
+      assertEquals(OwnedFile.Persistence.SAVED, initialized.persistence().state());
+      var first = initialized.observation().orElseThrow();
+      assertEquals(JsonStore.State.READY, first.state(), () -> first.report().toString());
+      assertEquals(defaults, first.candidate().orElseThrow().value());
+      String bytes = first.source().text().orElseThrow();
+      assertTrue(bytes.contains("\"flag\": null"));
+      assertTrue(bytes.contains("\"quiet\": null"));
+      var next =
+          new Nullable(
+              Optional.of(false), Map.of("quiet", Optional.empty(), "loud", Optional.of(true)));
+      var candidate =
+          DraftTree.from(type, next, DraftLimits.CONFIGURATION)
+              .inspect(definition, LIMITS)
+              .candidate()
+              .orElseThrow();
+      var write = store.write(first, candidate);
+      assertEquals(OwnedFile.Persistence.SAVED, write.persistence().state());
+      assertEquals(next, write.observation().orElseThrow().candidate().orElseThrow().value());
+      var cleared =
+          DraftTree.from(type, defaults, DraftLimits.CONFIGURATION)
+              .inspect(definition, LIMITS)
+              .candidate()
+              .orElseThrow();
+      var saved = store.write(store.read(), cleared);
+      assertEquals(OwnedFile.Persistence.SAVED, saved.persistence().state());
+      var reopened =
+          new JsonStore<>(
+                  definition,
+                  new OwnedFile(binding, 8192),
+                  format,
+                  LIMITS,
+                  DraftLimits.CONFIGURATION)
+              .read();
+      assertEquals(defaults, reopened.candidate().orElseThrow().value());
+    }
+  }
+
+  @Test
+  void nullableRootKeepsItsExplicitEnvelopeValueAndDoesNotBecomeMissing() throws Exception {
+    var type = ValueTypes.optional(ValueTypes.bool(), ValueShape.OptionalEncoding.NULL_OR_VALUE);
+    var definition =
+        new DocumentDefinition<>(
+            DocumentId.parse("fixture:nullable_root"), 1, type, Optional::empty);
+    for (var format : JsonStore.Format.values()) {
+      var store =
+          new JsonStore<>(
+              definition,
+              new OwnedFile(
+                  StorageBinding.relative(root, "null-root-" + format.name() + ".json"), 8192),
+              format,
+              LIMITS,
+              DraftLimits.CONFIGURATION);
+      var first = store.initializeDefaultsIfMissing().observation().orElseThrow();
+      assertEquals(JsonStore.State.READY, first.state(), () -> first.report().toString());
+      assertEquals(Optional.empty(), first.candidate().orElseThrow().value());
+      if (format == JsonStore.Format.NEW_ENVELOPE)
+        assertTrue(first.source().text().orElseThrow().contains("\"values\": null"));
+    }
   }
 
   @Test

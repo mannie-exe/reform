@@ -89,7 +89,7 @@ public final class JsonStore<T> {
   public record Write<T>(OwnedFile.Result persistence, Optional<Read<T>> observation) {}
 
   private static final Gson JSON =
-      new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+      new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().serializeNulls().create();
   private final Object identity = new Object();
   private final DocumentDefinition<T> definition;
   private final OwnedFile file;
