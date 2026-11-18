@@ -17,6 +17,7 @@ public sealed interface DraftNode
         DraftNode.ObjectValue,
         DraftNode.Sequence,
         DraftNode.Mapping,
+        DraftNode.Defaulted,
         DraftNode.Opaque,
         DraftNode.Missing,
         DraftNode.NullValue {
@@ -112,6 +113,81 @@ public sealed interface DraftNode
 
     public static Row create(DraftNode value) {
       return new Row(UUID.randomUUID(), value);
+    }
+  }
+
+  /**
+   * Inactive override input is local draft state; omitted fields retain their declared fallback.
+   */
+  final class Defaulted implements DraftNode {
+    private final boolean overridden;
+    private final DraftNode value;
+    private final Sequence retained;
+    private final Size size;
+
+    public Defaulted(boolean overridden, DraftNode value) {
+      this(overridden, value, List.of());
+    }
+
+    public Defaulted(boolean overridden, DraftNode value, List<Row> retainedOverrides) {
+      this.overridden = overridden;
+      this.value = Objects.requireNonNull(value);
+      retained = new Sequence(retainedOverrides);
+      size = measure(List.of(value, retained), 0, 0);
+    }
+
+    public boolean overridden() {
+      return overridden;
+    }
+
+    public DraftNode value() {
+      return value;
+    }
+
+    public List<Row> retainedOverrides() {
+      return retained.rows();
+    }
+
+    public Defaulted withOverride(boolean explicit) {
+      return new Defaulted(explicit, value, retained.rows());
+    }
+
+    public Defaulted withValue(DraftNode next) {
+      return new Defaulted(overridden, next, retained.rows());
+    }
+
+    public Defaulted retainOverride(DraftNode previous) {
+      if (value.equals(previous)
+          || retained.rows().stream().anyMatch(row -> row.value().equals(previous))) return this;
+      return new Defaulted(
+          overridden, value, retained.insert(retained.rows().size(), Row.create(previous)).rows());
+    }
+
+    public Defaulted restoreRetained(UUID id) {
+      var previous = retained.rows().get(retained.index(id)).value();
+      return new Defaulted(overridden, previous, retained.remove(id).rows()).retainOverride(value);
+    }
+
+    public Defaulted discardRetained(UUID id) {
+      return new Defaulted(overridden, value, retained.remove(id).rows());
+    }
+
+    @Override
+    public Size size() {
+      return size;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof Defaulted field
+          && overridden == field.overridden
+          && value.equals(field.value)
+          && retained.equals(field.retained);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(overridden, value, retained);
     }
   }
 
@@ -295,6 +371,9 @@ public sealed interface DraftNode
 
   /** Authored equality ignores session IDs; identical user data must not become a fake edit. */
   static boolean sameValue(DraftNode first, DraftNode second) {
+    if (first instanceof Defaulted a && second instanceof Defaulted b)
+      return a.overridden() == b.overridden()
+          && (!a.overridden() || sameValue(a.value(), b.value()));
     if (first instanceof Mapping a && second instanceof Mapping b) {
       return sameUnorderedRows(a.rows(), b.rows());
     }
@@ -340,6 +419,8 @@ public sealed interface DraftNode
   }
 
   private static int authoredHash(DraftNode node) {
+    if (node instanceof Defaulted value)
+      return value.overridden() ? 67 + authoredHash(value.value()) : 67;
     if (node instanceof Mapping map) {
       int hash = 17;
       for (var row : map.rows()) hash += authoredHash(row.value());

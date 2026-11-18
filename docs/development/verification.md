@@ -2,6 +2,20 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Declared field-default increment
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 239 core cases, including eight generated properties/1,300 checks, two native-file tests and twelve tooling controls. The independent Maven consumer exercises actual bare-file equal-value presence changes; native-addon/probe compilation passes. All 67 main Java sources match the source JAR. Markdown/link and workflow syntax checks pass separately.
+
+Controls cover required versus defaulted fields, owned mutable defaults, rejected malformed/partial defaults, validation before omission, raw explicit/implicit/null states, retained inactive input/rows, native-style acknowledgement, whole-field conflict choices, entry-map key/value defaults and duplicate keys, absence outside field positions, real source-only writes in both JSON formats and shared comparison/describe/save. Serializer-materialized defaults separately retain invalid inactive input and different collection rows; stable recovery/discard identities, deduplication, undo and logical-budget refusal are exercised. A 100-case independent presence/late-edit model uses replay seed `2026111801`.
+
+The initial focused run reproduced two development gaps: an explicit JSON null selected a missing-field fallback, and entry-map rendering refused otherwise valid omitted defaults. The corrected cases pass. A direct pinned-DFU control confirms `JsonOps` lookup can return Java null while the encoded key still exists, and native optional-field decoding can then use its default. Owned record decoding now checks ordinary object presence separately; valid ordinary/compressed omission encoding still matches the native codec. A later fixture-only assertion assumed compact file spacing and was replaced by strict numeric decoding of the actual saved field.
+
+`python3 tools/native_addon_server_probe.py --registered --java-home /path/to/jdk21 --timeout 150` passes two sequential disposable 2 GiB boots in 9.459 and 8.768 seconds including Gradle startup. Its actual registered COMMON owner retains 39 first-boot and six reopen checks, six native saves, synchronous callbacks and zero off-thread native validators. The library loads from the exact Maven JAR; addon/probe remain ModDev source containers. This is a shared-owner regression, not a native default/override-widget test. Marked fixtures and raw logs are removed after concise evidence extraction.
+
+The combined JAR is `c048cd71b134a6e590aa262eb63b78a60750bfbc8c5420642d8f9bdc8eb9e72d`, sources `fee7213265d31b7709ccffb1d6924174c2014f5856851467f145245ca5fa3e1e` and core `442abfa014d6a02094f768e7579f3df16c9d6667147e2d3aa49367fd2791dfc7`.
+
+Optional values, general profile inheritance/resolution, native default controls and real consumer migrations remain required. No client runtime, full-pack or cost qualification is added by this increment. Phase 1 remains incomplete; nothing is published or synchronized to personal instances.
+
 ## Unordered set increment
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 220 core cases, including seven generated properties/1,200 checks, two native-file tests and twelve tooling controls. The independent packaged Maven consumer and native-addon/probe compilation pass. All 66 main Java source files match the source JAR. Markdown/link and workflow syntax checks pass separately.

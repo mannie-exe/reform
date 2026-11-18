@@ -6,6 +6,8 @@ Display name is **re:form**. Repository, mod ID and artifact are `reform`; Java 
 
 `gradle.properties` owns `mod_version`. Supported Minecraft, NeoForge and tool dependencies live in `gradle/libs.versions.toml`. Changes to build inputs require relevant qualification, not only a version bump.
 
+DFU/serialization updates must retain the exact coercion/partial-result controls, dynamic-map compression and `DefaultedTypeTest` ordinary-null/compressed-slot behavior. Requalify field-default metadata against each affected native codec and rerun the native registered owner when shared record decoding changes. Current [verification](development/verification.md) keeps those artifact scopes separate from generated-control and consumer-migration readiness.
+
 `./gradlew check build` stages the combined mod JAR, sources and POM under `build/distributions/`. `./gradlew :neoforge:publishMavenJavaPublicationToStagingRepository` creates a local Maven repository under `build/repository/` for public-consumer checks. Neither command uploads anything. Do not install the separate development core JAR alongside the combined mod.
 
 The combined JAR contains own core/platform classes once. POM metadata declares the Java dependencies without a second owned core artifact. Artifact timestamps/order are reproducible. The wrapper distribution is checksum-pinned; its scripts/JAR retain [Gradle's license](../LICENSE-GRADLE.txt).

@@ -46,6 +46,68 @@ class JsonStoreTest {
   }
 
   @Test
+  void defaultPresenceChangesPersistEvenWhenTheTypedValueIsEqual() throws Exception {
+    var count = FieldKey.of("count", ValueTypes.defaultedField(ValueTypes.integer(0, 1000), 1));
+    var type =
+        RecordType.<Profile>builder(v -> new Profile(v.get(count), v.get(NAME)))
+            .field(count, Profile::count)
+            .field(NAME, Profile::name)
+            .build();
+    var definition =
+        new DocumentDefinition<>(
+            DocumentId.parse("fixture:default_presence"), 1, type, () -> new Profile(1, "Default"));
+    for (var format : JsonStore.Format.values()) {
+      var path = root.resolve("defaulted.json");
+      Files.writeString(
+          path,
+          format == JsonStore.Format.NEW_ENVELOPE
+              ? "{\"schemaVersion\":1,\"values\":{\"name\":\"Default\"}}"
+              : "{\"name\":\"Default\"}");
+      var store =
+          new JsonStore<>(
+              definition,
+              new OwnedFile(StorageBinding.relative(root, "defaulted.json"), 8192),
+              format,
+              LIMITS,
+              DraftLimits.CONFIGURATION);
+      var first = store.read();
+      var field = FieldPath.ROOT.field("count");
+      var explicit =
+          first
+              .draft()
+              .orElseThrow()
+              .change(field, n -> ((DraftNode.Defaulted) n).withOverride(true))
+              .inspect(definition, LIMITS)
+              .candidate()
+              .orElseThrow();
+      assertEquals(first.candidate().orElseThrow().value(), explicit.value());
+      var added = store.write(first, explicit);
+      assertEquals(OwnedFile.Persistence.SAVED, added.persistence().state());
+      assertTrue(
+          ((DraftNode.Defaulted) added.observation().orElseThrow().draft().orElseThrow().at(field))
+              .overridden());
+      var observed = added.observation().orElseThrow();
+      var implicit =
+          observed
+              .draft()
+              .orElseThrow()
+              .change(field, n -> ((DraftNode.Defaulted) n).withOverride(false))
+              .inspect(definition, LIMITS)
+              .candidate()
+              .orElseThrow();
+      var removed = store.write(observed, implicit);
+      assertEquals(OwnedFile.Persistence.SAVED, removed.persistence().state());
+      assertFalse(
+          ((DraftNode.Defaulted)
+                  removed.observation().orElseThrow().draft().orElseThrow().at(field))
+              .overridden());
+      assertEquals(
+          new Profile(1, "Default"),
+          removed.observation().orElseThrow().candidate().orElseThrow().value());
+    }
+  }
+
+  @Test
   void explicitInitializationUsesTheNewSchemaEnvelopeButReadDoesNotCreate() throws Exception {
     var store = store(JsonStore.Format.NEW_ENVELOPE);
     var missing = store.read();

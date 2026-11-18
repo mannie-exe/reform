@@ -18,6 +18,16 @@ Inspection is explicit and pure. Leaf checks describe empty, incomplete, invalid
 
 `DraftLimits` bounds depth, nodes and retained characters before a tree replaces session state. Defaults allow depth 128, 16,384 nodes and 131,072 characters. History defaults to 128 entries and a logical retention cost of 1,048,576. Cost counts characters, structural nodes and entry overhead conservatively; it is not measured heap bytes or a wire limit. Owners must also choose appropriate `JsonLimits`. Opaque JSON is structurally admitted during inspection rather than masquerading as one validated leaf.
 
+## Defaulted field state
+
+`DraftNode.Defaulted(overridden, value)` separates source presence from the retained raw override. `FieldPath.Part.VALUE` addresses the payload independently of a record field named `value`. Missing source fields begin with an owned copy of their declared fallback. Explicit null and invalid overrides remain explicit and invalid when their declared type rejects them.
+
+Using the default omits the field and ignores the inactive override during candidate validation. Its raw input, rows and history remain local and count toward draft limits. Re-enabling the override restores that input. Inactive work is not persisted; a fresh session recreates its fallback. Authored dirty state tracks source presence and active values, so changing only an inactive payload does not imply a file change.
+
+Equal-value acknowledgements can adopt a serializer's omitted-default representation while retaining inactive input and later overrides. When a serializer instead materializes an omitted default, the actual saved value becomes active and distinct inactive input is retained separately. These immutable snapshots have stable UUIDs for explicit recovery/discard, count toward draft/history limits and never enter serialized data or authored equality. Collection identities transfer from inactive input only when that input independently decodes to the same value; an unrelated equal document value does not establish row identity. Recovery uses the retained UUID rather than a potentially stale row index.
+
+Omitted fields receive no invented encoded address. Manual conflict review treats a defaulted field's presence and content as one choice. Generated default/override and retained-input recovery controls, plus richer provenance presentation, remain required.
+
 ## History and lifecycle
 
 `EditSession<T>` belongs to its creating thread by default. The explicit advanced `fromDraft` overload accepts a trusted owner verifier for a serialized worker adapter; that adapter must enforce serialization rather than disabling checks. `EditorActor` supplies this verifier from its active worker task and removes it afterward, so editing may move between workers without concurrent mutation. Immutable snapshots may be inspected on an admitted worker when definition callbacks support that contract. The pure model owns no global executor, timer, file watcher or screen reference.

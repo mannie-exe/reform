@@ -100,6 +100,11 @@ public final class DraftTree {
 
   private static DraftNode build(
       ValueType<?> type, JsonElement value, SourcePath path, Map<SourcePath, String> text) {
+    if (type.shape() instanceof ValueShape.Defaulted<?> defaults) {
+      return new DraftNode.Defaulted(
+          value != null,
+          value == null ? defaultDraft(defaults) : build(defaults.element(), value, path, text));
+    }
     if (value == null) return new DraftNode.Missing();
     if (type.shape() instanceof ValueShape.Custom)
       return new DraftNode.Opaque(sourceJson(value, path, text));
@@ -195,6 +200,17 @@ public final class DraftTree {
     return new DraftNode.ObjectValue(fields);
   }
 
+  private static <T> DraftNode defaultDraft(ValueShape.Defaulted<T> defaults) {
+    return build(defaults.element(), defaultJson(defaults), SourcePath.ROOT, Map.of());
+  }
+
+  private static <T> JsonElement defaultJson(ValueShape.Defaulted<T> defaults) {
+    var encoded = defaults.element().codec().encodeStart(JsonOps.INSTANCE, defaults.fallback());
+    if (encoded.error().isPresent() || encoded.result().isEmpty())
+      throw new IllegalArgumentException("Field default cannot encode completely");
+    return encoded.result().orElseThrow();
+  }
+
   private static String sourceJson(
       JsonElement value, SourcePath path, Map<SourcePath, String> text) {
     if (value.isJsonNull()) return "null";
@@ -225,7 +241,9 @@ public final class DraftTree {
     var segments = path.segments();
     for (int i = 0; i < segments.size(); i++) {
       var segment = segments.get(i);
-      if (segment instanceof FieldPath.Field field
+      if (segment == FieldPath.Part.VALUE && current instanceof DraftNode.Defaulted value) {
+        current = value.value();
+      } else if (segment instanceof FieldPath.Field field
           && current instanceof DraftNode.ObjectValue object) {
         current = object.fields().get(field.id());
         if (current == null)
@@ -277,6 +295,8 @@ public final class DraftTree {
       UnaryOperator<DraftNode> operation) {
     if (offset == path.size()) return Objects.requireNonNull(operation.apply(node));
     var segment = path.get(offset);
+    if (segment == FieldPath.Part.VALUE && node instanceof DraftNode.Defaulted value)
+      return value.withValue(change(value.value(), path, offset + 1, operation));
     if (segment instanceof FieldPath.Field field && node instanceof DraftNode.ObjectValue object) {
       var child = object.fields().get(field.id());
       if (child == null) throw new IllegalArgumentException("Field no longer exists in this draft");
@@ -334,6 +354,21 @@ public final class DraftTree {
 
   private static DraftNode align(
       DraftNode actual, DraftNode submitted, ValueType<?> type, JsonLimits limits) {
+    if (type.shape() instanceof ValueShape.Defaulted<?> defaults
+        && actual instanceof DraftNode.Defaulted a
+        && submitted instanceof DraftNode.Defaulted s) {
+      var value =
+          new DraftNode.Defaulted(
+              a.overridden(),
+              a.overridden()
+                  ? s.overridden()
+                          || sameTypedDraft(a.value(), s.value(), defaults.element(), limits)
+                      ? align(a.value(), s.value(), defaults.element(), limits)
+                      : a.value()
+                  : s.value(),
+              s.retainedOverrides());
+      return a.overridden() && !s.overridden() ? value.retainOverride(s.value()) : value;
+    }
     if (type.shape() instanceof ValueShape.ObjectValue object
         && actual instanceof DraftNode.ObjectValue a
         && submitted instanceof DraftNode.ObjectValue s
@@ -412,9 +447,24 @@ public final class DraftTree {
     return actual;
   }
 
-  private static Object decodedIdentity(DraftNode node, ValueType<?> type, JsonLimits limits) {
+  private static <T> boolean sameTypedDraft(
+      DraftNode first, DraftNode second, ValueType<T> type, JsonLimits limits) {
+    try {
+      return type.equivalent(
+          decodedIdentity(first, type, limits), decodedIdentity(second, type, limits));
+    } catch (RuntimeException invalidInactive) {
+      return false;
+    }
+  }
+
+  private static <T> T decodedIdentity(DraftNode node, ValueType<T> type, JsonLimits limits) {
     var renderer = new Renderer(limits);
-    var json = renderer.render(node, type, FieldPath.ROOT, SourcePath.ROOT);
+    var json =
+        type.shape() instanceof ValueShape.Defaulted<?> defaults
+                && node instanceof DraftNode.Defaulted value
+                && !value.overridden()
+            ? defaultJson(defaults).toString()
+            : renderer.render(node, type, FieldPath.ROOT, SourcePath.ROOT);
     if (!new ValidationReport(renderer.issues, renderer.complete).valid())
       throw new IllegalArgumentException("Collection identity is not complete");
     try {
@@ -518,6 +568,16 @@ public final class DraftTree {
             path, InputState.INVALID, "input.null", "Explicit null is not admitted for this value");
       if (type.shape() instanceof ValueShape.Scalar scalar
           && node instanceof DraftNode.Scalar value) return scalar(value.raw(), scalar, type, path);
+      if (type.shape() instanceof ValueShape.Defaulted<?> defaults
+          && node instanceof DraftNode.Defaulted value) {
+        if (!value.overridden())
+          return fail(
+              path,
+              InputState.INVALID,
+              "input.omitted_value",
+              "An omitted default is only valid as a record field");
+        return render(value.value(), defaults.element(), path.append(FieldPath.Part.VALUE), source);
+      }
       if (type.shape() instanceof ValueShape.Mapping mapping
           && node instanceof DraftNode.Mapping value) return mapping(value, mapping, path, source);
       if (type.shape() instanceof ValueShape.ObjectValue object
@@ -527,6 +587,7 @@ public final class DraftTree {
         for (var field : object.fields()) {
           known.add(field.id());
           var child = value.fields().getOrDefault(field.id(), new DraftNode.Missing());
+          if (omittedField(field.type(), child)) continue;
           parts.add(
               JSON.toJson(field.id())
                   + ":"
@@ -645,12 +706,12 @@ public final class DraftTree {
         if (!object) addresses.put(entrySource, rowPath);
         var keySource = entrySource.property("key");
         int before = issues.size();
+        var rawKey = entry.fields().getOrDefault("key", new DraftNode.Missing());
+        boolean omittedKey = !object && omittedField(shape.key(), rawKey);
         var keyJson =
-            render(
-                entry.fields().getOrDefault("key", new DraftNode.Missing()),
-                shape.key(),
-                keyPath,
-                keySource);
+            omittedKey
+                ? defaultJson((ValueShape.Defaulted<?>) shape.key().shape()).toString()
+                : render(rawKey, shape.key(), keyPath, keySource);
         String name = null;
         if (issues.size() == before) {
           try {
@@ -694,18 +755,33 @@ public final class DraftTree {
           addresses.remove(keySource);
           if (name != null) addresses.put(source.key(name), keyPath);
         }
+        var rawValue = entry.fields().getOrDefault("value", new DraftNode.Missing());
+        boolean omittedValue = !object && omittedField(shape.value(), rawValue);
         var encodedValue =
-            render(
-                entry.fields().getOrDefault("value", new DraftNode.Missing()),
-                shape.value(),
-                valuePath,
-                object ? source.property(name == null ? "" : name) : entrySource.property("value"));
-        parts.add(
-            object
-                ? JSON.toJson(name == null ? "" : name) + ":" + encodedValue
-                : "{\"key\":" + keyJson + ",\"value\":" + encodedValue + "}");
+            omittedValue
+                ? null
+                : render(
+                    rawValue,
+                    shape.value(),
+                    valuePath,
+                    object
+                        ? source.property(name == null ? "" : name)
+                        : entrySource.property("value"));
+        if (object) parts.add(JSON.toJson(name == null ? "" : name) + ":" + encodedValue);
+        else {
+          var fields = new ArrayList<String>();
+          if (!omittedKey) fields.add("\"key\":" + keyJson);
+          if (!omittedValue) fields.add("\"value\":" + encodedValue);
+          parts.add("{" + String.join(",", fields) + "}");
+        }
       }
       return object ? "{" + String.join(",", parts) + "}" : "[" + String.join(",", parts) + "]";
+    }
+
+    private static boolean omittedField(ValueType<?> type, DraftNode node) {
+      return type.shape() instanceof ValueShape.Defaulted<?>
+          && node instanceof DraftNode.Defaulted value
+          && !value.overridden();
     }
 
     private String scalar(String raw, ValueShape.Scalar shape, ValueType<?> type, FieldPath path) {

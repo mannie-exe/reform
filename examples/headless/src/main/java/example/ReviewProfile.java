@@ -153,8 +153,9 @@ public final class ReviewProfile {
     CreationRecipe.verify();
     MapEditing.verify();
     SetEditing.verify();
+    FieldDefaults.verify();
     System.out.println(
-        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe/typed-maps/sets; game classes absent");
+        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe/typed-maps/sets/field-defaults; game classes absent");
   }
 
   private static void verifyStorage(DocumentDefinition<Profile> definition, JsonLimits limits)

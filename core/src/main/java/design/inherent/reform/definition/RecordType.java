@@ -9,6 +9,7 @@ import com.mojang.serialization.RecordBuilder;
 import design.inherent.reform.validation.DecodedValue;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.DefaultedType;
 import design.inherent.reform.value.SnapshotContext;
 import design.inherent.reform.value.SnapshotPolicy;
 import design.inherent.reform.value.ValueShape;
@@ -20,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -62,21 +64,34 @@ public final class RecordType<T> implements ValueType<T> {
 
   private record Binding<T, V>(FieldKey<V> key, Function<T, V> getter) {
     private <O> ValidationReport decode(
-        DynamicOps<O> ops, MapLike<O> input, FieldPath parent, Map<FieldKey<?>, Object> values) {
+        DynamicOps<O> ops,
+        MapLike<O> input,
+        FieldPath parent,
+        Map<FieldKey<?>, Object> values,
+        Set<String> encodedNames) {
       O node = input.get(key.id());
-      if (node == null) {
+      if (node == null && (ops.compressMaps() || !encodedNames.contains(key.id()))) {
+        if (key.type() instanceof DefaultedType<V> defaulted) {
+          values.put(key, defaulted.fallback());
+          return ValidationReport.VALID;
+        }
         return new ValidationReport(
             List.of(
                 Issue.error("value.required", parent.field(key.id()), "Required field is missing")),
             true);
       }
+      if (node == null) node = ops.empty();
       var decoded = key.type().decode(ops, node, parent.field(key.id()));
       decoded.value().ifPresent(value -> values.put(key, value));
       return decoded.report();
     }
 
     private <O> RecordBuilder<O> encode(T value, DynamicOps<O> ops, RecordBuilder<O> prefix) {
-      return prefix.add(key.id(), key.type().codec().encodeStart(ops, getter.apply(value)));
+      V field = getter.apply(value);
+      var encoded = key.type().codec().encodeStart(ops, field);
+      if (key.type() instanceof DefaultedType<V> defaulted && defaulted.isDefault(field))
+        return prefix.withErrorsFrom(encoded);
+      return prefix.add(key.id(), encoded);
     }
 
     private void freeze(T value, SnapshotContext context, Map<FieldKey<?>, Object> values) {
@@ -197,7 +212,7 @@ public final class RecordType<T> implements ValueType<T> {
     var values = new HashMap<FieldKey<?>, Object>();
     boolean complete = true;
     for (var field : fields) {
-      var report = field.decode(ops, input, path, values);
+      var report = field.decode(ops, input, path, values, names);
       issues.addAll(report.issues());
       complete &= report.complete();
     }

@@ -11,6 +11,7 @@ public sealed interface ValueShape
         ValueShape.Sequence,
         ValueShape.ObjectValue,
         ValueShape.Mapping,
+        ValueShape.Defaulted,
         ValueShape.Custom {
   enum ScalarKind {
     BOOLEAN,
@@ -60,6 +61,21 @@ public sealed interface ValueShape
   record ObjectValue(List<FieldKey<?>> fields) implements ValueShape {
     public ObjectValue {
       fields = List.copyOf(fields);
+    }
+  }
+
+  /** An omitted record field resolves to its declared owned fallback, never an ambient source. */
+  record Defaulted<T>(ValueType<T> element, T fallback) implements ValueShape {
+    public Defaulted {
+      Objects.requireNonNull(element);
+      if (element.shape() instanceof Defaulted<?>)
+        throw new IllegalArgumentException("Nested field-default wrappers are ambiguous");
+      fallback = element.freeze(fallback);
+    }
+
+    @Override
+    public T fallback() {
+      return element.freeze(fallback);
     }
   }
 

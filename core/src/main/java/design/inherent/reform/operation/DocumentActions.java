@@ -15,6 +15,7 @@ import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.DefaultedType;
 import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueType;
 import design.inherent.reform.value.ValueTypes;
@@ -456,6 +457,7 @@ public final class DocumentActions<T> implements AutoCloseable {
             .map(
                 field -> {
                   var node = defaults.at(field.path());
+                  if (node instanceof DraftNode.Defaulted defaulted) node = defaulted.value();
                   return new FieldDescription(
                       field.path(),
                       field.selector(),
@@ -505,11 +507,25 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   private static <V> boolean equivalent(ValueType<V> type, JsonElement first, JsonElement second) {
-    var a = type.decode(JsonOps.INSTANCE, first, FieldPath.ROOT);
-    var b = type.decode(JsonOps.INSTANCE, second, FieldPath.ROOT);
-    if (a.value().isEmpty() || b.value().isEmpty())
+    return type.equivalent(comparisonValue(type, first), comparisonValue(type, second));
+  }
+
+  private static <V> V comparisonValue(ValueType<V> type, JsonElement encoded) {
+    if (encoded == null && type instanceof DefaultedType<V> defaults) return defaults.fallback();
+    if (encoded == null) throw new IllegalStateException("A required comparison field is missing");
+    var value = type.decode(JsonOps.INSTANCE, encoded, FieldPath.ROOT);
+    if (value.value().isEmpty() || !value.report().valid())
       throw new IllegalStateException("Previously validated comparison could not decode");
-    return type.equivalent(a.value().orElseThrow(), b.value().orElseThrow());
+    return value.value().orElseThrow();
+  }
+
+  private static <V> String comparisonJson(ValueType<V> type, JsonElement encoded) {
+    return encoded == null
+        ? type.codec()
+            .encodeStart(JsonOps.INSTANCE, comparisonValue(type, null))
+            .getOrThrow()
+            .toString()
+        : encoded.toString();
   }
 
   private static void differences(
@@ -527,7 +543,7 @@ public final class DocumentActions<T> implements AutoCloseable {
             first.getAsJsonObject().get(field.id()),
             second.getAsJsonObject().get(field.id()),
             changes);
-    } else changes.add(new Change(path, first.toString(), second.toString()));
+    } else changes.add(new Change(path, comparisonJson(type, first), comparisonJson(type, second)));
   }
 
   private ExportArtifact export(EditorActor.Inspection<T> observed) {

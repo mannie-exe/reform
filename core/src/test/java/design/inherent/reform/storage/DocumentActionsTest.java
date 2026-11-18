@@ -66,6 +66,69 @@ class DocumentActionsTest {
     }
   }
 
+  @Test
+  void comparisonAndSaveResolveCanonicalOmissionsWithoutDroppingExplicitInput() throws Exception {
+    var count = FieldKey.of("count", ValueTypes.defaultedField(ValueTypes.integer(0, 10), 1));
+    var type =
+        RecordType.<Profile>builder(v -> new Profile(v.get(count), v.get(SCALE), v.get(LABEL)))
+            .field(count, Profile::count)
+            .field(SCALE, Profile::scale)
+            .field(LABEL, Profile::label)
+            .build();
+    try (var h = new Harness(type)) {
+      var initial =
+          com.google.gson.JsonParser.parseString(Files.readString(h.path)).getAsJsonObject();
+      assertFalse(initial.getAsJsonObject("values").has("count"));
+      initial.getAsJsonObject("values").addProperty("count", 1);
+      Files.writeString(h.path, initial.toString());
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var bytes = Files.readString(h.path);
+      await(
+          h.nativeCall(
+              () ->
+                  h.actor.setRaw(FieldPath.ROOT.field("count").append(FieldPath.Part.VALUE), "7")));
+      var comparison = h.run(() -> h.actions.compare(EntryPoint.COMMAND));
+      assertTrue(comparison.report().valid());
+      assertEquals(
+          java.util.List.of(new DocumentActions.Change(FieldPath.ROOT.field("count"), "1", "7")),
+          comparison.changes());
+      assertEquals(bytes, Files.readString(h.path));
+      var committed = h.run(() -> h.actions.save(EntryPoint.GUI));
+      assertEquals(
+          CommitReceipt.Persistence.SAVED, committed.receipt().orElseThrow().persistence());
+      assertEquals(
+          7,
+          h.actions
+              .view()
+              .snapshot()
+              .orElseThrow()
+              .inspect()
+              .candidate()
+              .orElseThrow()
+              .value()
+              .count());
+      var persisted =
+          design.inherent.reform.serialization.JsonInput.read(Files.readString(h.path), JSON)
+              .copyTree()
+              .getAsJsonObject()
+              .getAsJsonObject("values");
+      assertEquals(
+          7,
+          design.inherent.reform.serialization.ExactCodecs.INT
+              .parse(com.mojang.serialization.JsonOps.INSTANCE, persisted.get("count"))
+              .getOrThrow());
+      assertFalse(h.actions.view().dirty());
+      assertEquals(
+          "1",
+          h.run(() -> h.actions.describe(EntryPoint.COMMAND)).fields().stream()
+              .filter(field -> field.selector().equals("count"))
+              .findFirst()
+              .orElseThrow()
+              .defaultText()
+              .orElseThrow());
+    }
+  }
+
   final class Harness implements AutoCloseable {
     final ExecutorService nativeExecutor = Executors.newSingleThreadExecutor(),
         workers = Executors.newFixedThreadPool(2);
@@ -84,12 +147,16 @@ class DocumentActionsTest {
     final DocumentActions<Profile> actions;
 
     Harness() throws Exception {
+      this(TYPE);
+    }
+
+    Harness(RecordType<Profile> rootType) throws Exception {
       var nativeThread = nativeCall(() -> Thread.currentThread().threadId());
       var definition =
           new DocumentDefinition<>(
               DocumentId.parse("fixture:actions"),
               1,
-              TYPE,
+              rootType,
               () -> new Profile(1, 1.0, "original"),
               profile -> {
                 if (Thread.currentThread().threadId() == nativeThread)

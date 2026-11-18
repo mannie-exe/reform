@@ -147,6 +147,10 @@ public final class ValueTypes {
     return new SetType<>(element, maximumSize);
   }
 
+  public static <T> DefaultedType<T> defaultedField(ValueType<T> element, T fallback) {
+    return new DefaultedType<>(element, fallback);
+  }
+
   private static <N extends Number> ValueType<N> number(
       Codec<N> codec, ValueShape.ScalarKind kind, BigDecimal minimum, BigDecimal maximum) {
     return scalar(
