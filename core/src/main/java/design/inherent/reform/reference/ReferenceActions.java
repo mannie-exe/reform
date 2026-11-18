@@ -47,8 +47,8 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
   private final OperationDescriptor<Request<K>, ReferenceResolution<V>> resolve;
   private final OperationDescriptor<ReferenceQuery, ReferencePage<K>> search;
   private final OwnerContext.CloseHook closeHook;
-  private Active<K, V> active;
-  private boolean closed;
+  private volatile Active<K, V> active;
+  private volatile boolean closed;
 
   public ReferenceActions(
       OwnerContext context,
@@ -146,6 +146,44 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
       return CompletableFuture.<ReferenceStamp>failedFuture(failure).minimalCompletionStage();
     }
     return produced.thenCompose(resolver -> context.onOwner(() -> publish(prepared, resolver)));
+  }
+
+  /** Capture on the actual owner, compile on its bounded worker lane, then publish freshly. */
+  public <I> CompletionStage<ReferenceStamp> bindCaptured(
+      String revision,
+      java.util.function.BiFunction<OwnerContext, ReferenceStamp, I> capture,
+      Function<I, ? extends ReferenceResolver<K, V>> compile) {
+    Objects.requireNonNull(capture);
+    Objects.requireNonNull(compile);
+    return bindAsync(
+        revision,
+        stamp -> {
+          var input = Objects.requireNonNull(capture.apply(context, stamp));
+          return context.onWorker(() -> Objects.requireNonNull(compile.apply(input)));
+        });
+  }
+
+  public DocumentId source() {
+    return source;
+  }
+
+  public ReferenceLimits limits() {
+    return limits;
+  }
+
+  /** Cached identity only. Neither authorization nor a lookup, including after source closure. */
+  public Optional<ReferenceStamp> observedStamp() {
+    var selected = active;
+    return selected == null ? Optional.empty() : Optional.of(selected.stamp());
+  }
+
+  public boolean isOpen() {
+    return !closed && context.isOpen() && access.isOpen();
+  }
+
+  /** Fresh native READ admission; consumers must call on this source's actual owner thread. */
+  public ReferenceStamp requireStamp() {
+    return current(Optional.empty()).stamp();
   }
 
   private Preparation<K, V> prepare(String revision) {

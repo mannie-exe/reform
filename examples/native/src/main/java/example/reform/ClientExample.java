@@ -12,6 +12,7 @@ public final class ClientExample {
 
   static void register(IEventBus bus, ModContainer container) {
     StructuredExample.register(bus, container);
+    ReferenceExample.register(bus, container);
     preferences = ClientJsonSettings.clientJson(bus, container, NativeExample.DEFINITION);
     preferences.registerMenu(Component.literal("Native example settings"));
     preferences.registerCommands("reformprefs");

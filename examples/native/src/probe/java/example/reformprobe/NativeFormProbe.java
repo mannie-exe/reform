@@ -60,6 +60,7 @@ public final class NativeFormProbe {
   private java.util.concurrent.CompletableFuture<JsonObject> commands;
   private NativeWorldRecipeControls recipe;
   private NativeStructuredControls structured;
+  private NativeReferenceControls references;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -83,7 +84,9 @@ public final class NativeFormProbe {
               "reentrant",
               "recipe",
               "structured",
-              "structured-reopen")
+              "structured-reopen",
+              "references",
+              "references-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -221,6 +224,27 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("references")) {
+        if (references == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.ReferenceExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          references =
+              new NativeReferenceControls(
+                  mode.equals("references-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (references.tick()) {
+          report.add("references", references.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("structured")) {
@@ -708,6 +732,10 @@ public final class NativeFormProbe {
           example.reform.StructuredExample.settings().status().lifecycle()
               == ClientJsonSettings.Lifecycle.CLOSED,
           "Structured settings context survived shutdown");
+      check(
+          example.reform.ReferenceExample.settings().status().lifecycle()
+              == ClientJsonSettings.Lifecycle.CLOSED,
+          "Reference settings context survived shutdown");
       var settings = ClientExample.settings();
       check(
           settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,

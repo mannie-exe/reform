@@ -11,14 +11,19 @@ import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.reference.ReferenceActions;
+import design.inherent.reform.reference.ReferenceLimits;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.JsonStore;
 import design.inherent.reform.storage.OwnedFile;
 import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.SnapshotPolicy;
+import design.inherent.reform.value.ValueType;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -161,6 +166,14 @@ public final class ClientJsonSettings<T> {
   }
 
   public Screen screen(Screen parent, Component title) {
+    return screen(parent, title, Map.of());
+  }
+
+  /** Borrowed context-owned sources; no capture, lookup or source replacement occurs here. */
+  public Screen screen(
+      Screen parent,
+      Component title,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources) {
     requireClientThread();
     var current = state.get();
     if (current.lifecycle() != Lifecycle.READY) return new StatusScreen(parent, title);
@@ -170,7 +183,19 @@ public final class ClientJsonSettings<T> {
         title,
         text("client_context", "Client preferences · applies to this installation"),
         definition,
-        editingActions(current));
+        editingActions(current),
+        sources);
+  }
+
+  /** Explicit source registration on this ready owner; caller supplies capture/reload policy. */
+  public <K, V> ReferenceActions<K, V> references(
+      DocumentId source, ValueType<K> keys, SnapshotPolicy<V> values, ReferenceLimits limits) {
+    requireClientThread();
+    var current = state.get();
+    if (current.lifecycle() != Lifecycle.READY)
+      throw new PolicyRefusal("reference.context", "Client reference owner is not ready");
+    return new ReferenceActions<>(
+        current.context(), current.access(), source, keys, values, limits);
   }
 
   private DocumentActions<T> editingActions(State<T> current) {

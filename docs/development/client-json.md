@@ -30,6 +30,14 @@ Each document has its own owner context, one installation-local access binding a
 
 Game shutdown closes registered preference documents and managed creation contexts before shutting down their shared worker executor. Cleanup continues across context failures. Core owners retain their active-effect/queued-refusal semantics; this does not promise a process-crash transaction or a universal synchronous exit drain.
 
+## Reference sources
+
+`references(source, keyType, valuePolicy, limits)` creates explicit reference actions under this document's ready actual client owner/access. It creates no new executor and captures no native data. The caller retains the source, declares its complete capture/reload policy and closes it when no longer needed; owner shutdown also closes it. Do not create another source on every frame or screen rebuild.
+
+`screen(parent, title, sources)` accepts borrowed source bindings keyed by their actual logical IDs. Its native Browse picker uses the same lookup services and stages through the existing editor. Missing bindings preserve manual input with an unavailable state. Closing a picker keeps the parent editor and source open; unexpected navigation closes that editor. No menu or automatic source discovery is installed by these overloads.
+
+The independent [reference example](../../examples/native/src/main/java/example/reform/ReferenceExample.java) uses `bindCaptured` to capture the actual block/tag registry and explicitly enumerate client language-resource names, compile their indexes on the owned worker lane, and publish only a fresh complete snapshot. It invokes no optional supplier for its deliberately absent donor. Source refresh is explicit in this example; real consumers must bind their actual registry/resource reload and world-context lifetime. A client global block registry is not a substitute for a new world's frozen dynamic registry context.
+
 ## Explicit commands
 
 `registerCommands("preferences")` explicitly contributes a native client command root once during client construction. Registration refuses a conflicting root and unregisters its event listener at shutdown. It adds no server command or permission and requires READY client settings. `commandBranch(literal, output)` instead supplies a Brigadier branch and native-thread result sink for explicit composition. Default feedback goes to the current client player; no chat recipient is fabricated at the main menu.
@@ -40,4 +48,4 @@ The branch uses [shared local operations](operations.md). Its editor is created 
 
 The convenience registry admits 128 document identities. Its shared pool has two workers, a 256-task queue and 30-second idle thread expiry. Each document retains the core standard context limits, a 16-operation owner lane and 64-edit actor lane. Its JSON admission is 256 KiB, 64 depth levels, 16,384 nodes, 32,768 string characters, 128 numeric characters and absolute decimal scale 4,096. These are explicit helper defaults, separate from field constraints, game networking and owner-specific advanced adapters.
 
-[Verification](verification.md) separates core controls and exact native runs. The independent factory example passes FML registration, saved reopen, malformed retention/recovery, native Brigadier operations and pending reentrant retry/shutdown in the five-client native suite. Dedicated-side loading separately preserves the absence of the client document. Other owner/native backends, full operations/control composition, measured costs and both migrations remain Phase 1 work.
+[Verification](verification.md) separates core controls and exact native runs. The independent factory example passes FML registration, saved reopen, malformed retention/recovery, native Brigadier operations and pending reentrant retry/shutdown in the independently attributed native suites, including recursive controls and source-bound reference pickers. Dedicated-side loading separately preserves the absence of the client document. Other owner/native backends, full operations/control composition, measured costs and both migrations remain Phase 1 work.

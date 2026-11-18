@@ -1,6 +1,7 @@
 package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftNode;
@@ -14,6 +15,8 @@ import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
+import design.inherent.reform.reference.ReferenceActions;
+import design.inherent.reform.reference.ReferenceSelection;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueShape;
 import java.util.ArrayList;
@@ -54,6 +57,7 @@ public final class SettingsScreen<T> extends Screen {
   private final Component contextLabel;
   private final DocumentDefinition<T> definition;
   private final DocumentActions<T> actions;
+  private final Map<DocumentId, ReferenceActions<String, ?>> sources;
   private final Map<FieldPath, Control> controls = new LinkedHashMap<>();
   private final Map<FieldPath, String> local = new LinkedHashMap<>();
   private final Map<FieldPath, Long> versions = new LinkedHashMap<>();
@@ -78,11 +82,30 @@ public final class SettingsScreen<T> extends Screen {
       Component contextLabel,
       DocumentDefinition<T> definition,
       DocumentActions<T> actions) {
+    this(parent, title, contextLabel, definition, actions, Map.of());
+  }
+
+  public SettingsScreen(
+      Screen parent,
+      Component title,
+      Component contextLabel,
+      DocumentDefinition<T> definition,
+      DocumentActions<T> actions,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources) {
     super(title);
     this.parent = parent;
     this.contextLabel = Objects.requireNonNull(contextLabel);
     this.definition = Objects.requireNonNull(definition);
     this.actions = Objects.requireNonNull(actions);
+    var admitted = new LinkedHashMap<DocumentId, ReferenceActions<String, ?>>();
+    sources.forEach(
+        (id, source) -> {
+          if (!id.equals(source.source()))
+            throw new IllegalArgumentException(
+                "Reference binding must retain its actual source ID");
+          admitted.put(id, source);
+        });
+    this.sources = Map.copyOf(admitted);
     if (definition != actions.definition())
       throw new IllegalArgumentException("A form requires its actual owner definition");
   }
@@ -237,7 +260,11 @@ public final class SettingsScreen<T> extends Screen {
 
   private Button button(Component label, Runnable action) {
     var result =
-        Button.builder(label, ignored -> action.run())
+        Button.builder(
+                label,
+                ignored -> {
+                  if (!closed && minecraft.screen == this) action.run();
+                })
             .bounds(0, 0, Math.max(56, font.width(label) + 20), 20)
             .build();
     footer.add(result);
@@ -445,7 +472,58 @@ public final class SettingsScreen<T> extends Screen {
               control.token());
       controls.put(path, control);
     }
-    panel.field(FormModel.key(path), label, Component.empty(), control.widget());
+    if (shape instanceof ValueShape.Reference<?> reference) {
+      var source = sources.get(reference.source());
+      var browse =
+          Button.builder(
+                  source == null
+                      ? text("source_unavailable", "Source unavailable")
+                      : text("browse", "Browse…"),
+                  ignored -> openReference(path, label, source))
+              .bounds(0, 0, 120, 20)
+              .createNarration(original -> label.copy().append(": ").append(original.get()))
+              .build();
+      browse.setTooltip(Tooltip.create(Component.literal(reference.source().toString())));
+      structureButtons.put(browse, source != null);
+      panel.field(FormModel.key(path), label, Component.empty(), control.widget(), browse);
+    } else panel.field(FormModel.key(path), label, Component.empty(), control.widget());
+  }
+
+  private <V> void openReference(
+      FieldPath path, Component label, ReferenceActions<String, V> source) {
+    if (closed
+        || minecraft.screen != this
+        || source == null
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()) return;
+    Supplier<ReferenceSelection<T, V>> factory =
+        () -> new ReferenceSelection<>(actions, path, source);
+    final ReferenceSelection<T, V> selection;
+    try {
+      selection = factory.get();
+    } catch (design.inherent.reform.owner.PolicyRefusal | IllegalArgumentException refused) {
+      notice = failure(refused);
+      return;
+    }
+    var screen =
+        new ReferenceScreen<>(
+            label,
+            selection,
+            source.limits(),
+            factory,
+            () -> {
+              synchronize(Map.copyOf(versions));
+              minecraft.setScreen(this);
+            },
+            actions::close);
+    handoff = true;
+    try {
+      minecraft.setScreen(screen);
+    } finally {
+      handoff = false;
+    }
   }
 
   private void children(FormModel.Node parent) {
@@ -499,6 +577,7 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private void structural(FieldPath path, DraftEdit.Action edit) {
+    if (closed || minecraft.screen != this) return;
     var current = actions.view();
     if (pendingEdits > 0
         || saving
@@ -581,7 +660,20 @@ public final class SettingsScreen<T> extends Screen {
           Math.max(raw.length(), scalar.maximumLength() > 0 ? scalar.maximumLength() : 128));
       input.setValue(raw);
       input.setResponder(value -> edit(path, token, value));
-      return new Control(input, input::setValue, true, declared, false, target, token);
+      return new Control(
+          input,
+          value -> {
+            input.setMaxLength(
+                Math.max(
+                    scalar.maximumLength() > 0 ? scalar.maximumLength() : 128,
+                    Math.max(input.getValue().length(), value.length())));
+            input.setValue(value);
+          },
+          true,
+          declared,
+          false,
+          target,
+          token);
     }
     var unavailable = new EditBox(font, 0, 0, 160, 20, label);
     unavailable.setMaxLength(Math.max(128, raw.length()));
@@ -849,6 +941,7 @@ public final class SettingsScreen<T> extends Screen {
 
   @Override
   public boolean keyPressed(int key, int scan, int modifiers) {
+    if (closed || minecraft.screen != this) return false;
     if (super.keyPressed(key, scan, modifiers)) return true;
     if (loading) return false;
     if (hasControlDown()) {
@@ -874,6 +967,7 @@ public final class SettingsScreen<T> extends Screen {
 
   @Override
   public void onClose() {
+    if (closed || minecraft.screen != this) return;
     if (saving || loading || pendingEdits > 0) {
       notice = text("wait_close", "Wait for the current operation before closing.");
       return;

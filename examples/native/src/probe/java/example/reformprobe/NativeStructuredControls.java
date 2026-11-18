@@ -134,7 +134,7 @@ final class NativeStructuredControls {
         .orElseThrow(() -> new AssertionError("Missing narrated action: " + context));
   }
 
-  private static String narration(AbstractWidget widget) {
+  static String narration(AbstractWidget widget) {
     var parts = new ArrayList<String>();
     widget.updateNarration(
         new NarrationElementOutput() {

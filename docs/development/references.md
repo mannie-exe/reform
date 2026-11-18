@@ -2,7 +2,7 @@
 
 `ValueTypes.reference(element, source)` adds selector metadata to an existing text/choice `ValueType`. It preserves that type's codec, snapshot policy, authored spelling and structural draft path. It performs no lookup while decoding or drawing a field. Structurally valid unresolved keys remain editable; the owner decides which reference checks are required for validation, publication or admission. Existing native registry codecs still need their actual registry context.
 
-The current implementation supplies reference data and shared local operations. Native pickers, draft-bound response presentation and searchable multi-selection remain required by [coverage](coverage.md).
+The current implementation supplies reference data, shared local operations, exact draft-bound selection and an experimental native picker. Searchable multi-selection, real consumer bindings and broader native/context qualification remain required by [coverage](coverage.md).
 
 ## Complete admitted data
 
@@ -20,7 +20,19 @@ Construct `ReferenceActions<K,V>` with the real `OwnerContext`, its actual `Acce
 
 `bind` invalidates the previous source before building a complete replacement. `bindAsync` allows native capture at entry, worker compilation and fresh native publication. Until publication, the source is unavailable. Failed, reentrant or late producers cannot resurrect an old source or overwrite a newer binding. `invalidate` publishes an explicit missing-dependency or unavailable state. Context closure clears the provider and refuses new work; running operations drain through their retained handles.
 
-These services bind source/context freshness. A frontend must also associate responses with its actual field/stable row, raw key, draft version and request identity. Editing, branch/profile switching and disposal must reject obsolete presentation. A response must never edit a replacement field or silently normalize the authored key. The current primitive screen preserves reference text without providing this picker/controller yet.
+`bindCaptured` supplies a convenience boundary for native capture and worker compilation: its capture receives the actual owner and assigned stamp, compilation uses that context's bounded worker lane, and publication retains the same fresh-source checks. It adds no executor or resource enumeration. `observedStamp` and `isOpen` provide cached lifetime observations for presentation; they neither authorize reading nor perform a lookup. `requireStamp` separately performs fresh READ admission on the actual owner thread.
+
+## Draft-bound selection
+
+`ReferenceSelection` binds one `DocumentActions` draft target to its declared `ReferenceActions<String,V>` source. It captures the exact editor/session/generation/version/path, original raw key and actual source/context nonce. A changed draft, removed/replaced/moved row, branch switch, save acknowledgement, reload, source replacement or closed context makes that selection obsolete. Equal descriptive source revisions do not preserve freshness.
+
+Search and inspection return the existing operation handles. The frontend marshals completion onto the controller's creating owner thread and calls `accept` with the actual request object. Only the latest completed search or lookup handle may publish its result; callers cannot substitute a different response. Starting another request invalidates the prior response even when fresh admission refuses that new request. Changed queries replace their old results, and closing the controller cancels only its own outstanding reads. The borrowed source and document remain open. Cached `page`/`resolution` observations perform no IO or permission callback.
+
+`choose` requires a resolved lookup, rechecks source READ/nonce and submits its exact raw key through the document's typed edit service. An empty resolved tag is usable; unknown, malformed, missing-dependency and unavailable results are not selectable. Inspecting an authored key never normalizes or replaces it. Selection stages a draft only: it does not save, publish resources, change runtime values or certify domain validity. Source admission occurs at submission, not as a registry lock held through later saving; owners retain complete current-context validation at their actual application boundary. This local controller requires the actual native owner thread for its source and document. It is not a remote bridge.
+
+The experimental native `SettingsScreen` accepts explicit borrowed source bindings. Missing bindings leave manual text intact with an unavailable Browse state. Its auxiliary picker uses bounded explicit search, source-bound pagination, identifier inspection, preview summaries, Refresh and a separate Use selection action. A changed filter cannot reuse its old continuation. Refresh captures a new field/source target rather than reviving obsolete results. Returning preserves the parent editor; unexpected picker removal closes that editor while leaving source ownership intact. Large previews are visibly abbreviated without changing their data. Native runtime qualification is recorded separately in [verification](verification.md).
+
+The [client JSON factory](client-json.md) can create reference actions under its ready actual owner and pass explicit bindings to a screen. The independent `ReferenceExample` prepares block/tag and explicitly enumerated client resource snapshots through public APIs; it owns when those sources are refreshed. Installing the library does not enumerate resources, register a menu or start source reload work.
 
 ## Native snapshots
 
