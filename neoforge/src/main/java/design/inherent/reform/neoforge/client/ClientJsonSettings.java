@@ -422,6 +422,15 @@ public final class ClientJsonSettings<T> {
       throw new IllegalStateException("Client settings require the native client thread");
   }
 
+  /** Borrow the same bounded physical-client pool without registering or initializing a file. */
+  static java.util.concurrent.Executor workers() {
+    return REGISTRY.workers();
+  }
+
+  static void manageContext(OwnerContext context) {
+    REGISTRY.manage(context);
+  }
+
   private static Component text(String key, String fallback) {
     return Component.translatableWithFallback("reform.settings." + key, fallback);
   }
@@ -434,6 +443,7 @@ public final class ClientJsonSettings<T> {
 
   private static final class Registry {
     private final Map<DocumentId, ClientJsonSettings<?>> documents = new LinkedHashMap<>();
+    private final Map<java.util.UUID, OwnerContext> contexts = new LinkedHashMap<>();
     private ThreadPoolExecutor workers;
     private boolean closing;
 
@@ -451,6 +461,25 @@ public final class ClientJsonSettings<T> {
 
     synchronized void remove(ClientJsonSettings<?> settings) {
       documents.remove(settings.definition.id(), settings);
+    }
+
+    synchronized void manage(OwnerContext context) {
+      requireClientThread();
+      if (closing || contexts.size() >= 128)
+        throw new IllegalStateException("Client context admission is closed or full");
+      if (contexts.putIfAbsent(context.id(), context) != null)
+        throw new IllegalArgumentException("Client context already managed");
+      try {
+        context.onClose(
+            () -> {
+              synchronized (this) {
+                contexts.remove(context.id());
+              }
+            });
+      } catch (RuntimeException failed) {
+        contexts.remove(context.id());
+        throw failed;
+      }
     }
 
     synchronized ThreadPoolExecutor workers() {
@@ -478,11 +507,14 @@ public final class ClientJsonSettings<T> {
 
     private void shutdown(GameShuttingDownEvent event) {
       final List<ClientJsonSettings<?>> selected;
+      final List<OwnerContext> selectedContexts;
       final ThreadPoolExecutor executor;
       synchronized (this) {
         closing = true;
         selected = List.copyOf(documents.values());
         documents.clear();
+        selectedContexts = List.copyOf(contexts.values());
+        contexts.clear();
         executor = workers;
         workers = null;
       }
@@ -491,6 +523,14 @@ public final class ClientJsonSettings<T> {
         for (var settings : selected) {
           try {
             settings.close();
+          } catch (RuntimeException | Error failed) {
+            if (failure == null) failure = failed;
+            else if (failure != failed) failure.addSuppressed(failed);
+          }
+        }
+        for (var context : selectedContexts) {
+          try {
+            context.close();
           } catch (RuntimeException | Error failed) {
             if (failure == null) failure = failed;
             else if (failure != failed) failure.addSuppressed(failed);

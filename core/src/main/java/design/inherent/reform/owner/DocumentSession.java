@@ -12,6 +12,11 @@ import java.util.concurrent.CompletionStage;
  * Editor/operation boundary shared by actual owners; backend execution and effects stay explicit.
  */
 public interface DocumentSession<T> extends AutoCloseable {
+  enum CommitKind {
+    PERSIST,
+    CONTEXT
+  }
+
   enum Operation {
     READ,
     COMMIT,
@@ -29,6 +34,11 @@ public interface DocumentSession<T> extends AutoCloseable {
   boolean isOpen();
 
   Set<Operation> operations();
+
+  /** Source-owner declaration, independent of file names and frontend labels. */
+  default CommitKind commitKind() {
+    return CommitKind.PERSIST;
+  }
 
   CompletionStage<? extends OwnerObservation<T>> read();
 

@@ -8,6 +8,7 @@ import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.CommitReceipt;
+import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.validation.ValidationReport;
@@ -73,6 +74,16 @@ public final class SettingsScreen<T> extends Screen {
     return Component.translatableWithFallback("reform.settings." + key, fallback);
   }
 
+  private boolean contextRecipe() {
+    return actions.commitKind() == DocumentSession.CommitKind.CONTEXT;
+  }
+
+  private Component commitLabel() {
+    return contextRecipe()
+        ? text("admit_recipe", "Apply recipe")
+        : text("save_apply", "Save and apply");
+  }
+
   private <O> CompletionStage<O> action(Supplier<OperationHandle<O>> operation) {
     try {
       return DocumentActions.result(operation.get());
@@ -94,7 +105,7 @@ public final class SettingsScreen<T> extends Screen {
     footer.clear();
     var current = actions.view();
     bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
-    save = button(text("save_apply", "Save and apply"), this::requestSave);
+    save = button(commitLabel(), this::requestSave);
     revert =
         button(
             text("revert", "Revert"),
@@ -103,7 +114,12 @@ public final class SettingsScreen<T> extends Screen {
         button(
             text("defaults", "Defaults"),
             () -> perform(action(() -> actions.defaults(EntryPoint.GUI)), true));
-    reload = button(text("reload", "Reload saved"), this::requestReload);
+    reload =
+        button(
+            contextRecipe()
+                ? text("reload_context", "Reload context")
+                : text("reload", "Reload saved"),
+            this::requestReload);
     done = button(text("done", "Done"), this::onClose);
     var geometry =
         FormGeometry.controls(
@@ -289,7 +305,7 @@ public final class SettingsScreen<T> extends Screen {
         || actions.view().review().isPresent()) return;
     saving = true;
     notice = null;
-    action(() -> actions.save(EntryPoint.GUI))
+    action(() -> actions.commit(EntryPoint.GUI))
         .whenComplete(
             (result, failed) ->
                 minecraft.execute(
@@ -357,8 +373,7 @@ public final class SettingsScreen<T> extends Screen {
   private void feedback() {
     var current = actions.view();
     if (save == null) return;
-    save.setMessage(
-        unsent() ? text("retry_edits", "Retry edits") : text("save_apply", "Save and apply"));
+    save.setMessage(unsent() ? text("retry_edits", "Retry edits") : commitLabel());
     save.active =
         current.snapshot().isPresent()
             && !saving
@@ -407,8 +422,14 @@ public final class SettingsScreen<T> extends Screen {
   private Component status() {
     var current = actions.view();
     if (notice != null) return notice;
-    if (saving) return text("saving", "Saving; waiting for the actual result");
-    if (loading) return text("reloading", "Loading saved values…");
+    if (saving)
+      return contextRecipe()
+          ? text("admitting", "Applying recipe; waiting for the actual result")
+          : text("saving", "Saving; waiting for the actual result");
+    if (loading)
+      return contextRecipe()
+          ? text("reloading_context", "Loading context values…")
+          : text("reloading", "Loading saved values…");
     if (pendingEdits > 0) return text("validating", "Validating edits…");
     if (current.availability() == EditorActor.Availability.LOADING)
       return text("loading", "Loading settings…");
@@ -418,15 +439,26 @@ public final class SettingsScreen<T> extends Screen {
     if (!current.validation().valid()) return first(current.validation());
     if (!current.operationReport().valid()) return first(current.operationReport());
     if (current.review().isPresent())
-      return text("review_required", "Saved values changed; conflict review is required.");
+      return contextRecipe()
+          ? text("context_review_required", "Context values changed; conflict review is required.")
+          : text("review_required", "Saved values changed; conflict review is required.");
     if (current.pending().isPresent())
-      return text(
-          "reconcile_required", "The previous save needs an observed result. Reload to review it.");
+      return contextRecipe()
+          ? text(
+              "context_reconcile_required",
+              "The previous application needs an observed result. Reload to review it.")
+          : text(
+              "reconcile_required",
+              "The previous save needs an observed result. Reload to review it.");
     if (unsent())
-      return text("retry_required", "Some edits were not accepted. Retry them before saving.");
+      return text("retry_required", "Some edits were not accepted. Retry them before applying.");
     return current.dirty()
-        ? text("unsaved", "Unsaved changes")
-        : text("ready", "Ready; no unsaved edits");
+        ? contextRecipe()
+            ? text("unapplied", "Unapplied changes")
+            : text("unsaved", "Unsaved changes")
+        : contextRecipe()
+            ? text("context_ready", "Ready; recipe draft matches context")
+            : text("ready", "Ready; no unsaved edits");
   }
 
   @Override
@@ -487,10 +519,16 @@ public final class SettingsScreen<T> extends Screen {
                 if (choice) finish();
                 else minecraft.setScreen(this);
               },
-              text("discard_title", "Discard unsaved edits?"),
-              text(
-                  "discard_help",
-                  "Discard this draft. This does not undo any save that has already taken place."),
+              contextRecipe()
+                  ? text("discard_recipe_title", "Discard unapplied recipe edits?")
+                  : text("discard_title", "Discard unsaved edits?"),
+              contextRecipe()
+                  ? text(
+                      "discard_recipe_help",
+                      "Discard this draft. This does not undo a creation-context update that already took place.")
+                  : text(
+                      "discard_help",
+                      "Discard this draft. This does not undo any save that has already taken place."),
               text("discard", "Discard draft"),
               text("keep_editing", "Keep editing")) {
             @Override
@@ -581,6 +619,19 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private static Component saved(CommitReceipt<?> receipt) {
+    if (receipt.persistence() == CommitReceipt.Persistence.NOT_ATTEMPTED
+        && receipt.acknowledgesBaseline())
+      return receipt.applicationReport().valid()
+          ? text("recipe_applied", "Applied to this creation context; no file saved")
+          : text(
+              "recipe_applied_unobserved",
+              "Application confirmed; the accepted recipe could not be observed");
+    if (receipt.baselineOutcomeUnknown())
+      return receipt.persistence() == CommitReceipt.Persistence.NOT_ATTEMPTED
+          ? text(
+              "context_outcome_unknown",
+              "Application outcome needs review; reopen the recipe from the current creation context")
+          : text("outcome_unknown", "The operation outcome needs review; do not repeat it blindly");
     if (receipt.persistence() == CommitReceipt.Persistence.SAVED
         || receipt.persistence() == CommitReceipt.Persistence.UNCHANGED) {
       if (receipt.application() == CommitReceipt.Application.STAGED)

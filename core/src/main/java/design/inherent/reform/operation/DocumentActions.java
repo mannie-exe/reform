@@ -10,6 +10,7 @@ import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -41,7 +42,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   public record FieldInput(String selector, String text) {}
 
   public record DraftRef(
-      DocumentId document, UUID context, long generation, long version, String savedRevision) {}
+      DocumentId document, UUID context, long generation, long version, String sourceRevision) {}
 
   public record FieldDescription(
       FieldPath path, String selector, ValueShape shape, Optional<String> defaultText) {}
@@ -129,6 +130,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationScope scope;
   private final FieldIndex fields;
   private final int maximumExportBytes;
+  private boolean ownsContext;
   private OperationHandle<EditorActor.View<T>> initialLoad;
   private final OperationDescriptor<Empty, EditorActor.View<T>> load,
       undo,
@@ -137,7 +139,7 @@ public final class DocumentActions<T> implements AutoCloseable {
       defaults,
       inspect;
   private final OperationDescriptor<FieldInput, EditorActor.View<T>> edit;
-  private final OperationDescriptor<Empty, EditorActor.Save<T>> save, apply;
+  private final OperationDescriptor<Empty, EditorActor.Commit<T>> save, apply, admit;
   private final OperationDescriptor<Empty, EditorActor.Validation> validate;
   private final OperationDescriptor<Empty, EditorActor.Inspection<T>> explain;
   private final OperationDescriptor<Empty, Comparison> compare;
@@ -153,7 +155,7 @@ public final class DocumentActions<T> implements AutoCloseable {
     context.requireOwner();
     if (!context.id().equals(actor.context())
         || maximumExportBytes < 1
-        || limits.maximumDefinitions() < 14)
+        || limits.maximumDefinitions() < 15)
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
     this.context = context;
@@ -199,6 +201,13 @@ public final class DocumentActions<T> implements AutoCloseable {
         save,
         (execution, request) ->
             actor.save(execution::checkpoint).thenApply(DocumentActions::checkedSave));
+    admit =
+        descriptor(
+            "admit", EMPTY, OwnerContext.Right.WRITE, Set.of(OperationDescriptor.Effect.APPLY));
+    scope.register(
+        admit,
+        (execution, request) ->
+            actor.admit(execution::checkpoint).thenApply(DocumentActions::checkedSave));
     apply =
         descriptor(
             "apply_saved",
@@ -235,7 +244,22 @@ public final class DocumentActions<T> implements AutoCloseable {
     this(context, access, actor, OperationScope.Limits.STANDARD, 262144);
   }
 
-  private static <T> EditorActor.Save<T> checkedSave(EditorActor.Save<T> saved) {
+  /**
+   * Transfer this shorter-lived context to the editor. Ordinary shared document contexts stay
+   * borrowed.
+   */
+  public static <T> DocumentActions<T> owningContext(
+      OwnerContext context,
+      OwnerContext.Access access,
+      EditorActor<T> actor,
+      OperationScope.Limits limits,
+      int maximumExportBytes) {
+    var actions = new DocumentActions<>(context, access, actor, limits, maximumExportBytes);
+    actions.ownsContext = true;
+    return actions;
+  }
+
+  private static <T> EditorActor.Commit<T> checkedSave(EditorActor.Commit<T> saved) {
     if (saved.receipt().isEmpty()
         && saved.editorReport().issues().stream()
             .anyMatch(issue -> issue.code().equals("operation.cancelled")))
@@ -277,6 +301,18 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   public DocumentDefinition<T> definition() {
     return definition;
+  }
+
+  public DocumentSession.CommitKind commitKind() {
+    return actor.commitKind();
+  }
+
+  public OperationHandle<EditorActor.Commit<T>> commit(OperationDescriptor.EntryPoint entry) {
+    return commitKind() == DocumentSession.CommitKind.PERSIST ? save(entry) : admit(entry);
+  }
+
+  public OperationHandle<EditorActor.Commit<T>> admit(OperationDescriptor.EntryPoint entry) {
+    return scope.submit(admit, entry, Empty.VALUE, readiness(entry));
   }
 
   public UUID context() {
@@ -365,11 +401,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     return scope.submit(edit, entry, new FieldInput(selector, text), readiness(entry));
   }
 
-  public OperationHandle<EditorActor.Save<T>> save(OperationDescriptor.EntryPoint entry) {
+  public OperationHandle<EditorActor.Commit<T>> save(OperationDescriptor.EntryPoint entry) {
     return scope.submit(save, entry, Empty.VALUE, readiness(entry));
   }
 
-  public OperationHandle<EditorActor.Save<T>> applySaved(OperationDescriptor.EntryPoint entry) {
+  public OperationHandle<EditorActor.Commit<T>> applySaved(OperationDescriptor.EntryPoint entry) {
     return scope.submit(apply, entry, Empty.VALUE, readiness(entry));
   }
 
@@ -438,7 +474,7 @@ public final class DocumentActions<T> implements AutoCloseable {
         snapshot.context(),
         snapshot.generation(),
         snapshot.version(),
-        snapshot.savedRevision());
+        snapshot.sourceRevision());
   }
 
   private Comparison compare(EditorActor.Inspection<T> observed) {
@@ -509,7 +545,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     try {
       scope.close();
     } finally {
-      actor.close();
+      try {
+        actor.close();
+      } finally {
+        if (ownsContext) context.close();
+      }
     }
   }
 }

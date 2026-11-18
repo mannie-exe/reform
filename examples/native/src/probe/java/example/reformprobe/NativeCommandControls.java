@@ -232,7 +232,7 @@ final class NativeCommandControls {
             })
         .thenCompose(
             reply -> {
-              var saved = (EditorActor.Save<?>) result(reply);
+              var saved = (EditorActor.Commit<?>) result(reply);
               var receipt = saved.receipt().orElseThrow();
               check(
                   "native command saves and publishes actual values",

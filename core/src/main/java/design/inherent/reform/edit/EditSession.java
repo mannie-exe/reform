@@ -77,7 +77,7 @@ public final class EditSession<T> implements AutoCloseable {
       UUID context,
       long generation,
       long version,
-      String savedRevision,
+      String sourceRevision,
       DraftTree draft,
       JsonLimits jsonLimits) {
     public DraftTree.Inspection<T> inspect() {
@@ -102,7 +102,7 @@ public final class EditSession<T> implements AutoCloseable {
   private final DraftLimits limits;
   private final Deque<History> undo = new ArrayDeque<>(), redo = new ArrayDeque<>();
   private DraftTree baseline, current;
-  private String savedRevision;
+  private String sourceRevision;
   private long generation, version;
   private boolean closed;
   private Submission<T> pending;
@@ -113,14 +113,14 @@ public final class EditSession<T> implements AutoCloseable {
   public EditSession(
       DocumentDefinition<T> definition,
       UUID context,
-      String savedRevision,
+      String sourceRevision,
       T saved,
       JsonLimits jsonLimits,
       DraftLimits limits) {
     this(
         definition,
         context,
-        savedRevision,
+        sourceRevision,
         DraftTree.from(definition.type(), saved, limits),
         jsonLimits,
         limits);
@@ -129,14 +129,14 @@ public final class EditSession<T> implements AutoCloseable {
   public static <T> EditSession<T> fromSource(
       DocumentDefinition<T> definition,
       UUID context,
-      String savedRevision,
+      String sourceRevision,
       JsonInput.Parsed source,
       JsonLimits jsonLimits,
       DraftLimits limits) {
     return new EditSession<>(
         definition,
         context,
-        savedRevision,
+        sourceRevision,
         DraftTree.fromParsed(definition.type(), source, limits),
         jsonLimits,
         limits);
@@ -145,14 +145,14 @@ public final class EditSession<T> implements AutoCloseable {
   public static <T> EditSession<T> fromDraft(
       DocumentDefinition<T> definition,
       UUID context,
-      String savedRevision,
+      String sourceRevision,
       DraftTree saved,
       JsonLimits jsonLimits,
       DraftLimits limits) {
     return new EditSession<>(
         definition,
         context,
-        savedRevision,
+        sourceRevision,
         new DraftTree(saved.root(), limits),
         jsonLimits,
         limits);
@@ -162,7 +162,7 @@ public final class EditSession<T> implements AutoCloseable {
   public static <T> EditSession<T> fromDraft(
       DocumentDefinition<T> definition,
       UUID context,
-      String savedRevision,
+      String sourceRevision,
       DraftTree saved,
       JsonLimits jsonLimits,
       DraftLimits limits,
@@ -170,7 +170,7 @@ public final class EditSession<T> implements AutoCloseable {
     return new EditSession<>(
         definition,
         context,
-        savedRevision,
+        sourceRevision,
         new DraftTree(saved.root(), limits),
         jsonLimits,
         limits,
@@ -180,24 +180,24 @@ public final class EditSession<T> implements AutoCloseable {
   private EditSession(
       DocumentDefinition<T> definition,
       UUID context,
-      String savedRevision,
+      String sourceRevision,
       DraftTree saved,
       JsonLimits jsonLimits,
       DraftLimits limits) {
-    this(definition, context, savedRevision, saved, jsonLimits, limits, currentThread());
+    this(definition, context, sourceRevision, saved, jsonLimits, limits, currentThread());
   }
 
   private EditSession(
       DocumentDefinition<T> definition,
       UUID context,
-      String savedRevision,
+      String sourceRevision,
       DraftTree saved,
       JsonLimits jsonLimits,
       DraftLimits limits,
       Runnable ownerThread) {
     this.definition = Objects.requireNonNull(definition);
     this.context = Objects.requireNonNull(context);
-    this.savedRevision = revision(savedRevision);
+    this.sourceRevision = revision(sourceRevision);
     this.jsonLimits = Objects.requireNonNull(jsonLimits);
     this.limits = Objects.requireNonNull(limits);
     this.ownerThread = Objects.requireNonNull(ownerThread);
@@ -231,7 +231,7 @@ public final class EditSession<T> implements AutoCloseable {
   public Snapshot<T> snapshot() {
     thread();
     return new Snapshot<>(
-        definition, context, generation, version, savedRevision, current, jsonLimits);
+        definition, context, generation, version, sourceRevision, current, jsonLimits);
   }
 
   public DraftTree baseline() {
@@ -400,7 +400,7 @@ public final class EditSession<T> implements AutoCloseable {
       return new Preparation<>(PreparationState.INVALID, Optional.empty(), inspection.report());
     pending =
         new Submission<>(
-            id, context, generation, version, savedRevision, inspection.candidate().orElseThrow());
+            id, context, generation, version, sourceRevision, inspection.candidate().orElseThrow());
     pendingState = PendingState.PREPARED;
     lastGroup = null;
     return new Preparation<>(PreparationState.READY, Optional.of(pending), inspection.report());
@@ -493,7 +493,7 @@ public final class EditSession<T> implements AutoCloseable {
     }
     baseline = actualTree;
     current = next;
-    savedRevision = newRevision;
+    sourceRevision = newRevision;
     generation++;
     version++;
     pending = null;
@@ -572,7 +572,7 @@ public final class EditSession<T> implements AutoCloseable {
       throw new IllegalStateException("Review is stale; keep the draft and review current values");
     var resolved = selection.resolve(current, choices);
     baseline = selection.observed();
-    savedRevision = selection.observedRevision();
+    sourceRevision = selection.observedRevision();
     current = resolved;
     review = null;
     generation++;
@@ -607,7 +607,7 @@ public final class EditSession<T> implements AutoCloseable {
     revision(observedRevision);
     baseline = new DraftTree(saved.root(), limits);
     current = baseline;
-    savedRevision = observedRevision;
+    sourceRevision = observedRevision;
     generation++;
     version++;
     pending = null;

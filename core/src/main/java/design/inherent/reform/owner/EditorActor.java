@@ -48,11 +48,15 @@ public final class EditorActor<T> implements AutoCloseable {
       Optional<CommitReceipt<T>> lastReceipt) {}
 
   /** A receipt remains valid even if the editor closes before its acknowledgement can be shown. */
-  public record Save<T>(Optional<CommitReceipt<T>> receipt, ValidationReport editorReport) {}
+  public record Commit<T>(Optional<CommitReceipt<T>> receipt, ValidationReport editorReport) {}
 
   /** Identified draft validation; later typing does not turn this into a different result. */
   public record Validation(
-      UUID context, long generation, long version, String savedRevision, ValidationReport report) {}
+      UUID context,
+      long generation,
+      long version,
+      String sourceRevision,
+      ValidationReport report) {}
 
   /** Immutable authoring/source observations, never an owner or file-writing capability. */
   public record Inspection<T>(
@@ -81,13 +85,13 @@ public final class EditorActor<T> implements AutoCloseable {
     }
   }
 
-  private final class SavePlan {
+  private final class CommitPlan {
     final Model model;
     final Submission<T> submission;
     final OwnerObservation<T> baseline;
     final AtomicBoolean commitInvoked = new AtomicBoolean();
 
-    SavePlan(Model model, Submission<T> submission) {
+    CommitPlan(Model model, Submission<T> submission) {
       this.model = model;
       this.submission = submission;
       baseline = model.source;
@@ -107,6 +111,7 @@ public final class EditorActor<T> implements AutoCloseable {
   private final Object lifetime = new Object();
   private final OwnerContext context;
   private final DocumentSession<T> source;
+  private final DocumentSession.CommitKind commitKind;
   private final DocumentDefinition<T> definition;
   private final JsonLimits jsonLimits;
   private final DraftLimits draftLimits;
@@ -129,6 +134,7 @@ public final class EditorActor<T> implements AutoCloseable {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.source = Objects.requireNonNull(source);
+    commitKind = Objects.requireNonNull(source.commitKind());
     if (!source.context().equals(context.id()) || source.definition() != definition)
       throw new IllegalArgumentException("Editor requires its actual context and owner definition");
     this.definition = Objects.requireNonNull(definition);
@@ -150,6 +156,10 @@ public final class EditorActor<T> implements AutoCloseable {
     return definition;
   }
 
+  public DocumentSession.CommitKind commitKind() {
+    return commitKind;
+  }
+
   /** Runs owner validation without saving, marking a submission or publishing effective values. */
   public CompletionStage<Validation> validate() {
     return act(() -> {
@@ -166,7 +176,7 @@ public final class EditorActor<T> implements AutoCloseable {
                         snapshot.context(),
                         snapshot.generation(),
                         snapshot.version(),
-                        snapshot.savedRevision(),
+                        snapshot.sourceRevision(),
                         checked.report()));
               return source
                   .prepare(checked.source(), snapshot.draft())
@@ -176,7 +186,7 @@ public final class EditorActor<T> implements AutoCloseable {
                               snapshot.context(),
                               snapshot.generation(),
                               snapshot.version(),
-                              snapshot.savedRevision(),
+                              snapshot.sourceRevision(),
                               failed == null ? checked.report() : report(failed)));
             });
   }
@@ -196,7 +206,7 @@ public final class EditorActor<T> implements AutoCloseable {
   }
 
   /** Retry only the owner's actual saved-value application, retaining later drafts/history. */
-  public CompletionStage<Save<T>> applySaved(Runnable beforeApply) {
+  public CompletionStage<Commit<T>> applySaved(Runnable beforeApply) {
     Objects.requireNonNull(beforeApply);
     return act(() -> {
           var selected = ready();
@@ -235,7 +245,10 @@ public final class EditorActor<T> implements AutoCloseable {
                                                     .document()
                                                     .revision()
                                                     .equals(
-                                                        selected.editor.snapshot().savedRevision()))
+                                                        selected
+                                                            .editor
+                                                            .snapshot()
+                                                            .sourceRevision()))
                                                   selected.editor.reviewConflict(
                                                       observed.document().draft().orElseThrow(),
                                                       observed.document().revision());
@@ -246,13 +259,13 @@ public final class EditorActor<T> implements AutoCloseable {
                                             });
                                   }
                                   publish(selected);
-                                  return new Save<>(
+                                  return new Commit<>(
                                       Optional.ofNullable(receipt),
                                       failed == null ? ValidationReport.VALID : report(failed));
                                 })
                                 .exceptionally(
                                     unavailable ->
-                                        new Save<>(
+                                        new Commit<>(
                                             Optional.ofNullable(receipt), report(unavailable))))
                     .thenCompose(stage -> stage));
   }
@@ -439,7 +452,7 @@ public final class EditorActor<T> implements AutoCloseable {
     return change(selected -> selected.editor.resolve(review, frozen));
   }
 
-  public CompletionStage<Save<T>> save() {
+  public CompletionStage<Commit<T>> save() {
     return save(() -> {});
   }
 
@@ -447,7 +460,22 @@ public final class EditorActor<T> implements AutoCloseable {
    * Synchronous worker-side safe-point checks before preparing and entering commit. Once commit is
    * invoked its actual receipt is drained; cancellation must never abandon it or claim rollback.
    */
-  public CompletionStage<Save<T>> save(Runnable beforeCommit) {
+  public CompletionStage<Commit<T>> save(Runnable beforeCommit) {
+    if (commitKind() != DocumentSession.CommitKind.PERSIST)
+      return java.util.concurrent.CompletableFuture.failedFuture(
+          new PolicyRefusal(
+              "owner.unsupported", "This source is admitted to its context, not saved to a file"));
+    return commit(beforeCommit);
+  }
+
+  public CompletionStage<Commit<T>> admit(Runnable beforeCommit) {
+    if (commitKind() != DocumentSession.CommitKind.CONTEXT)
+      return java.util.concurrent.CompletableFuture.failedFuture(
+          new PolicyRefusal("owner.unsupported", "This source uses its persistence operation"));
+    return commit(beforeCommit);
+  }
+
+  private CompletionStage<Commit<T>> commit(Runnable beforeCommit) {
     Objects.requireNonNull(beforeCommit);
     return act(() -> {
           beforeCommit.run();
@@ -456,7 +484,7 @@ public final class EditorActor<T> implements AutoCloseable {
           publish(selected);
           if (prepared.submission().isEmpty()) throw new PolicyRefusal(prepared.report());
           selected.pending = prepared.submission().orElseThrow();
-          return new SavePlan(selected, selected.pending);
+          return new CommitPlan(selected, selected.pending);
         })
         .thenCompose(
             plan ->
@@ -478,7 +506,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                       plan.commitInvoked.set(true);
                                       return source.commit(preparedCommit);
                                     }))
-                    .<CompletionStage<Save<T>>>handle(
+                    .<CompletionStage<Commit<T>>>handle(
                         (receipt, failed) ->
                             act(() -> {
                                   var selected = ready();
@@ -497,13 +525,13 @@ public final class EditorActor<T> implements AutoCloseable {
                                     selected.operationReport = report(failed);
                                   } else accept(selected, plan.submission, receipt);
                                   publish(selected);
-                                  return new Save<>(
+                                  return new Commit<>(
                                       Optional.ofNullable(receipt),
                                       failed == null ? ValidationReport.VALID : report(failed));
                                 })
                                 .exceptionally(
                                     unavailable ->
-                                        new Save<>(
+                                        new Commit<>(
                                             Optional.ofNullable(receipt), report(unavailable))))
                     .thenCompose(stage -> stage));
   }
@@ -511,40 +539,36 @@ public final class EditorActor<T> implements AutoCloseable {
   private void accept(Model selected, Submission<T> submission, CommitReceipt<T> receipt) {
     selected.lastReceipt = receipt;
     selected.operationReport = receipt.persistenceReport().and(receipt.applicationReport());
-    switch (receipt.persistence()) {
-      case SAVED, UNCHANGED -> {
-        var observed = receipt.observation();
-        if (observed.isPresent() && observed.orElseThrow().document().draft().isPresent()) {
-          var source = observed.orElseThrow();
-          var accepted =
-              selected.editor.acknowledge(
-                  submission,
-                  source.document().draft().orElseThrow(),
-                  source.document().revision());
-          if (accepted == EditSession.Acknowledgement.ACCEPTED
-              || accepted == EditSession.Acknowledgement.REVIEW_REQUIRED) {
-            selected.source = source;
-            selected.observationReport = source.document().report();
-            selected.pending = null;
-          }
-        } else selected.editor.observationUnavailable(submission);
-      }
-      case UNKNOWN -> selected.editor.failed(submission, EditSession.Failure.UNKNOWN);
-      default -> {
-        selected.editor.failed(submission, EditSession.Failure.REFUSED);
-        selected.pending = null;
-        receipt
-            .observation()
-            .ifPresent(
-                observed -> {
-                  if (observed.document().draft().isPresent()) {
-                    selected.editor.reviewConflict(
-                        observed.document().draft().orElseThrow(), observed.document().revision());
-                    selected.source = observed;
-                    selected.observationReport = observed.document().report();
-                  }
-                });
-      }
+    if (receipt.acknowledgesBaseline()) {
+      var observed = receipt.observation();
+      if (observed.isPresent() && observed.orElseThrow().document().draft().isPresent()) {
+        var source = observed.orElseThrow();
+        var accepted =
+            selected.editor.acknowledge(
+                submission, source.document().draft().orElseThrow(), source.document().revision());
+        if (accepted == EditSession.Acknowledgement.ACCEPTED
+            || accepted == EditSession.Acknowledgement.REVIEW_REQUIRED) {
+          selected.source = source;
+          selected.observationReport = source.document().report();
+          selected.pending = null;
+        }
+      } else selected.editor.observationUnavailable(submission);
+    } else if (receipt.baselineOutcomeUnknown()) {
+      selected.editor.failed(submission, EditSession.Failure.UNKNOWN);
+    } else {
+      selected.editor.failed(submission, EditSession.Failure.REFUSED);
+      selected.pending = null;
+      receipt
+          .observation()
+          .ifPresent(
+              observed -> {
+                if (observed.document().draft().isPresent()) {
+                  selected.editor.reviewConflict(
+                      observed.document().draft().orElseThrow(), observed.document().revision());
+                  selected.source = observed;
+                  selected.observationReport = observed.document().report();
+                }
+              });
     }
   }
 

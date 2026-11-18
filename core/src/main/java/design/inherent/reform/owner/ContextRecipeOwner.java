@@ -1,0 +1,556 @@
+package design.inherent.reform.owner;
+
+import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.edit.Candidate;
+import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.validation.Issue;
+import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.SnapshotContext;
+import design.inherent.reform.value.SnapshotPolicy;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * An unsaved creation recipe, bound to its actual immutable native context. No file or existing
+ * world is opened. Domain compilation and admission remain the consumer's implementations.
+ */
+public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
+  public interface Domain<T, C, P> {
+    /** Native executor: actual current creation context, never a seed/name/UUID surrogate. */
+    C current();
+
+    /** Native executor: capture immutable authored values from that exact context. */
+    T read(C context);
+
+    /** Worker: pure bounded compilation from immutable context and validated owned values. */
+    P compile(C context, T candidate);
+
+    /**
+     * Native executor: admit prepared inputs to this creation context; return its actual
+     * replacement. Do not mutate the old context or an existing world. Throwing after entry has
+     * unknown outcome.
+     */
+    C admit(C expected, P prepared);
+  }
+
+  private record Read<T>(
+      String revision,
+      Optional<DraftTree> draft,
+      Optional<Candidate<T>> candidate,
+      ValidationReport report)
+      implements DocumentRead<T> {}
+
+  public static final class Observation<T, C> implements OwnerObservation<T> {
+    private final Object owner;
+    private final UUID context, session;
+    private final C nativeContext;
+    private final long version;
+    private final DocumentRead<T> document;
+
+    private Observation(
+        Object owner,
+        UUID context,
+        UUID session,
+        C nativeContext,
+        long version,
+        DocumentRead<T> document) {
+      this.owner = owner;
+      this.context = context;
+      this.session = session;
+      this.nativeContext = nativeContext;
+      this.version = version;
+      this.document = document;
+    }
+
+    @Override
+    public UUID context() {
+      return context;
+    }
+
+    @Override
+    public UUID session() {
+      return session;
+    }
+
+    @Override
+    public DocumentRead<T> document() {
+      return document;
+    }
+
+    @Override
+    public SourceInfo provenance() {
+      return new SourceInfo("creation-context", "Unsaved world-creation recipe", Optional.empty());
+    }
+  }
+
+  private record Proposal<T, C, P>(
+      Observation<T, C> baseline, Candidate<T> candidate, P compiled) {}
+
+  public static final class Prepared<T, C, P> implements PreparedEdit<T> {
+    private final Object owner;
+    private final UUID context, session;
+    private final DocumentId document;
+    private final AtomicReference<Proposal<T, C, P>> proposal;
+
+    private Prepared(
+        Object owner, UUID context, UUID session, DocumentId document, Proposal<T, C, P> proposal) {
+      this.owner = owner;
+      this.context = context;
+      this.session = session;
+      this.document = document;
+      this.proposal = new AtomicReference<>(proposal);
+    }
+
+    @Override
+    public DocumentId document() {
+      return document;
+    }
+
+    @Override
+    public UUID context() {
+      return context;
+    }
+
+    @Override
+    public UUID session() {
+      return session;
+    }
+
+    private Proposal<T, C, P> take(Object actual, UUID actualSession) {
+      if (owner != actual || !session.equals(actualSession))
+        throw refusal("owner.session", "Recipe preparation belongs to another owner/session");
+      var issued = proposal.getAndSet(null);
+      if (issued == null)
+        throw refusal("owner.consumed", "Recipe preparation has already been consumed");
+      return issued;
+    }
+  }
+
+  public record Receipt<T, C>(
+      Application application,
+      Optional<Observation<T, C>> observation,
+      ValidationReport applicationReport,
+      boolean admissionEntered,
+      boolean identityConfirmed)
+      implements CommitReceipt<T> {
+    public Receipt {
+      Objects.requireNonNull(application);
+      Objects.requireNonNull(observation);
+      Objects.requireNonNull(applicationReport);
+      if (identityConfirmed && !admissionEntered
+          || application == Application.APPLIED != identityConfirmed)
+        throw new IllegalArgumentException("Inconsistent creation admission result");
+    }
+
+    @Override
+    public Persistence persistence() {
+      return Persistence.NOT_ATTEMPTED;
+    }
+
+    @Override
+    public Optional<String> savedRevision() {
+      return Optional.empty();
+    }
+
+    @Override
+    public ValidationReport persistenceReport() {
+      return ValidationReport.VALID;
+    }
+
+    @Override
+    public boolean acknowledgesBaseline() {
+      return identityConfirmed;
+    }
+
+    @Override
+    public boolean baselineOutcomeUnknown() {
+      return admissionEntered && !identityConfirmed;
+    }
+
+    @Override
+    public List<Requirement> requirements() {
+      return List.of(
+          new Requirement(
+              FieldPath.ROOT,
+              RequirementKind.NEW_WORLD,
+              "Applies only to this unsaved creation context"));
+    }
+  }
+
+  private record Capture<T, C>(C nativeContext, long version, T values) {}
+
+  private record Attempt<T, C>(
+      CommitReceipt.Application application,
+      Optional<Capture<T, C>> capture,
+      ValidationReport report,
+      boolean entered,
+      boolean confirmed) {}
+
+  public final class Session implements DocumentSession<T> {
+    private final UUID id = UUID.randomUUID();
+    private final OwnerContext.Access access;
+    private final AtomicBoolean open = new AtomicBoolean(true);
+
+    private Session(OwnerContext.Access access) {
+      this.access = access;
+    }
+
+    @Override
+    public DocumentId document() {
+      return definition.id();
+    }
+
+    @Override
+    public DocumentDefinition<T> definition() {
+      return definition;
+    }
+
+    @Override
+    public UUID context() {
+      return context.id();
+    }
+
+    @Override
+    public UUID id() {
+      return id;
+    }
+
+    @Override
+    public boolean isOpen() {
+      return open.get() && !closed && access.isOpen();
+    }
+
+    @Override
+    public Set<Operation> operations() {
+      return Set.of(Operation.READ, Operation.COMMIT);
+    }
+
+    @Override
+    public CommitKind commitKind() {
+      return CommitKind.CONTEXT;
+    }
+
+    private void current() {
+      access.requireCurrent();
+      if (!isOpen()) throw refusal("owner.closed", "This creation-recipe session is closed");
+      if (broken)
+        throw refusal(
+            "owner.reconcile", "Creation admission outcome needs a fresh native context review");
+    }
+
+    private void require(OwnerContext.Right right) {
+      current();
+      access.require(right);
+      current();
+    }
+
+    private void nativeCurrent(C expected, long expectedVersion) {
+      require(OwnerContext.Right.READ);
+      requireIdentity(expected, expectedVersion);
+    }
+
+    private void requireIdentity(C expected, long expectedVersion) {
+      current();
+      if (nativeContext != expected || version != expectedVersion || domain.current() != expected)
+        throw refusal("owner.revision", "The original world-creation context changed");
+      current();
+    }
+
+    @SuppressWarnings("unchecked") // The private issuing identity/session precede the cast.
+    private Observation<T, C> own(OwnerObservation<T> value) {
+      if (!(value instanceof Observation<?, ?> observed)
+          || observed.owner != identity
+          || !observed.session.equals(id))
+        throw refusal("owner.session", "Recipe observation belongs to another owner/session");
+      return (Observation<T, C>) observed;
+    }
+
+    @Override
+    public CompletionStage<Observation<T, C>> read() {
+      return lane.submit(
+          () ->
+              context
+                  .onOwner(
+                      () -> {
+                        nativeCurrent(nativeContext, version);
+                        return new Capture<>(nativeContext, version, domain.read(nativeContext));
+                      })
+                  .thenCompose(capture -> observation(capture)));
+    }
+
+    private CompletionStage<Observation<T, C>> observation(Capture<T, C> capture) {
+      return context
+          .onWorker(
+              () -> {
+                current();
+                var draft = DraftTree.from(definition.type(), capture.values(), draftLimits);
+                var inspected = draft.inspect(definition, jsonLimits);
+                return new Read<T>(
+                    identityId + "/" + capture.version(),
+                    Optional.of(draft),
+                    inspected.candidate(),
+                    inspected.report());
+              })
+          .thenCompose(
+              read ->
+                  context.onOwner(
+                      () -> {
+                        nativeCurrent(capture.nativeContext(), capture.version());
+                        return new Observation<>(
+                            identity,
+                            context.id(),
+                            id,
+                            capture.nativeContext(),
+                            capture.version(),
+                            read);
+                      }));
+    }
+
+    @Override
+    public CompletionStage<Prepared<T, C, P>> prepare(OwnerObservation<T> input, DraftTree draft) {
+      final Observation<T, C> baseline;
+      try {
+        baseline = own(Objects.requireNonNull(input));
+      } catch (RuntimeException failed) {
+        return CompletableFuture.failedFuture(failed);
+      }
+      Objects.requireNonNull(draft);
+      return context
+          .onOwner(
+              () -> {
+                nativeCurrent(baseline.nativeContext, baseline.version);
+                if (!baseline.document.report().valid())
+                  throw new PolicyRefusal(baseline.document.report());
+                return domain;
+              })
+          .thenCompose(
+              binding ->
+                  context.onWorker(
+                      () -> {
+                        current();
+                        var inspected = draft.inspect(definition, jsonLimits);
+                        var candidate =
+                            inspected
+                                .candidate()
+                                .orElseThrow(() -> new PolicyRefusal(inspected.report()));
+                        P compiled =
+                            Objects.requireNonNull(
+                                binding.compile(baseline.nativeContext, candidate.value()));
+                        var snapshots = new SnapshotContext(SnapshotContext.Limits.CONFIGURATION);
+                        P frozen =
+                            snapshots.copy(
+                                compiled, () -> compiledSnapshots.freeze(compiled, snapshots));
+                        return new Proposal<>(baseline, candidate, Objects.requireNonNull(frozen));
+                      }))
+          .thenCompose(
+              proposal ->
+                  context.onOwner(
+                      () -> {
+                        nativeCurrent(baseline.nativeContext, baseline.version);
+                        return new Prepared<>(identity, context.id(), id, document(), proposal);
+                      }));
+    }
+
+    @Override
+    public CompletionStage<Receipt<T, C>> commit(PreparedEdit<T> value) {
+      final Proposal<T, C, P> proposal;
+      try {
+        if (!(value instanceof Prepared<?, ?, ?> prepared))
+          throw refusal("owner.session", "Preparation was not issued by this recipe owner");
+        @SuppressWarnings("unchecked")
+        var typed = (Prepared<T, C, P>) prepared;
+        proposal = typed.take(identity, id);
+      } catch (RuntimeException refused) {
+        return CompletableFuture.failedFuture(refused);
+      }
+      return lane.submit(
+          () ->
+              context
+                  .onOwner(() -> attempt(proposal))
+                  .handle(
+                      (attempt, failed) ->
+                          failed == null
+                              ? settle(attempt)
+                              : CompletableFuture.completedStage(
+                                  new Receipt<T, C>(
+                                      CommitReceipt.Application.REFUSED,
+                                      Optional.empty(),
+                                      report(failed),
+                                      false,
+                                      false)))
+                  .thenCompose(stage -> stage));
+    }
+
+    private Attempt<T, C> attempt(Proposal<T, C, P> proposal) {
+      require(OwnerContext.Right.WRITE);
+      // Authorization may be reentrant. Check the exact original context again immediately before
+      // entry.
+      requireIdentity(proposal.baseline.nativeContext, proposal.baseline.version);
+      var binding = domain;
+      final C admitted;
+      try {
+        admitted =
+            Objects.requireNonNull(
+                binding.admit(proposal.baseline.nativeContext, proposal.compiled));
+      } catch (RuntimeException failed) {
+        broken = true;
+        return new Attempt<>(
+            CommitReceipt.Application.UNAVAILABLE, Optional.empty(), report(failed), true, false);
+      }
+      final boolean confirmed;
+      try {
+        confirmed = binding.current() == admitted;
+      } catch (RuntimeException unavailable) {
+        broken = true;
+        return new Attempt<>(
+            CommitReceipt.Application.UNAVAILABLE,
+            Optional.empty(),
+            report(unavailable),
+            true,
+            false);
+      }
+      if (!confirmed) {
+        broken = true;
+        return new Attempt<>(
+            CommitReceipt.Application.PARTIAL,
+            Optional.empty(),
+            report(
+                refusal("owner.revision", "The admitted creation context could not be confirmed")),
+            true,
+            false);
+      }
+      if (!closed) {
+        nativeContext = admitted;
+        version++;
+      }
+      try {
+        require(OwnerContext.Right.READ);
+        nativeCurrent(admitted, version);
+        return new Attempt<>(
+            CommitReceipt.Application.APPLIED,
+            Optional.of(new Capture<>(admitted, version, binding.read(admitted))),
+            ValidationReport.VALID,
+            true,
+            true);
+      } catch (RuntimeException unavailable) {
+        return new Attempt<>(
+            CommitReceipt.Application.APPLIED, Optional.empty(), report(unavailable), true, true);
+      }
+    }
+
+    private CompletionStage<Receipt<T, C>> settle(Attempt<T, C> attempt) {
+      if (attempt.capture().isEmpty())
+        return CompletableFuture.completedStage(
+            receipt(attempt, Optional.empty(), ValidationReport.VALID));
+      return observation(attempt.capture().orElseThrow())
+          .handle(
+              (observed, failed) ->
+                  receipt(
+                      attempt,
+                      Optional.ofNullable(observed),
+                      failed == null ? ValidationReport.VALID : report(failed)));
+    }
+
+    private Receipt<T, C> receipt(
+        Attempt<T, C> attempt, Optional<Observation<T, C>> observation, ValidationReport readback) {
+      return new Receipt<>(
+          attempt.application(),
+          observation,
+          attempt.report().and(readback),
+          attempt.entered(),
+          attempt.confirmed());
+    }
+
+    @Override
+    public void close() {
+      open.set(false);
+    }
+  }
+
+  private final Object identity = new Object();
+  private final UUID identityId = UUID.randomUUID();
+  private final OwnerContext context;
+  private final DocumentDefinition<T> definition;
+  private final SnapshotPolicy<P> compiledSnapshots;
+  private final JsonLimits jsonLimits;
+  private final DraftLimits draftLimits;
+  private final SerialLane lane;
+  private final OwnerContext.CloseHook cleanup;
+  private C nativeContext;
+  private Domain<T, C, P> domain;
+  private long version;
+  private volatile boolean closed, broken;
+
+  public ContextRecipeOwner(
+      OwnerContext context,
+      DocumentDefinition<T> definition,
+      C original,
+      Domain<T, C, P> domain,
+      SnapshotPolicy<P> compiledSnapshots,
+      JsonLimits jsonLimits,
+      DraftLimits draftLimits,
+      int maximumOperations) {
+    this.context = Objects.requireNonNull(context);
+    context.requireOwner();
+    this.definition = Objects.requireNonNull(definition);
+    this.nativeContext = Objects.requireNonNull(original);
+    this.domain = Objects.requireNonNull(domain);
+    this.compiledSnapshots = Objects.requireNonNull(compiledSnapshots);
+    this.jsonLimits = Objects.requireNonNull(jsonLimits);
+    this.draftLimits = Objects.requireNonNull(draftLimits);
+    if (domain.current() != original)
+      throw refusal("owner.revision", "Use the actual original world-creation context");
+    lane = new SerialLane(maximumOperations);
+    cleanup = context.onClose(this::close);
+  }
+
+  public Session open(OwnerContext.Access access) {
+    context.requireOwner();
+    if (closed || broken)
+      throw refusal("owner.closed", "This recipe owner cannot open another session");
+    if (!Objects.requireNonNull(access).context().equals(context.id()) || !access.isOpen())
+      throw refusal("owner.session", "Recipe session needs its actual context access");
+    return new Session(access);
+  }
+
+  private static PolicyRefusal refusal(String code, String message) {
+    return new PolicyRefusal(code, message);
+  }
+
+  private static ValidationReport report(Throwable failed) {
+    while (failed instanceof CompletionException && failed.getCause() != null)
+      failed = failed.getCause();
+    return failed instanceof PolicyRefusal refused
+        ? refused.report()
+        : new ValidationReport(
+            List.of(
+                Issue.error(
+                    "context.admission",
+                    FieldPath.ROOT,
+                    "Creation recipe admission or observation is unavailable")),
+            false);
+  }
+
+  @Override
+  public void close() {
+    if (closed) return;
+    context.checkOwnerThread();
+    closed = true;
+    nativeContext = null;
+    domain = null;
+    lane.close();
+    cleanup.close();
+  }
+}

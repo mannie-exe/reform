@@ -188,6 +188,7 @@ public final class SettingsCommands {
       root.then(command("explain", actions -> actions.explain(EntryPoint.COMMAND)));
       root.then(command("export", actions -> actions.export(EntryPoint.COMMAND)));
       root.then(command("save", actions -> actions.save(EntryPoint.COMMAND)));
+      root.then(command("admit", actions -> actions.admit(EntryPoint.COMMAND)));
       root.then(command("apply", actions -> actions.applySaved(EntryPoint.COMMAND)));
       for (String action : List.of("status", "cancel"))
         root.then(
@@ -374,7 +375,7 @@ public final class SettingsCommands {
               ? Level.ERROR
               : Level.INFO;
       var result = snapshot.result().orElse(null);
-      if (result instanceof EditorActor.Save<?> saved) {
+      if (result instanceof EditorActor.Commit<?> saved) {
         if (saved.receipt().isPresent()) {
           var receipt = saved.receipt().orElseThrow();
           text.append("persistence=")
@@ -437,8 +438,8 @@ public final class SettingsCommands {
               .append(inspection.provenance().kind())
               .append("; draft=")
               .append(inspection.snapshot().version())
-              .append("; saved=")
-              .append(inspection.snapshot().savedRevision())
+              .append("; baseline=")
+              .append(inspection.snapshot().sourceRevision())
               .append("; effective=")
               .append(
                   inspection

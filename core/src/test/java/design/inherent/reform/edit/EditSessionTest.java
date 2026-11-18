@@ -164,7 +164,7 @@ class EditSessionTest {
         EditSession.TargetState.FOREIGN,
         second.locate(foreign, SourcePath.ROOT.property("name")).state());
     assertTrue(second.markInFlight(own));
-    assertEquals("saved-1", second.snapshot().savedRevision());
+    assertEquals("saved-1", second.snapshot().sourceRevision());
   }
 
   @Test
@@ -226,7 +226,7 @@ class EditSessionTest {
         review, Map.of(NAME, ConflictReview.Choice.DRAFT, COUNT, ConflictReview.Choice.OBSERVED));
     assertEquals("Local", value(session).name());
     assertEquals(5, value(session).count());
-    assertEquals("saved-2", submit(session).savedRevision());
+    assertEquals("saved-2", submit(session).sourceRevision());
   }
 
   @Test

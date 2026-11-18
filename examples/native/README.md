@@ -4,6 +4,8 @@ This separate NeoForge mod consumes only the staged `design.inherent:reform` Mav
 
 `NativeExample` declares a small typed preference record through public record derivation. Its physically client-only `ClientExample` uses the [client JSON factory](../../docs/development/client-json.md), explicit menu registration and the `reformprefs` native client command. The library supplies native setup, bounded workers, owned storage, shared GUI/command operations, the generated form and shutdown. The example supplies no executor, serializer or editing-session infrastructure.
 
+`CreationExample.editor(parent, original)` separately demonstrates the public world-recipe factory for a bounded three-layer flat-world soil-depth setting. It preserves unedited dimensions through the native replacement API and registers no replacement editor for vanilla presets. This example compiles; it is not yet executed by the native form runner.
+
 Run `./gradlew --no-daemon check build` from the repository root to compile this example and its probe against the exact candidate artifact. This compiles native APIs without launching a game. It also runs the independent headless consumer and core/tooling checks.
 
 For a disposable client check, first build/stage the library, obtain sustained desktop focus, then run from the repository root:

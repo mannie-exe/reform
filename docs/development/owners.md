@@ -2,7 +2,7 @@
 
 `DocumentSession<T>` connects an actual owner to the shared editor. `DocumentRead`, `OwnerObservation`, opaque `PreparedEdit` and `CommitReceipt` separate saved state, context/session identity, one-shot preparation and persistence/application outcomes. Matching identifiers do not make a foreign proposal an issued token. Supported operations are explicit: an owner without an application-only path must refuse it rather than repeat persistence.
 
-`JsonOwner<T>` supplies owned JSON storage and worker-prepared runtime publication. [Registered NeoForge settings](native-settings.md) supply their actual native serializer/callback path through the same editor boundary. These are experimental explicit-infrastructure APIs. Other actor gateways/factories/backends, complete operation/cancellation views and real consumer migrations remain required by [coverage](coverage.md).
+`JsonOwner<T>` supplies owned JSON storage and worker-prepared runtime publication. [Unsaved world recipes](world-recipes.md) use actual context admission with no file persistence. [Registered NeoForge settings](native-settings.md) supply their actual native serializer/callback path through the same editor boundary. These are experimental explicit-infrastructure APIs. Other actor gateways/factories/backends, complete operation/cancellation views and real consumer migrations remain required by [coverage](coverage.md).
 
 ## Construct one document owner
 
@@ -38,7 +38,7 @@ This actor connects JSON and explicit registered native owners. The experimental
 
 ## Preserve truthful outcomes
 
-Receipts distinguish `NOT_ATTEMPTED`, `UNCHANGED`, `SAVED`, `REFUSED`, `FAILED` and `UNKNOWN` persistence from application status. They contain separate diagnostics, an observed saved revision where available, an optional newly authorized observation and owner-declared application requirements. `STAGED` and `PARTIAL` do not mean that all domain state took effect. Requirements can identify world/game restart, new-world admission, incompatibility or owner-managed effects.
+`CommitKind` distinguishes file persistence from unsaved context admission. `CommitReceipt.acknowledgesBaseline` and `baselineOutcomeUnknown` describe source acknowledgement independently of a saved file; the context owner supplies explicit admission facts. Receipts distinguish `NOT_ATTEMPTED`, `UNCHANGED`, `SAVED`, `REFUSED`, `FAILED` and `UNKNOWN` persistence from application status. They contain separate diagnostics, an observed saved revision where available, an optional newly authorized observation and owner-declared application requirements. `STAGED` and `PARTIAL` do not mean that all domain state took effect. Requirements can identify world/game restart, new-world admission, incompatibility or owner-managed effects.
 
 Losing READ permission suppresses newly observed contents. The JSON backend retains a known successful disk replacement as `SAVED` after permission loss or closure. The native backend separately retains whether mutation started and whether native save returned; without its required authorized readback, it reports final persistence as `UNKNOWN`. A completed callback cannot prove final file contents or arbitrary copied domain state. [Native settings](native-settings.md) owns those distinct execution facts.
 

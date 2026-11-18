@@ -9,6 +9,7 @@
 - [Owners](owners.md) owns asynchronous actor sessions, shared admission and outcome receipts.
 - [Operations](operations.md) owns shared local GUI/command services, progress and cancellation.
 - [Client JSON](client-json.md) owns physical-client registration, initialization, entry and recovery defaults.
+- [World recipes](world-recipes.md) owns unsaved creation-context admission and domain compilation.
 - [Presentation](presentation.md) owns measured panel/geometry/navigation boundaries.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.
 - [Verification](verification.md) owns current evidence and material gaps.

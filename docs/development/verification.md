@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Unsaved creation-context owner
+
+The full Gradle build/check passes with 180 core tests, four generated properties/920 checks, two native-file tests and twelve tooling controls. The independent Maven consumer additionally exercises context-recipe construction, cold editing, admission, actual context replacement, preserved unedited state, refused file Save and transferred context disposal with Minecraft/NeoForge absent from its classpath. The native world-recipe factory compiles against the pinned actual `WorldCreationContext`/`DimensionsUpdater` APIs.
+
+Eight new core controls use immutable headless creation contexts and real separate native/worker executors. They cover owned compiled-input snapshots, explicit no-persistence receipts, later-edit acknowledgement, readonly compilation, same-value foreign-context refusal, consumed denied proposals, reentrant authorization/context change, cancellation before admission, unknown outcome after a callback's actual mutation, transferred lifecycle and retained confirmed admission after reentrant closure. The generic editing result is `EditorActor.Commit`; `sourceRevision` identifies a baseline independently of a file.
+
+The registered-owner two-boot regression passes on `7c6757456119a6cbc4ccb9b0570163003a05f47929df38633242c11708609bbe`, before later context-UI wording and the independent native creation example. That exercises the generalized common receipt/editor path; it does not exercise the creation factory. The final headless/public/native-addon compile candidate is `5f30de5597f6f71d454086e239778a6f2daabdea420b9d3a3d3f50649d16bc14` (sources `15da27b496d321d8dfc33ebe8682808e1cc4f31e0f4a23c2d2097744515dfe4b`, core `857c41a9fbf0cec4f479d05b153a8cbd2ae81a7bb3105e51dd71bbf2cb3bcbe5`).
+
+The native creation factory, its actual parent/screen/context lifecycle, dimensions preservation, real callback/reload ordering and managed-recipe shutdown have not yet been executed in a client. This increment is headless/API qualification and native linkage, not actual world-creation or consumer migration qualification. Existing JSON/native-owner controls remain separate evidence. [World recipes](world-recipes.md) owns contracts and update checks.
+
 ## Shared local operations and native commands
 
 The full Gradle `spotlessApply check build --warning-mode all` passes with 172 core tests, four generated properties/920 checks, two native-file unit tests, twelve tooling controls and the packaged-artifact headless/native-addon checks. New controls cover scope registration/identity/bounds, worker input admission, fresh native permission checks, cancellation and actual-result drain, readonly validation, typed comparison/provenance/export, application-only retry and retained later drafts.

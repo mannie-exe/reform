@@ -318,7 +318,7 @@ class DocumentActionsTest {
         release.countDown();
         for (var handle : handles)
           assertEquals(OperationSnapshot.State.COMPLETED, await(handle.completion()).state());
-        var saving = (EditorActor.Save<?>) handles.get(2).snapshot().result().orElseThrow();
+        var saving = (EditorActor.Commit<?>) handles.get(2).snapshot().result().orElseThrow();
         assertEquals(CommitReceipt.Persistence.SAVED, saving.receipt().orElseThrow().persistence());
         assertEquals(4, h.owner.handle().view().value().orElseThrow().count());
         assertEquals(

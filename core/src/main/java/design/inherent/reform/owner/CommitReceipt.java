@@ -54,6 +54,15 @@ public interface CommitReceipt<T> {
 
   ValidationReport applicationReport();
 
+  /** Confirmed owner-baseline change. Non-file owners must declare their actual admission here. */
+  default boolean acknowledgesBaseline() {
+    return persistence() == Persistence.SAVED || persistence() == Persistence.UNCHANGED;
+  }
+
+  default boolean baselineOutcomeUnknown() {
+    return persistence() == Persistence.UNKNOWN;
+  }
+
   default List<Requirement> requirements() {
     return List.of();
   }

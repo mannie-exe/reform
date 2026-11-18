@@ -142,7 +142,7 @@ public final class ReviewProfile {
     if (!reviewed.name().equals("Later") || reviewed.maximum() != 128)
       throw new IllegalStateException("Public manual review did not retain choices");
     var next = session.prepareSubmission().submission().orElseThrow();
-    if (!next.savedRevision().equals("saved-3"))
+    if (!next.sourceRevision().equals("saved-3"))
       throw new IllegalStateException("Review retained the stale saved revision");
     session.reload(definition.defaults(), "reloaded");
     if (session.acknowledge(next, next.candidate().value(), "late")
@@ -150,8 +150,9 @@ public final class ReviewProfile {
       throw new IllegalStateException("Old acknowledgement crossed a reload");
     session.close();
     verifyStorage(definition, limits);
+    CreationRecipe.verify();
     System.out.println(
-        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner; game classes absent");
+        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe; game classes absent");
   }
 
   private static void verifyStorage(DocumentDefinition<Profile> definition, JsonLimits limits)

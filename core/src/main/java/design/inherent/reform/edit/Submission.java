@@ -9,7 +9,7 @@ public final class Submission<T> {
   private final UUID context;
   private final long generation;
   private final long draftVersion;
-  private final String savedRevision;
+  private final String sourceRevision;
   private final Candidate<T> candidate;
 
   Submission(
@@ -17,13 +17,13 @@ public final class Submission<T> {
       UUID context,
       long generation,
       long draftVersion,
-      String savedRevision,
+      String sourceRevision,
       Candidate<T> candidate) {
     this.session = session;
     this.context = context;
     this.generation = generation;
     this.draftVersion = draftVersion;
-    this.savedRevision = savedRevision;
+    this.sourceRevision = sourceRevision;
     this.candidate = candidate;
   }
 
@@ -47,8 +47,8 @@ public final class Submission<T> {
     return draftVersion;
   }
 
-  public String savedRevision() {
-    return savedRevision;
+  public String sourceRevision() {
+    return sourceRevision;
   }
 
   public Candidate<T> candidate() {
