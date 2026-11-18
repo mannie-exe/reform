@@ -2,6 +2,14 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Shared mapped-input drafts
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 344 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. The packaged headless example now uses the public typed unit-input action directly. Native-addon/probe compilation passes; all 91 main Java sources match the source JAR. Markdown/link/workflow/diff checks pass separately.
+
+Seven focused draft cases qualify a failed mapping whose retained text is an otherwise valid canonical number, complete integer/range validation, private-versus-authored equality, retained inactive optional input, unavailable/forged mappings, bounded refusal and a newer failure surviving an equal-raw save acknowledgement. Two shared-operation cases exercise per-unit undo grouping, own acknowledgement and reload identities, plus actual file/export/save refusal until explicit repair. Ordinary and compressed strict action codecs include the new action. No display metadata enters the saved JSON.
+
+The combined library is `4422858608de361b2b19c53ca42b0bd300ff510ea2405b8daf7ee755004b657e`, sources `e098e90a25ea0ddc44b914e07a297fae521b3f25c5d41a5c1e592232a647c609` and core `d0b4672576af5f66f9a87e36f2de4dcaa081f518ade747dda774f93755c84bf9`. This is shared-model/public/compile evidence; no game process runs on this artifact. Native unit/step/range/slider controls and the rest of Phase 1 remain unfinished. [Numeric presentation](numbers.md) owns the contracts; previous native evidence keeps its separate artifacts.
+
 ## Numeric display foundation
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 335 core cases, including the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. The independent Maven application additionally uses public numeric presentation, stages exact converted text through a real edit session, refuses fractional integer ticks and retains incomplete raw input/undo without game classes. Native-addon/probe compilation passes; all 91 main Java sources match the source JAR. Markdown/link/workflow/diff checks pass separately.

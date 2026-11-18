@@ -330,7 +330,9 @@ public final class EditSession<T> implements AutoCloseable {
       throw new DraftEditRefusal(
           "edit.stale_target", target.path(), "Edit target belongs to a stale or foreign draft");
     if (group != null
-        && (!(edit.action() instanceof DraftEdit.SetRaw) || !group.path().equals(target.path())))
+        && (!(edit.action() instanceof DraftEdit.SetRaw
+                || edit.action() instanceof DraftEdit.SetUnitRaw)
+            || !group.path().equals(target.path())))
       throw new IllegalArgumentException("Only matching scalar typing may share an edit group");
     try {
       apply(DraftEdits.apply(definition.type(), current, edit), "Edit structure", group);

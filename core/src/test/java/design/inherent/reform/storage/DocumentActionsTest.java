@@ -19,11 +19,14 @@ import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.NumericDisplay;
+import design.inherent.reform.serialization.DecimalText;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.TaggedType;
 import design.inherent.reform.value.ValueType;
 import design.inherent.reform.value.ValueTypes;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -190,6 +193,123 @@ class DocumentActionsTest {
       assertEquals(OperationSnapshot.State.REFUSED, stale.state());
       assertEquals("edit.stale_target", stale.report().issues().getFirst().code());
       assertFalse(h.actions.view().dirty());
+    }
+  }
+
+  @Test
+  void mappedTypingRetainsItsUnitAcrossUndoAndOwnAcknowledgementWithoutCrossUnitCoalescing()
+      throws Exception {
+    var count =
+        FieldKey.of(
+            "count",
+            ValueTypes.numericDisplay(COUNT.type(), NumericDisplay.ticks(BigDecimal.valueOf(20))));
+    var type =
+        RecordType.<Profile>builder(v -> new Profile(v.get(count), v.get(SCALE), v.get(LABEL)))
+            .field(count, Profile::count)
+            .field(SCALE, Profile::scale)
+            .field(LABEL, Profile::label)
+            .build();
+    try (var h = new Harness(type)) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var path = FieldPath.ROOT.field("count");
+      var target = h.actions.view().snapshot().orElseThrow().target(path).typing();
+      for (var text : java.util.List.of("0.1", "0.2"))
+        h.run(
+            () ->
+                h.actions.edit(
+                    EntryPoint.GUI,
+                    new DraftEdit(target, new DraftEdit.SetUnitRaw("seconds", text))));
+      h.run(
+          () ->
+              h.actions.edit(
+                  EntryPoint.GUI,
+                  new DraftEdit(target, new DraftEdit.SetUnitRaw("milliseconds", "250"))));
+      await(h.actor.setRaw(path, "6"));
+      h.run(() -> h.actions.undo(EntryPoint.GUI));
+      var milli = (DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path);
+      assertEquals("5", milli.raw());
+      assertEquals("milliseconds", milli.unitInput().orElseThrow().unit());
+      h.run(() -> h.actions.undo(EntryPoint.GUI));
+      var seconds = (DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path);
+      assertEquals("4", seconds.raw());
+      assertEquals("seconds", seconds.unitInput().orElseThrow().unit());
+      h.run(() -> h.actions.undo(EntryPoint.GUI));
+      assertFalse(h.actions.view().dirty());
+      h.run(() -> h.actions.redo(EntryPoint.GUI));
+      h.run(() -> h.actions.save(EntryPoint.GUI));
+      var saved = Files.readString(h.path);
+      h.run(
+          () ->
+              h.actions.edit(
+                  EntryPoint.GUI,
+                  new DraftEdit(target, new DraftEdit.SetUnitRaw("seconds", "0.3"))));
+      assertEquals(
+          "6",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path)).raw());
+      assertEquals(saved, Files.readString(h.path));
+      h.run(() -> h.actions.revert(EntryPoint.GUI));
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var stale =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.GUI,
+                              new DraftEdit(target, new DraftEdit.SetUnitRaw("seconds", "0.4"))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.REFUSED, stale.state());
+      assertEquals("edit.stale_target", stale.report().issues().getFirst().code());
+      assertEquals(saved, Files.readString(h.path));
+    }
+  }
+
+  @Test
+  void failedMappedInputBlocksSharedValidationExportAndRealFileSaveUntilExplicitlyRepaired()
+      throws Exception {
+    var display =
+        new NumericDisplay(
+            "base",
+            java.util.List.of(
+                new NumericDisplay.Unit("base", "base", BigDecimal.ONE),
+                new NumericDisplay.Unit("tiny", "tiny", new BigDecimal("1e-4096"))),
+            BigDecimal.ONE,
+            java.util.Optional.empty(),
+            DecimalText.Limits.CONFIGURATION);
+    var scale = FieldKey.of("scale", ValueTypes.numericDisplay(SCALE.type(), display));
+    var type =
+        RecordType.<Profile>builder(v -> new Profile(v.get(COUNT), v.get(scale), v.get(LABEL)))
+            .field(COUNT, Profile::count)
+            .field(scale, Profile::scale)
+            .field(LABEL, Profile::label)
+            .build();
+    try (var h = new Harness(type)) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var path = FieldPath.ROOT.field("scale");
+      var target = h.actions.view().snapshot().orElseThrow().target(path);
+      String before = Files.readString(h.path);
+      h.run(
+          () ->
+              h.actions.edit(
+                  EntryPoint.GUI, new DraftEdit(target, new DraftEdit.SetUnitRaw("tiny", "0.1"))));
+      assertFalse(h.run(() -> h.actions.validate(EntryPoint.COMMAND)).report().valid());
+      for (var operation :
+          java.util.List.of(
+              h.nativeCall(() -> h.actions.export(EntryPoint.COMMAND)),
+              h.nativeCall(() -> h.actions.save(EntryPoint.GUI))))
+        assertEquals(OperationSnapshot.State.REFUSED, await(operation.completion()).state());
+      assertEquals(before, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+      assertEquals(
+          "0.1",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path))
+              .unitInput()
+              .orElseThrow()
+              .text());
+      h.edit("scale", "0.1", EntryPoint.COMMAND);
+      assertTrue(h.run(() -> h.actions.validate(EntryPoint.GUI)).report().valid());
+      h.run(() -> h.actions.save(EntryPoint.GUI));
+      assertEquals(0.1, h.owner.handle().view().value().orElseThrow().scale());
+      assertFalse(Files.readString(h.path).contains("tiny"));
     }
   }
 

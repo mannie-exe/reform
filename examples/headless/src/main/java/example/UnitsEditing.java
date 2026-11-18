@@ -3,6 +3,7 @@ package example;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.EditSession;
@@ -35,25 +36,34 @@ final class UnitsEditing {
           || session.snapshot().version() != version
           || session.dirty())
         throw new AssertionError("Display conversion changed the canonical draft");
-      session.setRaw(
-          FieldPath.ROOT, display.toStored("0.125", "seconds").convertedText().orElseThrow());
+      edit(session, "0.125");
       if (session.snapshot().inspect().candidate().isPresent())
         throw new AssertionError("A fractional stored tick silently became a whole number");
-      session.setRaw(
-          FieldPath.ROOT, display.toStored("0.15", "seconds").convertedText().orElseThrow());
+      edit(session, "0.15");
       if (!session.snapshot().inspect().candidate().orElseThrow().value().equals(3))
         throw new AssertionError("An exact unit conversion did not retain the native integer");
-      session.setRaw(FieldPath.ROOT, "-");
+      edit(session, "-");
       for (var unit : display.units())
         if (!display.fromStored("-", unit.id()).text().equals("-"))
           throw new AssertionError("Changing a display unit discarded incomplete input");
       if (!((DraftNode.Scalar) session.snapshot().draft().root()).raw().equals("-")
+          || !((DraftNode.Scalar) session.snapshot().draft().root())
+              .unitInput()
+              .orElseThrow()
+              .unit()
+              .equals("seconds")
           || session.snapshot().inspect().candidate().isPresent())
         throw new AssertionError("Incomplete unit input became an owner value");
       session.undo();
       if (!session.snapshot().inspect().candidate().orElseThrow().value().equals(3))
         throw new AssertionError("Raw unit editing lost its undo boundary");
     }
+  }
+
+  private static void edit(EditSession<?> session, String raw) {
+    session.execute(
+        new DraftEdit(
+            session.snapshot().target(FieldPath.ROOT), new DraftEdit.SetUnitRaw("seconds", raw)));
   }
 
   private UnitsEditing() {}

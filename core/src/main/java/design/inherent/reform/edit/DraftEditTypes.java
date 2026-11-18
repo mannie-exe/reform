@@ -59,6 +59,13 @@ final class DraftEditTypes {
                   .field("text", FieldKey.of("text", ValueTypes.text(32768)))
                   .build())
           .variant(
+              "unit_raw",
+              DraftEdit.SetUnitRaw.class,
+              RecordTypes.record(DraftEdit.SetUnitRaw.class)
+                  .field("unit", FieldKey.of("unit", ValueTypes.text(64)))
+                  .field("text", FieldKey.of("text", ValueTypes.text(32768)))
+                  .build())
+          .variant(
               "insert",
               DraftEdit.InsertRow.class,
               RecordTypes.record(DraftEdit.InsertRow.class)

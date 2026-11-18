@@ -80,6 +80,7 @@ public final class EditorActor<T> implements AutoCloseable {
     Submission<T> pending;
     CommitReceipt<T> lastReceipt;
     EditSession.EditGroup typing;
+    String typingUnit = "";
     long typingFloor;
     ValidationReport observationReport = ValidationReport.VALID;
     ValidationReport operationReport = ValidationReport.VALID;
@@ -432,8 +433,10 @@ public final class EditorActor<T> implements AutoCloseable {
     Objects.requireNonNull(text);
     return change(
         selected -> {
-          if (selected.typing == null || !selected.typing.path().equals(path))
-            selected.typing = selected.editor.beginGroup(path);
+          if (selected.typing == null
+              || !selected.typing.path().equals(path)
+              || !selected.typingUnit.isEmpty()) selected.typing = selected.editor.beginGroup(path);
+          selected.typingUnit = "";
           selected.editor.setRaw(path, text, selected.typing);
         });
   }
@@ -443,8 +446,11 @@ public final class EditorActor<T> implements AutoCloseable {
     return change(
         selected -> {
           try {
-            if (edit.action() instanceof DraftEdit.SetRaw) {
+            if (edit.action() instanceof DraftEdit.SetRaw
+                || edit.action() instanceof DraftEdit.SetUnitRaw) {
               var path = edit.target().path();
+              String unit =
+                  edit.action() instanceof DraftEdit.SetUnitRaw mapped ? mapped.unit() : "";
               var snapshot = selected.editor.snapshot();
               // Acknowledgement advances the baseline in this same editor. Explicit load creates
               // a new editor UUID, so an old typing stream still cannot enter a replacement.
@@ -458,8 +464,11 @@ public final class EditorActor<T> implements AutoCloseable {
                               snapshot.session(), snapshot.generation(), Optional.empty(), path),
                           edit.action())
                       : edit;
-              if (selected.typing == null || !selected.typing.path().equals(path))
+              if (selected.typing == null
+                  || !selected.typing.path().equals(path)
+                  || !selected.typingUnit.equals(unit))
                 selected.typing = new EditSession.EditGroup(path, UUID.randomUUID());
+              selected.typingUnit = unit;
               selected.editor.execute(input, selected.typing);
             } else {
               selected.typing = null;

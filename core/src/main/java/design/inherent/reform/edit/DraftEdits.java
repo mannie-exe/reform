@@ -28,6 +28,16 @@ public final class DraftEdits {
     if (action instanceof DraftEdit.SetRaw raw
         && (shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>))
       return new DraftNode.Scalar(raw.text());
+    if (action instanceof DraftEdit.SetUnitRaw input && shape instanceof ValueShape.Scalar scalar) {
+      var display =
+          scalar
+              .numericDisplay()
+              .orElseThrow(
+                  () -> new IllegalArgumentException("This field declares no numeric units"));
+      var mapped = display.toStored(input.text(), input.unit());
+      return new DraftNode.Scalar(
+          mapped.text(), new DraftNode.UnitInput(input.unit(), input.text(), mapped.state()));
+    }
     if (shape instanceof ValueShape.Sequence sequence && node instanceof DraftNode.Sequence values)
       return new DraftNode.Sequence(
           rows(

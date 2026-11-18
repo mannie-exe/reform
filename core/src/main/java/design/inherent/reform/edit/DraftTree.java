@@ -7,6 +7,7 @@ import com.mojang.serialization.JsonOps;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.presentation.NumericDisplay;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonInputException;
 import design.inherent.reform.serialization.JsonLimits;
@@ -749,7 +750,7 @@ public final class DraftTree {
         return fail(
             path, InputState.INVALID, "input.null", "Explicit null is not admitted for this value");
       if (type.shape() instanceof ValueShape.Scalar scalar
-          && node instanceof DraftNode.Scalar value) return scalar(value.raw(), scalar, type, path);
+          && node instanceof DraftNode.Scalar value) return scalar(value, scalar, type, path);
       if (type.shape() instanceof ValueShape.Defaulted<?> defaults
           && node instanceof DraftNode.Defaulted value) {
         if (!value.overridden())
@@ -966,8 +967,44 @@ public final class DraftTree {
           && !value.overridden();
     }
 
-    private String scalar(String raw, ValueShape.Scalar shape, ValueType<?> type, FieldPath path) {
+    private String scalar(
+        DraftNode.Scalar value, ValueShape.Scalar shape, ValueType<?> type, FieldPath path) {
+      String raw = value.raw();
       try {
+        if (value.unitInput().isPresent()) {
+          var input = value.unitInput().orElseThrow();
+          if (shape.numericDisplay().isEmpty())
+            return fail(
+                path,
+                InputState.UNAVAILABLE,
+                "input.unit_unavailable",
+                "The original unit definition is unavailable; retained the input");
+          final NumericDisplay.Conversion mapped;
+          try {
+            mapped = shape.numericDisplay().orElseThrow().toStored(input.text(), input.unit());
+          } catch (IllegalArgumentException unavailable) {
+            return fail(
+                path,
+                InputState.UNAVAILABLE,
+                "input.unit_unavailable",
+                "The original unit is unavailable; retained the input");
+          }
+          if (mapped.state() != input.state() || !mapped.text().equals(raw))
+            return fail(
+                path,
+                InputState.UNAVAILABLE,
+                "input.unit_changed",
+                "The unit mapping changed; review the retained input");
+          if (mapped.convertedText().isEmpty()) {
+            var state =
+                switch (mapped.state()) {
+                  case EMPTY -> InputState.EMPTY;
+                  case INCOMPLETE -> InputState.INCOMPLETE;
+                  default -> InputState.INVALID;
+                };
+            return fail(path, state, "input.unit_conversion", mapped.reason());
+          }
+        }
         final JsonElement json;
         final String literal;
         if (shape.kind() == ValueShape.ScalarKind.TEXT

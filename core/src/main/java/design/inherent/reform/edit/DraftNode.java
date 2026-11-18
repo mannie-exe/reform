@@ -1,5 +1,6 @@
 package design.inherent.reform.edit;
 
+import design.inherent.reform.presentation.NumericDisplay;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -7,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -31,30 +33,65 @@ public sealed interface DraftNode
 
   Size size();
 
+  /** Private editor input, never a persisted unit field or a supplied canonical value. */
+  record UnitInput(String unit, String text, NumericDisplay.State state) {
+    public UnitInput {
+      if (!Objects.requireNonNull(unit).matches("[a-z][a-z0-9_-]{0,63}"))
+        throw new IllegalArgumentException("Invalid unit input identity");
+      Objects.requireNonNull(text);
+      Objects.requireNonNull(state);
+    }
+  }
+
   final class Scalar implements DraftNode {
     private final String raw;
+    private final Optional<UnitInput> unitInput;
 
     public Scalar(String raw) {
+      this(raw, Optional.empty());
+    }
+
+    public Scalar(String raw, UnitInput input) {
+      this(raw, Optional.of(Objects.requireNonNull(input)));
+    }
+
+    private Scalar(String raw, Optional<UnitInput> input) {
       this.raw = Objects.requireNonNull(raw);
+      unitInput = input;
     }
 
     public String raw() {
       return raw;
     }
 
+    public Optional<UnitInput> unitInput() {
+      return unitInput;
+    }
+
     @Override
     public Size size() {
-      return new Size(1, 1, raw.length());
+      return new Size(
+          1,
+          unitInput.isEmpty() ? 1 : 2,
+          unitInput
+              .map(
+                  value ->
+                      Math.addExact(
+                          raw.length(),
+                          Math.addExact(value.unit().length(), value.text().length())))
+              .orElse(raw.length()));
     }
 
     @Override
     public boolean equals(Object other) {
-      return other instanceof Scalar scalar && raw.equals(scalar.raw);
+      return other instanceof Scalar scalar
+          && raw.equals(scalar.raw)
+          && unitInput.equals(scalar.unitInput);
     }
 
     @Override
     public int hashCode() {
-      return raw.hashCode();
+      return Objects.hash(raw, unitInput);
     }
   }
 
@@ -475,6 +512,14 @@ public sealed interface DraftNode
 
   /** Authored equality ignores session IDs; identical user data must not become a fake edit. */
   static boolean sameValue(DraftNode first, DraftNode second) {
+    if (first instanceof Scalar a && second instanceof Scalar b) {
+      boolean failed =
+          a.unitInput().filter(value -> value.state() != NumericDisplay.State.EXACT).isPresent()
+              || b.unitInput()
+                  .filter(value -> value.state() != NumericDisplay.State.EXACT)
+                  .isPresent();
+      return failed ? a.equals(b) : a.raw().equals(b.raw());
+    }
     if (first instanceof Alternative a && second instanceof Alternative b)
       return a.selected().equals(b.selected())
           && sameValue(a.selectedValue(), b.selectedValue())

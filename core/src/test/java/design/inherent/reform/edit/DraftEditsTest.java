@@ -334,6 +334,7 @@ class DraftEditsTest {
     for (var action :
         List.of(
             new DraftEdit.SetRaw("-"),
+            new DraftEdit.SetUnitRaw("seconds", "0.125"),
             new DraftEdit.InsertRow(Optional.of(id)),
             new DraftEdit.DuplicateRow(id, Optional.empty()),
             new DraftEdit.RemoveRow(id),

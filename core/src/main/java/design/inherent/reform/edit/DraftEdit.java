@@ -9,12 +9,13 @@ public record DraftEdit(DraftTarget target, Action action) {
   public DraftEdit {
     Objects.requireNonNull(target);
     Objects.requireNonNull(action);
-    if (target.version().isEmpty() && !(action instanceof SetRaw))
+    if (target.version().isEmpty() && !(action instanceof SetRaw || action instanceof SetUnitRaw))
       throw new IllegalArgumentException("Structural edits require an exact draft version");
   }
 
   public sealed interface Action
       permits SetRaw,
+          SetUnitRaw,
           InsertRow,
           DuplicateRow,
           RemoveRow,
@@ -30,6 +31,14 @@ public record DraftEdit(DraftTarget target, Action action) {
 
   public record SetRaw(String text) implements Action {
     public SetRaw {
+      Objects.requireNonNull(text);
+    }
+  }
+
+  /** Only display input and a declared unit ID; mapping is performed by the actual editor. */
+  public record SetUnitRaw(String unit, String text) implements Action {
+    public SetUnitRaw {
+      Objects.requireNonNull(unit);
       Objects.requireNonNull(text);
     }
   }
