@@ -36,6 +36,14 @@ Singleton-list optionals map their active child to encoded index zero; nullable 
 
 Malformed encodings remain opaque repairable drafts; they never silently become empty. Nullable nested emptiness that cannot be represented stays invalid in both raw rendering and typed encoding. Native controls remain required.
 
+## Tagged branches
+
+`DraftNode.Alternative` retains a selected ID, branch drafts by stable declared ID and unknown envelope fields. `FieldPath.Part.KEY` addresses the discriminator independently of a field named `kind`; `FieldPath.Variant(id)` addresses a retained payload. Only the selected branch enters authored data and candidate validation. Inactive invalid input, row identities and history remain local, count toward limits and can be explicitly discarded by inactive ID.
+
+`select(id, seed)` creates a missing branch from an explicit seed and restores an existing branch unchanged. It does not infer a valid default, reinterpret unknown payloads or replace unfinished input with a supplied seed. Unknown tags retain opaque payloads; unknown fields remain errors until explicitly repaired. A malformed envelope/tag retains the complete opaque input for repair rather than selecting a fallback.
+
+Equal-value acknowledgement normalizes the actual saved branch while retaining private branches and their later edits. A later selection retains its own payload. Old diagnostics retain their branch target and become stale when that branch is inactive. Whole-alternative conflict choices cannot pair one selector with another branch's payload. Native branch controls and repair/recovery presentation remain required.
+
 ## History and lifecycle
 
 `EditSession<T>` belongs to its creating thread by default. The explicit advanced `fromDraft` overload accepts a trusted owner verifier for a serialized worker adapter; that adapter must enforce serialization rather than disabling checks. `EditorActor` supplies this verifier from its active worker task and removes it afterward, so editing may move between workers without concurrent mutation. Immutable snapshots may be inspected on an admitted worker when definition callbacks support that contract. The pure model owns no global executor, timer, file watcher or screen reference.

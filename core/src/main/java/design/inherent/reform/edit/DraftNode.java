@@ -19,6 +19,7 @@ public sealed interface DraftNode
         DraftNode.Mapping,
         DraftNode.Defaulted,
         DraftNode.OptionalValue,
+        DraftNode.Alternative,
         DraftNode.Opaque,
         DraftNode.Missing,
         DraftNode.NullValue {
@@ -134,6 +135,88 @@ public sealed interface DraftNode
     @Override
     public Size size() {
       return measure(List.of(value), 0, 0);
+    }
+  }
+
+  /** Only the selected branch is authored; inactive branches remain bounded session state. */
+  final class Alternative implements DraftNode {
+    private final Scalar selector;
+    private final ObjectValue branches;
+    private final ObjectValue unknownFields;
+    private final Size size;
+
+    public Alternative(
+        String selected, Map<String, DraftNode> branches, Map<String, DraftNode> unknownFields) {
+      selector = new Scalar(selected);
+      this.branches = new ObjectValue(branches);
+      this.unknownFields = new ObjectValue(unknownFields);
+      size = measure(List.of(selector, this.branches, this.unknownFields), 0, 0);
+    }
+
+    public String selected() {
+      return selector.raw();
+    }
+
+    public Scalar selector() {
+      return selector;
+    }
+
+    public Map<String, DraftNode> branches() {
+      return branches.fields();
+    }
+
+    public Map<String, DraftNode> unknownFields() {
+      return unknownFields.fields();
+    }
+
+    public DraftNode selectedValue() {
+      return branches.fields().getOrDefault(selected(), new Missing());
+    }
+
+    public Alternative withSelector(String next) {
+      return new Alternative(next, branches.fields(), unknownFields.fields());
+    }
+
+    public Alternative select(String id, DraftNode seed) {
+      var next = new LinkedHashMap<>(branches.fields());
+      next.putIfAbsent(Objects.requireNonNull(id), Objects.requireNonNull(seed));
+      return new Alternative(id, next, unknownFields.fields());
+    }
+
+    public Alternative withBranch(String id, DraftNode value) {
+      if (!branches.fields().containsKey(id))
+        throw new IllegalArgumentException("Branch no longer exists in this draft");
+      return new Alternative(selected(), branches.with(id, value).fields(), unknownFields.fields());
+    }
+
+    public Alternative discardInactive(String id) {
+      if (selected().equals(id) || !branches.fields().containsKey(id))
+        throw new IllegalArgumentException("Only a retained inactive branch can be discarded");
+      return new Alternative(selected(), branches.without(id).fields(), unknownFields.fields());
+    }
+
+    public Alternative withoutUnknownField(String id) {
+      if (!unknownFields.fields().containsKey(id))
+        throw new IllegalArgumentException("Unknown field no longer exists");
+      return new Alternative(selected(), branches.fields(), unknownFields.without(id).fields());
+    }
+
+    @Override
+    public Size size() {
+      return size;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof Alternative value
+          && selector.equals(value.selector)
+          && branches.equals(value.branches)
+          && unknownFields.equals(value.unknownFields);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(selector, branches, unknownFields);
     }
   }
 
@@ -392,6 +475,10 @@ public sealed interface DraftNode
 
   /** Authored equality ignores session IDs; identical user data must not become a fake edit. */
   static boolean sameValue(DraftNode first, DraftNode second) {
+    if (first instanceof Alternative a && second instanceof Alternative b)
+      return a.selected().equals(b.selected())
+          && sameValue(a.selectedValue(), b.selectedValue())
+          && sameValue(a.unknownFields, b.unknownFields);
     if (first instanceof OptionalValue a && second instanceof OptionalValue b)
       return a.present() == b.present() && (!a.present() || sameValue(a.value(), b.value()));
     if (first instanceof Defaulted a && second instanceof Defaulted b)
@@ -442,6 +529,9 @@ public sealed interface DraftNode
   }
 
   private static int authoredHash(DraftNode node) {
+    if (node instanceof Alternative value)
+      return Objects.hash(
+          value.selected(), authoredHash(value.selectedValue()), authoredHash(value.unknownFields));
     if (node instanceof OptionalValue value)
       return value.present() ? 71 + authoredHash(value.value()) : 71;
     if (node instanceof Defaulted value)

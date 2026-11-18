@@ -10,7 +10,7 @@ The current API is experimental. It supplies typed values, explicit record defin
 
 `RecordTypes.record(MyRecord.class).build()` derives that same `RecordType` for explicitly selected accessible records. It binds the canonical constructor/getters using ordinary method-handle access and supplies common scalar, enum, nested record, typed `List`/`Set` and string-keyed `Map` codecs/snapshots. Derived string maps use object encoding, including any explicitly registered string type. Other map keys require a field override selecting their actual lossless encoding. It scans no classpath and opens no foreign module. Nonpublic owned records can receive the caller's actual `MethodHandles.Lookup`; the library does not use an access override.
 
-The derivation defaults to 32 type-depth levels, 1,024 compiled record fields, 4,096 text characters and 256 collection entries. `limits` declares different bounds. Custom/unsupported Java types use explicit `register(Class, ValueType)` bindings; recursive/wildcard/raw/unknown types are refused instead of guessed. An `Optional<T>` component needs an explicit field override choosing its encoding and omission policy. Tagged alternatives remain additional Phase 1 work.
+The derivation defaults to 32 type-depth levels, 1,024 compiled record fields, 4,096 text characters and 256 collection entries. `limits` declares different bounds. Custom/unsupported Java types use explicit `register(Class, ValueType)` bindings; recursive/wildcard/raw/unknown types are refused instead of guessed. An `Optional<T>` component needs an explicit field override choosing its encoding and omission policy. A tagged family can register its base Java type with an explicitly built `TaggedType`.
 
 `field("javaComponent", FieldKey.of("serialized_id", type))` supplies an explicit root-field identity/constraint override. Duplicate or unknown overrides fail. Default component names become serialized IDs and must be treated as persistent names; a Java rename keeps the prior explicit serialized ID. Nested customized records can be built separately and registered. Definitions still declare owner defaults and meaningful cross-field constraints; derivation infers no units, permissions, application effects or semantic bounds from a member name.
 
@@ -37,6 +37,16 @@ Optional membership does not make a record field optional. Combine a nullable op
 Compressed record slots cannot distinguish null from omission. A required nullable empty value, or an explicit empty value against a nonempty fallback, therefore refuses compressed encoding instead of silently changing its meaning. Singleton-list encoding preserves those distinctions. Nullable nesting also refuses a present child whose canonical encoding is null; choose singleton lists where the nested empty distinction matters. Custom serializers remain their owners' responsibility.
 
 The [packaged optional example](../../examples/headless/src/main/java/example/OptionalEditing.java) writes native-style fields through a real bare JSON file and retains invalid inactive input separately. [Editing](editing.md) owns raw presence, source locations and history. Built-in optional controls and actual consumer migration remain required.
+
+## Tagged alternatives
+
+`TaggedType.<Mode>builder("kind", "settings").variant("fixed", Fixed.class, fixedType).variant("automatic", Automatic.class, automaticType).build()` declares a finite family. Each stable ID binds one concrete exact Java class and its typed child definition. Duplicate IDs/classes, abstract/interface classes and unknown runtime classes are refused; subclasses and aliases are not inferred. Builder changes do not modify an already built definition.
+
+The owned format is an explicit discriminator/payload envelope, such as `{"kind":"fixed","settings":{"count":4}}`. Field names are declared and distinct. The envelope remains an object under compressed JsonOps; children retain their actual codecs. Both fields are required and unknown fields/variants refuse decoding. Numeric tags are not coerced to strings. Existing flattened native dispatch codecs require their own explicitly matching adapter; this helper does not migrate them.
+
+Payload decoding and snapshots retain the selected child type and exact class. A tagged view does not introduce a second object-identity visit for the same value, and real child cycles remain subject to snapshot accounting. `RecordType.decode` delegates compressed layout to native DFU `MapDecoder` while retaining the caller's structured child paths. Shared comparison descends into a matching variant's fields; a changed variant remains a complete alternative change.
+
+The [packaged tagged example](../../examples/headless/src/main/java/example/TaggedEditing.java) persists the selected variant while retaining invalid inactive work only in its draft. [Editing](editing.md) owns branch identity, raw repair and history. Native branch selectors and real consumer adapters remain required.
 
 ## Explicit map encodings
 
@@ -70,4 +80,4 @@ Built-in lists, sets, maps and explicit records recursively own their values. De
 
 Custom types provide an explicit snapshot and equality policy. `SnapshotPolicy.immutable()` is appropriate only when the entire reachable value is immutable. Lists, map values and record fields delegate semantic equality to their children; map keys and set members retain the Java identity contract above. Callbacks must be pure and bounded; an interface cannot sandbox arbitrary consumer code.
 
-`FieldPath` distinguishes field, stable row, variant and map-part segments. The editing model implements current record/list/set/map paths and defaulted payloads with session row IDs and explicit value parts; variant traversal remains follow-up work. Filenames, labels, logical IDs, schema versions, saved revisions and owner contexts remain distinct. No environment-variable or ambient JVM-property settings source is involved.
+`FieldPath` distinguishes field, stable row, variant and part segments. The editing model implements record/list/set/map/variant paths, defaulted and optional payloads with session row IDs and explicit parts. Filenames, labels, logical IDs, schema versions, saved revisions and owner contexts remain distinct. No environment-variable or ambient JVM-property settings source is involved.

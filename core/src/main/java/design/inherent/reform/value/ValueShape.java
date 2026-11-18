@@ -13,6 +13,7 @@ public sealed interface ValueShape
         ValueShape.Mapping,
         ValueShape.Defaulted,
         ValueShape.OptionalValue,
+        ValueShape.Alternative,
         ValueShape.Custom {
   enum ScalarKind {
     BOOLEAN,
@@ -95,6 +96,35 @@ public sealed interface ValueShape
     public OptionalValue {
       Objects.requireNonNull(element);
       Objects.requireNonNull(encoding);
+    }
+  }
+
+  record Variant(String id, ValueType<?> type) {
+    public Variant {
+      if (Objects.requireNonNull(id).isBlank())
+        throw new IllegalArgumentException("Missing variant ID");
+      Objects.requireNonNull(type);
+    }
+  }
+
+  /** An explicit discriminator/payload envelope; existing flattened native codecs stay owned. */
+  record Alternative(String discriminator, String payload, List<Variant> variants)
+      implements ValueShape {
+    public Alternative {
+      if (Objects.requireNonNull(discriminator).isBlank()
+          || Objects.requireNonNull(payload).isBlank()
+          || discriminator.equals(payload))
+        throw new IllegalArgumentException("Alternative fields must be distinct nonblank names");
+      variants = List.copyOf(variants);
+      if (variants.isEmpty())
+        throw new IllegalArgumentException("An alternative needs declared variants");
+      var ids = new java.util.HashSet<String>();
+      for (var variant : variants)
+        if (!ids.add(variant.id())) throw new IllegalArgumentException("Duplicate variant ID");
+    }
+
+    public java.util.Optional<Variant> variant(String id) {
+      return variants.stream().filter(variant -> variant.id().equals(id)).findFirst();
     }
   }
 

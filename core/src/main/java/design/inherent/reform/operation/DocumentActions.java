@@ -535,6 +535,19 @@ public final class DocumentActions<T> implements AutoCloseable {
       JsonElement second,
       List<Change> changes) {
     if (equivalent(type, first, second)) return;
+    if (type.shape() instanceof ValueShape.Alternative alternative) {
+      String before = first.getAsJsonObject().get(alternative.discriminator()).getAsString();
+      String after = second.getAsJsonObject().get(alternative.discriminator()).getAsString();
+      if (before.equals(after)) {
+        differences(
+            alternative.variant(before).orElseThrow().type(),
+            path.variant(before),
+            first.getAsJsonObject().get(alternative.payload()),
+            second.getAsJsonObject().get(alternative.payload()),
+            changes);
+        return;
+      }
+    }
     if (type.shape() instanceof ValueShape.ObjectValue object) {
       for (var field : object.fields())
         differences(

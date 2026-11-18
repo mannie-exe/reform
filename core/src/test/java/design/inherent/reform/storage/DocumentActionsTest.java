@@ -20,6 +20,8 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.TaggedType;
+import design.inherent.reform.value.ValueType;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -63,6 +65,25 @@ class DocumentActionsTest {
     } catch (InterruptedException failed) {
       Thread.currentThread().interrupt();
       throw new AssertionError(failed);
+    }
+  }
+
+  @Test
+  void sameVariantComparisonReportsTheActualNestedFieldWithoutWriting() throws Exception {
+    var type =
+        TaggedType.<Profile>builder("kind", "settings")
+            .variant("profile", Profile.class, TYPE)
+            .build();
+    try (var h = new Harness(type)) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var original = Files.readString(h.path);
+      var path = FieldPath.ROOT.variant("profile").field("count");
+      await(h.nativeCall(() -> h.actor.setRaw(path, "4")));
+      var comparison = h.run(() -> h.actions.compare(EntryPoint.COMMAND));
+      assertEquals(
+          java.util.List.of(new DocumentActions.Change(path, "1", "4")), comparison.changes());
+      assertTrue(comparison.report().valid());
+      assertEquals(original, Files.readString(h.path));
     }
   }
 
@@ -150,7 +171,7 @@ class DocumentActionsTest {
       this(TYPE);
     }
 
-    Harness(RecordType<Profile> rootType) throws Exception {
+    Harness(ValueType<Profile> rootType) throws Exception {
       var nativeThread = nativeCall(() -> Thread.currentThread().threadId());
       var definition =
           new DocumentDefinition<>(

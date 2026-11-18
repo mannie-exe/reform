@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Tagged-alternative increment
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 272 core cases, including ten generated properties/1,500 checks, two native-file tests and twelve tooling controls. The independent Maven consumer persists only the selected variant through a real bare JSON file and restores its invalid inactive branch. Native-addon/probe compilation passes; all 69 main Java sources match the source JAR.
+
+Controls exercise exact class/ID registration, immutable built definitions, ordinary/compressed record payloads, malformed/unknown/numeric tags, required/extra fields, partial refusal, owned composite snapshots, raw branch selection/repair/discard, logical budgets, row/source identities, inactive diagnostics, whole-alternative conflicts and late-save normalization. One hundred generated branch/late-edit cases use seed `2026111803`. The actual shared GUI/command service reports the nested changed field without writing.
+
+Development controls first reproduced a false snapshot cycle and compressed record payloads refused as objects. Delegating the selected snapshot policy without another identity visit, and using native `MapDecoder` for compressed record inspection, fix those controls while preserving nested error paths. A separate service control reproduced an entire tagged JSON object reported instead of its changed field; matching variants now compare through their typed child definitions.
+
+The final combined library is `60928e05637dc75d93420d2443f1de26a5b979224823af4c312e08f419881133`, sources `9e3d63a990b94280b11eb622b08eeb97fc4b63bfc92c58823d7e068f3ebb5153` and core `e17fd99573586777352538cde96beb1f7c8d1be9bf97dd549fc809872f3b497e`. The registered native COMMON-owner regression passes two sequential disposable 2 GiB boots in 9.290 and 8.546 seconds: 39 first-boot/six reopen checks, six native saves and zero off-thread validators. The runner is `python3 tools/native_addon_server_probe.py --registered --java-home /path/to/jdk21 --timeout 150`; addon/probe use ModDev source containers and the exact packaged Maven library. Marked worlds/logs are removed.
+
+Markdown/link/workflow/diff checks pass separately. Native variant/recursive selectors, malformed-input repair presentation, reference resolution, real consumer formats/migrations and remaining Phase 1 qualification are still required. No native variant GUI, full-pack, cost or release claim is established by these checks.
+
 ## Optional-value increment
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 256 core cases, including nine generated properties/1,400 checks, two native-file tests and twelve tooling controls. The independent Maven consumer persists native-style optional fields through a real bare JSON file without game classes. Native-addon/probe compilation passes; all 68 main Java source files match the source JAR.

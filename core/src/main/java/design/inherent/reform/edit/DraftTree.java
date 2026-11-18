@@ -106,6 +106,40 @@ public final class DraftTree {
           value == null ? defaultDraft(defaults) : build(defaults.element(), value, path, text));
     }
     if (value == null) return new DraftNode.Missing();
+    if (type.shape() instanceof ValueShape.Alternative alternative && value.isJsonObject()) {
+      var object = value.getAsJsonObject();
+      var tag = object.get(alternative.discriminator());
+      if (tag != null && tag.isJsonPrimitive() && tag.getAsJsonPrimitive().isString()) {
+        var id = tag.getAsString();
+        var payload = object.get(alternative.payload());
+        var selected = alternative.variant(id);
+        var body =
+            selected.isPresent()
+                ? build(
+                    selected.orElseThrow().type(),
+                    payload,
+                    path.property(alternative.payload()),
+                    text)
+                : payload == null
+                    ? new DraftNode.Missing()
+                    : new DraftNode.Opaque(
+                        sourceJson(payload, path.property(alternative.payload()), text));
+        var unknown = new LinkedHashMap<String, DraftNode>();
+        object
+            .entrySet()
+            .forEach(
+                entry -> {
+                  if (!entry.getKey().equals(alternative.discriminator())
+                      && !entry.getKey().equals(alternative.payload()))
+                    unknown.put(
+                        entry.getKey(),
+                        new DraftNode.Opaque(
+                            sourceJson(entry.getValue(), path.property(entry.getKey()), text)));
+                });
+        return new DraftNode.Alternative(id, Map.of(id, body), unknown);
+      }
+      return new DraftNode.Opaque(sourceJson(value, path, text));
+    }
     if (type.shape() instanceof ValueShape.OptionalValue<?> optional) {
       if (optional.encoding() == ValueShape.OptionalEncoding.NULL_OR_VALUE)
         return value.isJsonNull()
@@ -258,7 +292,16 @@ public final class DraftTree {
     var segments = path.segments();
     for (int i = 0; i < segments.size(); i++) {
       var segment = segments.get(i);
-      if (segment == FieldPath.Part.VALUE && current instanceof DraftNode.Defaulted value) {
+      if (segment == FieldPath.Part.KEY && current instanceof DraftNode.Alternative value) {
+        current = value.selector();
+      } else if (segment instanceof FieldPath.Variant variant
+          && current instanceof DraftNode.Alternative value) {
+        if (activeOnly && !variant.id().equals(value.selected()))
+          throw new IllegalArgumentException("The retained branch is inactive");
+        current = value.branches().get(variant.id());
+        if (current == null)
+          throw new IllegalArgumentException("Branch no longer exists in this draft");
+      } else if (segment == FieldPath.Part.VALUE && current instanceof DraftNode.Defaulted value) {
         if (activeOnly && !value.overridden())
           throw new IllegalArgumentException("The retained override is inactive");
         current = value.value();
@@ -328,6 +371,19 @@ public final class DraftTree {
       UnaryOperator<DraftNode> operation) {
     if (offset == path.size()) return Objects.requireNonNull(operation.apply(node));
     var segment = path.get(offset);
+    if (segment == FieldPath.Part.KEY && node instanceof DraftNode.Alternative value) {
+      var selector = change(value.selector(), path, offset + 1, operation);
+      if (!(selector instanceof DraftNode.Scalar scalar))
+        throw new IllegalArgumentException("Variant selection requires text");
+      return value.withSelector(scalar.raw());
+    }
+    if (segment instanceof FieldPath.Variant variant
+        && node instanceof DraftNode.Alternative value) {
+      var previous = value.branches().get(variant.id());
+      if (previous == null)
+        throw new IllegalArgumentException("Branch no longer exists in this draft");
+      return value.withBranch(variant.id(), change(previous, path, offset + 1, operation));
+    }
     if (segment == FieldPath.Part.VALUE && node instanceof DraftNode.Defaulted value)
       return value.withValue(change(value.value(), path, offset + 1, operation));
     if (segment == FieldPath.Part.VALUE && node instanceof DraftNode.OptionalValue value)
@@ -389,6 +445,16 @@ public final class DraftTree {
 
   private static DraftNode align(
       DraftNode actual, DraftNode submitted, ValueType<?> type, JsonLimits limits) {
+    if (type.shape() instanceof ValueShape.Alternative alternative
+        && actual instanceof DraftNode.Alternative a
+        && submitted instanceof DraftNode.Alternative s
+        && a.selected().equals(s.selected())) {
+      var branch = alternative.variant(a.selected()).orElseThrow();
+      var branches = new LinkedHashMap<>(s.branches());
+      branches.put(
+          a.selected(), align(a.selectedValue(), s.selectedValue(), branch.type(), limits));
+      return new DraftNode.Alternative(a.selected(), branches, a.unknownFields());
+    }
     if (type.shape() instanceof ValueShape.OptionalValue<?> optional
         && actual instanceof DraftNode.OptionalValue a
         && submitted instanceof DraftNode.OptionalValue s)
@@ -522,6 +588,21 @@ public final class DraftTree {
 
   private static DraftNode retain(DraftNode submitted, DraftNode current, DraftNode actual) {
     if (current.equals(submitted)) return actual;
+    if (submitted instanceof DraftNode.Alternative s
+        && current instanceof DraftNode.Alternative c
+        && actual instanceof DraftNode.Alternative a) {
+      var branches = new LinkedHashMap<>(c.branches());
+      c.branches()
+          .forEach(
+              (id, branch) -> {
+                if (s.branches().containsKey(id) && a.branches().containsKey(id))
+                  branches.put(id, retain(s.branches().get(id), branch, a.branches().get(id)));
+              });
+      return new DraftNode.Alternative(
+          c.selected().equals(s.selected()) ? a.selected() : c.selected(),
+          branches,
+          c.unknownFields().equals(s.unknownFields()) ? a.unknownFields() : c.unknownFields());
+    }
     if (submitted instanceof DraftNode.ObjectValue s
         && current instanceof DraftNode.ObjectValue c
         && actual instanceof DraftNode.ObjectValue a
@@ -604,6 +685,34 @@ public final class DraftTree {
       addresses.put(source, path);
       if (node instanceof DraftNode.Missing)
         return fail(path, InputState.EMPTY, "input.required", "Enter a required value");
+      if (type.shape() instanceof ValueShape.Alternative alternative
+          && node instanceof DraftNode.Alternative value) {
+        var keyPath = path.append(FieldPath.Part.KEY);
+        addresses.put(source.property(alternative.discriminator()), keyPath);
+        for (String unknown : value.unknownFields().keySet())
+          fail(
+              unknown.isBlank() ? path : path.field(unknown),
+              InputState.INVALID,
+              "input.unknown_field",
+              "Remove or resolve the unknown field");
+        var branch = alternative.variant(value.selected());
+        if (branch.isEmpty())
+          return fail(keyPath, InputState.INVALID, "input.variant", "Select a declared variant");
+        inputs.put(keyPath, InputState.VALID);
+        return "{"
+            + JSON.toJson(alternative.discriminator())
+            + ":"
+            + JSON.toJson(value.selected())
+            + ","
+            + JSON.toJson(alternative.payload())
+            + ":"
+            + render(
+                value.selectedValue(),
+                branch.orElseThrow().type(),
+                path.variant(value.selected()),
+                source.property(alternative.payload()))
+            + "}";
+      }
       if (type.shape() instanceof ValueShape.OptionalValue<?> optional
           && node instanceof DraftNode.OptionalValue value) {
         if (!value.present()) {

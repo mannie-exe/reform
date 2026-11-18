@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.MapDecoder;
 import com.mojang.serialization.MapLike;
 import com.mojang.serialization.RecordBuilder;
 import design.inherent.reform.validation.DecodedValue;
@@ -153,15 +154,7 @@ public final class RecordType<T> implements ValueType<T> {
 
           @Override
           public <O> DataResult<T> decode(DynamicOps<O> ops, MapLike<O> input) {
-            var decoded = decodeFields(ops, input, FieldPath.ROOT);
-            if (decoded.value().isPresent())
-              return DataResult.success(decoded.value().orElseThrow());
-            return DataResult.error(
-                () ->
-                    decoded.report().issues().stream()
-                        .map(Issue::fallback)
-                        .reduce((first, second) -> first + "; " + second)
-                        .orElse("Record validation unavailable"));
+            return result(decodeFields(ops, input, FieldPath.ROOT));
           }
 
           @Override
@@ -194,10 +187,49 @@ public final class RecordType<T> implements ValueType<T> {
 
   @Override
   public <O> DecodedValue<T> decode(DynamicOps<O> ops, O input, FieldPath path) {
+    if (ops.compressMaps()) {
+      class AtPath extends MapDecoder.Implementation<T> {
+        private DecodedValue<T> decoded;
+
+        @Override
+        public <P> DataResult<T> decode(DynamicOps<P> localOps, MapLike<P> map) {
+          decoded = decodeFields(localOps, map, path);
+          return result(decoded);
+        }
+
+        @Override
+        public <P> Stream<P> keys(DynamicOps<P> localOps) {
+          return fields.stream().map(field -> localOps.createString(field.key().id()));
+        }
+      }
+      var decoder = new AtPath();
+      var decoded = decoder.compressedDecode(ops, input);
+      if (decoder.decoded != null
+          && (decoded.error().isEmpty() || !decoder.decoded.report().valid()))
+        return decoder.decoded;
+      return DecodedValue.failure(
+          Issue.error(
+              "value.object",
+              path,
+              decoded
+                  .error()
+                  .map(DataResult.Error::message)
+                  .orElse("Expected a compressed record")));
+    }
     var object = ops.getMap(input);
     if (object.result().isEmpty())
       return DecodedValue.failure(Issue.error("value.object", path, "Expected an object"));
     return decodeFields(ops, object.result().orElseThrow(), path);
+  }
+
+  private static <V> DataResult<V> result(DecodedValue<V> decoded) {
+    if (decoded.value().isPresent()) return DataResult.success(decoded.value().orElseThrow());
+    return DataResult.error(
+        () ->
+            decoded.report().issues().stream()
+                .map(Issue::fallback)
+                .reduce((first, second) -> first + "; " + second)
+                .orElse("Record validation unavailable"));
   }
 
   private <O> DecodedValue<T> decodeFields(DynamicOps<O> ops, MapLike<O> input, FieldPath path) {
