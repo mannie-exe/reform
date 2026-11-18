@@ -51,6 +51,11 @@ public record NumericDisplay(
       if (state != State.EXACT && !text.equals(sourceText))
         throw new IllegalArgumentException("A failed display conversion must retain its input");
     }
+
+    /** Only this value is a converted representation; failed retained text is not canonical. */
+    public Optional<String> convertedText() {
+      return state == State.EXACT ? Optional.of(text) : Optional.empty();
+    }
   }
 
   public NumericDisplay {

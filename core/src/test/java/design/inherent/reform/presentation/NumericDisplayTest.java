@@ -225,6 +225,31 @@ class NumericDisplayTest {
   }
 
   @Test
+  void retainedNumericFailureIsNotAnAdmissibleCanonicalConversion() {
+    var tiny =
+        new NumericDisplay(
+            "base",
+            List.of(
+                new NumericDisplay.Unit("base", "base", BigDecimal.ONE),
+                new NumericDisplay.Unit("tiny", "tiny", new BigDecimal("1e-4096"))),
+            BigDecimal.ONE,
+            Optional.empty(),
+            DecimalText.Limits.CONFIGURATION);
+    var result = tiny.toStored("0.1", "tiny");
+    assertEquals(NumericDisplay.State.LIMIT, result.state());
+    assertEquals("0.1", result.text());
+    assertTrue(result.convertedText().isEmpty());
+    // The retained display text is valid in the owner's canonical codec but means another value.
+    assertEquals(
+        0.1,
+        ValueTypes.decimal(0, 1)
+            .codec()
+            .parse(JsonOps.INSTANCE, JsonParser.parseString(result.text()))
+            .getOrThrow());
+    assertEquals(Optional.of("2.5"), TICKS.toStored("0.125", "seconds").convertedText());
+  }
+
+  @Test
   void seededFiniteUnitRoundTripsRetainValueAcrossLargeSmallAndNegativeInputs() {
     var random = new Random(2026111806L);
     for (int i = 0; i < 200; i++) {

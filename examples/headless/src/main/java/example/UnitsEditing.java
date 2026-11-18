@@ -35,10 +35,12 @@ final class UnitsEditing {
           || session.snapshot().version() != version
           || session.dirty())
         throw new AssertionError("Display conversion changed the canonical draft");
-      session.setRaw(FieldPath.ROOT, display.toStored("0.125", "seconds").text());
+      session.setRaw(
+          FieldPath.ROOT, display.toStored("0.125", "seconds").convertedText().orElseThrow());
       if (session.snapshot().inspect().candidate().isPresent())
         throw new AssertionError("A fractional stored tick silently became a whole number");
-      session.setRaw(FieldPath.ROOT, display.toStored("0.15", "seconds").text());
+      session.setRaw(
+          FieldPath.ROOT, display.toStored("0.15", "seconds").convertedText().orElseThrow());
       if (!session.snapshot().inspect().candidate().orElseThrow().value().equals(3))
         throw new AssertionError("An exact unit conversion did not retain the native integer");
       session.setRaw(FieldPath.ROOT, "-");
