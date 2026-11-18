@@ -15,7 +15,9 @@ import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.reference.CollectionSelection;
 import design.inherent.reform.reference.ReferenceActions;
+import design.inherent.reform.reference.ReferenceBrowser;
 import design.inherent.reform.reference.ReferenceIndex;
 import design.inherent.reform.reference.ReferenceLimits;
 import design.inherent.reform.reference.ReferencePage;
@@ -155,6 +157,20 @@ final class CompositionEditing {
           "Initial combined profile rejected");
       var page = h.run(() -> h.references.search(EntryPoint.GUI, new ReferenceQuery("house", 4)));
       require(page.choices().size() == 1 && page.exhausted(), "Public reference search failed");
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var search =
+          h.nativeCall(() -> browser.search(EntryPoint.GUI, new ReferenceQuery("house", 4)));
+      await(search.operation().completion());
+      require(h.nativeCall(() -> browser.accept(search)), "Public browser rejected its own search");
+      require(
+          h.nativeCall(() -> browser.page().orElseThrow()).equals(page),
+          "Public browser changed page evidence");
+      h.nativeCall(
+          () -> {
+            browser.close();
+            return null;
+          });
+      require(h.references.isOpen(), "Public browser closed its borrowed source");
       var missing = h.run(() -> h.references.resolve(EntryPoint.GUI, "future:donor"));
       require(
           missing.status() == ReferenceResolution.Status.UNKNOWN_REFERENCE,
@@ -229,10 +245,25 @@ final class CompositionEditing {
       h.edit(weights.row(added.id()), new DraftEdit.SetRaw("3"));
       var beforeSelection =
           (DraftNode.Sequence) h.actions.view().snapshot().orElseThrow().draft().at(weights);
-      h.edit(
-          weights,
-          new DraftEdit.ChangeScalarRows(
-              List.of("4", "5"), Set.of(beforeSelection.rows().getFirst().id())));
+      var selection = h.nativeCall(() -> new CollectionSelection<>(h.actions, weights));
+      var selectedEdit =
+          h.nativeCall(
+              () ->
+                  selection.change(
+                      EntryPoint.GUI,
+                      selection.view().target(),
+                      new DraftEdit.ChangeScalarRows(
+                          List.of("4", "5"), Set.of(beforeSelection.rows().getFirst().id()))));
+      await(selectedEdit.operation().completion());
+      require(
+          h.nativeCall(() -> selection.accept(selectedEdit))
+              == CollectionSelection.Acceptance.ACCEPTED,
+          "Public collection controller did not accept its actual edit");
+      h.nativeCall(
+          () -> {
+            selection.close();
+            return null;
+          });
       var selected =
           (DraftNode.Sequence) h.actions.view().snapshot().orElseThrow().draft().at(weights);
       require(

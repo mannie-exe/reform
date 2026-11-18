@@ -25,20 +25,19 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
 
   private final Thread thread = Thread.currentThread();
   private final DocumentActions<T> document;
-  private final ReferenceActions<String, V> source;
+  private final ReferenceBrowser<V> browser;
   private final DraftTarget target;
   private final String raw;
-  private final ReferenceStamp stamp;
   private Search search;
   private Lookup<V> lookup;
-  private ReferencePage<String> page;
-  private ReferenceResolution<V> resolution;
+  private ReferenceBrowser.Search searchWork;
+  private ReferenceBrowser.Lookup<V> lookupWork;
   private boolean closed;
 
   public ReferenceSelection(
       DocumentActions<T> document, FieldPath path, ReferenceActions<String, V> source) {
     this.document = Objects.requireNonNull(document);
-    this.source = Objects.requireNonNull(source);
+    Objects.requireNonNull(source);
     var view = document.view();
     if (view.availability() != EditorActor.Availability.READY || view.snapshot().isEmpty())
       throw new PolicyRefusal("reference.draft", "The editing context is not ready");
@@ -52,7 +51,7 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
       throw new PolicyRefusal("reference.draft", "Repair this field before selecting a reference");
     raw = scalar.raw();
     target = snapshot.target(path);
-    stamp = source.requireStamp();
+    browser = new ReferenceBrowser<>(source);
   }
 
   public DraftTarget target() {
@@ -64,7 +63,7 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
   }
 
   public ReferenceStamp stamp() {
-    return stamp;
+    return browser.stamp();
   }
 
   /** Cached observation only; effect admission checks fresh source READ again. */
@@ -72,8 +71,7 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
     thread();
     var view = document.view();
     return !closed
-        && source.isOpen()
-        && source.observedStamp().filter(stamp::equals).isPresent()
+        && browser.current()
         && view.availability() == EditorActor.Availability.READY
         && view.snapshot()
             .filter(
@@ -89,35 +87,33 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
     if (!current())
       throw new PolicyRefusal(
           "reference.selection_stale", "The field or source changed; refresh this selection");
-    if (!stamp.equals(source.requireStamp()))
-      throw new PolicyRefusal("reference.stale", "Reference source changed; refresh its choices");
   }
 
   public Search search(EntryPoint entry, ReferenceQuery query) {
     thread();
-    var previous = search;
     search = null;
-    page = null;
-    cancel(previous == null ? null : previous.operation());
-    requireCurrent();
-    if (query.cursor().filter(cursor -> !cursor.snapshot().equals(stamp.snapshot())).isPresent())
-      throw new PolicyRefusal("reference.cursor", "The continuation belongs to another source");
-    search = new Search(query, source.search(entry, query));
+    searchWork = null;
+    if (!current()) {
+      browser.clearSearch();
+      requireCurrent();
+    }
+    var work = browser.search(entry, query);
+    searchWork = work;
+    search = new Search(query, searchWork.operation());
     return search;
   }
 
   public Lookup<V> resolve(EntryPoint entry, String key) {
     thread();
-    var previous = lookup;
     lookup = null;
-    resolution = null;
-    cancel(previous == null ? null : previous.operation());
-    requireCurrent();
-    lookup =
-        new Lookup<>(
-            key,
-            source.resolve(
-                entry, new ReferenceActions.Request<>(key, Optional.of(stamp.snapshot()))));
+    lookupWork = null;
+    if (!current()) {
+      browser.clearLookup();
+      requireCurrent();
+    }
+    var work = browser.resolve(entry, key);
+    lookupWork = work;
+    lookup = new Lookup<>(key, lookupWork.operation());
     return lookup;
   }
 
@@ -126,30 +122,22 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
    */
   public boolean accept(Search request) {
     thread();
-    if (request != search || !current()) return false;
-    requireCurrent();
-    var result = request.operation().snapshot().result();
-    if (result.isEmpty() || !result.orElseThrow().stamp().equals(stamp)) return false;
-    page = result.orElseThrow();
-    return true;
+    if (request == null || request != search || !current()) return false;
+    return browser.accept(searchWork);
   }
 
   public boolean accept(Lookup<V> request) {
     thread();
-    if (request != lookup || !current()) return false;
-    requireCurrent();
-    var result = request.operation().snapshot().result();
-    if (result.isEmpty() || !result.orElseThrow().stamp().equals(stamp)) return false;
-    resolution = result.orElseThrow();
-    return true;
+    if (request == null || request != lookup || !current()) return false;
+    return browser.accept(lookupWork);
   }
 
   public Optional<ReferencePage<String>> page() {
-    return current() ? Optional.ofNullable(page) : Optional.empty();
+    return current() ? browser.page() : Optional.empty();
   }
 
   public Optional<ReferenceResolution<V>> resolution() {
-    return current() ? Optional.ofNullable(resolution) : Optional.empty();
+    return current() ? browser.resolution() : Optional.empty();
   }
 
   public Optional<String> selectedKey() {
@@ -163,16 +151,13 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
    */
   public OperationHandle<EditorActor.View<T>> choose(EntryPoint entry) {
     requireCurrent();
+    browser.requireCurrent();
     var selected =
         selectedKey()
             .orElseThrow(
                 () ->
                     new PolicyRefusal("reference.unresolved", "Select a resolved reference first"));
     return document.edit(entry, new DraftEdit(target, new DraftEdit.SetRaw(selected)));
-  }
-
-  private static void cancel(OperationHandle<?> operation) {
-    if (operation != null && !operation.snapshot().terminal()) operation.requestCancellation();
   }
 
   private void thread() {
@@ -186,11 +171,10 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
     thread();
     if (closed) return;
     closed = true;
-    cancel(search == null ? null : search.operation());
-    cancel(lookup == null ? null : lookup.operation());
+    browser.close();
     search = null;
     lookup = null;
-    page = null;
-    resolution = null;
+    searchWork = null;
+    lookupWork = null;
   }
 }

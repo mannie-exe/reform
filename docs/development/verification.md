@@ -2,6 +2,14 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Shared browsing and collection controllers
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 390 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. The public packaged compound consumer now uses `ReferenceBrowser` for actual source browsing and `CollectionSelection` for its existing remove/add/undo workflow, retaining its borrowed source and actual bare-file ownership. Both examples compile against the staged Maven artifact without game classes.
+
+Two actual negative controls first reproduced reentrant READ callbacks allowing an older search to overwrite a newer search or publish an obsolete page. Per-request identity checks now preserve the newer work; lookup and scalar-facade controls exercise the corresponding seam. Other new controls retain unknown collection members, refuse forged completions/stale targets and revoked document READ, preserve a competing later edit, and keep sibling browser/source lifetimes independent.
+
+The combined artifact is `fce27a2838a391dcef487d90013ddf1351f5182b1c166c3afb29c52198055f41`, sources `434d51460c842b78df48db034c445956eba7ecd3130da841a3c38f1c0ba0781c` and core `4d57da6b0b1a9eb02d6208cf7dab29ed80870a33a5cf4514a0cda9229ada149e`. This cut has no new native runtime run. The existing native scalar picker compiles with the shared browser; native regression and a complete searchable collection UI remain pending. [Reference sources](references.md#shared-browsing-and-collection-edits) owns the contracts. Phase 1 remains incomplete.
+
 ## Scalar membership edit foundation
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 382 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. New controls cover one-step addition/removal/undo, retained invalid rows and identities, all-or-nothing capacity/text/node admission, incremental oversized-source repair, list/set distinctions, immutable request snapshots and exact ordinary/compressed codecs. Stale, foreign, versionless, wrong-shape and malformed requests refuse without partial edits.

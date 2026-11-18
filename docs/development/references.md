@@ -22,6 +22,14 @@ Construct `ReferenceActions<K,V>` with the real `OwnerContext`, its actual `Acce
 
 `bindCaptured` supplies a convenience boundary for native capture and worker compilation: its capture receives the actual owner and assigned stamp, compilation uses that context's bounded worker lane, and publication retains the same fresh-source checks. It adds no executor or resource enumeration. `observedStamp` and `isOpen` provide cached lifetime observations for presentation; they neither authorize reading nor perform a lookup. `requireStamp` separately performs fresh READ admission on the actual owner thread.
 
+## Shared browsing and collection edits
+
+`ReferenceBrowser<V>` borrows one admitted `ReferenceActions<String,V>` source without attaching it to an authoring target. It exposes the same bounded search/lookup handles and immutable results used by scalar selectors. Source identity, fresh READ checks, latest actual request identity and creating-thread rules remain explicit. Starting a replacement clears prior evidence even if admission fails. Reentrant permission/cancellation callbacks cannot let an older request replace or publish over a newer request; closing one browser never closes its borrowed source or another browser's work.
+
+`CollectionSelection<T>` binds the actual `DocumentActions` actor to a scalar list/set path, including direct reference elements. Its cached view retains stable row IDs, raw/malformed input, per-input parse state, declared choices and any reference-source ID. Input validity does not establish resolution. It neither queries a catalog nor treats its current entries as the only permitted values.
+
+`change` takes the widget's captured exact `DraftTarget` and one bounded `ChangeScalarRows` action through the real document edit service. Only the controller's actual issued completion may advance its target; forged completions and competing later edits cannot silently adopt a newer draft. A pending issued edit requires completion before another selection or explicit refresh. A stale selection requires deliberate refresh. Closing releases only local observations; the document owns an already-issued edit, with no implicit cancellation, rollback or Save. These controllers currently have core and packaged headless qualification; the complete native collection picker remains required.
+
 ## Draft-bound selection
 
 `ReferenceSelection` binds one `DocumentActions` draft target to its declared `ReferenceActions<String,V>` source. It captures the exact editor/session/generation/version/path, original raw key and actual source/context nonce. A changed draft, removed/replaced/moved row, branch switch, save acknowledgement, reload, source replacement or closed context makes that selection obsolete. Equal descriptive source revisions do not preserve freshness.

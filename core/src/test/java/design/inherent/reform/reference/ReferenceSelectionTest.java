@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
@@ -35,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -91,6 +93,7 @@ class ReferenceSelectionTest {
     final AtomicBoolean sourceRead = new AtomicBoolean(true),
         documentRead = new AtomicBoolean(true),
         write = new AtomicBoolean(true);
+    final AtomicReference<Runnable> beforeSourceRead = new AtomicReference<>();
     final OwnerContext context;
     final JsonOwner<Profile> owner;
     final DocumentActions<Profile> actions;
@@ -129,7 +132,13 @@ class ReferenceSelectionTest {
               () ->
                   new ReferenceActions<>(
                       context,
-                      context.access(sourceRead::get, () -> false),
+                      context.access(
+                          () -> {
+                            var callback = beforeSourceRead.getAndSet(null);
+                            if (callback != null) callback.run();
+                            return sourceRead.get();
+                          },
+                          () -> false),
                       SOURCE,
                       ValueTypes.text(128),
                       ValueTypes.list(ValueTypes.text(128), 16).snapshotPolicy(),
@@ -251,6 +260,281 @@ class ReferenceSelectionTest {
           });
       assertTrue(h.references.isOpen());
       assertEquals(EditorActor.Availability.READY, h.actions.view().availability());
+    }
+  }
+
+  @Test
+  void collectionSelectionRetainsUnknownMembersAndAdvancesOnlyItsIssuedEdit() throws Exception {
+    try (var h = new Harness()) {
+      var path = FieldPath.ROOT.field("donors");
+      var selector = h.nativeCall(() -> new CollectionSelection<>(h.actions, path));
+      var before = h.nativeCall(selector::view);
+      String bytes = Files.readString(h.file);
+      assertEquals(SOURCE, before.referenceSource().orElseThrow());
+      assertEquals("fixture:missing", before.items().getFirst().raw().orElseThrow());
+      assertTrue(before.knownChoices().isEmpty());
+      var edit =
+          h.nativeCall(
+              () ->
+                  selector.change(
+                      EntryPoint.GUI,
+                      before.target(),
+                      new DraftEdit.ChangeScalarRows(
+                          List.of("fixture:a"), Set.of(before.items().get(1).id()))));
+      var busy =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () ->
+                  h.nativeCall(
+                      () ->
+                          selector.change(
+                              EntryPoint.GUI,
+                              before.target(),
+                              new DraftEdit.ChangeScalarRows(List.of(), Set.of()))));
+      assertInstanceOf(PolicyRefusal.class, busy.getCause());
+      await(edit.operation().completion());
+      var forged = new CollectionSelection.Edit<>(edit.target(), edit.operation());
+      assertEquals(
+          CollectionSelection.Acceptance.STALE, h.nativeCall(() -> selector.accept(forged)));
+      assertTrue(h.nativeCall(selector::pending).isPresent());
+      assertEquals(
+          CollectionSelection.Acceptance.ACCEPTED, h.nativeCall(() -> selector.accept(edit)));
+      var after = h.nativeCall(selector::view);
+      assertEquals(
+          List.of("fixture:missing", "fixture:a"),
+          after.items().stream().map(item -> item.raw().orElseThrow()).toList());
+      assertEquals(before.items().getFirst().id(), after.items().getFirst().id());
+      assertTrue(h.nativeCall(selector::current));
+      var stale =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () ->
+                  h.nativeCall(
+                      () ->
+                          selector.change(
+                              EntryPoint.GUI,
+                              before.target(),
+                              new DraftEdit.ChangeScalarRows(List.of(), Set.of()))));
+      assertInstanceOf(PolicyRefusal.class, stale.getCause());
+      assertEquals(bytes, Files.readString(h.file));
+      h.nativeCall(
+          () -> {
+            selector.close();
+            return null;
+          });
+      assertFalse(h.nativeCall(selector::current));
+      assertTrue(h.references.isOpen());
+      assertEquals(EditorActor.Availability.READY, h.actions.view().availability());
+    }
+  }
+
+  @Test
+  void collectionCompletionDoesNotSilentlyAdoptACompetingDraftChange() throws Exception {
+    try (var h = new Harness()) {
+      var selector =
+          h.nativeCall(() -> new CollectionSelection<>(h.actions, FieldPath.ROOT.field("donors")));
+      var before = h.nativeCall(selector::view);
+      var edit =
+          h.nativeCall(
+              () ->
+                  selector.change(
+                      EntryPoint.GUI,
+                      before.target(),
+                      new DraftEdit.ChangeScalarRows(List.of("fixture:a"), Set.of())));
+      await(edit.operation().completion());
+      var other = FieldPath.ROOT.field("mode").variant("primary").field("donor");
+      h.structure(other, new DraftEdit.SetRaw("fixture:b"));
+      assertEquals(CollectionSelection.Acceptance.STALE, h.nativeCall(() -> selector.accept(edit)));
+      assertFalse(h.nativeCall(selector::current));
+      long version = h.actions.view().snapshot().orElseThrow().version();
+      h.nativeCall(
+          () -> {
+            selector.refresh();
+            return null;
+          });
+      assertTrue(h.nativeCall(selector::current));
+      assertEquals(version, h.actions.view().snapshot().orElseThrow().version());
+      assertEquals(3, h.nativeCall(selector::view).items().size());
+      assertEquals(
+          "fixture:b",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(other)).raw());
+      h.nativeCall(
+          () -> {
+            selector.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void collectionEditsRecheckReadAuthorityAndDoNotCreateAPendingTokenOnRefusal() throws Exception {
+    try (var h = new Harness()) {
+      var selector =
+          h.nativeCall(() -> new CollectionSelection<>(h.actions, FieldPath.ROOT.field("donors")));
+      var before = h.nativeCall(selector::view);
+      var draft = h.actions.view().snapshot().orElseThrow();
+      h.documentRead.set(false);
+      var refusal =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () ->
+                  h.nativeCall(
+                      () ->
+                          selector.change(
+                              EntryPoint.GUI,
+                              before.target(),
+                              new DraftEdit.ChangeScalarRows(List.of("fixture:a"), Set.of()))));
+      assertInstanceOf(PolicyRefusal.class, refusal.getCause());
+      assertTrue(h.nativeCall(selector::pending).isEmpty());
+      assertEquals(draft.version(), h.actions.view().snapshot().orElseThrow().version());
+      h.nativeCall(
+          () -> {
+            selector.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void sourceBrowserDoesNotOverwriteANewerReentrantSearch() throws Exception {
+    try (var h = new Harness()) {
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var newer = new AtomicReference<ReferenceBrowser.Search>();
+      h.beforeSourceRead.set(
+          () -> newer.set(browser.search(EntryPoint.GUI, new ReferenceQuery("Beta", 2))));
+      var refused =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () ->
+                  h.nativeCall(
+                      () -> browser.search(EntryPoint.GUI, new ReferenceQuery("Alpha", 2))));
+      assertInstanceOf(PolicyRefusal.class, refused.getCause());
+      assertNotNull(newer.get());
+      await(newer.get().operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(newer.get())));
+      assertEquals(
+          "fixture:b", h.nativeCall(() -> browser.page().orElseThrow().choices().getFirst().key()));
+      h.nativeCall(
+          () -> {
+            browser.close();
+            return null;
+          });
+      assertTrue(h.references.isOpen());
+    }
+  }
+
+  @Test
+  void sourceBrowserCannotPublishAnOldPageAfterAReentrantReplacement() throws Exception {
+    try (var h = new Harness()) {
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var first =
+          h.nativeCall(() -> browser.search(EntryPoint.GUI, new ReferenceQuery("Alpha", 2)));
+      await(first.operation().completion());
+      var newer = new AtomicReference<ReferenceBrowser.Search>();
+      h.beforeSourceRead.set(
+          () -> newer.set(browser.search(EntryPoint.GUI, new ReferenceQuery("Beta", 2))));
+      assertFalse(h.nativeCall(() -> browser.accept(first)));
+      assertTrue(h.nativeCall(browser::page).isEmpty());
+      await(newer.get().operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(newer.get())));
+      assertEquals(
+          "fixture:b", h.nativeCall(() -> browser.page().orElseThrow().choices().getFirst().key()));
+      h.nativeCall(
+          () -> {
+            browser.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void lookupAdmissionAndDeliveryPreserveTheNewerReentrantRequest() throws Exception {
+    try (var h = new Harness()) {
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var newer = new AtomicReference<ReferenceBrowser.Lookup<List<String>>>();
+      h.beforeSourceRead.set(() -> newer.set(browser.resolve(EntryPoint.GUI, "fixture:b")));
+      var refused =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () -> h.nativeCall(() -> browser.resolve(EntryPoint.GUI, "fixture:a")));
+      assertEquals(
+          "reference.request_superseded",
+          ((PolicyRefusal) refused.getCause()).report().issues().getFirst().code());
+      await(newer.get().operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(newer.get())));
+      assertEquals("fixture:b", h.nativeCall(() -> browser.selectedKey().orElseThrow()));
+      var old = h.nativeCall(() -> browser.resolve(EntryPoint.GUI, "fixture:a"));
+      await(old.operation().completion());
+      h.beforeSourceRead.set(() -> newer.set(browser.resolve(EntryPoint.GUI, "fixture:b")));
+      assertFalse(h.nativeCall(() -> browser.accept(old)));
+      assertTrue(h.nativeCall(browser::selectedKey).isEmpty());
+      await(newer.get().operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(newer.get())));
+      assertEquals("fixture:b", h.nativeCall(() -> browser.selectedKey().orElseThrow()));
+      h.nativeCall(
+          () -> {
+            browser.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void scalarSelectionPreservesItsNewerFacadeDuringReentrantSourceRead() throws Exception {
+    try (var h = new Harness()) {
+      var selection = h.selection(h.first());
+      var newer = new AtomicReference<ReferenceSelection.Lookup<List<String>>>();
+      h.beforeSourceRead.set(() -> newer.set(selection.resolve(EntryPoint.GUI, "fixture:b")));
+      assertThrows(
+          java.util.concurrent.ExecutionException.class,
+          () -> h.nativeCall(() -> selection.resolve(EntryPoint.GUI, "fixture:a")));
+      await(newer.get().operation().completion());
+      assertTrue(h.nativeCall(() -> selection.accept(newer.get())));
+      assertEquals("fixture:b", h.nativeCall(() -> selection.selectedKey().orElseThrow()));
+      var searches = new AtomicReference<ReferenceSelection.Search>();
+      h.beforeSourceRead.set(
+          () -> searches.set(selection.search(EntryPoint.GUI, new ReferenceQuery("Beta", 2))));
+      assertThrows(
+          java.util.concurrent.ExecutionException.class,
+          () ->
+              h.nativeCall(() -> selection.search(EntryPoint.GUI, new ReferenceQuery("Alpha", 2))));
+      await(searches.get().operation().completion());
+      assertTrue(h.nativeCall(() -> selection.accept(searches.get())));
+      assertEquals(
+          "fixture:b",
+          h.nativeCall(() -> selection.page().orElseThrow().choices().getFirst().key()));
+      h.nativeCall(
+          () -> {
+            selection.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void closingOneBrowserDoesNotCancelOrHideTheOtherBrowsersWork() throws Exception {
+    try (var h = new Harness()) {
+      var first = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var second = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var search = h.nativeCall(() -> second.search(EntryPoint.GUI, new ReferenceQuery("Beta", 2)));
+      var lookup = h.nativeCall(() -> second.resolve(EntryPoint.GUI, "fixture:empty"));
+      h.nativeCall(
+          () -> {
+            first.close();
+            return null;
+          });
+      await(search.operation().completion());
+      await(lookup.operation().completion());
+      assertTrue(h.nativeCall(() -> second.accept(search)));
+      assertTrue(h.nativeCall(() -> second.accept(lookup)));
+      assertEquals("fixture:empty", h.nativeCall(() -> second.selectedKey().orElseThrow()));
+      assertThrows(IllegalStateException.class, second::current);
+      h.nativeCall(
+          () -> {
+            second.close();
+            return null;
+          });
+      assertTrue(h.references.isOpen());
     }
   }
 
