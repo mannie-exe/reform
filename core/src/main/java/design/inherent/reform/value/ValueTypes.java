@@ -182,6 +182,11 @@ public final class ValueTypes {
     return new ReferenceType<>(element, source);
   }
 
+  public static <N extends Number> ValueType<N> numericDisplay(
+      ValueType<N> element, design.inherent.reform.presentation.NumericDisplay display) {
+    return new NumericType<>(element, display);
+  }
+
   private static <N extends Number> ValueType<N> number(
       Codec<N> codec, ValueShape.ScalarKind kind, BigDecimal minimum, BigDecimal maximum) {
     return scalar(

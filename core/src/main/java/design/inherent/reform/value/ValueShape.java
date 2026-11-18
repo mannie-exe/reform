@@ -33,11 +33,25 @@ public sealed interface ValueShape
       BigDecimal minimum,
       BigDecimal maximum,
       int maximumLength,
-      List<String> choices)
+      List<String> choices,
+      java.util.Optional<design.inherent.reform.presentation.NumericDisplay> numericDisplay)
       implements ValueShape {
+    public Scalar(
+        ScalarKind kind,
+        BigDecimal minimum,
+        BigDecimal maximum,
+        int maximumLength,
+        List<String> choices) {
+      this(kind, minimum, maximum, maximumLength, choices, java.util.Optional.empty());
+    }
+
     public Scalar {
       Objects.requireNonNull(kind);
       choices = List.copyOf(choices);
+      Objects.requireNonNull(numericDisplay);
+      if (numericDisplay.isPresent()
+          && (kind == ScalarKind.BOOLEAN || kind == ScalarKind.TEXT || kind == ScalarKind.CHOICE))
+        throw new IllegalArgumentException("Numeric display metadata needs a numeric scalar");
     }
   }
 

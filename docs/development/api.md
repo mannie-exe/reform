@@ -74,6 +74,8 @@ The parsed input retains its original source string and scalar spellings keyed b
 
 These checks do not establish read/write permission or qualify publication. Context-dependent checks and application remain owner responsibilities. A successfully decoded value is not a persistence or application receipt.
 
+[Numeric presentation](numbers.md) decorates numeric scalar metadata without changing its codec or stored value; native unit-aware controls remain unfinished.
+
 ## Snapshots and identity
 
 Built-in lists, sets, maps and explicit records recursively own their values. Defaults are not shared mutable instances. Snapshot traversal has per-copy depth/node accounting and rejects object cycles while allowing shared acyclic inputs. Its configuration convenience bound is 128 nested values and 65,536 visits; custom contexts can choose admitted limits. These local limits are not claims about remote frames or terrain workloads.

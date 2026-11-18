@@ -27,8 +27,6 @@ import java.util.regex.Pattern;
 /** Persistent raw edits. Inspection is explicit and pure; it performs no file/world operation. */
 public final class DraftTree {
   private static final Gson JSON = new Gson();
-  private static final Pattern INCOMPLETE_NUMBER =
-      Pattern.compile("[+-]?\\.?|[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)[eE][+-]?");
   private static final Pattern JSON_NUMBER =
       Pattern.compile("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?");
 
@@ -1006,7 +1004,7 @@ public final class DraftTree {
                 InputState.INVALID,
                 "input.number_length",
                 "Number exceeds its representation limit");
-          if (INCOMPLETE_NUMBER.matcher(text).matches())
+          if (design.inherent.reform.serialization.DecimalText.incomplete(text))
             return fail(path, InputState.INCOMPLETE, "input.incomplete", "Complete the number");
           var number = new BigDecimal(text);
           if (Math.abs((long) number.scale()) > limits.maximumAbsoluteScale())

@@ -2,6 +2,14 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Numeric display foundation
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 334 core cases, including the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. The independent Maven application additionally uses public numeric presentation, stages exact converted text through a real edit session, refuses fractional integer ticks and retains incomplete raw input/undo without game classes. Native-addon/probe compilation passes; all 91 main Java sources match the source JAR. Markdown/link/workflow/diff checks pass separately.
+
+Nine new focused controls cover tick/distance/probability factors, already stored percent, original spelling, incomplete/invalid input, repeating conversions, signed zero through the actual double codec, scalar ranges/integral refusal, custom decode/equivalence, immutable metadata and exponent/scale/text admission. A deterministic seed `2026111806` supplies 200 decimal values across nine declared unit choices, yielding 1,800 exact round trips. The shared incomplete grammar extraction leaves the previous draft tests intact.
+
+The combined library is `1358ab8ff28387d6bec2cefbe9e6128ecaef3720649efa013071adb4b72dcf40`, sources `2312f131cb6c312d37905353abb340140959a43bbc53938dc95d498017a4b15e` and core `840d9c8a987748b09258556d1aca5d0a980a687c6b3692e113aa7c2ef1597dc2`. This slice is core/public/compile qualification only; no game process runs on this artifact. [Numeric presentation](numbers.md) owns the contracts. The native unit/range/step/slider controls, dependent fields and remaining promoted workflows are unfinished. The earlier reference-picker/native COMMON evidence below retains its exact separate artifact. Both real migrations and full Phase 1 qualification remain required; nothing is published or installed personally.
+
 ## Draft-bound native reference selection
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 325 core cases, including twelve generated properties/1,700 checks, two native-file tests and twelve tooling controls. Packaged public workflows/native-addon compilation pass; all 88 main Java sources match the source JAR. Markdown/link/workflow/diff checks pass separately.
