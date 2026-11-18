@@ -41,7 +41,9 @@ public class RecordTypesTest {
 
   public record Recursive(Recursive child) {}
 
-  public record Unsupported(Map<String, String> mappings) {}
+  public record Unsupported(Map<Integer, String> mappings) {}
+
+  public record Mappings(Map<String, List<Counted>> mappings) {}
 
   public record Wildcard(List<? extends Number> entries) {}
 
@@ -117,6 +119,48 @@ public class RecordTypesTest {
     assertThrows(
         UnsupportedOperationException.class, () -> definition.defaults().entries().clear());
     assertEquals(definition.defaults(), type.freeze(definition.defaults()));
+  }
+
+  @Test
+  void declaredStringMapsDeriveObjectEncodingWithOwnedNestedValues() throws Exception {
+    var type = RecordTypes.record(Mappings.class).build();
+    var source = "{\"mappings\":{\"\":[{\"low\":2,\"high\":4}]}}";
+    var value = JsonInput.read(source, JSON).decode(type).value().orElseThrow();
+    assertEquals(new Mappings(Map.of("", List.of(new Counted(2, 4)))), value);
+    assertEquals(source, type.codec().encodeStart(JsonOps.INSTANCE, value).getOrThrow().toString());
+    var values = new ArrayList<>(List.of(new Counted(3, 6)));
+    var owned = type.freeze(new Mappings(Map.of("a", values)));
+    values.clear();
+    assertEquals(1, owned.mappings().get("a").size());
+    assertThrows(UnsupportedOperationException.class, () -> owned.mappings().clear());
+    var shortKeys =
+        RecordTypes.record(Mappings.class).register(String.class, ValueTypes.text(1)).build();
+    assertTrue(
+        JsonInput.read("{\"mappings\":{\"long\":[]}}", JSON).decode(shortKeys).value().isEmpty());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            RecordTypes.record(Mappings.class)
+                .limits(new RecordTypes.Limits(2, 32, 64, 8))
+                .build());
+  }
+
+  @Test
+  void nonStringMapsRequireAnExplicitLosslessEncoding() throws Exception {
+    var type =
+        RecordTypes.record(Unsupported.class)
+            .field(
+                "mappings",
+                FieldKey.of(
+                    "mappings",
+                    ValueTypes.entryMap(ValueTypes.integer(0, 10), ValueTypes.text(16), 8)))
+            .build();
+    assertEquals(
+        new Unsupported(Map.of(2, "a")),
+        JsonInput.read("{\"mappings\":[{\"key\":2,\"value\":\"a\"}]}", JSON)
+            .decode(type)
+            .value()
+            .orElseThrow());
   }
 
   @Test

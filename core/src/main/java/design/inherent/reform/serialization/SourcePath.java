@@ -7,7 +7,14 @@ import java.util.Objects;
 
 /** Encoded source positions, separate from session row identities and filesystem paths. */
 public final class SourcePath {
-  public sealed interface Segment permits Property, Index {}
+  public sealed interface Segment permits Property, Key, Index {}
+
+  /** Object property name, distinct from the value stored at that property. */
+  public record Key(String name) implements Segment {
+    public Key {
+      Objects.requireNonNull(name);
+    }
+  }
 
   public record Property(String name) implements Segment {
     public Property {
@@ -46,6 +53,10 @@ public final class SourcePath {
     return new SourcePath(this, new Property(name));
   }
 
+  public SourcePath key(String name) {
+    return new SourcePath(this, new Key(name));
+  }
+
   public SourcePath index(int index) {
     return new SourcePath(this, new Index(index));
   }
@@ -79,6 +90,8 @@ public final class SourcePath {
       result.append('/');
       if (segment instanceof Property property)
         result.append(property.name().replace("~", "~0").replace("/", "~1"));
+      else if (segment instanceof Key key)
+        result.append("~k").append(key.name().replace("~", "~0").replace("/", "~1"));
       else result.append(((Index) segment).index());
     }
     return result.toString();

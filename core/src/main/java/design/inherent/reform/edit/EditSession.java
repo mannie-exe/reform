@@ -465,7 +465,8 @@ public final class EditSession<T> implements AutoCloseable {
       boolean equal = definition.type().equivalent(actual, submission.candidate().value());
       var normalized = new DraftTree(observed.root(), limits);
       var submitted = submission.candidate().draft();
-      actualTree = equal ? normalized.alignRows(submitted) : normalized;
+      actualTree =
+          equal ? normalized.alignRows(submitted, definition.type(), jsonLimits) : normalized;
       needsReview = !equal && !current.root().equals(submitted.root());
       next =
           equal

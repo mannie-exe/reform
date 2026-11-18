@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
 import com.mojang.serialization.JsonOps;
 import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonInputException;
@@ -103,6 +104,45 @@ public final class DraftTree {
     if (type.shape() instanceof ValueShape.Custom)
       return new DraftNode.Opaque(sourceJson(value, path, text));
     if (value.isJsonNull()) return new DraftNode.NullValue();
+    if (type.shape() instanceof ValueShape.Mapping mapping) {
+      var rows = new ArrayList<DraftNode.Row>();
+      if (mapping.encoding() == ValueShape.MapEncoding.OBJECT && value.isJsonObject()) {
+        value
+            .getAsJsonObject()
+            .entrySet()
+            .forEach(
+                entry -> {
+                  var parts = new LinkedHashMap<String, DraftNode>();
+                  parts.put(
+                      "key",
+                      build(
+                          mapping.key(),
+                          new JsonPrimitive(entry.getKey()),
+                          path.key(entry.getKey()),
+                          text));
+                  parts.put(
+                      "value",
+                      build(
+                          mapping.value(), entry.getValue(), path.property(entry.getKey()), text));
+                  rows.add(DraftNode.Row.create(new DraftNode.ObjectValue(parts)));
+                });
+        return new DraftNode.Mapping(rows);
+      }
+      if (mapping.encoding() == ValueShape.MapEncoding.ENTRY_LIST && value.isJsonArray()) {
+        var fields =
+            List.<FieldKey<?>>of(
+                FieldKey.of("key", mapping.key()), FieldKey.of("value", mapping.value()));
+        for (int i = 0; i < value.getAsJsonArray().size(); i++) {
+          var entry = value.getAsJsonArray().get(i);
+          rows.add(
+              DraftNode.Row.create(
+                  entry.isJsonObject()
+                      ? buildObject(fields, entry, path.index(i), text)
+                      : new DraftNode.Opaque(sourceJson(entry, path.index(i), text))));
+        }
+        return new DraftNode.Mapping(rows);
+      }
+    }
     if (type.shape() instanceof ValueShape.Scalar scalar && value.isJsonPrimitive()) {
       boolean matches =
           switch (scalar.kind()) {
@@ -114,27 +154,7 @@ public final class DraftTree {
       return new DraftNode.Opaque(sourceJson(value, path, text));
     }
     if (type.shape() instanceof ValueShape.ObjectValue object && value.isJsonObject()) {
-      var fields = new LinkedHashMap<String, DraftNode>();
-      for (var field : object.fields())
-        fields.put(
-            field.id(),
-            build(
-                field.type(),
-                value.getAsJsonObject().get(field.id()),
-                path.property(field.id()),
-                text));
-      value
-          .getAsJsonObject()
-          .entrySet()
-          .forEach(
-              entry -> {
-                if (!fields.containsKey(entry.getKey()))
-                  fields.put(
-                      entry.getKey(),
-                      new DraftNode.Opaque(
-                          sourceJson(entry.getValue(), path.property(entry.getKey()), text)));
-              });
-      return new DraftNode.ObjectValue(fields);
+      return buildObject(object.fields(), value, path, text);
     }
     if (type.shape() instanceof ValueShape.Sequence sequence && value.isJsonArray()) {
       var rows = new ArrayList<DraftNode.Row>();
@@ -145,6 +165,34 @@ public final class DraftTree {
       return new DraftNode.Sequence(rows);
     }
     return new DraftNode.Opaque(sourceJson(value, path, text));
+  }
+
+  private static DraftNode.ObjectValue buildObject(
+      List<FieldKey<?>> declared,
+      JsonElement value,
+      SourcePath path,
+      Map<SourcePath, String> text) {
+    var fields = new LinkedHashMap<String, DraftNode>();
+    for (var field : declared)
+      fields.put(
+          field.id(),
+          build(
+              field.type(),
+              value.getAsJsonObject().get(field.id()),
+              path.property(field.id()),
+              text));
+    value
+        .getAsJsonObject()
+        .entrySet()
+        .forEach(
+            entry -> {
+              if (!fields.containsKey(entry.getKey()))
+                fields.put(
+                    entry.getKey(),
+                    new DraftNode.Opaque(
+                        sourceJson(entry.getValue(), path.property(entry.getKey()), text)));
+            });
+    return new DraftNode.ObjectValue(fields);
   }
 
   private static String sourceJson(
@@ -174,7 +222,9 @@ public final class DraftTree {
 
   public DraftNode at(FieldPath path) {
     DraftNode current = root;
-    for (var segment : path.segments()) {
+    var segments = path.segments();
+    for (int i = 0; i < segments.size(); i++) {
+      var segment = segments.get(i);
       if (segment instanceof FieldPath.Field field
           && current instanceof DraftNode.ObjectValue object) {
         current = object.fields().get(field.id());
@@ -183,6 +233,17 @@ public final class DraftTree {
       } else if (segment instanceof FieldPath.Row row
           && current instanceof DraftNode.Sequence sequence) {
         current = sequence.rows().get(sequence.index(row.id())).value();
+      } else if (segment instanceof FieldPath.Row row
+          && current instanceof DraftNode.Mapping mapping) {
+        current = mapping.rows().get(mapping.index(row.id())).value();
+        if (i + 1 < segments.size()) {
+          if (!(segments.get(++i) instanceof FieldPath.Part part)
+              || !(current instanceof DraftNode.ObjectValue entry))
+            throw new IllegalArgumentException("A map row requires a key or value part");
+          current = entry.fields().get(part == FieldPath.Part.KEY ? "key" : "value");
+          if (current == null)
+            throw new IllegalArgumentException("Map part no longer exists in this draft");
+        }
       } else throw new IllegalArgumentException("Path does not address this draft structure");
     }
     return current;
@@ -227,6 +288,20 @@ public final class DraftTree {
           change(
               sequence.rows().get(sequence.index(row.id())).value(), path, offset + 1, operation));
     }
+    if (segment instanceof FieldPath.Row row && node instanceof DraftNode.Mapping mapping) {
+      var entry = mapping.rows().get(mapping.index(row.id())).value();
+      if (offset + 1 == path.size())
+        return mapping.replace(row.id(), change(entry, path, offset + 1, operation));
+      if (!(path.get(offset + 1) instanceof FieldPath.Part part)
+          || !(entry instanceof DraftNode.ObjectValue object))
+        throw new IllegalArgumentException("A map row requires a key or value part");
+      String name = part == FieldPath.Part.KEY ? "key" : "value";
+      var child = object.fields().get(name);
+      if (child == null)
+        throw new IllegalArgumentException("Map part no longer exists in this draft");
+      return mapping.replace(
+          row.id(), object.with(name, change(child, path, offset + 2, operation)));
+    }
     throw new IllegalArgumentException("Path does not address this draft structure");
   }
 
@@ -253,29 +328,83 @@ public final class DraftTree {
   }
 
   /** Only for an already qualified equal-value saved observation, never an identity heuristic. */
-  DraftTree alignRows(DraftTree submitted) {
-    return new DraftTree(align(root, submitted.root), limits);
+  DraftTree alignRows(DraftTree submitted, ValueType<?> type, JsonLimits jsonLimits) {
+    return new DraftTree(align(root, submitted.root, type, jsonLimits), limits);
   }
 
-  private static DraftNode align(DraftNode actual, DraftNode submitted) {
-    if (actual instanceof DraftNode.ObjectValue a
+  private static DraftNode align(
+      DraftNode actual, DraftNode submitted, ValueType<?> type, JsonLimits limits) {
+    if (type.shape() instanceof ValueShape.ObjectValue object
+        && actual instanceof DraftNode.ObjectValue a
         && submitted instanceof DraftNode.ObjectValue s
         && a.fields().keySet().equals(s.fields().keySet())) {
       var fields = new LinkedHashMap<String, DraftNode>();
-      a.fields().forEach((key, value) -> fields.put(key, align(value, s.fields().get(key))));
+      for (var field : object.fields())
+        fields.put(
+            field.id(),
+            align(a.fields().get(field.id()), s.fields().get(field.id()), field.type(), limits));
       return new DraftNode.ObjectValue(fields);
     }
-    if (actual instanceof DraftNode.Sequence a
+    if (type.shape() instanceof ValueShape.Sequence sequence
+        && actual instanceof DraftNode.Sequence a
         && submitted instanceof DraftNode.Sequence s
         && a.rows().size() == s.rows().size()) {
       var rows = new ArrayList<DraftNode.Row>();
       for (int i = 0; i < a.rows().size(); i++)
         rows.add(
             new DraftNode.Row(
-                s.rows().get(i).id(), align(a.rows().get(i).value(), s.rows().get(i).value())));
+                s.rows().get(i).id(),
+                align(
+                    a.rows().get(i).value(), s.rows().get(i).value(), sequence.element(), limits)));
       return new DraftNode.Sequence(rows);
     }
+    if (type.shape() instanceof ValueShape.Mapping mapping
+        && actual instanceof DraftNode.Mapping a
+        && submitted instanceof DraftNode.Mapping s
+        && a.rows().size() == s.rows().size()) {
+      var submittedKeys = new java.util.HashMap<Object, DraftNode.Row>();
+      for (var row : s.rows()) {
+        var entry = (DraftNode.ObjectValue) row.value();
+        var key = decodedKey(entry.fields().get("key"), mapping.key(), limits);
+        if (submittedKeys.putIfAbsent(key, row) != null)
+          throw new IllegalArgumentException("Duplicate submitted key");
+      }
+      var rows = new ArrayList<DraftNode.Row>();
+      for (var row : a.rows()) {
+        var entry = (DraftNode.ObjectValue) row.value();
+        var key = decodedKey(entry.fields().get("key"), mapping.key(), limits);
+        var matched = submittedKeys.remove(key);
+        if (matched == null)
+          throw new IllegalArgumentException("Observed map key differs from submission");
+        var previous = (DraftNode.ObjectValue) matched.value();
+        var parts = new LinkedHashMap<String, DraftNode>();
+        parts.put(
+            "key",
+            align(entry.fields().get("key"), previous.fields().get("key"), mapping.key(), limits));
+        parts.put(
+            "value",
+            align(
+                entry.fields().get("value"),
+                previous.fields().get("value"),
+                mapping.value(),
+                limits));
+        rows.add(new DraftNode.Row(matched.id(), new DraftNode.ObjectValue(parts)));
+      }
+      return new DraftNode.Mapping(rows);
+    }
     return actual;
+  }
+
+  private static Object decodedKey(DraftNode node, ValueType<?> type, JsonLimits limits) {
+    var renderer = new Renderer(limits);
+    var json = renderer.render(node, type, FieldPath.ROOT, SourcePath.ROOT);
+    if (!new ValidationReport(renderer.issues, renderer.complete).valid())
+      throw new IllegalArgumentException("Map key is not complete");
+    try {
+      return JsonInput.read(json, limits).decode(type).value().orElseThrow();
+    } catch (JsonInputException invalid) {
+      throw new IllegalArgumentException("Map key is not admissible", invalid);
+    }
   }
 
   /** Rebase known edits in this session; changed collections stay whole. */
@@ -372,6 +501,8 @@ public final class DraftTree {
             path, InputState.INVALID, "input.null", "Explicit null is not admitted for this value");
       if (type.shape() instanceof ValueShape.Scalar scalar
           && node instanceof DraftNode.Scalar value) return scalar(value.raw(), scalar, type, path);
+      if (type.shape() instanceof ValueShape.Mapping mapping
+          && node instanceof DraftNode.Mapping value) return mapping(value, mapping, path, source);
       if (type.shape() instanceof ValueShape.ObjectValue object
           && node instanceof DraftNode.ObjectValue value) {
         var parts = new ArrayList<String>();
@@ -427,6 +558,100 @@ public final class DraftTree {
           InputState.INVALID,
           "input.structure",
           "Draft structure differs from its declared value type");
+    }
+
+    private String mapping(
+        DraftNode.Mapping value, ValueShape.Mapping shape, FieldPath path, SourcePath source) {
+      if (value.rows().size() > shape.maximumSize())
+        fail(path, InputState.INVALID, "input.length", "Map exceeds its declared size");
+      var parts = new ArrayList<String>();
+      var keys = new java.util.HashMap<Object, FieldPath>();
+      boolean object = shape.encoding() == ValueShape.MapEncoding.OBJECT;
+      for (int i = 0; i < value.rows().size(); i++) {
+        var row = value.rows().get(i);
+        var rowPath = path.row(row.id());
+        var keyPath = rowPath.append(FieldPath.Part.KEY);
+        var valuePath = rowPath.append(FieldPath.Part.VALUE);
+        var entrySource = source.index(i);
+        if (!(row.value() instanceof DraftNode.ObjectValue entry)) {
+          fail(
+              rowPath,
+              InputState.INVALID,
+              "input.map_entry",
+              "A map entry requires a key and value");
+          continue;
+        }
+        for (String name : entry.fields().keySet())
+          if (!name.equals("key") && !name.equals("value"))
+            fail(
+                rowPath,
+                InputState.INVALID,
+                "input.unknown_field",
+                "Remove or resolve the unknown map-entry field");
+        if (!object) addresses.put(entrySource, rowPath);
+        var keySource = entrySource.property("key");
+        int before = issues.size();
+        var keyJson =
+            render(
+                entry.fields().getOrDefault("key", new DraftNode.Missing()),
+                shape.key(),
+                keyPath,
+                keySource);
+        String name = null;
+        if (issues.size() == before) {
+          try {
+            var parsed = JsonInput.read(keyJson, limits);
+            var encoded = parsed.copyTree();
+            if (object
+                && (!encoded.isJsonPrimitive() || !encoded.getAsJsonPrimitive().isString())) {
+              fail(
+                  keyPath,
+                  InputState.INVALID,
+                  "input.map_key_encoding",
+                  "Object map keys must encode as strings");
+            } else {
+              if (object) name = encoded.getAsString();
+              var decoded = shape.key().decode(JsonOps.INSTANCE, encoded, keyPath);
+              issues.addAll(decoded.report().issues());
+              complete &= decoded.report().complete();
+              if (decoded.value().isPresent() && decoded.report().valid()) {
+                var previous = keys.putIfAbsent(decoded.value().orElseThrow(), keyPath);
+                if (previous != null) {
+                  issues.add(
+                      new Issue(
+                          "input.duplicate_key",
+                          Issue.Severity.ERROR,
+                          keyPath,
+                          List.of(previous),
+                          Map.of(),
+                          "Resolve the duplicate map key"));
+                  inputs.put(keyPath, InputState.INVALID);
+                } else inputs.put(keyPath, InputState.VALID);
+              } else
+                inputs.put(
+                    keyPath,
+                    decoded.report().complete() ? InputState.INVALID : InputState.UNAVAILABLE);
+            }
+          } catch (JsonInputException invalid) {
+            fail(keyPath, InputState.INVALID, invalid.code(), invalid.getMessage());
+          }
+        }
+        if (object) {
+          addresses.remove(keySource);
+          if (name != null) addresses.put(source.key(name), keyPath);
+        }
+        var encodedValue =
+            render(
+                entry.fields().getOrDefault("value", new DraftNode.Missing()),
+                shape.value(),
+                valuePath,
+                object ? source.property(name == null ? "" : name) : entrySource.property("value"));
+        parts.add(
+            object
+                ? JSON.toJson(name == null ? "" : name) + ":" + encodedValue
+                : "{\"key\":" + keyJson + ",\"value\":" + encodedValue + "}");
+      }
+      return object ? "{" + String.join(",", parts) + "}" : "[" + String.join(",", parts) + "]";
     }
 
     private String scalar(String raw, ValueShape.Scalar shape, ValueType<?> type, FieldPath path) {

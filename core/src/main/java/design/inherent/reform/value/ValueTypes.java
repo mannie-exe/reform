@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -129,6 +130,16 @@ public final class ValueTypes {
             return true;
           }
         });
+  }
+
+  public static <K, V> ValueType<Map<K, V>> objectMap(
+      ValueType<K> key, ValueType<V> value, int maximumSize) {
+    return MappingType.object(key, value, maximumSize);
+  }
+
+  public static <K, V> ValueType<Map<K, V>> entryMap(
+      ValueType<K> key, ValueType<V> value, int maximumSize) {
+    return MappingType.entries(key, value, maximumSize);
   }
 
   private static <N extends Number> ValueType<N> number(

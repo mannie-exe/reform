@@ -16,6 +16,7 @@ public sealed interface DraftNode
     permits DraftNode.Scalar,
         DraftNode.ObjectValue,
         DraftNode.Sequence,
+        DraftNode.Mapping,
         DraftNode.Opaque,
         DraftNode.Missing,
         DraftNode.NullValue {
@@ -178,6 +179,56 @@ public sealed interface DraftNode
     }
   }
 
+  /**
+   * Rows retain raw key/value objects, including invalid or duplicate keys, before a Map exists.
+   */
+  final class Mapping implements DraftNode {
+    private final Sequence entries;
+
+    public Mapping(List<Row> rows) {
+      entries = new Sequence(rows);
+    }
+
+    public List<Row> rows() {
+      return entries.rows();
+    }
+
+    public int index(UUID id) {
+      return entries.index(id);
+    }
+
+    public Mapping insert(int index, Row row) {
+      return new Mapping(entries.insert(index, row).rows());
+    }
+
+    public Mapping remove(UUID id) {
+      return new Mapping(entries.remove(id).rows());
+    }
+
+    public Mapping move(UUID id, int target) {
+      return new Mapping(entries.move(id, target).rows());
+    }
+
+    public Mapping replace(UUID id, DraftNode value) {
+      return new Mapping(entries.replace(id, value).rows());
+    }
+
+    @Override
+    public Size size() {
+      return entries.size();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof Mapping map && entries.equals(map.entries);
+    }
+
+    @Override
+    public int hashCode() {
+      return entries.hashCode();
+    }
+  }
+
   final class Opaque implements DraftNode {
     private final String json;
 
@@ -231,6 +282,30 @@ public sealed interface DraftNode
 
   /** Authored equality ignores session IDs; identical user data must not become a fake edit. */
   static boolean sameValue(DraftNode first, DraftNode second) {
+    if (first instanceof Mapping a && second instanceof Mapping b) {
+      if (a.rows().size() != b.rows().size()) return false;
+      record Entry(DraftNode value) {
+        @Override
+        public boolean equals(Object other) {
+          return other instanceof Entry entry && sameValue(value, entry.value);
+        }
+
+        @Override
+        public int hashCode() {
+          return authoredHash(value);
+        }
+      }
+      var counts = new java.util.HashMap<Entry, Integer>();
+      for (var row : a.rows()) counts.merge(new Entry(row.value()), 1, Integer::sum);
+      for (var row : b.rows()) {
+        var key = new Entry(row.value());
+        var count = counts.get(key);
+        if (count == null) return false;
+        if (count == 1) counts.remove(key);
+        else counts.put(key, count - 1);
+      }
+      return counts.isEmpty();
+    }
     if (first instanceof Sequence a && second instanceof Sequence b) {
       if (a.rows.size() != b.rows.size()) return false;
       for (int i = 0; i < a.rows.size(); i++)
@@ -243,5 +318,25 @@ public sealed interface DraftNode
           .allMatch(entry -> sameValue(entry.getValue(), b.fields.get(entry.getKey())));
     }
     return first.equals(second);
+  }
+
+  private static int authoredHash(DraftNode node) {
+    if (node instanceof Mapping map) {
+      int hash = 17;
+      for (var row : map.rows()) hash += authoredHash(row.value());
+      return hash;
+    }
+    if (node instanceof Sequence sequence) {
+      int hash = 31;
+      for (var row : sequence.rows()) hash = 31 * hash + authoredHash(row.value());
+      return hash;
+    }
+    if (node instanceof ObjectValue object) {
+      int hash = 47;
+      for (var entry : object.fields.entrySet())
+        hash += entry.getKey().hashCode() ^ authoredHash(entry.getValue());
+      return hash;
+    }
+    return node.hashCode();
   }
 }

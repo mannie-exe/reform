@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Typed map increment
+
+`./gradlew --no-daemon -Dorg.gradle.java.home=/path/to/jdk21 spotlessApply check build --warning-mode all` passes 205 core cases, including six generated properties/1,100 checks, two native-file tests and twelve tooling controls. The exact Maven-artifact headless consumer and independent native-addon/probe compilation pass. Markdown/link and CI syntax checks pass separately.
+
+The map increment adds bounded object/entry-list encodings, recursive owned keys/values, raw duplicate-key repair, separate key/value diagnostic addresses and decoded-key acknowledgement alignment. Focused tests cover exact numeric kinds, malformed/missing/unknown rows, key normalization collisions, copy/codec identity stability, order-independent equality, nested record/list paths, later edits/history and derivation. Two generated properties compare raw row/history operations with an independent model and exercise reordered acknowledgements with retained invalid drafts; their replay seeds are `2026111701` and `2026111702`.
+
+A focused failing control reproduced `IndexOutOfBoundsException` when DFU's fixed-field compressed builder received dynamic map keys. The object adapter now uses explicit dynamic map operations, retaining an object in both ordinary and compressed JsonOps. The same control passes. The independent Maven consumer uses only the packaged public API for a role-count profile and a composite-key entry list.
+
+The tested combined JAR is `140b659bf5443339beab8bdee5af34c9ec80de45a3b6f4aa50f49b10cebdcd9d`, sources `c46989ae06b631d87cc16517c7dcd85b37347793f1f43921fa4d13104c6415fe` and core `f74101257b70bd9f553c52a70db0d8234d5471f1208bd56b5995c0b6b7066ff6`.
+
+These are core, artifact and compilation checks. No native map GUI or real consumer migration is qualified by this increment. Earlier native runs below retain their actual older artifact identities. Complete controls/value families, both migrations, native sides/lifecycles and pack/cost checks remain required; Phase 1 is incomplete.
+
 ## Native creation and current client regression
 
 The full Gradle build, 180 core tests, four generated properties/920 checks, two native-file tests, twelve tooling controls, public packaged headless API and native-addon compilation pass. `python3 tools/native_form_probe.py --java-home /path/to/jdk21 --timeout 150` additionally passes five sequential disposable 2 GiB clients in 14.022, 11.686, 11.797, 12.516 and 11.326 seconds including Gradle startup. They exercise initial native JSON/Brigadier editing, saved reopen, malformed recovery, actual creation admission and pending reentrant shutdown.
@@ -224,7 +236,7 @@ Other controls cover invalid input without owner construction, original number s
 | Source JAR       | `a2242804e5d4c8486fa081d72303e0712c077e6e01652348244f9b11d1a4939e` |
 | Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
 
-The current shapes still exclude built-in sets/maps/optionals/tagged alternatives and references. File/native owners, generated controls, commands, real consumer migrations and native/full-pack/cost qualification remain required by Phase 1. [Editing](editing.md) owns these implemented contracts; this is an unpublished development increment.
+That earlier shapes cut excluded built-in sets/maps/optionals/tagged alternatives and references. The map increment above extends it. File/native owners, generated controls, commands, real consumer migrations and native/full-pack/cost qualification remain required by Phase 1. [Editing](editing.md) owns implemented contracts; these are unpublished development increments.
 
 ## Initial core definition slice
 

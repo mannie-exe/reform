@@ -7,7 +7,11 @@ import java.util.Objects;
 
 /** Editor structure is declared metadata, not reflection into a codec implementation. */
 public sealed interface ValueShape
-    permits ValueShape.Scalar, ValueShape.Sequence, ValueShape.ObjectValue, ValueShape.Custom {
+    permits ValueShape.Scalar,
+        ValueShape.Sequence,
+        ValueShape.ObjectValue,
+        ValueShape.Mapping,
+        ValueShape.Custom {
   enum ScalarKind {
     BOOLEAN,
     BYTE,
@@ -43,6 +47,21 @@ public sealed interface ValueShape
   record ObjectValue(List<FieldKey<?>> fields) implements ValueShape {
     public ObjectValue {
       fields = List.copyOf(fields);
+    }
+  }
+
+  enum MapEncoding {
+    OBJECT,
+    ENTRY_LIST
+  }
+
+  record Mapping(ValueType<?> key, ValueType<?> value, int maximumSize, MapEncoding encoding)
+      implements ValueShape {
+    public Mapping {
+      Objects.requireNonNull(key);
+      Objects.requireNonNull(value);
+      Objects.requireNonNull(encoding);
+      if (maximumSize < 0) throw new IllegalArgumentException("Negative map bound");
     }
   }
 

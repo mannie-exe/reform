@@ -130,6 +130,15 @@ public final class RecordTypes {
             ValueTypes.list(
                 type(parameterized.getActualTypeArguments()[0], depth + 1),
                 limits.collectionSize());
+      else if (javaType instanceof ParameterizedType parameterized
+          && parameterized.getRawType() == Map.class
+          && parameterized.getActualTypeArguments().length == 2
+          && parameterized.getActualTypeArguments()[0] == String.class)
+        result =
+            ValueTypes.objectMap(
+                type(String.class, depth + 1),
+                type(parameterized.getActualTypeArguments()[1], depth + 1),
+                limits.collectionSize());
       else
         throw new IllegalArgumentException(
             "Register an explicit value type for " + javaType.getTypeName());

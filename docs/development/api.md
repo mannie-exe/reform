@@ -4,19 +4,27 @@ The current API is experimental. It supplies typed values, explicit record defin
 
 ## Declare values once
 
-`ValueType<T>` combines a DFU `Codec<T>`, explicit `ValueShape` and `SnapshotPolicy<T>`. Codec implementation details are not inspected to infer an editor. `ValueTypes` currently supplies booleans, bounded bytes/shorts/integers/longs/floats/doubles, bounded text, enums and bounded recursive lists. Float bounds use their declared float spelling rather than a widened double approximation.
+`ValueType<T>` combines a DFU `Codec<T>`, explicit `ValueShape` and `SnapshotPolicy<T>`. Codec implementation details are not inspected to infer an editor. `ValueTypes` currently supplies booleans, bounded bytes/shorts/integers/longs/floats/doubles, bounded text, enums, bounded recursive lists and explicitly encoded maps. Float bounds use their declared float spelling rather than a widened double approximation.
 
 `FieldKey<T>` pairs a serialized field ID with its type. `RecordType.builder` binds those keys to typed getters and one constructor. The resulting type supplies ordered field metadata, a strict object codec and a recursive snapshot policy. Serialized field IDs can differ from Java component names and translated labels. Duplicate declared IDs are rejected. Current explicit record fields are required; missing, unknown or invalid fields prevent construction. Optional/default field policies remain required follow-up work.
 
-`RecordTypes.record(MyRecord.class).build()` derives that same `RecordType` for explicitly selected accessible records. It binds the canonical constructor/getters using ordinary method-handle access and supplies common scalar, enum, nested record and typed `List` codecs/snapshots. It scans no classpath and opens no foreign module. Nonpublic owned records can receive the caller's actual `MethodHandles.Lookup`; the library does not use an access override.
+`RecordTypes.record(MyRecord.class).build()` derives that same `RecordType` for explicitly selected accessible records. It binds the canonical constructor/getters using ordinary method-handle access and supplies common scalar, enum, nested record, typed `List` and string-keyed `Map` codecs/snapshots. Derived string maps use object encoding, including any explicitly registered string type. Other map keys require a field override selecting their actual lossless encoding. It scans no classpath and opens no foreign module. Nonpublic owned records can receive the caller's actual `MethodHandles.Lookup`; the library does not use an access override.
 
-The derivation defaults to 32 type-depth levels, 1,024 compiled record fields, 4,096 text characters and 256 collection entries. `limits` declares different bounds. Custom/unsupported Java types use explicit `register(Class, ValueType)` bindings; recursive/wildcard/raw/unknown types are refused instead of guessed. Maps, sets, optionals and tagged alternatives remain additional Phase 1 work.
+The derivation defaults to 32 type-depth levels, 1,024 compiled record fields, 4,096 text characters and 256 collection entries. `limits` declares different bounds. Custom/unsupported Java types use explicit `register(Class, ValueType)` bindings; recursive/wildcard/raw/unknown types are refused instead of guessed. Sets, optionals and tagged alternatives remain additional Phase 1 work.
 
 `field("javaComponent", FieldKey.of("serialized_id", type))` supplies an explicit root-field identity/constraint override. Duplicate or unknown overrides fail. Default component names become serialized IDs and must be treated as persistent names; a Java rename keeps the prior explicit serialized ID. Nested customized records can be built separately and registered. Definitions still declare owner defaults and meaningful cross-field constraints; derivation infers no units, permissions, application effects or semantic bounds from a member name.
 
 `DocumentDefinition<T>` supplies a namespaced `DocumentId`, positive owner-declared schema version, defaults and an optional pure validator. Defaults are copied and validated at registration. A schema version is metadata here; this type does not inject an envelope into an existing file, initialize storage or interpret world-generation identity.
 
 See the independently built [headless consumer](../../examples/headless/src/main/java/example/ReviewProfile.java) for a complete example. It uses the locally staged `design.inherent:reform` publication, rather than source-set/project access. Its optional references are plain retained values; a real resolver is not implemented by this example.
+
+## Explicit map encodings
+
+`ValueTypes.objectMap(key, value, maximumSize)` retains actual string-encoded object keys. It neither converts numeric keys to strings nor routes dynamic names through DFU's fixed-field compression. `entryMap` uses an array of required `{"key": ..., "value": ...}` records for numeric, composite or other declared keys. Both formats compose with nested records, lists and maps; switching them changes the consumer's storage schema and is not an automatic migration.
+
+Keys use Java value equality and hash codes, which must survive both the declared codec roundtrip and owned copying. Object-key encoding must also be injective. Duplicate decoded keys, encoding collisions, partial child results and exceeded size bounds refuse a complete map. Values use their declared child snapshot/equality policy. Map equality ignores entry order; the retained iteration order is presentation/serialization order rather than a separate persisted setting. Ordered domain tables need an explicit list type instead.
+
+The [packaged map example](../../examples/headless/src/main/java/example/MapEditing.java) exercises role counts, delayed acknowledgements and explicit composite-key encoding. Raw duplicates and key edits are described in [editing](editing.md); generated native map controls remain required.
 
 ## Exact input and complete validation
 
@@ -32,8 +40,8 @@ These checks do not establish read/write permission or qualify publication. Cont
 
 ## Snapshots and identity
 
-Built-in lists and explicit records recursively own their values. Defaults are not shared mutable instances. Snapshot traversal has per-copy depth/node accounting and rejects object cycles while allowing shared acyclic inputs. Its configuration convenience bound is 128 nested values and 65,536 visits; custom contexts can choose admitted limits. These local limits are not claims about remote frames or terrain workloads.
+Built-in lists, maps and explicit records recursively own their values. Defaults are not shared mutable instances. Snapshot traversal has per-copy depth/node accounting and rejects object cycles while allowing shared acyclic inputs. Its configuration convenience bound is 128 nested values and 65,536 visits; custom contexts can choose admitted limits. These local limits are not claims about remote frames or terrain workloads.
 
 Custom types provide an explicit snapshot and equality policy. `SnapshotPolicy.immutable()` is appropriate only when the entire reachable value is immutable. Collection and record policies delegate semantic equality to their children. Callbacks must be pure and bounded; an interface cannot sandbox arbitrary consumer code.
 
-`FieldPath` distinguishes field, stable row, variant and map-part segments. The editing model implements current record/list paths with session row IDs; variant and map-part traversal remains follow-up work. Filenames, labels, logical IDs, schema versions, saved revisions and owner contexts remain distinct. No environment-variable or ambient JVM-property settings source is involved.
+`FieldPath` distinguishes field, stable row, variant and map-part segments. The editing model implements current record/list/map paths with session row IDs and explicit key/value parts; variant traversal remains follow-up work. Filenames, labels, logical IDs, schema versions, saved revisions and owner contexts remain distinct. No environment-variable or ambient JVM-property settings source is involved.
