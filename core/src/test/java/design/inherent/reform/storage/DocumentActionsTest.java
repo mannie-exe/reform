@@ -124,6 +124,47 @@ class DocumentActionsTest {
   }
 
   @Test
+  void typedTypingContinuesAcrossAcknowledgementButExactTargetsRemainStale() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var path = FieldPath.ROOT.field("count");
+      var original = h.actions.view().snapshot().orElseThrow().target(path);
+      h.run(
+          () ->
+              h.actions.edit(
+                  EntryPoint.GUI, new DraftEdit(original.typing(), new DraftEdit.SetRaw("2"))));
+      h.run(() -> h.actions.save(EntryPoint.GUI));
+      var saved = Files.readString(h.path);
+      var acknowledged = h.actions.view().snapshot().orElseThrow();
+      assertEquals(original.session(), acknowledged.session());
+      assertTrue(acknowledged.generation() > original.generation());
+      var typing =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.GUI,
+                              new DraftEdit(original.typing(), new DraftEdit.SetRaw("4"))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.COMPLETED, typing.state());
+      assertEquals(
+          "4",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path)).raw());
+      assertEquals(saved, Files.readString(h.path));
+      var stale =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.GUI, new DraftEdit(original, new DraftEdit.SetRaw("6"))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.REFUSED, stale.state());
+      assertEquals("edit.stale_target", stale.report().issues().getFirst().code());
+      assertEquals(saved, Files.readString(h.path));
+    }
+  }
+
+  @Test
   void typedTypingCoalescesUndoAndCannotResumeAfterReload() throws Exception {
     try (var h = new Harness()) {
       h.run(() -> h.actions.load(EntryPoint.GUI));
@@ -149,6 +190,59 @@ class DocumentActionsTest {
       assertEquals(OperationSnapshot.State.REFUSED, stale.state());
       assertEquals("edit.stale_target", stale.report().issues().getFirst().code());
       assertFalse(h.actions.view().dirty());
+    }
+  }
+
+  @Test
+  void typingDoesNotInventFutureBaselines() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var path = FieldPath.ROOT.field("count");
+      var original = h.actions.view().snapshot().orElseThrow().target(path).typing();
+      var future =
+          new design.inherent.reform.edit.DraftTarget(
+              original.session(), original.generation() + 1, original.version(), path);
+      var invented =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.GUI, new DraftEdit(future, new DraftEdit.SetRaw("8"))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.REFUSED, invented.state());
+      assertFalse(h.actions.view().dirty());
+    }
+  }
+
+  @Test
+  void typingCannotCrossExplicitConflictResolution() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var path = FieldPath.ROOT.field("count");
+      var original = h.actions.view().snapshot().orElseThrow().target(path).typing();
+      h.run(
+          () -> h.actions.edit(EntryPoint.GUI, new DraftEdit(original, new DraftEdit.SetRaw("2"))));
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var review = h.actions.view().review().orElseThrow();
+      await(
+          h.actor.resolve(
+              review,
+              java.util.Map.of(path, design.inherent.reform.edit.ConflictReview.Choice.OBSERVED)));
+      assertFalse(h.actions.view().dirty());
+      var obsolete =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.edit(
+                              EntryPoint.GUI, new DraftEdit(original, new DraftEdit.SetRaw("9"))))
+                  .completion());
+      assertEquals(OperationSnapshot.State.REFUSED, obsolete.state());
+      assertFalse(h.actions.view().dirty());
+      var fresh = h.actions.view().snapshot().orElseThrow().target(path).typing();
+      h.run(() -> h.actions.edit(EntryPoint.GUI, new DraftEdit(fresh, new DraftEdit.SetRaw("3"))));
+      assertEquals(
+          "3",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path)).raw());
     }
   }
 

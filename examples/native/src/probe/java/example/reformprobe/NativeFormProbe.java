@@ -59,6 +59,7 @@ public final class NativeFormProbe {
   private java.nio.file.attribute.FileTime repairedTime;
   private java.util.concurrent.CompletableFuture<JsonObject> commands;
   private NativeWorldRecipeControls recipe;
+  private NativeStructuredControls structured;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -73,10 +74,17 @@ public final class NativeFormProbe {
   public NativeFormProbe(IEventBus bus, ModContainer probeContainer) {
     try {
       var modeFile = mc.gameDirectory.toPath().resolve("native-form-mode.txt");
-      if (Files.size(modeFile) > 16) throw new IllegalStateException("Invalid form fixture mode");
+      if (Files.size(modeFile) > 32) throw new IllegalStateException("Invalid form fixture mode");
       mode = Files.readString(modeFile).strip();
-      if (!List.of("first", "reopen", "malformed", "reentrant", "recipe").contains(mode))
-        throw new IllegalStateException("Unknown form fixture mode");
+      if (!List.of(
+              "first",
+              "reopen",
+              "malformed",
+              "reentrant",
+              "recipe",
+              "structured",
+              "structured-reopen")
+          .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
     }
@@ -213,6 +221,27 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("structured")) {
+        if (structured == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.StructuredExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          structured =
+              new NativeStructuredControls(
+                  mode.equals("structured-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (structured.tick()) {
+          report.add("structured", structured.report());
+          finish(null);
+        }
         return;
       }
       if (mode.equals("recipe")) {
@@ -547,7 +576,7 @@ public final class NativeFormProbe {
       check(form.charTyped(next, 0), "Native text event was not consumed");
   }
 
-  private static boolean focus(ContainerEventHandler parent, GuiEventListener target) {
+  static boolean focus(ContainerEventHandler parent, GuiEventListener target) {
     for (var child : parent.children()) {
       if (child == target) {
         parent.setFocused(child);
@@ -594,7 +623,7 @@ public final class NativeFormProbe {
         .orElseThrow();
   }
 
-  private static List<AbstractWidget> widgets(ContainerEventHandler parent) {
+  static List<AbstractWidget> widgets(ContainerEventHandler parent) {
     var found = new ArrayList<AbstractWidget>();
     for (var child : parent.children()) {
       if (child instanceof AbstractWidget widget) found.add(widget);
@@ -675,6 +704,10 @@ public final class NativeFormProbe {
         report.addProperty("reentrantRetryClosed", true);
       }
       if (recipe != null) recipe.shutdown();
+      check(
+          example.reform.StructuredExample.settings().status().lifecycle()
+              == ClientJsonSettings.Lifecycle.CLOSED,
+          "Structured settings context survived shutdown");
       var settings = ClientExample.settings();
       check(
           settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,

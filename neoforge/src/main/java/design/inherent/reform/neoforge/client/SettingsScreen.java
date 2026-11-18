@@ -2,7 +2,9 @@ package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
@@ -11,14 +13,16 @@ import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueShape;
-import design.inherent.reform.value.ValueType;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
@@ -35,9 +39,16 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
-/** Initial native scalar/record form over an admitted owner-backed editing actor. */
+/** Generated recursive native form over the same admitted owner/operation services. */
 public final class SettingsScreen<T> extends Screen {
-  private record Control(AbstractWidget widget, Consumer<String> display, boolean editable) {}
+  private record Control(
+      AbstractWidget widget,
+      Consumer<String> display,
+      boolean editable,
+      ValueShape shape,
+      boolean cycle,
+      DraftTarget target,
+      Object token) {}
 
   private final Screen parent;
   private final Component contextLabel;
@@ -48,12 +59,16 @@ public final class SettingsScreen<T> extends Screen {
   private final Map<FieldPath, Long> versions = new LinkedHashMap<>();
   private final List<AbstractWidget> footer = new ArrayList<>();
   private final List<FieldPath> visibleFields = new ArrayList<>();
+  private final Map<AbstractWidget, Boolean> structureButtons = new LinkedHashMap<>();
+  private List<FormModel.Layout> formLayout = List.of();
+  private UUID formSession;
+  private long formGeneration;
   private FormPanel panel;
   private EditorActor.View<T> displayed;
   private Button save, revert, defaults, reload, done;
   private int bodyTop, statusTop, pendingEdits;
   private long version;
-  private boolean requested, updating, saving, loading, handoff, closed;
+  private boolean requested, updating, saving, loading, handoff, closed, formUnavailable;
   private Component notice;
 
   /** No implicit initialization, actor lookup or settings ownership is inferred by the screen. */
@@ -68,6 +83,8 @@ public final class SettingsScreen<T> extends Screen {
     this.contextLabel = Objects.requireNonNull(contextLabel);
     this.definition = Objects.requireNonNull(definition);
     this.actions = Objects.requireNonNull(actions);
+    if (definition != actions.definition())
+      throw new IllegalArgumentException("A form requires its actual owner definition");
   }
 
   private static Component text(String key, String fallback) {
@@ -98,11 +115,28 @@ public final class SettingsScreen<T> extends Screen {
     return actions.view();
   }
 
+  /** Current native control only; the caller gains no owner or persistence authority. */
+  public Optional<AbstractWidget> fieldControl(FieldPath path) {
+    return Optional.ofNullable(controls.get(path)).map(Control::widget);
+  }
+
+  /** Focus and reveal a currently rendered field, including related diagnostic destinations. */
+  public boolean focusField(FieldPath path) {
+    var control = controls.get(path);
+    if (control == null || panel == null) return false;
+    String focus = panel.fieldFocus(FormModel.key(path), control.widget());
+    if (focus == null) return false;
+    setFocused(panel);
+    panel.restoreFocus(focus);
+    return true;
+  }
+
   @Override
   protected void init() {
     float scroll = panel == null ? 0 : panel.scroll();
     String focus = panel == null ? null : panel.focusKey();
     footer.clear();
+    structureButtons.clear();
     var current = actions.view();
     bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
     save = button(commitLabel(), this::requestSave);
@@ -144,12 +178,23 @@ public final class SettingsScreen<T> extends Screen {
             Math.max(1, statusTop - bodyTop - 8),
             false);
     visibleFields.clear();
-    if (current.snapshot().isPresent())
-      fields(
-          definition.type(),
-          FieldPath.ROOT,
-          current.snapshot().orElseThrow().draft().root(),
-          title);
+    formLayout = List.of();
+    if (current.snapshot().isPresent()) {
+      var snapshot = current.snapshot().orElseThrow();
+      formSession = snapshot.session();
+      formGeneration = snapshot.generation();
+      FormModel model = null;
+      try {
+        model = new FormModel(definition.type(), snapshot.draft());
+        formLayout = model.layout();
+        formUnavailable = false;
+      } catch (IllegalArgumentException unavailable) {
+        formUnavailable = true;
+        notice = failure(unavailable);
+        panel.row(text("form_unavailable", "Form unavailable"), notice);
+      }
+      if (model != null) fields(model.root(), title);
+    }
     controls.keySet().retainAll(visibleFields);
     local.keySet().retainAll(visibleFields);
     versions.keySet().retainAll(visibleFields);
@@ -199,64 +244,360 @@ public final class SettingsScreen<T> extends Screen {
     return result;
   }
 
-  private void fields(ValueType<?> type, FieldPath path, DraftNode node, Component label) {
-    if (type.shape() instanceof ValueShape.ObjectValue object
-        && node instanceof DraftNode.ObjectValue values) {
+  private void fields(FormModel.Node field, Component label) {
+    var path = field.path();
+    var node = field.input();
+    var shape = field.type().orElseThrow().shape();
+    if (shape instanceof ValueShape.ObjectValue && node instanceof DraftNode.ObjectValue) {
       if (!path.equals(FieldPath.ROOT)) panel.heading(label);
-      for (var field : object.fields()) {
-        DraftNode child = values.fields().getOrDefault(field.id(), new DraftNode.Missing());
-        var childPath = path.field(field.id());
-        var title = Component.translatableWithFallback(labelKey(childPath), readable(field.id()));
-        fields(field.type(), childPath, child, title);
+      children(field);
+      return;
+    }
+    if ((shape instanceof ValueShape.Sequence && node instanceof DraftNode.Sequence)
+        || (shape instanceof ValueShape.Mapping && node instanceof DraftNode.Mapping)) {
+      int size = field.children().size();
+      int maximum =
+          shape instanceof ValueShape.Sequence sequence
+              ? sequence.maximumSize()
+              : ((ValueShape.Mapping) shape).maximumSize();
+      var add =
+          structuralButton(
+              path,
+              text("add_entry", "Add entry"),
+              label,
+              new DraftEdit.InsertRow(Optional.empty()));
+      add.setTooltip(Tooltip.create(text("add_entry_help", "Add a blank entry for editing")));
+      structureButtons.put(add, size < maximum);
+      panel.row(
+          FormModel.key(path) + ":collection",
+          label,
+          Component.translatableWithFallback(
+              "reform.settings.entry_count", "%s entries (limit %s)", size, maximum),
+          add);
+      for (int i = 0; i < size; i++) {
+        var child = field.children().get(i);
+        var row = ((FieldPath.Row) child.path().segments().getLast()).id();
+        var rowLabel =
+            Component.translatableWithFallback("reform.settings.entry", "Entry %s", i + 1);
+        var rowContext = label.copy().append(": ").append(rowLabel);
+        var up =
+            structuralButton(
+                path,
+                text("move_up", "Up"),
+                rowContext,
+                new DraftEdit.MoveRow(
+                    row,
+                    i > 0
+                        ? Optional.of(
+                            ((FieldPath.Row)
+                                    field.children().get(i - 1).path().segments().getLast())
+                                .id())
+                        : Optional.of(row)));
+        var down =
+            structuralButton(
+                path,
+                text("move_down", "Down"),
+                rowContext,
+                new DraftEdit.MoveRow(
+                    row,
+                    i + 2 < size
+                        ? Optional.of(
+                            ((FieldPath.Row)
+                                    field.children().get(i + 2).path().segments().getLast())
+                                .id())
+                        : Optional.empty()));
+        var duplicate =
+            structuralButton(
+                path,
+                text("duplicate", "Copy"),
+                rowContext,
+                new DraftEdit.DuplicateRow(row, Optional.empty()));
+        structureButtons.put(up, i > 0);
+        structureButtons.put(down, i + 1 < size);
+        structureButtons.put(duplicate, size < maximum);
+        panel.row(
+            child.key() + ":row",
+            rowLabel,
+            Component.empty(),
+            up,
+            down,
+            duplicate,
+            structuralButton(
+                path, text("remove", "Remove"), rowContext, new DraftEdit.RemoveRow(row)));
+        fields(child, rowLabel);
       }
       return;
     }
+    if (shape instanceof ValueShape.Defaulted<?> && node instanceof DraftNode.Defaulted value) {
+      panel.row(
+          FormModel.key(path) + ":default",
+          label,
+          value.overridden()
+              ? text("override_active", "Override active")
+              : text("using_default", "Using default"),
+          structuralButton(
+              path,
+              value.overridden()
+                  ? text("use_default", "Use default")
+                  : text("override", "Override"),
+              label,
+              new DraftEdit.Override(!value.overridden())));
+      for (var retained : value.retainedOverrides())
+        panel.row(
+            FormModel.key(path) + ":retained:" + retained.id(),
+            text("retained_override", "Retained input"),
+            Component.literal(preview(retained.value())),
+            structuralButton(
+                path,
+                text("recover_input", "Recover input"),
+                label,
+                new DraftEdit.RestoreOverride(retained.id())),
+            structuralButton(
+                path,
+                text("discard_input", "Discard input"),
+                label,
+                new DraftEdit.DiscardOverride(retained.id())));
+      for (var child : field.children()) fields(child, label);
+      return;
+    }
+    if (shape instanceof ValueShape.OptionalValue<?>
+        && node instanceof DraftNode.OptionalValue value) {
+      panel.row(
+          FormModel.key(path) + ":optional",
+          label,
+          value.present() ? Component.empty() : text("empty_value", "Empty"),
+          structuralButton(
+              path,
+              value.present() ? text("use_empty", "Use empty") : text("add_value", "Add value"),
+              label,
+              new DraftEdit.Presence(!value.present())));
+      for (var child : field.children()) fields(child, label);
+      return;
+    }
+    if (shape instanceof ValueShape.Alternative alternatives
+        && node instanceof DraftNode.Alternative value) {
+      var choices =
+          new ArrayList<>(alternatives.variants().stream().map(ValueShape.Variant::id).toList());
+      if (!choices.contains(value.selected())) choices.addFirst(value.selected());
+      var choice =
+          CycleButton.<String>builder(
+                  id ->
+                      id.isEmpty()
+                          ? text("choose_variant", "Choose a variant")
+                          : Component.literal(readable(id)))
+              .withValues(choices)
+              .withInitialValue(value.selected())
+              .displayOnlyValue()
+              .create(
+                  0,
+                  0,
+                  160,
+                  20,
+                  label,
+                  (widget, id) -> structural(path, new DraftEdit.SelectVariant(id)));
+      structureButtons.put(choice, true);
+      panel.row(FormModel.key(path) + ":variant", label, Component.empty(), choice);
+      for (var branch : value.branches().keySet())
+        if (!branch.equals(value.selected()))
+          panel.row(
+              FormModel.key(path) + ":branch:" + branch,
+              text("inactive_branch", "Inactive branch"),
+              Component.literal(clip(branch, 120)),
+              structuralButton(
+                  path,
+                  text("discard_branch", "Discard branch"),
+                  label,
+                  new DraftEdit.DiscardBranch(branch)));
+      children(field);
+      return;
+    }
+    if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>)) {
+      panel.row(
+          FormModel.key(path) + ":repair",
+          label,
+          text(
+              "retained_malformed",
+              "Input is retained; repair replaces it with a blank value and can be undone."),
+          structuralButton(
+              path, text("repair_value", "Repair value"), label, new DraftEdit.Repair()));
+    }
     visibleFields.add(path);
     var control = controls.get(path);
-    if (control == null) {
-      var raw = raw(node);
+    var raw = raw(node);
+    boolean cycle = field.cycling();
+    if (control == null
+        || !control.shape().equals(shape)
+        || control.cycle() != cycle
+        || !control.target().session().equals(formSession)) {
       local.put(path, raw);
       versions.put(path, 0L);
-      control = createControl(type.shape(), path, raw, label);
+      control = createControl(shape, path, raw, label, cycle);
+      controls.put(path, control);
+    } else if (control.target().generation() != formGeneration) {
+      control =
+          new Control(
+              control.widget(),
+              control.display(),
+              control.editable(),
+              control.shape(),
+              control.cycle(),
+              actions.view().snapshot().orElseThrow().target(path).typing(),
+              control.token());
       controls.put(path, control);
     }
-    panel.field(path.toString(), label, Component.empty(), control.widget());
+    panel.field(FormModel.key(path), label, Component.empty(), control.widget());
   }
 
-  private Control createControl(ValueShape shape, FieldPath path, String raw, Component label) {
-    if (shape instanceof ValueShape.Reference<?> reference)
-      return createControl(reference.element().shape(), path, raw, label);
+  private void children(FormModel.Node parent) {
+    for (var child : parent.children()) {
+      if (child.role() == FormModel.Role.UNKNOWN) {
+        var label =
+            Component.translatableWithFallback(
+                "reform.settings.unknown_field", "Unknown field: %s", clip(child.name(), 120));
+        var retained = new EditBox(font, 0, 0, 160, 20, label);
+        String raw = raw(child.input());
+        retained.setMaxLength(Math.max(128, raw.length()));
+        retained.setValue(raw);
+        retained.setEditable(false);
+        panel.row(
+            child.key(),
+            label,
+            text("unknown_retained", "Retained until explicitly removed"),
+            retained,
+            structuralButton(
+                parent.path(),
+                text("remove", "Remove"),
+                label,
+                new DraftEdit.RemoveUnknown(child.name())));
+      } else fields(child, label(child));
+    }
+  }
+
+  private Component label(FormModel.Node field) {
+    return switch (field.role()) {
+      case ROOT -> title;
+      case FIELD ->
+          Component.translatableWithFallback(labelKey(field.path()), readable(field.name()));
+      case ROW, MAP_ROW ->
+          Component.translatableWithFallback("reform.settings.entry", "Entry %s", field.name());
+      case KEY -> text("entry_key", "Key");
+      case VALUE -> text("entry_value", "Value");
+      case VARIANT -> Component.literal(readable(field.name()));
+      case UNKNOWN -> Component.literal(clip(field.name(), 120));
+    };
+  }
+
+  private Button structuralButton(
+      FieldPath path, Component label, Component context, DraftEdit.Action edit) {
+    var button =
+        Button.builder(label, ignored -> structural(path, edit))
+            .bounds(0, 0, Math.max(40, font.width(label) + 16), 20)
+            .createNarration(original -> context.copy().append(": ").append(original.get()))
+            .build();
+    structureButtons.put(button, true);
+    return button;
+  }
+
+  private void structural(FieldPath path, DraftEdit.Action edit) {
+    var current = actions.view();
+    if (pendingEdits > 0
+        || saving
+        || loading
+        || unsent()
+        || current.availability() != EditorActor.Availability.READY
+        || current.snapshot().isEmpty()) return;
+    if (layoutChanged(current)) {
+      notice = text("review_changed_form", "The form changed; review this control again.");
+      rebuildWidgets();
+      return;
+    }
+    var before = Map.copyOf(versions);
+    pendingEdits++;
+    notice = null;
+    action(
+            () ->
+                actions.edit(
+                    EntryPoint.GUI,
+                    new DraftEdit(current.snapshot().orElseThrow().target(path), edit)))
+        .whenComplete(
+            (result, failed) ->
+                minecraft.execute(
+                    () -> {
+                      pendingEdits--;
+                      if (failed != null) notice = failure(failed);
+                      else {
+                        synchronize(before);
+                        if (edit instanceof DraftEdit.RestoreOverride)
+                          notice =
+                              text(
+                                  "recovered_input",
+                                  "Input recovered. Enable Override to use it if the default is still active.");
+                      }
+                      if (minecraft.screen == this) {
+                        if (layoutChanged(actions.view())) rebuildWidgets();
+                        else feedback();
+                      }
+                    }));
+    feedback();
+  }
+
+  private static String preview(DraftNode node) {
+    String value = raw(node);
+    return value.isEmpty()
+        ? text("structured_input", "Structured input retained").getString()
+        : clip(value, 160);
+  }
+
+  private static String clip(String text, int maximum) {
+    return text.codePointCount(0, text.length()) <= maximum
+        ? text
+        : text.substring(0, text.offsetByCodePoints(0, maximum)) + "…";
+  }
+
+  private Control createControl(
+      ValueShape declared, FieldPath path, String raw, Component label, boolean cycle) {
+    var target = actions.view().snapshot().orElseThrow().target(path).typing();
+    var token = new Object();
+    ValueShape shape =
+        declared instanceof ValueShape.Reference<?> reference
+            ? reference.element().shape()
+            : declared;
     if (shape instanceof ValueShape.Scalar scalar) {
       var choices =
           scalar.kind() == ValueShape.ScalarKind.BOOLEAN
               ? List.of("false", "true")
               : scalar.choices();
-      if (!choices.isEmpty() && choices.contains(raw)) {
+      if (cycle) {
         var button =
             CycleButton.<String>builder(Component::literal)
                 .withValues(choices)
                 .withInitialValue(raw)
                 .displayOnlyValue()
-                .create(0, 0, 160, 20, label, (widget, value) -> edit(path, value));
-        return new Control(button, button::setValue, true);
+                .create(0, 0, 160, 20, label, (widget, value) -> edit(path, token, value));
+        return new Control(button, button::setValue, true, declared, true, target, token);
       }
       var input = new EditBox(font, 0, 0, 160, 20, label);
       input.setMaxLength(
           Math.max(raw.length(), scalar.maximumLength() > 0 ? scalar.maximumLength() : 128));
       input.setValue(raw);
-      input.setResponder(value -> edit(path, value));
-      return new Control(input, input::setValue, true);
+      input.setResponder(value -> edit(path, token, value));
+      return new Control(input, input::setValue, true, declared, false, target, token);
     }
     var unavailable = new EditBox(font, 0, 0, 160, 20, label);
-    unavailable.setValue(text("unsupported", "Editor unavailable").getString());
+    unavailable.setMaxLength(Math.max(128, raw.length()));
+    unavailable.setValue(
+        raw.isEmpty() ? text("unsupported", "Editor unavailable").getString() : raw);
     unavailable.setEditable(false);
     unavailable.setTooltip(
         Tooltip.create(
             text("unsupported_help", "This type needs a dedicated editor. Its data is retained.")));
-    return new Control(unavailable, ignored -> {}, false);
+    return new Control(unavailable, ignored -> {}, false, declared, false, target, token);
   }
 
-  private void edit(FieldPath path, String value) {
+  private void edit(FieldPath path, Object token, String value) {
+    if (closed || minecraft.screen != this) return;
+    var current = controls.get(path);
+    if (current == null || current.token() != token) return;
     if (updating || value.equals(local.get(path))) return;
     local.put(path, value);
     versions.put(path, ++version);
@@ -264,12 +605,10 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private void submit(FieldPath path, String value) {
+    var target = controls.get(path).target();
     pendingEdits++;
     notice = null;
-    action(
-            () ->
-                actions.edit(
-                    EntryPoint.GUI, actions.fields().field(path).orElseThrow().selector(), value))
+    action(() -> actions.edit(EntryPoint.GUI, new DraftEdit(target, new DraftEdit.SetRaw(value))))
         .whenComplete(
             (result, failed) ->
                 minecraft.execute(
@@ -278,6 +617,7 @@ public final class SettingsScreen<T> extends Screen {
                       if (failed != null) notice = failure(failed);
                       if (minecraft.screen == this) feedback();
                     }));
+    feedback();
   }
 
   private boolean unsent() {
@@ -305,6 +645,7 @@ public final class SettingsScreen<T> extends Screen {
     if (!actions.view().validation().valid()
         || actions.view().pending().isPresent()
         || actions.view().review().isPresent()) return;
+    var before = Map.copyOf(versions);
     saving = true;
     notice = null;
     action(() -> actions.commit(EntryPoint.GUI))
@@ -316,8 +657,18 @@ public final class SettingsScreen<T> extends Screen {
                       if (failed != null) notice = failure(failed);
                       else if (!result.editorReport().valid())
                         notice = first(result.editorReport());
-                      else result.receipt().ifPresent(receipt -> notice = saved(receipt));
-                      if (minecraft.screen == this) feedback();
+                      else
+                        result
+                            .receipt()
+                            .ifPresent(
+                                receipt -> {
+                                  notice = saved(receipt);
+                                  if (receipt.acknowledgesBaseline()) synchronize(before);
+                                });
+                      if (minecraft.screen == this) {
+                        if (layoutChanged(actions.view())) rebuildWidgets();
+                        else feedback();
+                      }
                     }));
   }
 
@@ -378,6 +729,8 @@ public final class SettingsScreen<T> extends Screen {
     save.setMessage(unsent() ? text("retry_edits", "Retry edits") : commitLabel());
     save.active =
         current.snapshot().isPresent()
+            && current.availability() == EditorActor.Availability.READY
+            && !formUnavailable
             && !saving
             && !loading
             && pendingEdits == 0
@@ -388,11 +741,25 @@ public final class SettingsScreen<T> extends Screen {
         defaults.active =
             current.snapshot().isPresent() && !saving && !loading && pendingEdits == 0;
     reload.active = done.active = !saving && !loading && pendingEdits == 0;
+    structureButtons.forEach(
+        (button, enabled) ->
+            button.active =
+                enabled
+                    && current.availability() == EditorActor.Availability.READY
+                    && !loading
+                    && !saving
+                    && pendingEdits == 0
+                    && !unsent());
     controls.forEach(
         (path, control) -> {
           if (control.widget() instanceof EditBox input)
-            input.setEditable(control.editable() && !loading);
-          else control.widget().active = !loading;
+            input.setEditable(
+                control.editable()
+                    && !loading
+                    && current.availability() == EditorActor.Availability.READY);
+          else
+            control.widget().active =
+                !loading && current.availability() == EditorActor.Availability.READY;
           var issue =
               current.validation().issues().stream()
                   .filter(value -> value.path().equals(path) || value.related().contains(path))
@@ -403,7 +770,7 @@ public final class SettingsScreen<T> extends Screen {
                       value ->
                           text("invalid", "Invalid").copy().append(": ").append(value.fallback()))
                   .orElse(Component.empty());
-          panel.summary(path.toString(), summary);
+          panel.summary(FormModel.key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
             input.setTextColor(
                 issue.isEmpty() ? FormPanel.TITLE_TEXT : ChatFormatting.RED.getColor());
@@ -568,30 +935,29 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private boolean layoutChanged(EditorActor.View<T> view) {
-    var expected = new ArrayList<FieldPath>();
-    view.snapshot()
-        .ifPresent(
-            snapshot ->
-                leaves(definition.type(), FieldPath.ROOT, snapshot.draft().root(), expected));
-    return !expected.equals(visibleFields);
-  }
-
-  private static void leaves(
-      ValueType<?> type, FieldPath path, DraftNode node, List<FieldPath> found) {
-    if (type.shape() instanceof ValueShape.ObjectValue object
-        && node instanceof DraftNode.ObjectValue value) {
-      for (var field : object.fields())
-        leaves(
-            field.type(),
-            path.field(field.id()),
-            value.fields().getOrDefault(field.id(), new DraftNode.Missing()),
-            found);
-    } else found.add(path);
+    if (view.snapshot().isEmpty()) return !formLayout.isEmpty();
+    var snapshot = view.snapshot().orElseThrow();
+    if (!snapshot.session().equals(formSession) || snapshot.generation() != formGeneration)
+      return true;
+    try {
+      return !formLayout.equals(new FormModel(definition.type(), snapshot.draft()).layout());
+    } catch (IllegalArgumentException unavailable) {
+      return !formUnavailable;
+    }
   }
 
   private String labelKey(FieldPath path) {
     var parts =
-        path.segments().stream().map(segment -> escape(((FieldPath.Field) segment).id())).toList();
+        path.segments().stream()
+            .map(
+                segment ->
+                    switch (segment) {
+                      case FieldPath.Field field -> escape(field.id());
+                      case FieldPath.Row ignored -> "%row";
+                      case FieldPath.Variant variant -> "%variant:" + escape(variant.id());
+                      case FieldPath.Part part -> part == FieldPath.Part.KEY ? "%key" : "%value";
+                    })
+            .toList();
     return definition.id().namespace()
         + ":settings/"
         + escape(definition.id().path())

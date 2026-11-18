@@ -26,7 +26,7 @@ Using the default omits the field and ignores the inactive override during candi
 
 Equal-value acknowledgements can adopt a serializer's omitted-default representation while retaining inactive input and later overrides. When a serializer instead materializes an omitted default, the actual saved value becomes active and distinct inactive input is retained separately. These immutable snapshots have stable UUIDs for explicit recovery/discard, count toward draft/history limits and never enter serialized data or authored equality. Collection identities transfer from inactive input only when that input independently decodes to the same value; an unrelated equal document value does not establish row identity. Recovery uses the retained UUID rather than a potentially stale row index.
 
-Omitted fields receive no invented encoded address. Manual conflict review treats a defaulted field's presence and content as one choice. Generated default/override and retained-input recovery controls, plus richer provenance presentation, remain required.
+Omitted fields receive no invented encoded address. Manual conflict review treats a defaulted field's presence and content as one choice. The native recursive form supplies explicit default/override and retained-input recovery controls; richer provenance presentation remains required.
 
 ## Optional membership
 
@@ -34,7 +34,7 @@ Omitted fields receive no invented encoded address. Manual conflict review treat
 
 Singleton-list optionals map their active child to encoded index zero; nullable optionals map it to the same encoded source location. Empty membership has no encoded child address. Equal-value acknowledgements retain inactive input and active collection identities; later membership/input edits survive. Manual conflict choices include membership and content together. Old source diagnostics become stale when an ancestor optional or default override is disabled, even when its raw text is retained unchanged.
 
-Malformed encodings remain opaque repairable drafts; they never silently become empty. Nullable nested emptiness that cannot be represented stays invalid in both raw rendering and typed encoding. Native controls remain required.
+Malformed encodings remain opaque repairable drafts; they never silently become empty. Nullable nested emptiness that cannot be represented stays invalid in both raw rendering and typed encoding. The native recursive form supplies membership and blank-repair controls.
 
 ## Tagged branches
 
@@ -42,7 +42,7 @@ Malformed encodings remain opaque repairable drafts; they never silently become 
 
 `select(id, seed)` creates a missing branch from an explicit seed and restores an existing branch unchanged. It does not infer a valid default, reinterpret unknown payloads or replace unfinished input with a supplied seed. Unknown tags retain opaque payloads; unknown fields remain errors until explicitly repaired. A malformed envelope/tag retains the complete opaque input for repair rather than selecting a fallback.
 
-Equal-value acknowledgement normalizes the actual saved branch while retaining private branches and their later edits. A later selection retains its own payload. Old diagnostics retain their branch target and become stale when that branch is inactive. Whole-alternative conflict choices cannot pair one selector with another branch's payload. Native branch controls and repair/recovery presentation remain required.
+Equal-value acknowledgement normalizes the actual saved branch while retaining private branches and their later edits. A later selection retains its own payload. Old diagnostics retain their branch target and become stale when that branch is inactive. Whole-alternative conflict choices cannot pair one selector with another branch's payload. The native recursive form supplies branch selection, inactive-branch discard and blank repair; richer recovery/review presentation remains required.
 
 ## Public structural edits
 
@@ -52,9 +52,9 @@ An immutable session snapshot exposes its actual editor UUID separately from its
 
 `DraftTypes.at` resolves the declared type at an actual active record/row/map-part/variant path. An inactive payload or unknown field cannot become an editable declared leaf. Unknown fields require explicit removal at their owning record/envelope. A malformed subtree requires explicit `Repair`; replacing it with its blank shape is undoable. Blank numeric/boolean/choice leaves remain incomplete instead of inventing a valid value. Blank required text can be valid under its declared codec. Blank construction is depth/node/text bounded and performs no domain compilation or external lookup. Enabling a missing override uses its actual declared fallback; re-enabling retained input restores it unchanged.
 
-Exact-version targets are required for structural/destructive actions. `target.typing()` explicitly permits an ordered raw-input stream to follow edits within the same editor generation; reload or loss/inactivation of the target still refuses it. The actor coalesces matching scalar typing for undo. Frontends must dispose obsolete streams and retain their request/draft identities rather than installing a late input event into a replacement screen. Asynchronous choice application should use the exact-version target, together with its reference-source epoch.
+Exact-version targets are required for structural/destructive actions. `target.typing()` explicitly permits an ordered raw-input stream to follow edits within the same editor generation. The actor additionally carries that stream across its own save acknowledgement in the same editor UUID; it refuses invented future generations, streams preceding explicit conflict resolution, reloads and lost/inactive targets. The pure `EditSession.execute` generation check remains strict. The actor coalesces matching scalar typing for undo. Frontends must dispose obsolete streams and retain their request/draft identities rather than installing a late input event into a replacement screen. Asynchronous choice application should use the exact-version target, together with its reference-source epoch.
 
-`DraftEdits.type()` admits these requests through the normal strict record/tagged codecs and snapshot limits. It is a local operation input, not a generic JSON patch or remote protocol. `EditorActor.edit` maps a `DraftEditRefusal` to field-attributed policy diagnostics; `DocumentActions.edit(entry, request)` shares that service across frontends without granting Save. Snapshots, validation and comparison/export references retain the actual editor UUID. Native collection services and the public compound example are qualified separately from recursive widgets, which remain required.
+`DraftEdits.type()` admits these requests through the normal strict record/tagged codecs and snapshot limits. It is a local operation input, not a generic JSON patch or remote protocol. `EditorActor.edit` maps a `DraftEditRefusal` to field-attributed policy diagnostics; `DocumentActions.edit(entry, request)` shares that service across frontends without granting Save. Snapshots, validation and comparison/export references retain the actual editor UUID. Native collection services, the public compound example and recursive widgets have separately attributed qualification.
 
 ## History and lifecycle
 

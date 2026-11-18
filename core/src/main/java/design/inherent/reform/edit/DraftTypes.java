@@ -32,7 +32,7 @@ public final class DraftTypes {
           && shape instanceof ValueShape.Sequence sequence) {
         type = sequence.element();
       } else if (segment instanceof FieldPath.Row && shape instanceof ValueShape.Mapping mapping) {
-        if (i + 1 == segments.size()) return mapRow(mapping.key(), mapping.value());
+        if (i + 1 == segments.size()) return mapRowType(mapping.key(), mapping.value());
         if (!(segments.get(++i) instanceof FieldPath.Part part))
           throw new IllegalArgumentException("A map row needs an explicit key/value part");
         type = part == FieldPath.Part.KEY ? mapping.key() : mapping.value();
@@ -56,7 +56,7 @@ public final class DraftTypes {
     return type;
   }
 
-  private static <K, V> ValueType<MapRow<K, V>> mapRow(ValueType<K> key, ValueType<V> value) {
+  public static <K, V> ValueType<MapRow<K, V>> mapRowType(ValueType<K> key, ValueType<V> value) {
     var keyField = FieldKey.of("key", key);
     var valueField = FieldKey.of("value", value);
     return RecordType.<MapRow<K, V>>builder(v -> new MapRow<>(v.get(keyField), v.get(valueField)))

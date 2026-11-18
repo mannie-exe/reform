@@ -2,6 +2,20 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Recursive native forms
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 316 core cases, including twelve generated properties/1,700 checks, two native-file tests and twelve tooling controls. The public Maven consumers and native addon/probe compile against that exact artifact; all 86 main Java sources match its source JAR. Markdown/link/workflow/diff checks pass separately.
+
+Pure controls distinguish map parts from ordinary record field names, preserve unknown data without granting a declared editor, bound active form construction and prove it invokes no codecs. Layout identity changes for structure/branch/editor flavor rather than ordinary typing. An adversarial field name reproduces a collision in human `FieldPath.toString()`; opaque widget keys keep those two controls distinct.
+
+`python3 tools/native_form_probe.py --java-home /path/to/jdk21 --timeout 150` passes seven sequential disposable 2 GiB clients in 13.058, 11.310, 11.566, 12.333, 10.895, 12.237 and 10.944 seconds, including Gradle startup. Existing menu/command/scalar save/reflow/reopen, malformed recovery, original flat-creation context and reentrant shutdown controls pass. The added recursive fixture drives actual native text/pointer events through list copy/move, separate map key/value editing, duplicate set diagnostics/removal, optional membership, retained invalid default overrides and tagged-branch restoration. It verifies stable row/widget identity, obsolete widget callback refusal, unchanged file bytes before explicit Save, runtime publication, parent/context cleanup and exact saved values in a fresh JVM. Screenshots were inspected. Native narration labels are queried; physical input devices and spoken narrator output are not qualified.
+
+The first native attempt reproduced a focused scalar widget being replaced after its own save acknowledgement. A corresponding actor control also refused the original ordered typing stream after acknowledgement. Reusing the widget while rebinding its same-editor baseline, and carrying its versionless typing stream across that acknowledgement, fixes both original controls. Further negatives reproduced future-generation input and pre-conflict-resolution typing being accepted; both are now refused. Pure exact-version requests remain strict. Arbitrary owner normalization that changes a field's active structure while input admission is delayed remains unqualified.
+
+The registered native COMMON-owner regression also passes two disposable dedicated boots, retaining its actual serializer/callback/authority checks, thirteen structural-service and 27 reference checks per boot, six first-boot native saves and zero off-thread validators. Both runners use ordinary addon/probe ModDev source containers and the exact packaged Maven library; matching task-owned worlds/logs are removed. No personal client or world is used.
+
+The final combined library is `69d1083ba43d0238ce406db83f89fefab77a6a17f580dcb7bde222bf7f16caec`, sources `47928473599b4e98ed1a67bbfda4fb23beb4d731eaf2f0c4206ea3977f4485cb` and core `fbed0c993a94c2b9f9fc79caaf5c358178cfc2a2d6a24ced26be431a6633320a`. [Presentation](presentation.md) owns the APIs. This is an inline recursive form; catalog/detail, reference/promoted controls, broader malformed/recovery and font/resource-reload presentation, remaining owners, both migrations and integrated/full-pack/cost qualification remain required. Phase 1 remains incomplete and no release is made.
+
 ## Structural editing and compound public workflow
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 307 core cases, including twelve generated properties/1,700 checks, two native-file tests and twelve tooling controls. The independent Maven application exercises the new combined composition-like profile, and the native addon/probe compile against the same packaged artifact. All 85 main Java files match the source JAR. Markdown/link/workflow/diff checks pass separately.

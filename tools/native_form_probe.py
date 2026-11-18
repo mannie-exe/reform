@@ -36,10 +36,11 @@ def successful_run(result, mode, digest):
     return (result["exitCode"] == 0 and result["termination"] is None
             and native.get("status") == "PASS" and native.get("nativeShutdownClosed") is True
             and native.get("mode") == mode and native.get("librarySha256") == digest
+            and (not mode.startswith("structured") or native.get("structured", {}).get("status") == "PASS")
             and (mode != "recipe" or native.get("recipe", {}).get("managedShutdownClosed") is True))
 
 
-def run(java_home, timeout, lifecycle_only=False, recipe_only=False):
+def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
@@ -60,12 +61,14 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False):
               "gitHead": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
               "launch": "ModDev native example/probe source containers; dependency is a packaged Maven JAR",
               "inputs": {}, "screenshots": {}}
-    for source in sorted([*example.glob("src/**/*.java"), *example.glob("src/**/*.toml"),
+    for source in sorted([*(p for p in example.glob("src/**/*") if p.is_file()),
                           example / "build.gradle", example / "settings.gradle",
                           Path(__file__).resolve(), ROOT / "tools/native_config_probe.py"]):
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-form-client.log"
-    modes = ("recipe",) if recipe_only else (("reentrant",) if lifecycle_only else ("first", "reopen", "malformed", "recipe", "reentrant"))
+    modes = (("structured", "structured-reopen") if structured_only else
+             (("recipe",) if recipe_only else (("reentrant",) if lifecycle_only else
+              ("first", "reopen", "malformed", "recipe", "reentrant", "structured", "structured-reopen"))))
     try:
         for mode in modes:
             if mode == "malformed":
@@ -120,7 +123,8 @@ if __name__ == "__main__":
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--recipe-only", action="store_true", help="Run only native unsaved creation recipe controls")
     modes.add_argument("--lifecycle-only", action="store_true", help="Run only the held reentrant retry/shutdown control")
+    modes.add_argument("--structured-only", action="store_true", help="Run recursive editing and saved reopen controls")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only))

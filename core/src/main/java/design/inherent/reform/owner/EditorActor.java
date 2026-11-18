@@ -6,6 +6,7 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftEditRefusal;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
 import design.inherent.reform.edit.Submission;
@@ -79,12 +80,14 @@ public final class EditorActor<T> implements AutoCloseable {
     Submission<T> pending;
     CommitReceipt<T> lastReceipt;
     EditSession.EditGroup typing;
+    long typingFloor;
     ValidationReport observationReport = ValidationReport.VALID;
     ValidationReport operationReport = ValidationReport.VALID;
 
     Model(EditSession<T> editor, OwnerObservation<T> source) {
       this.editor = editor;
       this.source = source;
+      typingFloor = editor.snapshot().generation();
     }
   }
 
@@ -442,9 +445,22 @@ public final class EditorActor<T> implements AutoCloseable {
           try {
             if (edit.action() instanceof DraftEdit.SetRaw) {
               var path = edit.target().path();
+              var snapshot = selected.editor.snapshot();
+              // Acknowledgement advances the baseline in this same editor. Explicit load creates
+              // a new editor UUID, so an old typing stream still cannot enter a replacement.
+              var input =
+                  edit.target().version().isEmpty()
+                          && edit.target().session().equals(snapshot.session())
+                          && edit.target().generation() >= selected.typingFloor
+                          && edit.target().generation() <= snapshot.generation()
+                      ? new DraftEdit(
+                          new DraftTarget(
+                              snapshot.session(), snapshot.generation(), Optional.empty(), path),
+                          edit.action())
+                      : edit;
               if (selected.typing == null || !selected.typing.path().equals(path))
                 selected.typing = new EditSession.EditGroup(path, UUID.randomUUID());
-              selected.editor.execute(edit, selected.typing);
+              selected.editor.execute(input, selected.typing);
             } else {
               selected.typing = null;
               selected.editor.execute(edit);
@@ -474,7 +490,12 @@ public final class EditorActor<T> implements AutoCloseable {
   public CompletionStage<View<T>> resolve(
       ConflictReview review, Map<FieldPath, ConflictReview.Choice> choices) {
     var frozen = Map.copyOf(choices);
-    return change(selected -> selected.editor.resolve(review, frozen));
+    return change(
+        selected -> {
+          selected.editor.resolve(review, frozen);
+          selected.typingFloor = selected.editor.snapshot().generation();
+          selected.typing = null;
+        });
   }
 
   public CompletionStage<Commit<T>> save() {
