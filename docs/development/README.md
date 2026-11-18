@@ -8,6 +8,7 @@
 - [Publication](publication.md) owns effective handles and context/revision checks.
 - [Owners](owners.md) owns asynchronous actor sessions, shared admission and outcome receipts.
 - [Operations](operations.md) owns shared local GUI/command services, progress and cancellation.
+- [Local import](imports.md) owns admitted sources/formats, bounded preview and reviewed draft replacement.
 - [Reference sources](references.md) owns admitted registry/tag/resource data, bounded lookup and reload freshness.
 - [Numeric presentation](numbers.md) owns exact display/storage units and their validation boundary.
 - [Dependent settings](dependencies.md) owns bounded local availability, retained values and cached input evidence.

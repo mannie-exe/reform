@@ -4,14 +4,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.mojang.serialization.JsonOps;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.DocumentRead;
-import design.inherent.reform.serialization.ExactCodecs;
+import design.inherent.reform.serialization.JsonEnvelope;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonInputException;
 import design.inherent.reform.serialization.JsonLimits;
@@ -21,7 +20,6 @@ import design.inherent.reform.validation.ValidationReport;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 /** Typed worker-side storage. Owners still supply authorization, execution and publication. */
 public final class JsonStore<T> {
@@ -198,25 +196,10 @@ public final class JsonStore<T> {
       return problem(State.MISSING, source, "storage.missing", "No saved document exists", false);
     try {
       var parsed = JsonInput.read(source.text().orElseThrow(), jsonLimits);
-      SourcePath selection = SourcePath.ROOT;
-      if (format == Format.NEW_ENVELOPE) {
-        var root = parsed.copyTree();
-        if (!root.isJsonObject()
-            || !root.getAsJsonObject().keySet().equals(Set.of("schemaVersion", "values")))
-          return problem(
-              State.INVALID,
-              source,
-              "storage.envelope",
-              "Expected schemaVersion and values only",
-              true);
-        var version =
-            ExactCodecs.INT.parse(JsonOps.INSTANCE, root.getAsJsonObject().get("schemaVersion"));
-        if (version.error().isPresent()
-            || version.result().orElseThrow() != definition.schemaVersion())
-          return problem(
-              State.INVALID, source, "storage.schema", "Unsupported document schema version", true);
-        selection = selection.property("values");
-      }
+      SourcePath selection =
+          format == Format.NEW_ENVELOPE
+              ? JsonEnvelope.values(parsed, definition.schemaVersion())
+              : SourcePath.ROOT;
       var draft = DraftTree.fromParsed(definition.type(), parsed, selection, draftLimits);
       var inspected = draft.inspect(definition, jsonLimits);
       return new Read<>(
@@ -229,7 +212,13 @@ public final class JsonStore<T> {
           inspected.candidate(),
           inspected.report());
     } catch (JsonInputException invalid) {
-      return problem(State.INVALID, source, invalid.code(), invalid.getMessage(), true);
+      String code =
+          switch (invalid.code()) {
+            case "json.envelope" -> "storage.envelope";
+            case "json.schema" -> "storage.schema";
+            default -> invalid.code();
+          };
+      return problem(State.INVALID, source, code, invalid.getMessage(), true);
     } catch (RuntimeException unavailable) {
       return problem(
           State.UNAVAILABLE,

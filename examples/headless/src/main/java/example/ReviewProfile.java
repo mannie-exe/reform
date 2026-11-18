@@ -9,6 +9,12 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
+import design.inherent.reform.importing.FileImportSource;
+import design.inherent.reform.importing.ImportFormat;
+import design.inherent.reform.importing.ImportInput;
+import design.inherent.reform.importing.JsonImportFormat;
+import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
@@ -21,6 +27,7 @@ import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueTypes;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -190,8 +197,8 @@ public final class ReviewProfile {
       try {
         var owner = ownerExecutor.submit(() -> new JsonOwner<>(context, store, 8)).get();
         var writable = new AtomicBoolean(true);
-        var bound =
-            ownerExecutor.submit(() -> owner.open(context.access(() -> true, writable::get))).get();
+        var access = ownerExecutor.submit(() -> context.access(() -> true, writable::get)).get();
+        var bound = ownerExecutor.submit(() -> owner.open(access)).get();
         if (await(bound.read()).saved().state() != JsonStore.State.MISSING
             || Files.exists(binding.path()))
           throw new IllegalStateException("Public browsing initialized storage implicitly");
@@ -313,6 +320,85 @@ public final class ReviewProfile {
                   .equals("Imported draft"))
             throw new IllegalStateException(
                 "Public reviewed stage lost its single history boundary");
+          var actions =
+              ownerExecutor.submit(() -> new DocumentActions<>(context, access, actor)).get();
+          var input =
+              new ImportInput(
+                  "Reviewed external profile",
+                  "{\"schemaVersion\":1,\"values\":{\"name\":\"Source import\",\"minimum\":16,\"maximum\":128,\"references\":[]}}"
+                      .getBytes(StandardCharsets.UTF_8),
+                  limits.maximumBytes());
+          var format =
+              new JsonImportFormat<>(
+                  DocumentId.parse("example:versioned_json"),
+                  definition,
+                  JsonImportFormat.Mode.SCHEMA_ENVELOPE,
+                  limits,
+                  DraftLimits.CONFIGURATION,
+                  ImportFormat.InvalidDraftPolicy.REFUSE);
+          Path chosen = fixture.resolve("reviewed source.json");
+          Files.write(chosen, input.bytes());
+          var imports =
+              ownerExecutor
+                  .submit(
+                      () ->
+                          actions.imports(
+                              new FileImportSource(
+                                  DocumentId.parse("example:chosen_profile"),
+                                  chosen,
+                                  limits.maximumBytes()),
+                              List.of(format)))
+                  .get();
+          var preview =
+              await(
+                  DocumentActions.result(
+                      ownerExecutor
+                          .submit(() -> imports.preview(EntryPoint.GUI, format.id()))
+                          .get()));
+          if (!preview.stageable()
+              || !preview.comparisonAvailable()
+              || preview.sourceSchemaVersion().orElseThrow() != 1
+              || !preview.source().sha256().equals(input.sha256())
+              || preview.changes().stream()
+                  .noneMatch(c -> c.path().equals(FieldPath.ROOT.field("name"))))
+            throw new IllegalStateException(
+                "Public admitted import lost its source/comparison identity");
+          await(
+              DocumentActions.result(
+                  ownerExecutor.submit(() -> imports.stage(EntryPoint.COMMAND, preview)).get()));
+          if (!actor
+                  .view()
+                  .snapshot()
+                  .orElseThrow()
+                  .inspect()
+                  .candidate()
+                  .orElseThrow()
+                  .value()
+                  .name()
+                  .equals("Source import")
+              || !await(actor.undo())
+                  .snapshot()
+                  .orElseThrow()
+                  .inspect()
+                  .candidate()
+                  .orElseThrow()
+                  .value()
+                  .name()
+                  .equals("Imported draft")
+              || !await(actor.redo())
+                  .snapshot()
+                  .orElseThrow()
+                  .inspect()
+                  .candidate()
+                  .orElseThrow()
+                  .value()
+                  .name()
+                  .equals("Source import")
+              || !Files.readString(binding.path()).equals(sourceBeforeStage)
+              || !owner.handle().view().value().orElseThrow().name().equals("Actor"))
+            throw new IllegalStateException(
+                "Public admitted import lost history or performed a write");
+          ownerExecutor.submit(actions::close).get();
         } finally {
           actor.close();
         }

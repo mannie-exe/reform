@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Admitted import services
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 432 reported core cases, two native-file tests, twelve tooling controls and the packaged headless consumer. The public consumer reads an actual admitted versioned-JSON file, checks source/schema/typed-comparison identity, stages through the command entry point and restores the preceding draft with one undo/redo. Saved file bytes and effective runtime values stay unchanged until an independent Save. Native examples compile; this slice has no additional Minecraft runtime run.
+
+The combined artifact is `6c4f229dee755954dbb0a71f3ab97ca6ddda7fd8aaf5054c065ea0f0a57603b0`, sources `337e29ab4ed41a0a7934474f8781b09e6080aa87ce0b11e7dc0b2a02b7e6044d` and core `f43debb83cb071fe7d77caf89cb4f01c45aa284ba3bcbb1177a8146737fb839e`. All 107 owned Java source entries exactly match that source JAR. Markdown, local links, CI syntax and diff checks pass.
+
+Two actual negative controls reproduced older source registration replacing a newer import service and source-guard permission revocation still entering native capture. Request epochs and a fresh post-guard READ check fix those original controls. Staging carries the exact reviewed target to the worker rather than adopting a later cached target. Other controls cover real source/target files and executor ownership, invalid-draft policy, current/imported diagnostics, explicit version/UTF-8/null/number spelling, strict byte/editor/comparison bounds, revocation, stale drafts, independent source replacement, bounded ticket eviction, cancellation/close and retained prior history. A failed foreign-thread close preserves the active owner's later edit/cleanup. No timing race, hostile-process filesystem isolation or native GUI claim is inferred from these controls.
+
+[Local import](imports.md) owns the API/defaults and remaining presentation boundary. Native file selection, import controls/commands and integrated/full-pack/accessibility/cost qualification remain required. The broader Phase 1 goal stays incomplete; no consumer migration, publication or personal rollout is included.
+
 ## Reviewed replacement foundation
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 402 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. The public Maven consumer stages a reviewed whole draft on its actual actor, restores it with one undo/redo, and verifies unchanged file bytes and runtime publication. Native examples compile; this slice has no additional native runtime run.

@@ -1,7 +1,5 @@
 package design.inherent.reform.operation;
 
-import com.google.gson.JsonElement;
-import com.mojang.serialization.JsonOps;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
@@ -12,19 +10,19 @@ import design.inherent.reform.edit.DraftEdits;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.importing.ImportFormat;
+import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.validation.ValidationReport;
-import design.inherent.reform.value.DefaultedType;
 import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueType;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -133,12 +131,16 @@ public final class DocumentActions<T> implements AutoCloseable {
           .build();
 
   private final OwnerContext context;
+  private final OwnerContext.Access access;
   private final EditorActor<T> actor;
   private final DocumentDefinition<T> definition;
   private final OperationScope scope;
   private final FieldIndex fields;
   private final int maximumExportBytes;
   private boolean ownsContext;
+  private boolean closed;
+  private DocumentImports<T> imports;
+  private Object importEpoch;
   private OperationHandle<EditorActor.View<T>> initialLoad;
   private final OperationDescriptor<Empty, EditorActor.View<T>> load,
       undo,
@@ -168,6 +170,7 @@ public final class DocumentActions<T> implements AutoCloseable {
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
     this.context = context;
+    this.access = access;
     this.actor = actor;
     this.definition = actor.definition();
     this.maximumExportBytes = maximumExportBytes;
@@ -322,6 +325,38 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   public DocumentDefinition<T> definition() {
     return definition;
+  }
+
+  /** Replace this editor's borrowed-source import review, preserving its actual draft/history. */
+  public DocumentImports<T> imports(
+      ImportSource source, List<? extends ImportFormat<T>> formats, DocumentImports.Limits limits) {
+    context.requireOwner();
+    var epoch = new Object();
+    importEpoch = epoch;
+    access.require(OwnerContext.Right.READ);
+    requireImportEpoch(epoch);
+    var previous = imports;
+    imports = null;
+    if (previous != null) previous.close();
+    requireImportEpoch(epoch);
+    var requested = new DocumentImports<>(context, access, actor, source, formats, limits);
+    try {
+      requireImportEpoch(epoch);
+      imports = requested;
+      return requested;
+    } catch (RuntimeException | Error superseded) {
+      requested.close();
+      throw superseded;
+    }
+  }
+
+  private void requireImportEpoch(Object requested) {
+    if (closed || requested != importEpoch)
+      throw new PolicyRefusal("import.superseded", "A newer import source replaced this request");
+  }
+
+  public DocumentImports<T> imports(ImportSource source, List<? extends ImportFormat<T>> formats) {
+    return imports(source, formats, DocumentImports.Limits.STANDARD);
   }
 
   public DocumentSession.CommitKind commitKind() {
@@ -509,80 +544,20 @@ public final class DocumentActions<T> implements AutoCloseable {
     var before = observed.baseline().inspect(definition, observed.snapshot().jsonLimits());
     var after = observed.snapshot().inspect();
     var report = before.report().and(after.report());
-    var changes = new ArrayList<Change>();
-    if (before.candidate().isPresent() && after.candidate().isPresent()) {
-      var first =
-          definition
-              .type()
-              .codec()
-              .encodeStart(JsonOps.INSTANCE, before.candidate().orElseThrow().value())
-              .getOrThrow();
-      var second =
-          definition
-              .type()
-              .codec()
-              .encodeStart(JsonOps.INSTANCE, after.candidate().orElseThrow().value())
-              .getOrThrow();
-      differences(definition.type(), FieldPath.ROOT, first, second, changes);
-    }
+    var changes =
+        before.candidate().isPresent() && after.candidate().isPresent()
+            ? TypedDifferences.between(
+                definition.type(),
+                before.candidate().orElseThrow().value(),
+                after.candidate().orElseThrow().value(),
+                Integer.MAX_VALUE,
+                Integer.MAX_VALUE)
+            : List.<Change>of();
     return new Comparison(
         ref(observed),
         !observed.snapshot().draft().sameValue(observed.baseline()),
         changes,
         report);
-  }
-
-  private static <V> boolean equivalent(ValueType<V> type, JsonElement first, JsonElement second) {
-    return type.equivalent(comparisonValue(type, first), comparisonValue(type, second));
-  }
-
-  private static <V> V comparisonValue(ValueType<V> type, JsonElement encoded) {
-    if (encoded == null && type instanceof DefaultedType<V> defaults) return defaults.fallback();
-    if (encoded == null) throw new IllegalStateException("A required comparison field is missing");
-    var value = type.decode(JsonOps.INSTANCE, encoded, FieldPath.ROOT);
-    if (value.value().isEmpty() || !value.report().valid())
-      throw new IllegalStateException("Previously validated comparison could not decode");
-    return value.value().orElseThrow();
-  }
-
-  private static <V> String comparisonJson(ValueType<V> type, JsonElement encoded) {
-    return encoded == null
-        ? type.codec()
-            .encodeStart(JsonOps.INSTANCE, comparisonValue(type, null))
-            .getOrThrow()
-            .toString()
-        : encoded.toString();
-  }
-
-  private static void differences(
-      ValueType<?> type,
-      FieldPath path,
-      JsonElement first,
-      JsonElement second,
-      List<Change> changes) {
-    if (equivalent(type, first, second)) return;
-    if (type.shape() instanceof ValueShape.Alternative alternative) {
-      String before = first.getAsJsonObject().get(alternative.discriminator()).getAsString();
-      String after = second.getAsJsonObject().get(alternative.discriminator()).getAsString();
-      if (before.equals(after)) {
-        differences(
-            alternative.variant(before).orElseThrow().type(),
-            path.variant(before),
-            first.getAsJsonObject().get(alternative.payload()),
-            second.getAsJsonObject().get(alternative.payload()),
-            changes);
-        return;
-      }
-    }
-    if (type.shape() instanceof ValueShape.ObjectValue object) {
-      for (var field : object.fields())
-        differences(
-            field.type(),
-            path.field(field.id()),
-            first.getAsJsonObject().get(field.id()),
-            second.getAsJsonObject().get(field.id()),
-            changes);
-    } else changes.add(new Change(path, comparisonJson(type, first), comparisonJson(type, second)));
   }
 
   private ExportArtifact export(EditorActor.Inspection<T> observed) {
@@ -597,13 +572,21 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   @Override
   public void close() {
+    if (closed) return;
+    if (context.isOpen()) context.checkOwnerThread();
+    closed = true;
+    importEpoch = new Object();
     try {
-      scope.close();
+      if (imports != null) imports.close();
     } finally {
       try {
-        actor.close();
+        scope.close();
       } finally {
-        if (ownsContext) context.close();
+        try {
+          actor.close();
+        } finally {
+          if (ownsContext) context.close();
+        }
       }
     }
   }
