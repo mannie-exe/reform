@@ -66,8 +66,11 @@ public final class NativeFormProbe {
   private NativeCollectionControls collections;
   private NativeImportControls imports;
   private NativeChooserControls chooser;
+  private NativeConflictControls conflicts;
   private NativeImportCommandControls commandImports;
   private java.util.concurrent.CompletableFuture<JsonObject> importCommands;
+  private NativeConflictCommandControls commandConflicts;
+  private java.util.concurrent.CompletableFuture<JsonObject> conflictCommands;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -104,7 +107,11 @@ public final class NativeFormProbe {
               "imports-reopen",
               "command-imports",
               "command-imports-reopen",
-              "chooser")
+              "chooser",
+              "conflicts",
+              "conflicts-reopen",
+              "command-conflicts",
+              "command-conflicts-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -245,6 +252,22 @@ public final class NativeFormProbe {
         action.run();
         return;
       }
+      if (mode.startsWith("command-conflicts")) {
+        if (commandConflicts == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.ConflictExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          commandConflicts = new NativeConflictCommandControls();
+          conflictCommands =
+              commandConflicts.run(mode.equals("command-conflicts-reopen")).toCompletableFuture();
+        }
+        if (conflictCommands.isDone()) {
+          report.add("commandConflicts", conflictCommands.join());
+          finish(null);
+        }
+        return;
+      }
       if (mode.startsWith("command-imports")) {
         if (commandImports == null) {
           if (!(mc.screen instanceof TitleScreen)
@@ -271,6 +294,27 @@ public final class NativeFormProbe {
         }
         if (chooser.tick()) {
           report.add("chooser", chooser.report());
+          finish(null);
+        }
+        return;
+      }
+      if (mode.startsWith("conflicts")) {
+        if (conflicts == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.ConflictExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          conflicts =
+              new NativeConflictControls(
+                  mode.equals("conflicts-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (conflicts.tick()) {
+          report.add("conflicts", conflicts.report());
           finish(null);
         }
         return;
@@ -843,7 +887,9 @@ public final class NativeFormProbe {
     if (collections != null) report.add("collections", collections.report());
     if (imports != null) report.add("imports", imports.report());
     if (chooser != null) report.add("chooser", chooser.report());
+    if (conflicts != null) report.add("conflicts", conflicts.report());
     if (commandImports != null) report.add("commandImports", commandImports.report());
+    if (commandConflicts != null) report.add("commandConflicts", commandConflicts.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -878,6 +924,10 @@ public final class NativeFormProbe {
       commandImports.shutdown();
       report.add("commandImports", commandImports.report());
     }
+    if (commandConflicts != null) {
+      commandConflicts.shutdown();
+      report.add("commandConflicts", commandConflicts.report());
+    }
     try {
       if (reentrantSettings != null) {
         check(
@@ -908,6 +958,10 @@ public final class NativeFormProbe {
           example.reform.ImportExample.settings().status().lifecycle()
               == ClientJsonSettings.Lifecycle.CLOSED,
           "Import settings context survived shutdown");
+      check(
+          example.reform.ConflictExample.settings().status().lifecycle()
+              == ClientJsonSettings.Lifecycle.CLOSED,
+          "Conflict settings context survived shutdown");
       var settings = ClientExample.settings();
       check(
           settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,

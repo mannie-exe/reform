@@ -453,13 +453,7 @@ public final class DocumentImports<T> implements AutoCloseable {
   }
 
   private DocumentActions.DraftRef ref(EditSession.Snapshot<T> snapshot) {
-    return new DocumentActions.DraftRef(
-        definition.id(),
-        snapshot.context(),
-        snapshot.session(),
-        snapshot.generation(),
-        snapshot.version(),
-        snapshot.sourceRevision());
+    return DocumentActions.DraftRef.of(snapshot);
   }
 
   private void requireTarget(DocumentActions.DraftRef target) {

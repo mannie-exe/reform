@@ -79,3 +79,25 @@ class NativeFormFixtureGuards(unittest.TestCase):
         result["native"]["chooser"]["nativeFileDialogExercised"] = True
         self.assertTrue(PROBE.successful_run(result, "chooser", "exact-jar"))
         self.assertFalse(PROBE.successful_run(result, "chooser", "different-jar"))
+
+    def test_conflict_success_requires_actual_choices_and_matching_run(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "conflicts",
+            "librarySha256": "exact-jar"}}
+        self.assertFalse(PROBE.successful_run(result, "conflicts", "exact-jar"))
+        result["native"]["conflicts"] = {"status": "PASS"}
+        self.assertTrue(PROBE.successful_run(result, "conflicts", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "conflicts-reopen", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "conflicts", "different-jar"))
+        result["native"]["nativeShutdownClosed"] = False
+        self.assertFalse(PROBE.successful_run(result, "conflicts", "exact-jar"))
+
+    def test_conflict_commands_require_a_closed_native_context(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "command-conflicts",
+            "librarySha256": "exact-jar", "commandConflicts": {"status": "PASS", "contextClosed": False}}}
+        self.assertFalse(PROBE.successful_run(result, "command-conflicts", "exact-jar"))
+        result["native"]["commandConflicts"]["contextClosed"] = True
+        self.assertTrue(PROBE.successful_run(result, "command-conflicts", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "command-conflicts-reopen", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "command-conflicts", "different-jar"))

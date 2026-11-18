@@ -168,7 +168,7 @@ public final class ReviewProfile {
     RangeEditing.verify();
     DependentEditing.verify();
     System.out.println(
-        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe/typed-maps/sets/field-defaults/optionals/variants/composition/units/ranges/dependencies/scalar-selection; game classes absent");
+        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe/typed-maps/sets/field-defaults/optionals/variants/composition/units/ranges/dependencies/scalar-selection/manual-conflict-service; game classes absent");
   }
 
   private static void verifyStorage(DocumentDefinition<Profile> definition, JsonLimits limits)
@@ -398,6 +398,47 @@ public final class ReviewProfile {
               || !owner.handle().view().value().orElseThrow().name().equals("Actor"))
             throw new IllegalStateException(
                 "Public admitted import lost history or performed a write");
+          Files.writeString(
+              binding.path(),
+              "{\"schemaVersion\":1,\"values\":{\"name\":\"Remote saved\",\"minimum\":20,\"maximum\":112,\"references\":[\"missing:retained\"]}}");
+          var remote = Files.readString(binding.path());
+          await(actor.load());
+          var conflicts = ownerExecutor.submit(() -> actions.conflicts()).get();
+          var conflict =
+              await(
+                  DocumentActions.result(
+                      ownerExecutor.submit(() -> conflicts.preview(EntryPoint.COMMAND)).get()));
+          var choices = new java.util.LinkedHashMap<FieldPath, ConflictReview.Choice>();
+          for (var entry : conflict.entries())
+            choices.put(
+                entry.path(),
+                entry.path().equals(FieldPath.ROOT.field("name"))
+                    ? ConflictReview.Choice.DRAFT
+                    : ConflictReview.Choice.OBSERVED);
+          var reconciled =
+              await(
+                  DocumentActions.result(
+                      ownerExecutor
+                          .submit(() -> conflicts.resolve(EntryPoint.GUI, conflict, choices))
+                          .get()));
+          var candidate =
+              reconciled
+                  .resolved()
+                  .snapshot()
+                  .orElseThrow()
+                  .inspect()
+                  .candidate()
+                  .orElseThrow()
+                  .value();
+          if (!reconciled.report().valid()
+              || !candidate.name().equals("Source import")
+              || candidate.maximum() != 112
+              || !candidate.references().equals(List.of("missing:retained"))
+              || reconciled.resolved().canUndo()
+              || !Files.readString(binding.path()).equals(remote)
+              || !owner.handle().view().value().orElseThrow().name().equals("Actor"))
+            throw new IllegalStateException(
+                "Public manual conflict service lost selected input or wrote/published it");
           ownerExecutor.submit(actions::close).get();
         } finally {
           actor.close();

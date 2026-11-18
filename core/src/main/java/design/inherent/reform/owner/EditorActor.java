@@ -49,9 +49,40 @@ public final class EditorActor<T> implements AutoCloseable {
       ValidationReport observationReport,
       ValidationReport operationReport,
       Optional<CommitReceipt<T>> lastReceipt,
-      Map<FieldPath, DraftTree.InputState> inputs) {
+      Map<FieldPath, DraftTree.InputState> inputs,
+      boolean conflictObservationAvailable) {
     public View {
       inputs = Map.copyOf(inputs);
+    }
+
+    /** Older observations do not qualify a current conflict source. */
+    public View(
+        Availability availability,
+        Optional<EditSession.Snapshot<T>> snapshot,
+        boolean dirty,
+        boolean canUndo,
+        boolean canRedo,
+        Optional<EditSession.PendingState> pending,
+        Optional<ConflictReview> review,
+        ValidationReport validation,
+        ValidationReport observationReport,
+        ValidationReport operationReport,
+        Optional<CommitReceipt<T>> lastReceipt,
+        Map<FieldPath, DraftTree.InputState> inputs) {
+      this(
+          availability,
+          snapshot,
+          dirty,
+          canUndo,
+          canRedo,
+          pending,
+          review,
+          validation,
+          observationReport,
+          operationReport,
+          lastReceipt,
+          inputs,
+          false);
     }
 
     /** Older observers supply no per-input evidence; local dependencies remain unknown. */
@@ -115,6 +146,7 @@ public final class EditorActor<T> implements AutoCloseable {
     EditSession.EditGroup typing;
     String typingUnit = "";
     long typingFloor;
+    boolean conflictSourceAvailable = true;
     ValidationReport observationReport = ValidationReport.VALID;
     ValidationReport operationReport = ValidationReport.VALID;
 
@@ -282,6 +314,10 @@ public final class EditorActor<T> implements AutoCloseable {
                                         .filter(observed -> selected.source == plan.baseline)
                                         .ifPresent(
                                             observed -> {
+                                              selected.conflictSourceAvailable =
+                                                  observed.document().draft().isPresent();
+                                              selected.observationReport =
+                                                  observed.document().report();
                                               if (observed.document().draft().isPresent()) {
                                                 if (!observed
                                                     .document()
@@ -295,6 +331,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                                       observed.document().draft().orElseThrow(),
                                                       observed.document().revision());
                                                 selected.source = observed;
+                                                selected.conflictSourceAvailable = true;
                                                 selected.observationReport =
                                                     observed.document().report();
                                               }
@@ -363,7 +400,9 @@ public final class EditorActor<T> implements AutoCloseable {
             selected.observationReport,
             selected.operationReport,
             Optional.ofNullable(selected.lastReceipt),
-            inspection.inputs());
+            inspection.inputs(),
+            selected.conflictSourceAvailable
+                && selected.editor.review().filter(review -> review.matches(snapshot)).isPresent());
     synchronized (lifetime) {
       current();
       if (model != selected) throw new PolicyRefusal("editor.changed", "Editing context changed");
@@ -402,6 +441,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                   if (observed.document().draft().isEmpty()) {
                                     if (selected != null) {
                                       selected.observationReport = observed.document().report();
+                                      selected.conflictSourceAvailable = false;
                                       return publish(selected);
                                     }
                                     var unavailable =
@@ -423,6 +463,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                       return publish(selected);
                                     selected.pending = null;
                                     selected.source = observed;
+                                    selected.conflictSourceAvailable = true;
                                     selected.observationReport = observed.document().report();
                                     return publish(selected);
                                   }
@@ -431,6 +472,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                         observed.document().draft().orElseThrow(),
                                         observed.document().revision());
                                     selected.source = observed;
+                                    selected.conflictSourceAvailable = true;
                                     selected.observationReport = observed.document().report();
                                     return publish(selected);
                                   }
@@ -557,9 +599,14 @@ public final class EditorActor<T> implements AutoCloseable {
     var frozen = Map.copyOf(choices);
     return change(
         selected -> {
+          if (!selected.conflictSourceAvailable)
+            throw new PolicyRefusal(
+                "conflict.observation_unavailable",
+                "Read the current source before resolving this conflict");
           selected.editor.resolve(review, frozen);
           selected.typingFloor = selected.editor.snapshot().generation();
           selected.typing = null;
+          selected.operationReport = ValidationReport.VALID;
         });
   }
 
@@ -660,6 +707,7 @@ public final class EditorActor<T> implements AutoCloseable {
         if (accepted == EditSession.Acknowledgement.ACCEPTED
             || accepted == EditSession.Acknowledgement.REVIEW_REQUIRED) {
           selected.source = source;
+          selected.conflictSourceAvailable = true;
           selected.observationReport = source.document().report();
           selected.pending = null;
         }
@@ -673,10 +721,13 @@ public final class EditorActor<T> implements AutoCloseable {
           .observation()
           .ifPresent(
               observed -> {
+                selected.conflictSourceAvailable = observed.document().draft().isPresent();
+                selected.observationReport = observed.document().report();
                 if (observed.document().draft().isPresent()) {
                   selected.editor.reviewConflict(
                       observed.document().draft().orElseThrow(), observed.document().revision());
                   selected.source = observed;
+                  selected.conflictSourceAvailable = true;
                   selected.observationReport = observed.document().report();
                 }
               });

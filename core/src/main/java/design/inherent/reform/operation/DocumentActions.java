@@ -10,6 +10,7 @@ import design.inherent.reform.edit.DraftEdits;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.edit.EditSession;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.owner.DocumentSession;
@@ -48,7 +49,17 @@ public final class DocumentActions<T> implements AutoCloseable {
       UUID session,
       long generation,
       long version,
-      String sourceRevision) {}
+      String sourceRevision) {
+    public static DraftRef of(EditSession.Snapshot<?> snapshot) {
+      return new DraftRef(
+          snapshot.definition().id(),
+          snapshot.context(),
+          snapshot.session(),
+          snapshot.generation(),
+          snapshot.version(),
+          snapshot.sourceRevision());
+    }
+  }
 
   public record FieldDescription(
       FieldPath path, String selector, ValueShape shape, Optional<String> defaultText) {}
@@ -141,6 +152,8 @@ public final class DocumentActions<T> implements AutoCloseable {
   private boolean closed;
   private DocumentImports<T> imports;
   private Object importEpoch;
+  private DocumentConflicts<T> conflicts;
+  private Object conflictEpoch;
   private OperationHandle<EditorActor.View<T>> initialLoad;
   private final OperationDescriptor<Empty, EditorActor.View<T>> load,
       undo,
@@ -368,6 +381,53 @@ public final class DocumentActions<T> implements AutoCloseable {
     return Optional.ofNullable(imports).filter(DocumentImports::isOpen);
   }
 
+  /** Current manual review workflow; creating it reads no source and changes no draft. */
+  public DocumentConflicts<T> conflicts() {
+    context.requireOwner();
+    access.require(OwnerContext.Right.READ);
+    if (closed) throw new PolicyRefusal("editor.closed", "This editing workflow is closed");
+    return conflicts != null && conflicts.isOpen()
+        ? conflicts
+        : conflicts(DocumentConflicts.Limits.STANDARD);
+  }
+
+  /** Noncreating lookup; retained review IDs never create another editor or review scope. */
+  public Optional<DocumentConflicts<T>> activeConflicts() {
+    context.requireOwner();
+    access.require(OwnerContext.Right.READ);
+    if (closed) throw new PolicyRefusal("editor.closed", "This editing workflow is closed");
+    return Optional.ofNullable(conflicts).filter(DocumentConflicts::isOpen);
+  }
+
+  /** Explicitly replace this editor's review presentation limits, preserving its actual draft. */
+  public DocumentConflicts<T> conflicts(DocumentConflicts.Limits limits) {
+    context.requireOwner();
+    var epoch = new Object();
+    conflictEpoch = epoch;
+    access.require(OwnerContext.Right.READ);
+    requireConflictEpoch(epoch);
+    var previous = conflicts;
+    conflicts = null;
+    if (previous != null) previous.close();
+    requireConflictEpoch(epoch);
+    var requested =
+        new DocumentConflicts<>(context, access, actor, fields, limits, this::readiness);
+    try {
+      requireConflictEpoch(epoch);
+      conflicts = requested;
+      return requested;
+    } catch (RuntimeException | Error superseded) {
+      requested.close();
+      throw superseded;
+    }
+  }
+
+  private void requireConflictEpoch(Object requested) {
+    if (closed || conflictEpoch != requested)
+      throw new PolicyRefusal(
+          "conflict.superseded", "A newer conflict workflow replaced this request");
+  }
+
   public DocumentSession.CommitKind commitKind() {
     return actor.commitKind();
   }
@@ -539,14 +599,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   private DraftRef ref(EditorActor.Inspection<T> observed) {
-    var snapshot = observed.snapshot();
-    return new DraftRef(
-        definition.id(),
-        snapshot.context(),
-        snapshot.session(),
-        snapshot.generation(),
-        snapshot.version(),
-        snapshot.sourceRevision());
+    return DraftRef.of(observed.snapshot());
   }
 
   private Comparison compare(EditorActor.Inspection<T> observed) {
@@ -585,16 +638,21 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (context.isOpen()) context.checkOwnerThread();
     closed = true;
     importEpoch = new Object();
+    conflictEpoch = new Object();
     try {
       if (imports != null) imports.close();
     } finally {
       try {
-        scope.close();
+        if (conflicts != null) conflicts.close();
       } finally {
         try {
-          actor.close();
+          scope.close();
         } finally {
-          if (ownsContext) context.close();
+          try {
+            actor.close();
+          } finally {
+            if (ownsContext) context.close();
+          }
         }
       }
     }

@@ -362,6 +362,9 @@ class EditSessionTest {
     var review = session.reviewConflict(observed, "saved-2");
     assertEquals(EditSession.PreparationState.REVIEW_REQUIRED, session.prepareSubmission().state());
     assertEquals(2, review.entries().size());
+    assertEquals(ConflictReview.Basis.OBSERVED_BASELINE, review.basis());
+    assertEquals("saved-1", review.baselineRevision());
+    assertEquals("saved-2", review.observedRevision());
     assertThrows(
         IllegalArgumentException.class,
         () -> session.resolve(review, Map.of(NAME, ConflictReview.Choice.DRAFT)));
@@ -410,6 +413,9 @@ class EditSessionTest {
     assertEquals(3, value(session).count());
     var review = session.review().orElseThrow();
     var choices = new HashMap<FieldPath, ConflictReview.Choice>();
+    assertEquals(ConflictReview.Basis.SUBMITTED_DRAFT, review.basis());
+    assertEquals(submitted.sourceRevision(), review.baselineRevision());
+    assertEquals("saved-2", review.observedRevision());
     review
         .entries()
         .forEach(

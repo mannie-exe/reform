@@ -10,6 +10,11 @@ import java.util.UUID;
 
 /** Explicit manual choices against an observed revision; collections are indivisible here. */
 public final class ConflictReview {
+  public enum Basis {
+    OBSERVED_BASELINE,
+    SUBMITTED_DRAFT
+  }
+
   public enum Choice {
     BASELINE,
     OBSERVED,
@@ -23,6 +28,8 @@ public final class ConflictReview {
   private final long generation;
   private final long draftVersion;
   private final String observedRevision;
+  private final Basis basis;
+  private final String baselineRevision;
   private final DraftTree observed;
   private final List<Entry> entries;
 
@@ -32,6 +39,8 @@ public final class ConflictReview {
       long generation,
       long draftVersion,
       String observedRevision,
+      Basis basis,
+      String baselineRevision,
       DraftTree baseline,
       DraftTree observed,
       DraftTree draft,
@@ -41,6 +50,8 @@ public final class ConflictReview {
     this.generation = generation;
     this.draftVersion = draftVersion;
     this.observedRevision = observedRevision;
+    this.basis = java.util.Objects.requireNonNull(basis);
+    this.baselineRevision = java.util.Objects.requireNonNull(baselineRevision);
     this.observed = observed;
     var found = new ArrayList<Entry>();
     collect(type, FieldPath.ROOT, baseline.root(), observed.root(), draft.root(), found);
@@ -55,8 +66,23 @@ public final class ConflictReview {
     return observedRevision;
   }
 
+  public Basis basis() {
+    return basis;
+  }
+
+  /** Owner revision underlying the baseline or submitted draft; not a live source observation. */
+  public String baselineRevision() {
+    return baselineRevision;
+  }
+
   public List<Entry> entries() {
     return entries;
+  }
+
+  /** Cached identity check only; this does not grant source access or resolution authority. */
+  public boolean matches(EditSession.Snapshot<?> snapshot) {
+    return matches(
+        snapshot.session(), snapshot.context(), snapshot.generation(), snapshot.version());
   }
 
   DraftTree observed() {

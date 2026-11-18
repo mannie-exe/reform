@@ -199,6 +199,7 @@ public final class SettingsCommands {
       root.then(command("admit", actions -> actions.admit(EntryPoint.COMMAND)));
       root.then(command("apply", actions -> actions.applySaved(EntryPoint.COMMAND)));
       root.then(new ImportCommands<>(this).tree());
+      root.then(new ConflictCommands<>(this).tree());
       for (String action : List.of("status", "cancel"))
         root.then(
             LiteralArgumentBuilder.<S>literal(action)
@@ -401,7 +402,20 @@ public final class SettingsCommands {
       var result = snapshot.result().orElse(null);
       if (result instanceof design.inherent.reform.operation.DocumentImports.Preview preview)
         return ImportCommands.previewReply(this, kind, preview, actions, Optional.of(snapshot));
-      if (result instanceof EditorActor.Commit<?> saved) {
+      if (result instanceof design.inherent.reform.operation.DocumentConflicts.Preview preview)
+        return ConflictCommands.previewReply(
+            this, kind, preview, actions, Optional.of(snapshot), 0);
+      if (result
+          instanceof design.inherent.reform.operation.DocumentConflicts.Resolution<?> resolved) {
+        text.append("choices resolved in draft ")
+            .append(resolved.resolved().snapshot().orElseThrow().version())
+            .append("; Save is separate; validation=")
+            .append(resolved.report().valid());
+        if (!resolved.report().valid()) {
+          level = Level.WARNING;
+          text.append("; ").append(first(resolved.report()));
+        }
+      } else if (result instanceof EditorActor.Commit<?> saved) {
         if (saved.receipt().isPresent()) {
           var receipt = saved.receipt().orElseThrow();
           text.append("persistence=")

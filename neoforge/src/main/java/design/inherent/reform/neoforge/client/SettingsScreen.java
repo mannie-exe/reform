@@ -133,7 +133,7 @@ public final class SettingsScreen<T> extends FormScreen {
   private long formGeneration;
   private FormPanel panel;
   private EditorActor.View<T> displayed;
-  private Button save, undo, redo, revert, defaults, reload, importData, done;
+  private Button save, undo, redo, revert, defaults, reload, importData, conflict, done;
   private Object widgetGeneration;
   private int bodyTop, statusTop, pendingEdits;
   private long version;
@@ -262,6 +262,10 @@ public final class SettingsScreen<T> extends FormScreen {
                 : text("reload", "Reload saved"),
             this::requestReload);
     importData = button(text("import", "Import…"), this::openImport);
+    conflict =
+        current.review().isPresent()
+            ? button(text("conflict", "Review conflict…"), this::openConflict)
+            : null;
     done = button(text("done", "Done"), this::onClose);
     var geometry =
         FormGeometry.controls(
@@ -858,6 +862,53 @@ public final class SettingsScreen<T> extends FormScreen {
     }
   }
 
+  private void openConflict() {
+    if (closed
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()
+        || actions.view().review().isEmpty()
+        || actions.view().pending().isPresent()) return;
+    final ConflictScreen<T> screen;
+    try {
+      screen =
+          new ConflictScreen<>(
+              text("conflict_title", "Review conflict"),
+              contextLabel,
+              actions,
+              () -> !closed,
+              result -> {
+                result.ifPresent(
+                    resolved ->
+                        notice =
+                            resolved.report().valid()
+                                ? text(
+                                    "conflict_resolved",
+                                    "Choices resolved in this draft. Save or apply separately.")
+                                : text(
+                                        "conflict_needs_repair",
+                                        "Choices resolved in this draft; validation needs attention.")
+                                    .copy()
+                                    .append(" ")
+                                    .append(first(resolved.report())));
+                synchronize(Map.copyOf(versions));
+                minecraft.setScreen(this);
+              },
+              actions::close);
+    } catch (RuntimeException refused) {
+      notice = failure(refused);
+      feedback();
+      return;
+    }
+    handoff = true;
+    try {
+      minecraft.setScreen(screen);
+    } finally {
+      handoff = false;
+    }
+  }
+
   private Component label(FormModel.Node field) {
     return switch (field.role()) {
       case ROOT -> title;
@@ -1324,6 +1375,8 @@ public final class SettingsScreen<T> extends FormScreen {
     undo.active = historyReady && current.canUndo();
     redo.active = historyReady && current.canRedo();
     importData.active = historyReady && current.pending().isEmpty() && current.review().isEmpty();
+    if (conflict != null)
+      conflict.active = historyReady && current.review().isPresent() && current.pending().isEmpty();
     save.setMessage(unaccepted ? text("retry_edits", "Retry edits") : commitLabel());
     save.active =
         current.snapshot().isPresent()
@@ -1598,6 +1651,7 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private boolean layoutChanged(EditorActor.View<T> view) {
+    if ((conflict != null) != view.review().isPresent()) return true;
     if (view.snapshot().isEmpty()) return !formLayout.isEmpty();
     var snapshot = view.snapshot().orElseThrow();
     if (!snapshot.session().equals(formSession) || snapshot.generation() != formGeneration)

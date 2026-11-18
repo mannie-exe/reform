@@ -17,6 +17,7 @@ public final class ClientExample {
     DependencyExample.register(bus, container);
     CollectionExample.register(bus, container);
     ImportExample.register(bus, container);
+    ConflictExample.register(bus, container);
     preferences = ClientJsonSettings.clientJson(bus, container, NativeExample.DEFINITION);
     preferences.registerMenu(Component.literal("Native example settings"));
     preferences.registerCommands("reformprefs");

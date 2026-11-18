@@ -373,6 +373,41 @@ class EditorActorTest {
   }
 
   @Test
+  void malformedReloadCannotResolveAnOlderSavedObservation() throws Exception {
+    try (var h = new Harness(true)) {
+      await(h.actor.setRaw(COUNT_PATH, "3"));
+      Files.writeString(h.path, "{\"schemaVersion\":1,\"values\":{\"count\":13}}");
+      var review = await(h.actor.load()).review().orElseThrow();
+      var choices =
+          review.entries().stream()
+              .collect(
+                  Collectors.toMap(
+                      ConflictReview.Entry::path, ignored -> ConflictReview.Choice.DRAFT));
+      Files.writeString(h.path, "not json anymore");
+      var failedRead = await(h.actor.load());
+      assertSame(review, failedRead.review().orElseThrow());
+      assertFalse(failedRead.observationReport().valid());
+      assertFalse(failedRead.conflictObservationAvailable());
+      assertThrows(ExecutionException.class, () -> await(h.actor.resolve(review, choices)));
+      assertEquals(3, value(h.actor.view()));
+      assertEquals("not json anymore", Files.readString(h.path));
+      Files.writeString(h.path, "{\"schemaVersion\":1,\"values\":{\"count\":14}}");
+      var refreshed = await(h.actor.load());
+      assertTrue(refreshed.conflictObservationAvailable());
+      var currentReview = refreshed.review().orElseThrow();
+      assertNotSame(review, currentReview);
+      assertThrows(ExecutionException.class, () -> await(h.actor.resolve(review, choices)));
+      var freshChoices =
+          currentReview.entries().stream()
+              .collect(
+                  Collectors.toMap(
+                      ConflictReview.Entry::path, ignored -> ConflictReview.Choice.DRAFT));
+      assertEquals(3, value(await(h.actor.resolve(currentReview, freshChoices))));
+      assertTrue(Files.readString(h.path).contains("14"));
+    }
+  }
+
+  @Test
   void aLateReadCannotReplaceTypingThatHappenedAfterLoadBegan() throws Exception {
     try (var h = new Harness(true)) {
       h.delayRead.set(true);
