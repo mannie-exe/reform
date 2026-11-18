@@ -2,6 +2,14 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Scalar membership edit foundation
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 382 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. New controls cover one-step addition/removal/undo, retained invalid rows and identities, all-or-nothing capacity/text/node admission, incremental oversized-source repair, list/set distinctions, immutable request snapshots and exact ordinary/compressed codecs. Stale, foreign, versionless, wrong-shape and malformed requests refuse without partial edits.
+
+The packaged compound consumer stages a numeric selection through `DocumentActions`, checks complete owner validation and retained row identity, then restores it with one undo while actual file bytes remain unchanged. The registered COMMON-owner fixture also drives a remove/add batch through native typed services and restores its entire previous input/identity with one undo. Both dedicated boots pass: 39 first-boot/six reopen checks, fifteen structural-service and 27 reference checks each, six initial native saves and zero off-thread validators. Matching task-owned servers/logs are removed; the packaged library loads through named ModDev example/probe containers.
+
+The combined library is `6b7bae96a29eeef6b7059aee8c4e49cf6216603e934e01854f27f926361aa3c0`, sources `f5136c00cc18ecdb559d3e80f6216d000fd2858409deb74262110f00b9d3174a` and core `356a88539ebe818efb0aad7cba724b38da5d852df232c5e7e75fcf46b05dd66f`. [Editing](editing.md#public-structural-edits) owns the action and its bounds. This is the shared edit foundation for multi-selection, not a completed searchable picker or new native GUI qualification. Phase 1 remains incomplete; no consumer migration, publication or personal rollout is included.
+
 ## Local dependencies and explicit JSON nulls
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 375 core cases, the existing twelve properties/1,700 generated checks, two native-file tests and twelve tooling controls. Packaged headless consumers exercise local dependencies alongside units/ranges and existing workflows; the independent native addon/probe compiles. The combined artifact retains 95 main source files. Markdown/link/workflow/diff checks pass separately.

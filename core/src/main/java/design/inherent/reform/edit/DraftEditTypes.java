@@ -72,6 +72,14 @@ final class DraftEditTypes {
                   .field("before", FieldKey.of("before", ROW))
                   .build())
           .variant(
+              "scalar_rows",
+              DraftEdit.ChangeScalarRows.class,
+              RecordTypes.record(DraftEdit.ChangeScalarRows.class)
+                  .field(
+                      "append", FieldKey.of("append", ValueTypes.list(ValueTypes.text(32768), 256)))
+                  .field("remove", FieldKey.of("remove", ValueTypes.set(ValueTypes.uuid(), 256)))
+                  .build())
+          .variant(
               "duplicate",
               DraftEdit.DuplicateRow.class,
               RecordTypes.record(DraftEdit.DuplicateRow.class)

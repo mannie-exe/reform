@@ -38,6 +38,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
@@ -226,6 +227,27 @@ final class CompositionEditing {
           !h.run(() -> h.actions.validate(EntryPoint.GUI)).report().valid(),
           "Incomplete new row silently became a value");
       h.edit(weights.row(added.id()), new DraftEdit.SetRaw("3"));
+      var beforeSelection =
+          (DraftNode.Sequence) h.actions.view().snapshot().orElseThrow().draft().at(weights);
+      h.edit(
+          weights,
+          new DraftEdit.ChangeScalarRows(
+              List.of("4", "5"), Set.of(beforeSelection.rows().getFirst().id())));
+      var selected =
+          (DraftNode.Sequence) h.actions.view().snapshot().orElseThrow().draft().at(weights);
+      require(
+          h.actions.view().validation().valid()
+              && selected.rows().stream()
+                  .map(row -> ((DraftNode.Scalar) row.value()).raw())
+                  .toList()
+                  .equals(List.of("2", "3", "4", "5"))
+              && selected.rows().getFirst().id().equals(beforeSelection.rows().get(1).id()),
+          "Compound scalar selection lost its retained row or complete owner validation");
+      h.run(() -> h.actions.undo(EntryPoint.GUI));
+      require(
+          h.actions.view().snapshot().orElseThrow().draft().at(weights).equals(beforeSelection)
+              && Files.readString(h.file).equals(original),
+          "One undo failed to restore the complete selection without persistence");
       h.edit(
           FieldPath.ROOT
               .field("roles")

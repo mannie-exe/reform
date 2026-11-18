@@ -1,7 +1,9 @@
 package design.inherent.reform.edit;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /** Data-only structural edits; no callback, arbitrary JSON patch or implicit owner effect. */
@@ -16,6 +18,7 @@ public record DraftEdit(DraftTarget target, Action action) {
   public sealed interface Action
       permits SetRaw,
           SetUnitRaw,
+          ChangeScalarRows,
           InsertRow,
           DuplicateRow,
           RemoveRow,
@@ -47,6 +50,27 @@ public record DraftEdit(DraftTarget target, Action action) {
   public record InsertRow(Optional<UUID> before) implements Action {
     public InsertRow {
       Objects.requireNonNull(before);
+    }
+  }
+
+  /** Explicit additions/removals, one history step; existing rows keep identity and order. */
+  public record ChangeScalarRows(List<String> append, Set<UUID> remove) implements Action {
+    public ChangeScalarRows {
+      Objects.requireNonNull(append);
+      Objects.requireNonNull(remove);
+      if ((long) append.size() + remove.size() > 256)
+        throw new IllegalArgumentException("Too many membership changes in one action");
+      // Admit the retained snapshot too; callers may have supplied mutable collections.
+      append = List.copyOf(append);
+      remove = Set.copyOf(remove);
+      if ((long) append.size() + remove.size() > 256)
+        throw new IllegalArgumentException("Too many membership changes in one action");
+      long characters = 0;
+      for (String text : append) {
+        Objects.requireNonNull(text);
+        if (text.length() > 32768 || (characters += text.length()) > 131072)
+          throw new IllegalArgumentException("Membership input exceeds its text budget");
+      }
     }
   }
 

@@ -20,7 +20,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -84,6 +86,40 @@ final class NativeDraftChecks {
                       "native dynamic row uses its declared text type", view.validation().valid());
                   return null;
                 });
+    work =
+        work.thenCompose(
+            ignored -> {
+              var before =
+                  (DraftNode.Sequence) actions.view().snapshot().orElseThrow().draft().at(names);
+              return edit(
+                      context,
+                      actions,
+                      names,
+                      new DraftEdit.ChangeScalarRows(
+                          List.of("choice-a", "choice-b"), Set.of(before.rows().getFirst().id())))
+                  .thenApply(
+                      view -> {
+                        var changed =
+                            (DraftNode.Sequence) view.snapshot().orElseThrow().draft().at(names);
+                        check.accept(
+                            "native membership stages the complete remove/add batch",
+                            view.validation().valid()
+                                && changed.rows().size() == 2
+                                && changed.rows().stream()
+                                    .map(r -> ((DraftNode.Scalar) r.value()).raw())
+                                    .toList()
+                                    .equals(List.of("choice-a", "choice-b")));
+                        return null;
+                      })
+                  .thenCompose(value -> run(context, () -> actions.undo(EntryPoint.GUI)))
+                  .thenApply(
+                      view -> {
+                        check.accept(
+                            "native membership undo restores all prior input and row identities",
+                            view.snapshot().orElseThrow().draft().at(names).equals(before));
+                        return null;
+                      });
+            });
     work =
         work.thenCompose(
                 ignored ->

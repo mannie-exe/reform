@@ -38,7 +38,10 @@ public final class DraftEdits {
       return new DraftNode.Scalar(
           mapped.text(), new DraftNode.UnitInput(input.unit(), input.text(), mapped.state()));
     }
-    if (shape instanceof ValueShape.Sequence sequence && node instanceof DraftNode.Sequence values)
+    if (shape instanceof ValueShape.Sequence sequence
+        && node instanceof DraftNode.Sequence values) {
+      if (action instanceof DraftEdit.ChangeScalarRows change)
+        return scalarRows(sequence, values, change, limits);
       return new DraftNode.Sequence(
           rows(
               values.rows(),
@@ -46,6 +49,7 @@ public final class DraftEdits {
               sequence.maximumSize(),
               () -> blank(sequence.element(), limits)),
           values.unordered());
+    }
     if (shape instanceof ValueShape.Mapping mapping && node instanceof DraftNode.Mapping values)
       return new DraftNode.Mapping(
           rows(
@@ -138,6 +142,31 @@ public final class DraftEdits {
       changed.add(destination > source ? destination - 1 : destination, selected);
     } else throw new IllegalArgumentException("Select a collection row action");
     return changed;
+  }
+
+  private static DraftNode.Sequence scalarRows(
+      ValueShape.Sequence shape,
+      DraftNode.Sequence values,
+      DraftEdit.ChangeScalarRows change,
+      DraftLimits limits) {
+    ValueShape element = shape.element().shape();
+    if (element instanceof ValueShape.Reference<?> reference) element = reference.element().shape();
+    if (!(element instanceof ValueShape.Scalar))
+      throw new IllegalArgumentException("Membership changes need declared scalar elements");
+    if (!change.append().isEmpty()
+        && (long) values.rows().size() - change.remove().size() + change.append().size()
+            > shape.maximumSize())
+      throw new IllegalArgumentException("Complete selection exceeds the collection limit");
+    for (UUID id : change.remove()) index(values.rows(), id);
+    long characters = 0;
+    for (String raw : change.append()) characters += raw.length();
+    if (characters > limits.maximumCharacters())
+      throw new IllegalArgumentException("Selection input exceeds the draft text budget");
+    if (change.append().isEmpty() && change.remove().isEmpty()) return values;
+    var rows = new ArrayList<DraftNode.Row>();
+    for (var row : values.rows()) if (!change.remove().contains(row.id())) rows.add(row);
+    for (var raw : change.append()) rows.add(DraftNode.Row.create(new DraftNode.Scalar(raw)));
+    return new DraftNode.Sequence(rows, values.unordered());
   }
 
   private static int before(List<DraftNode.Row> rows, Optional<UUID> before) {
