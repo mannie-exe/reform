@@ -1,5 +1,7 @@
 package design.inherent.reform.neoforge.client;
 
+import static design.inherent.reform.neoforge.client.FieldLabels.readable;
+
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
@@ -7,6 +9,8 @@ import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.importing.ImportFormat;
+import design.inherent.reform.importing.JsonImportFormat;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
@@ -129,7 +133,7 @@ public final class SettingsScreen<T> extends FormScreen {
   private long formGeneration;
   private FormPanel panel;
   private EditorActor.View<T> displayed;
-  private Button save, undo, redo, revert, defaults, reload, done;
+  private Button save, undo, redo, revert, defaults, reload, importData, done;
   private Object widgetGeneration;
   private int bodyTop, statusTop, pendingEdits;
   private long version;
@@ -257,6 +261,7 @@ public final class SettingsScreen<T> extends FormScreen {
                 ? text("reload_context", "Reload context")
                 : text("reload", "Reload saved"),
             this::requestReload);
+    importData = button(text("import", "Import…"), this::openImport);
     done = button(text("done", "Done"), this::onClose);
     var geometry =
         FormGeometry.controls(
@@ -687,12 +692,7 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private Component inputLabel(FieldPath path) {
-    // Optional/default payloads use their actual declaring field's caption even while absent.
-    for (int i = path.segments().size() - 1; i >= 0; i--)
-      if (path.segments().get(i) instanceof FieldPath.Field field)
-        return Component.translatableWithFallback(
-            labelKey(new FieldPath(path.segments().subList(0, i + 1))), readable(field.id()));
-    return title.copy();
+    return FieldLabels.input(definition.id(), path, title);
   }
 
   private <V> void openReference(
@@ -764,6 +764,55 @@ public final class SettingsScreen<T> extends FormScreen {
       }
     } catch (design.inherent.reform.owner.PolicyRefusal | IllegalArgumentException refused) {
       notice = failure(refused);
+    }
+  }
+
+  private void openImport() {
+    var view = actions.view();
+    if (closed
+        || minecraft.screen != this
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()
+        || view.availability() != EditorActor.Availability.READY
+        || view.snapshot().isEmpty()
+        || view.pending().isPresent()
+        || view.review().isPresent()) return;
+    var snapshot = view.snapshot().orElseThrow();
+    var value =
+        new JsonImportFormat<>(
+            DocumentId.parse("reform:import/value_json"),
+            definition,
+            JsonImportFormat.Mode.VALUE_JSON,
+            snapshot.jsonLimits(),
+            snapshot.draft().limits(),
+            ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE);
+    var versioned =
+        new JsonImportFormat<>(
+            DocumentId.parse("reform:import/schema_json"),
+            definition,
+            JsonImportFormat.Mode.SCHEMA_ENVELOPE,
+            snapshot.jsonLimits(),
+            snapshot.draft().limits(),
+            ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE);
+    var screen =
+        new ImportScreen<>(
+            text("import_title", "Import profile"),
+            contextLabel,
+            actions,
+            List.of(value, versioned),
+            () -> !closed,
+            () -> {
+              synchronize(Map.copyOf(versions));
+              minecraft.setScreen(this);
+            },
+            actions::close);
+    handoff = true;
+    try {
+      minecraft.setScreen(screen);
+    } finally {
+      handoff = false;
     }
   }
 
@@ -1286,6 +1335,7 @@ public final class SettingsScreen<T> extends FormScreen {
             && !unaccepted;
     undo.active = historyReady && current.canUndo();
     redo.active = historyReady && current.canRedo();
+    importData.active = historyReady && current.pending().isEmpty() && current.review().isEmpty();
     save.setMessage(unaccepted ? text("retry_edits", "Retry edits") : commitLabel());
     save.active =
         current.snapshot().isPresent()
@@ -1572,31 +1622,7 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private String labelKey(FieldPath path) {
-    var parts =
-        path.segments().stream()
-            .map(
-                segment ->
-                    switch (segment) {
-                      case FieldPath.Field field -> escape(field.id());
-                      case FieldPath.Row ignored -> "%row";
-                      case FieldPath.Variant variant -> "%variant:" + escape(variant.id());
-                      case FieldPath.Part part -> part == FieldPath.Part.KEY ? "%key" : "%value";
-                    })
-            .toList();
-    return definition.id().namespace()
-        + ":settings/"
-        + escape(definition.id().path())
-        + "/fields/"
-        + String.join("/", parts);
-  }
-
-  private static String escape(String value) {
-    return value.replace("%", "%25").replace("/", "%2F");
-  }
-
-  private static String readable(String id) {
-    var words = id.replace('_', ' ').replace('-', ' ').replaceAll("([a-z])([A-Z])", "$1 $2");
-    return words.isEmpty() ? id : Character.toUpperCase(words.charAt(0)) + words.substring(1);
+    return FieldLabels.key(definition.id(), path);
   }
 
   private static Component first(ValidationReport report) {

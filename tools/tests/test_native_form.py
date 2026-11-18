@@ -39,3 +39,22 @@ class NativeFormFixtureGuards(unittest.TestCase):
         self.assertTrue((self.fixture / "options.txt").is_file())
         PROBE.cleanup_fixture(self.fixture, "own-token")
         self.assertFalse(self.fixture.exists())
+
+    def test_failure_keeps_bounded_crash_causes_before_owned_cleanup(self):
+        PROBE.create_fixture(self.fixture, "own-token")
+        crash = self.fixture / "crash-reports"
+        crash.mkdir()
+        (crash / "crash-normal.txt").write_text("Actual root exception\n")
+        (crash / "crash-oversize.txt").write_bytes(b"x" * 131073)
+        external = self.fixture.parent / "private.txt"
+        external.write_text("outside fixture")
+        (crash / "crash-link.txt").symlink_to(external)
+        reports = PROBE.crash_evidence(self.fixture)
+        self.assertEqual([r["name"] for r in reports], ["crash-normal.txt", "crash-oversize.txt"])
+        self.assertEqual(reports[0]["text"], "Actual root exception\n")
+        self.assertTrue(reports[0]["complete"])
+        self.assertEqual(len(reports[1]["text"]), 131072)
+        self.assertFalse(reports[1]["complete"])
+        PROBE.cleanup_fixture(self.fixture, "own-token")
+        self.assertFalse(self.fixture.exists())
+        self.assertEqual(external.read_text(), "outside fixture")

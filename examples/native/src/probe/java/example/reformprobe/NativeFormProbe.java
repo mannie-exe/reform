@@ -64,6 +64,7 @@ public final class NativeFormProbe {
   private NativeNumericControls numeric;
   private NativeDependencyControls dependencies;
   private NativeCollectionControls collections;
+  private NativeImportControls imports;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -95,7 +96,9 @@ public final class NativeFormProbe {
               "dependencies",
               "dependencies-reopen",
               "collections",
-              "collections-reopen")
+              "collections-reopen",
+              "imports",
+              "imports-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -233,6 +236,29 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("imports")) {
+        if (imports == null) {
+          var status = example.reform.ImportExample.settings().status();
+          if (status.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE)
+            throw new AssertionError("Import initialization unavailable: " + status.report());
+          if (!(mc.screen instanceof TitleScreen)
+              || status.lifecycle() != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          imports =
+              new NativeImportControls(
+                  mode.equals("imports-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (imports.tick()) {
+          report.add("imports", imports.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("collections")) {
@@ -778,6 +804,7 @@ public final class NativeFormProbe {
     if (numeric != null) report.add("numeric", numeric.report());
     if (dependencies != null) report.add("dependencies", dependencies.report());
     if (collections != null) report.add("collections", collections.report());
+    if (imports != null) report.add("imports", imports.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -807,6 +834,7 @@ public final class NativeFormProbe {
   }
 
   private void shutdown(GameShuttingDownEvent event) {
+    if (imports != null) imports.shutdown();
     try {
       if (reentrantSettings != null) {
         check(
@@ -833,6 +861,10 @@ public final class NativeFormProbe {
           example.reform.CollectionExample.settings().status().lifecycle()
               == ClientJsonSettings.Lifecycle.CLOSED,
           "Collection settings context survived shutdown");
+      check(
+          example.reform.ImportExample.settings().status().lifecycle()
+              == ClientJsonSettings.Lifecycle.CLOSED,
+          "Import settings context survived shutdown");
       var settings = ClientExample.settings();
       check(
           settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
