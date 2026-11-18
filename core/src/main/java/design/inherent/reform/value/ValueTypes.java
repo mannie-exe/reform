@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -149,6 +150,11 @@ public final class ValueTypes {
 
   public static <T> DefaultedType<T> defaultedField(ValueType<T> element, T fallback) {
     return new DefaultedType<>(element, fallback);
+  }
+
+  public static <T> ValueType<Optional<T>> optional(
+      ValueType<T> element, ValueShape.OptionalEncoding encoding) {
+    return new OptionalType<>(element, encoding);
   }
 
   private static <N extends Number> ValueType<N> number(

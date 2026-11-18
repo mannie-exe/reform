@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Optional-value increment
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 256 core cases, including nine generated properties/1,400 checks, two native-file tests and twelve tooling controls. The independent Maven consumer persists native-style optional fields through a real bare JSON file without game classes. Native-addon/probe compilation passes; all 68 main Java source files match the source JAR.
+
+Controls cover explicit nullable/singleton encodings, nested empty membership, strict malformed/partial-child refusal, mutable child snapshots, set/map composition, required versus defaulted fields, actual pinned native optional-field encoding in ordinary/compressed JsonOps, raw missing/invalid/inactive input, source addresses, stable collection rows, undo, save acknowledgement, whole-field conflict choices and inactive draft budgets. A 100-case independent membership/late-edit model uses seed `2026111802`.
+
+A new control reproduced compressed explicit emptiness selecting a nonempty missing-field fallback. Encoding now refuses that unrepresentable distinction; ordinary JSON and singleton-list cases retain it. Two other failing controls reproduced old source diagnostics reported as current after disabling an optional or default override. The corrected lookup keeps the retained target but reports stale value, and undo restores its current state.
+
+The exact packaged `1f663b4526043c54ef222a21252eaada81117bb62f3876d1931a79aa0559a275` library passes `python3 tools/native_addon_server_probe.py --registered --java-home /path/to/jdk21 --timeout 150`: two sequential disposable 2 GiB boots in 9.683 and 8.564 seconds, 39 first-boot/six reopen checks, six native saves and zero off-thread validators. Addon/probe are ModDev source containers. Marked worlds/logs are removed. This checks the existing COMMON owner after shared serialization changes, not a native optional widget or a migrated Skyweave document.
+
+Sources are `49ace762417bec879eb07380f2d967f60f23b82e52f8672203547a3ede24116c`; core is `5a03c68f86908aa259279bfa7bfefcf0c1cc94d2d250ca6b8ef6a2293e54b637`. Markdown/link/workflow/diff checks pass separately. General profile inheritance, alternatives/references, native recursive controls, both real migrations and full Phase 1 qualification remain required. No client/full-pack/cost qualification or publication is added.
+
 ## Declared field-default increment
 
 The full Gradle `spotlessApply check build --warning-mode all` passes 239 core cases, including eight generated properties/1,300 checks, two native-file tests and twelve tooling controls. The independent Maven consumer exercises actual bare-file equal-value presence changes; native-addon/probe compilation passes. All 67 main Java sources match the source JAR. Markdown/link and workflow syntax checks pass separately.

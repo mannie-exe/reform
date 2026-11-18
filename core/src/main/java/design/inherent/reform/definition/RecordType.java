@@ -91,6 +91,21 @@ public final class RecordType<T> implements ValueType<T> {
       var encoded = key.type().codec().encodeStart(ops, field);
       if (key.type() instanceof DefaultedType<V> defaulted && defaulted.isDefault(field))
         return prefix.withErrorsFrom(encoded);
+      var valueShape =
+          key.type().shape() instanceof ValueShape.Defaulted<?> defaults
+              ? defaults.element().shape()
+              : key.type().shape();
+      if (ops.compressMaps()
+          && valueShape instanceof ValueShape.OptionalValue<?> optional
+          && optional.encoding() == ValueShape.OptionalEncoding.NULL_OR_VALUE
+          && encoded
+              .result()
+              .filter(valueNode -> Objects.equals(valueNode, ops.empty()))
+              .isPresent())
+        return prefix.withErrorsFrom(
+            DataResult.error(
+                () ->
+                    "Explicit null optional fields cannot be represented in this compressed record"));
       return prefix.add(key.id(), encoded);
     }
 

@@ -28,6 +28,14 @@ Equal-value acknowledgements can adopt a serializer's omitted-default representa
 
 Omitted fields receive no invented encoded address. Manual conflict review treats a defaulted field's presence and content as one choice. Generated default/override and retained-input recovery controls, plus richer provenance presentation, remain required.
 
+## Optional membership
+
+`DraftNode.OptionalValue(present, value)` separates empty membership from the retained raw child. `FieldPath.Part.VALUE` addresses that child. An empty source starts with a missing child rather than an invented default; enabling it requires authored input or an explicitly supplied consumer seed. Disabling it preserves invalid text, nested rows and undo while excluding them from serialization, validation and authored dirty state. The inactive child still counts toward draft/history limits.
+
+Singleton-list optionals map their active child to encoded index zero; nullable optionals map it to the same encoded source location. Empty membership has no encoded child address. Equal-value acknowledgements retain inactive input and active collection identities; later membership/input edits survive. Manual conflict choices include membership and content together. Old source diagnostics become stale when an ancestor optional or default override is disabled, even when its raw text is retained unchanged.
+
+Malformed encodings remain opaque repairable drafts; they never silently become empty. Nullable nested emptiness that cannot be represented stays invalid in both raw rendering and typed encoding. Native controls remain required.
+
 ## History and lifecycle
 
 `EditSession<T>` belongs to its creating thread by default. The explicit advanced `fromDraft` overload accepts a trusted owner verifier for a serialized worker adapter; that adapter must enforce serialization rather than disabling checks. `EditorActor` supplies this verifier from its active worker task and removes it afterward, so editing may move between workers without concurrent mutation. Immutable snapshots may be inspected on an admitted worker when definition callbacks support that contract. The pure model owns no global executor, timer, file watcher or screen reference.

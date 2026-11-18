@@ -18,6 +18,21 @@ import org.junit.jupiter.api.Test;
 
 class DefaultedDraftTest {
   @Test
+  void disablingAnOverrideMakesItsOldSourceDiagnosticStaleDespiteRetainedRawInput()
+      throws Exception {
+    try (var session = session("{\"name\":\"a\",\"height\":4}")) {
+      var submission = session.prepareSubmission().submission().orElseThrow();
+      var source = SourcePath.ROOT.property("height");
+      assertEquals(EditSession.TargetState.CURRENT, session.locate(submission, source).state());
+      session.edit(HEIGHT_PATH, n -> ((DraftNode.Defaulted) n).withOverride(false), "Use default");
+      assertEquals(EditSession.TargetState.STALE_VALUE, session.locate(submission, source).state());
+      assertEquals("4", ((DraftNode.Scalar) session.snapshot().draft().at(HEIGHT_VALUE)).raw());
+      session.undo();
+      assertEquals(EditSession.TargetState.CURRENT, session.locate(submission, source).state());
+    }
+  }
+
+  @Test
   void materializedDefaultRetainsInvalidInactiveInputWithoutChangingSavedMeaning()
       throws Exception {
     try (var session = session("{\"name\":\"a\"}")) {

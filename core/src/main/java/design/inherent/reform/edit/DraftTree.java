@@ -106,6 +106,19 @@ public final class DraftTree {
           value == null ? defaultDraft(defaults) : build(defaults.element(), value, path, text));
     }
     if (value == null) return new DraftNode.Missing();
+    if (type.shape() instanceof ValueShape.OptionalValue<?> optional) {
+      if (optional.encoding() == ValueShape.OptionalEncoding.NULL_OR_VALUE)
+        return value.isJsonNull()
+            ? new DraftNode.OptionalValue(false, new DraftNode.Missing())
+            : new DraftNode.OptionalValue(true, build(optional.element(), value, path, text));
+      if (value.isJsonArray() && value.getAsJsonArray().size() <= 1)
+        return value.getAsJsonArray().isEmpty()
+            ? new DraftNode.OptionalValue(false, new DraftNode.Missing())
+            : new DraftNode.OptionalValue(
+                true,
+                build(optional.element(), value.getAsJsonArray().get(0), path.index(0), text));
+      return new DraftNode.Opaque(sourceJson(value, path, text));
+    }
     if (type.shape() instanceof ValueShape.Custom)
       return new DraftNode.Opaque(sourceJson(value, path, text));
     if (value.isJsonNull()) return new DraftNode.NullValue();
@@ -237,11 +250,22 @@ public final class DraftTree {
   }
 
   public DraftNode at(FieldPath path) {
+    return at(path, false);
+  }
+
+  private DraftNode at(FieldPath path, boolean activeOnly) {
     DraftNode current = root;
     var segments = path.segments();
     for (int i = 0; i < segments.size(); i++) {
       var segment = segments.get(i);
       if (segment == FieldPath.Part.VALUE && current instanceof DraftNode.Defaulted value) {
+        if (activeOnly && !value.overridden())
+          throw new IllegalArgumentException("The retained override is inactive");
+        current = value.value();
+      } else if (segment == FieldPath.Part.VALUE
+          && current instanceof DraftNode.OptionalValue value) {
+        if (activeOnly && !value.present())
+          throw new IllegalArgumentException("The retained optional value is inactive");
         current = value.value();
       } else if (segment instanceof FieldPath.Field field
           && current instanceof DraftNode.ObjectValue object) {
@@ -276,6 +300,15 @@ public final class DraftTree {
     }
   }
 
+  boolean activeAt(FieldPath path) {
+    try {
+      at(path, true);
+      return true;
+    } catch (IllegalArgumentException inactive) {
+      return false;
+    }
+  }
+
   public DraftTree change(FieldPath path, UnaryOperator<DraftNode> operation) {
     return new DraftTree(change(root, path.segments(), 0, operation), limits);
   }
@@ -296,6 +329,8 @@ public final class DraftTree {
     if (offset == path.size()) return Objects.requireNonNull(operation.apply(node));
     var segment = path.get(offset);
     if (segment == FieldPath.Part.VALUE && node instanceof DraftNode.Defaulted value)
+      return value.withValue(change(value.value(), path, offset + 1, operation));
+    if (segment == FieldPath.Part.VALUE && node instanceof DraftNode.OptionalValue value)
       return value.withValue(change(value.value(), path, offset + 1, operation));
     if (segment instanceof FieldPath.Field field && node instanceof DraftNode.ObjectValue object) {
       var child = object.fields().get(field.id());
@@ -354,6 +389,12 @@ public final class DraftTree {
 
   private static DraftNode align(
       DraftNode actual, DraftNode submitted, ValueType<?> type, JsonLimits limits) {
+    if (type.shape() instanceof ValueShape.OptionalValue<?> optional
+        && actual instanceof DraftNode.OptionalValue a
+        && submitted instanceof DraftNode.OptionalValue s)
+      return new DraftNode.OptionalValue(
+          a.present(),
+          a.present() ? align(a.value(), s.value(), optional.element(), limits) : s.value());
     if (type.shape() instanceof ValueShape.Defaulted<?> defaults
         && actual instanceof DraftNode.Defaulted a
         && submitted instanceof DraftNode.Defaulted s) {
@@ -563,6 +604,36 @@ public final class DraftTree {
       addresses.put(source, path);
       if (node instanceof DraftNode.Missing)
         return fail(path, InputState.EMPTY, "input.required", "Enter a required value");
+      if (type.shape() instanceof ValueShape.OptionalValue<?> optional
+          && node instanceof DraftNode.OptionalValue value) {
+        if (!value.present()) {
+          inputs.put(path, InputState.VALID);
+          return optional.encoding() == ValueShape.OptionalEncoding.SINGLETON_LIST ? "[]" : "null";
+        }
+        var childSource =
+            optional.encoding() == ValueShape.OptionalEncoding.SINGLETON_LIST
+                ? source.index(0)
+                : source;
+        int before = issues.size();
+        var child =
+            render(
+                value.value(), optional.element(), path.append(FieldPath.Part.VALUE), childSource);
+        if (optional.encoding() == ValueShape.OptionalEncoding.SINGLETON_LIST)
+          return "[" + child + "]";
+        if (issues.size() == before) {
+          try {
+            if (JsonInput.read(child, limits).copyTree().isJsonNull())
+              return fail(
+                  path,
+                  InputState.INVALID,
+                  "input.optional_ambiguous",
+                  "A present optional cannot use its empty encoding");
+          } catch (JsonInputException invalid) {
+            return fail(path, InputState.INVALID, invalid.code(), invalid.getMessage());
+          }
+        }
+        return child;
+      }
       if (node instanceof DraftNode.NullValue && !(type.shape() instanceof ValueShape.Custom))
         return fail(
             path, InputState.INVALID, "input.null", "Explicit null is not admitted for this value");

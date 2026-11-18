@@ -593,7 +593,8 @@ public final class EditSession<T> implements AutoCloseable {
     if (!current.contains(path)) return new DiagnosticTarget(path, TargetState.REMOVED);
     return new DiagnosticTarget(
         path,
-        DraftNode.sameValue(current.at(path), submission.candidate().draft().at(path))
+        current.activeAt(path)
+                && DraftNode.sameValue(current.at(path), submission.candidate().draft().at(path))
             ? TargetState.CURRENT
             : TargetState.STALE_VALUE);
   }

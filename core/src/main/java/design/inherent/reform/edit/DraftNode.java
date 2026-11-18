@@ -18,6 +18,7 @@ public sealed interface DraftNode
         DraftNode.Sequence,
         DraftNode.Mapping,
         DraftNode.Defaulted,
+        DraftNode.OptionalValue,
         DraftNode.Opaque,
         DraftNode.Missing,
         DraftNode.NullValue {
@@ -113,6 +114,26 @@ public sealed interface DraftNode
 
     public static Row create(DraftNode value) {
       return new Row(UUID.randomUUID(), value);
+    }
+  }
+
+  /** An inactive present-value draft is retained locally without becoming serialized membership. */
+  record OptionalValue(boolean present, DraftNode value) implements DraftNode {
+    public OptionalValue {
+      Objects.requireNonNull(value);
+    }
+
+    public OptionalValue withPresent(boolean next) {
+      return new OptionalValue(next, value);
+    }
+
+    public OptionalValue withValue(DraftNode next) {
+      return new OptionalValue(present, next);
+    }
+
+    @Override
+    public Size size() {
+      return measure(List.of(value), 0, 0);
     }
   }
 
@@ -371,6 +392,8 @@ public sealed interface DraftNode
 
   /** Authored equality ignores session IDs; identical user data must not become a fake edit. */
   static boolean sameValue(DraftNode first, DraftNode second) {
+    if (first instanceof OptionalValue a && second instanceof OptionalValue b)
+      return a.present() == b.present() && (!a.present() || sameValue(a.value(), b.value()));
     if (first instanceof Defaulted a && second instanceof Defaulted b)
       return a.overridden() == b.overridden()
           && (!a.overridden() || sameValue(a.value(), b.value()));
@@ -419,6 +442,8 @@ public sealed interface DraftNode
   }
 
   private static int authoredHash(DraftNode node) {
+    if (node instanceof OptionalValue value)
+      return value.present() ? 71 + authoredHash(value.value()) : 71;
     if (node instanceof Defaulted value)
       return value.overridden() ? 67 + authoredHash(value.value()) : 67;
     if (node instanceof Mapping map) {

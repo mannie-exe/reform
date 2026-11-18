@@ -12,6 +12,7 @@ public sealed interface ValueShape
         ValueShape.ObjectValue,
         ValueShape.Mapping,
         ValueShape.Defaulted,
+        ValueShape.OptionalValue,
         ValueShape.Custom {
   enum ScalarKind {
     BOOLEAN,
@@ -82,6 +83,19 @@ public sealed interface ValueShape
   enum MapEncoding {
     OBJECT,
     ENTRY_LIST
+  }
+
+  enum OptionalEncoding {
+    NULL_OR_VALUE,
+    SINGLETON_LIST
+  }
+
+  /** Empty membership is distinct from field omission and from a declared fallback. */
+  record OptionalValue<T>(ValueType<T> element, OptionalEncoding encoding) implements ValueShape {
+    public OptionalValue {
+      Objects.requireNonNull(element);
+      Objects.requireNonNull(encoding);
+    }
   }
 
   record Mapping(ValueType<?> key, ValueType<?> value, int maximumSize, MapEncoding encoding)
