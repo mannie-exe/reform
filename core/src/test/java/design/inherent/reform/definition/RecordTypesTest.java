@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +45,8 @@ public class RecordTypesTest {
   public record Unsupported(Map<Integer, String> mappings) {}
 
   public record Mappings(Map<String, List<Counted>> mappings) {}
+
+  public record Sets(Set<List<Counted>> members) {}
 
   public record Wildcard(List<? extends Number> entries) {}
 
@@ -161,6 +164,23 @@ public class RecordTypesTest {
             .decode(type)
             .value()
             .orElseThrow());
+  }
+
+  @Test
+  void declaredSetsDeriveUniqueListEncodingAndOwnedNestedMembers() throws Exception {
+    var type = RecordTypes.record(Sets.class).build();
+    var parsed =
+        JsonInput.read("{\"members\":[[{\"low\":1,\"high\":2}]]}", JSON)
+            .decode(type)
+            .value()
+            .orElseThrow();
+    assertEquals(new Sets(Set.of(List.of(new Counted(1, 2)))), parsed);
+    assertTrue(JsonInput.read("{\"members\":[[],[]]}", JSON).decode(type).value().isEmpty());
+    var child = new ArrayList<>(List.of(new Counted(2, 4)));
+    var owned = type.freeze(new Sets(Set.of(child)));
+    child.clear();
+    assertEquals(1, owned.members().iterator().next().size());
+    assertThrows(UnsupportedOperationException.class, () -> owned.members().clear());
   }
 
   @Test

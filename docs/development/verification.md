@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Unordered set increment
+
+The full Gradle `spotlessApply check build --warning-mode all` passes 220 core cases, including seven generated properties/1,200 checks, two native-file tests and twelve tooling controls. The independent packaged Maven consumer and native-addon/probe compilation pass. All 66 main Java source files match the source JAR. Markdown/link and workflow syntax checks pass separately.
+
+The set increment covers bounded unique array encoding, recursive owned member snapshots, duplicate/partial/copy/codec refusal, separate ordering metadata, raw duplicate repair, member-based equal-observation alignment and nested set/map identities. Core tests retain meaningful order for unique ordered lists, while set display reordering stays nondirty and late invalid drafts/history survive acknowledgement. A generated property runs 100 membership/reorder/late-edit cases with replay seed `2026111703`. The independent Maven consumer repairs an invalid duplicate selection and observes a reordered acknowledgement using the packaged public API.
+
+A failing control first reproduced unique ordered-list reordering incorrectly treated as unchanged. Ordering is now declared separately from uniqueness; the three-argument sequence constructor retains ordered behavior. The same control and existing map/list controls pass. This is a development-library correction, not a claimed fix to a released consumer.
+
+The combined JAR is `6fafbb939091ce31bbf9724b2a6146936d773a7faedafd547f5a0c0b46a6af02`, sources `6c5d05b6ca42f79e19235291b01b77970e556747c591305197706701a9e81b6b` and core `4a15f2c7b78ceaa08d0c7ec21072c8d0b416b692319bfa1ea5c25a3e2b57109e`.
+
+No native collection GUI, actual resource resolution, real consumer migration, gameplay performance or full-pack qualification is established by this increment. Earlier native evidence retains its exact artifact identities below. Phase 1 remains incomplete and Phase 2 deferred.
+
 ## Typed map increment
 
 `./gradlew --no-daemon -Dorg.gradle.java.home=/path/to/jdk21 spotlessApply check build --warning-mode all` passes 205 core cases, including six generated properties/1,100 checks, two native-file tests and twelve tooling controls. The exact Maven-artifact headless consumer and independent native-addon/probe compilation pass. Markdown/link and CI syntax checks pass separately.

@@ -117,10 +117,17 @@ public sealed interface DraftNode
 
   final class Sequence implements DraftNode {
     private final List<Row> rows;
+    private final boolean unordered;
     private final Size size;
 
     public Sequence(List<Row> rows) {
+      this(rows, false);
+    }
+
+    /** Set drafts retain duplicate rows, while authored equality ignores their display order. */
+    public Sequence(List<Row> rows, boolean unordered) {
       this.rows = List.copyOf(rows);
+      this.unordered = unordered;
       var seen = new HashSet<UUID>();
       for (var row : rows)
         if (!seen.add(row.id())) throw new IllegalArgumentException("Duplicate session row ID");
@@ -131,16 +138,20 @@ public sealed interface DraftNode
       return rows;
     }
 
+    public boolean unordered() {
+      return unordered;
+    }
+
     public Sequence insert(int index, Row row) {
       var copy = new ArrayList<>(rows);
       copy.add(index, row);
-      return new Sequence(copy);
+      return new Sequence(copy, unordered);
     }
 
     public Sequence remove(UUID id) {
       var copy = new ArrayList<>(rows);
       copy.remove(index(id));
-      return new Sequence(copy);
+      return new Sequence(copy, unordered);
     }
 
     public Sequence move(UUID id, int target) {
@@ -148,7 +159,7 @@ public sealed interface DraftNode
       var copy = new ArrayList<>(rows);
       var row = copy.remove(index(id));
       copy.add(target, row);
-      return new Sequence(copy);
+      return new Sequence(copy, unordered);
     }
 
     public int index(UUID id) {
@@ -160,7 +171,7 @@ public sealed interface DraftNode
       var copy = new ArrayList<>(rows);
       int index = index(id);
       copy.set(index, new Row(id, value));
-      return new Sequence(copy);
+      return new Sequence(copy, unordered);
     }
 
     @Override
@@ -170,12 +181,14 @@ public sealed interface DraftNode
 
     @Override
     public boolean equals(Object other) {
-      return other instanceof Sequence sequence && rows.equals(sequence.rows);
+      return other instanceof Sequence sequence
+          && unordered == sequence.unordered
+          && rows.equals(sequence.rows);
     }
 
     @Override
     public int hashCode() {
-      return rows.hashCode();
+      return 31 * rows.hashCode() + Boolean.hashCode(unordered);
     }
   }
 
@@ -283,30 +296,11 @@ public sealed interface DraftNode
   /** Authored equality ignores session IDs; identical user data must not become a fake edit. */
   static boolean sameValue(DraftNode first, DraftNode second) {
     if (first instanceof Mapping a && second instanceof Mapping b) {
-      if (a.rows().size() != b.rows().size()) return false;
-      record Entry(DraftNode value) {
-        @Override
-        public boolean equals(Object other) {
-          return other instanceof Entry entry && sameValue(value, entry.value);
-        }
-
-        @Override
-        public int hashCode() {
-          return authoredHash(value);
-        }
-      }
-      var counts = new java.util.HashMap<Entry, Integer>();
-      for (var row : a.rows()) counts.merge(new Entry(row.value()), 1, Integer::sum);
-      for (var row : b.rows()) {
-        var key = new Entry(row.value());
-        var count = counts.get(key);
-        if (count == null) return false;
-        if (count == 1) counts.remove(key);
-        else counts.put(key, count - 1);
-      }
-      return counts.isEmpty();
+      return sameUnorderedRows(a.rows(), b.rows());
     }
     if (first instanceof Sequence a && second instanceof Sequence b) {
+      if (a.unordered != b.unordered) return false;
+      if (a.unordered) return sameUnorderedRows(a.rows, b.rows);
       if (a.rows.size() != b.rows.size()) return false;
       for (int i = 0; i < a.rows.size(); i++)
         if (!sameValue(a.rows.get(i).value(), b.rows.get(i).value())) return false;
@@ -320,6 +314,31 @@ public sealed interface DraftNode
     return first.equals(second);
   }
 
+  private static boolean sameUnorderedRows(List<Row> first, List<Row> second) {
+    if (first.size() != second.size()) return false;
+    record Entry(DraftNode value) {
+      @Override
+      public boolean equals(Object other) {
+        return other instanceof Entry entry && sameValue(value, entry.value);
+      }
+
+      @Override
+      public int hashCode() {
+        return authoredHash(value);
+      }
+    }
+    var counts = new java.util.HashMap<Entry, Integer>();
+    for (var row : first) counts.merge(new Entry(row.value()), 1, Integer::sum);
+    for (var row : second) {
+      var key = new Entry(row.value());
+      var count = counts.get(key);
+      if (count == null) return false;
+      if (count == 1) counts.remove(key);
+      else counts.put(key, count - 1);
+    }
+    return counts.isEmpty();
+  }
+
   private static int authoredHash(DraftNode node) {
     if (node instanceof Mapping map) {
       int hash = 17;
@@ -328,7 +347,11 @@ public sealed interface DraftNode
     }
     if (node instanceof Sequence sequence) {
       int hash = 31;
-      for (var row : sequence.rows()) hash = 31 * hash + authoredHash(row.value());
+      for (var row : sequence.rows())
+        hash =
+            sequence.unordered
+                ? hash + authoredHash(row.value())
+                : 31 * hash + authoredHash(row.value());
       return hash;
     }
     if (node instanceof ObjectValue object) {

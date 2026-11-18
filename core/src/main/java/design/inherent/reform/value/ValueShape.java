@@ -37,10 +37,23 @@ public sealed interface ValueShape
     }
   }
 
-  record Sequence(ValueType<?> element, int maximumSize, boolean unique) implements ValueShape {
+  enum CollectionOrder {
+    ORDERED,
+    UNORDERED
+  }
+
+  record Sequence(ValueType<?> element, int maximumSize, boolean unique, CollectionOrder order)
+      implements ValueShape {
+    public Sequence(ValueType<?> element, int maximumSize, boolean unique) {
+      this(element, maximumSize, unique, CollectionOrder.ORDERED);
+    }
+
     public Sequence {
       Objects.requireNonNull(element);
+      Objects.requireNonNull(order);
       if (maximumSize < 0) throw new IllegalArgumentException("Negative collection bound");
+      if (order == CollectionOrder.UNORDERED && !unique)
+        throw new IllegalArgumentException("Unordered membership requires a unique collection");
     }
   }
 

@@ -124,13 +124,14 @@ public final class RecordTypes {
       else if (javaType instanceof Class<?> raw && raw.isRecord())
         result = record(raw.asSubclass(Record.class), Map.of(), depth);
       else if (javaType instanceof ParameterizedType parameterized
-          && parameterized.getRawType() == List.class
-          && parameterized.getActualTypeArguments().length == 1)
+          && (parameterized.getRawType() == List.class || parameterized.getRawType() == Set.class)
+          && parameterized.getActualTypeArguments().length == 1) {
+        var element = type(parameterized.getActualTypeArguments()[0], depth + 1);
         result =
-            ValueTypes.list(
-                type(parameterized.getActualTypeArguments()[0], depth + 1),
-                limits.collectionSize());
-      else if (javaType instanceof ParameterizedType parameterized
+            parameterized.getRawType() == Set.class
+                ? ValueTypes.set(element, limits.collectionSize())
+                : ValueTypes.list(element, limits.collectionSize());
+      } else if (javaType instanceof ParameterizedType parameterized
           && parameterized.getRawType() == Map.class
           && parameterized.getActualTypeArguments().length == 2
           && parameterized.getActualTypeArguments()[0] == String.class)

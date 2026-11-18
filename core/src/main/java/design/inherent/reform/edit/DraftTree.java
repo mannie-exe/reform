@@ -162,7 +162,7 @@ public final class DraftTree {
         rows.add(
             DraftNode.Row.create(
                 build(sequence.element(), value.getAsJsonArray().get(i), path.index(i), text)));
-      return new DraftNode.Sequence(rows);
+      return new DraftNode.Sequence(rows, sequence.order() == ValueShape.CollectionOrder.UNORDERED);
     }
     return new DraftNode.Opaque(sourceJson(value, path, text));
   }
@@ -350,6 +350,23 @@ public final class DraftTree {
         && submitted instanceof DraftNode.Sequence s
         && a.rows().size() == s.rows().size()) {
       var rows = new ArrayList<DraftNode.Row>();
+      if (sequence.order() == ValueShape.CollectionOrder.UNORDERED) {
+        var submittedValues = new java.util.HashMap<Object, DraftNode.Row>();
+        for (var row : s.rows())
+          if (submittedValues.putIfAbsent(
+                  decodedIdentity(row.value(), sequence.element(), limits), row)
+              != null) throw new IllegalArgumentException("Duplicate submitted set member");
+        for (var row : a.rows()) {
+          var matched =
+              submittedValues.remove(decodedIdentity(row.value(), sequence.element(), limits));
+          if (matched == null)
+            throw new IllegalArgumentException("Observed set member differs from submission");
+          rows.add(
+              new DraftNode.Row(
+                  matched.id(), align(row.value(), matched.value(), sequence.element(), limits)));
+        }
+        return new DraftNode.Sequence(rows, true);
+      }
       for (int i = 0; i < a.rows().size(); i++)
         rows.add(
             new DraftNode.Row(
@@ -365,14 +382,14 @@ public final class DraftTree {
       var submittedKeys = new java.util.HashMap<Object, DraftNode.Row>();
       for (var row : s.rows()) {
         var entry = (DraftNode.ObjectValue) row.value();
-        var key = decodedKey(entry.fields().get("key"), mapping.key(), limits);
+        var key = decodedIdentity(entry.fields().get("key"), mapping.key(), limits);
         if (submittedKeys.putIfAbsent(key, row) != null)
           throw new IllegalArgumentException("Duplicate submitted key");
       }
       var rows = new ArrayList<DraftNode.Row>();
       for (var row : a.rows()) {
         var entry = (DraftNode.ObjectValue) row.value();
-        var key = decodedKey(entry.fields().get("key"), mapping.key(), limits);
+        var key = decodedIdentity(entry.fields().get("key"), mapping.key(), limits);
         var matched = submittedKeys.remove(key);
         if (matched == null)
           throw new IllegalArgumentException("Observed map key differs from submission");
@@ -395,15 +412,15 @@ public final class DraftTree {
     return actual;
   }
 
-  private static Object decodedKey(DraftNode node, ValueType<?> type, JsonLimits limits) {
+  private static Object decodedIdentity(DraftNode node, ValueType<?> type, JsonLimits limits) {
     var renderer = new Renderer(limits);
     var json = renderer.render(node, type, FieldPath.ROOT, SourcePath.ROOT);
     if (!new ValidationReport(renderer.issues, renderer.complete).valid())
-      throw new IllegalArgumentException("Map key is not complete");
+      throw new IllegalArgumentException("Collection identity is not complete");
     try {
       return JsonInput.read(json, limits).decode(type).value().orElseThrow();
     } catch (JsonInputException invalid) {
-      throw new IllegalArgumentException("Map key is not admissible", invalid);
+      throw new IllegalArgumentException("Collection identity is not admissible", invalid);
     }
   }
 
@@ -528,12 +545,49 @@ public final class DraftTree {
       }
       if (type.shape() instanceof ValueShape.Sequence sequence
           && node instanceof DraftNode.Sequence value) {
+        if ((sequence.order() == ValueShape.CollectionOrder.UNORDERED) != value.unordered())
+          return fail(
+              path,
+              InputState.INVALID,
+              "input.structure",
+              "Collection ordering differs from its declared type");
         if (value.rows().size() > sequence.maximumSize())
           fail(path, InputState.INVALID, "input.length", "Collection exceeds its declared size");
         var parts = new ArrayList<String>();
+        var members = new java.util.HashMap<Object, FieldPath>();
         for (int i = 0; i < value.rows().size(); i++) {
           var row = value.rows().get(i);
-          parts.add(render(row.value(), sequence.element(), path.row(row.id()), source.index(i)));
+          var rowPath = path.row(row.id());
+          int before = issues.size();
+          var rendered = render(row.value(), sequence.element(), rowPath, source.index(i));
+          parts.add(rendered);
+          if (sequence.unique() && issues.size() == before) {
+            try {
+              var decoded =
+                  sequence
+                      .element()
+                      .decode(
+                          JsonOps.INSTANCE, JsonInput.read(rendered, limits).copyTree(), rowPath);
+              issues.addAll(decoded.report().issues());
+              complete &= decoded.report().complete();
+              if (decoded.value().isPresent() && decoded.report().valid()) {
+                var previous = members.putIfAbsent(decoded.value().orElseThrow(), rowPath);
+                if (previous != null) {
+                  issues.add(
+                      new Issue(
+                          "input.duplicate_member",
+                          Issue.Severity.ERROR,
+                          rowPath,
+                          List.of(previous),
+                          Map.of(),
+                          "Resolve the duplicate collection member"));
+                  inputs.put(rowPath, InputState.INVALID);
+                }
+              }
+            } catch (JsonInputException invalid) {
+              fail(rowPath, InputState.INVALID, invalid.code(), invalid.getMessage());
+            }
+          }
         }
         return "[" + String.join(",", parts) + "]";
       }

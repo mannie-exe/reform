@@ -142,7 +142,7 @@ public final class MappingType<K, V> implements ValueType<Map<K, V>> {
             var copied = new LinkedHashMap<K, V>();
             for (var entry : input.entrySet()) {
               K frozen = key.freeze(entry.getKey(), context);
-              if (!sameKey(entry.getKey(), frozen))
+              if (!CollectionIdentity.same(entry.getKey(), frozen))
                 throw new IllegalArgumentException(
                     "Map key equality/hashCode must survive an owned copy");
               if (copied.containsKey(frozen))
@@ -174,19 +174,7 @@ public final class MappingType<K, V> implements ValueType<Map<K, V>> {
   }
 
   private <O> DataResult<O> encodedKey(K input, DynamicOps<O> ops) {
-    var encoded = key.codec().encodeStart(ops, input);
-    if (encoded.error().isPresent() || encoded.result().isEmpty())
-      return DataResult.error(() -> "Map key could not encode completely");
-    var decoded = key.codec().parse(ops, encoded.result().orElseThrow());
-    if (decoded.error().isPresent()
-        || decoded.result().isEmpty()
-        || !sameKey(input, decoded.result().orElseThrow()))
-      return DataResult.error(() -> "Map key encoding must roundtrip with value equality/hashCode");
-    return encoded;
-  }
-
-  private static boolean sameKey(Object first, Object second) {
-    return Objects.equals(first, second) && Objects.hashCode(first) == Objects.hashCode(second);
+    return CollectionIdentity.encode(key, input, ops);
   }
 
   private DataResult<Map<K, V>> fromEntries(List<Entry<K, V>> entries) {

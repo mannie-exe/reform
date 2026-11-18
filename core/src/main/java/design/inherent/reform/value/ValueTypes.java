@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Common codec/snapshot/editor definitions. No consumer implements a writer or snapshot for these.
@@ -140,6 +141,10 @@ public final class ValueTypes {
   public static <K, V> ValueType<Map<K, V>> entryMap(
       ValueType<K> key, ValueType<V> value, int maximumSize) {
     return MappingType.entries(key, value, maximumSize);
+  }
+
+  public static <E> ValueType<Set<E>> set(ValueType<E> element, int maximumSize) {
+    return new SetType<>(element, maximumSize);
   }
 
   private static <N extends Number> ValueType<N> number(
