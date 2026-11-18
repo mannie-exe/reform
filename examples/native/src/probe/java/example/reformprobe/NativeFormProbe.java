@@ -61,6 +61,7 @@ public final class NativeFormProbe {
   private NativeWorldRecipeControls recipe;
   private NativeStructuredControls structured;
   private NativeReferenceControls references;
+  private NativeNumericControls numeric;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -86,7 +87,9 @@ public final class NativeFormProbe {
               "structured",
               "structured-reopen",
               "references",
-              "references-reopen")
+              "references-reopen",
+              "numeric",
+              "numeric-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -224,6 +227,27 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("numeric")) {
+        if (numeric == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.NumericExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          numeric =
+              new NativeNumericControls(
+                  mode.equals("numeric-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (numeric.tick()) {
+          report.add("numeric", numeric.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("references")) {
@@ -692,6 +716,9 @@ public final class NativeFormProbe {
     report.addProperty("stage", stage);
     report.addProperty("ticks", ticks);
     report.addProperty("status", failure == null ? "PASS" : "FAIL");
+    if (numeric != null) report.add("numeric", numeric.report());
+    if (structured != null) report.add("structured", structured.report());
+    if (references != null) report.add("references", references.report());
     if (failure != null) {
       report.addProperty("failure", failure.toString());
       var stack = new java.io.StringWriter();

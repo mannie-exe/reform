@@ -15,6 +15,7 @@ import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
+import design.inherent.reform.presentation.NumericInput;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.reference.ReferenceSelection;
 import design.inherent.reform.validation.ValidationReport;
@@ -51,7 +52,18 @@ public final class SettingsScreen<T> extends Screen {
       ValueShape shape,
       boolean cycle,
       DraftTarget target,
-      Object token) {}
+      Object token,
+      Quantity quantity) {}
+
+  private static final class Quantity {
+    NumericInput input;
+    CycleButton<String> units;
+    Button less, more;
+
+    Quantity(NumericInput input) {
+      this.input = input;
+    }
+  }
 
   private final Screen parent;
   private final Component contextLabel;
@@ -455,10 +467,15 @@ public final class SettingsScreen<T> extends Screen {
     if (control == null
         || !control.shape().equals(shape)
         || control.cycle() != cycle
+        || (control.quantity() != null)
+            != (node instanceof DraftNode.Scalar
+                && shape instanceof ValueShape.Scalar scalar
+                && scalar.numericDisplay().isPresent())
         || !control.target().session().equals(formSession)) {
       local.put(path, raw);
       versions.put(path, 0L);
-      control = createControl(shape, path, raw, label, cycle);
+      control = createControl(shape, path, node, label, cycle);
+      if (control.quantity() != null) local.put(path, control.quantity().input.text());
       controls.put(path, control);
     } else if (control.target().generation() != formGeneration) {
       control =
@@ -469,7 +486,8 @@ public final class SettingsScreen<T> extends Screen {
               control.shape(),
               control.cycle(),
               actions.view().snapshot().orElseThrow().target(path).typing(),
-              control.token());
+              control.token(),
+              control.quantity());
       controls.put(path, control);
     }
     if (shape instanceof ValueShape.Reference<?> reference) {
@@ -486,6 +504,16 @@ public final class SettingsScreen<T> extends Screen {
       browse.setTooltip(Tooltip.create(Component.literal(reference.source().toString())));
       structureButtons.put(browse, source != null);
       panel.field(FormModel.key(path), label, Component.empty(), control.widget(), browse);
+    } else if (control.quantity() != null) {
+      var quantity = control.quantity();
+      panel.field(
+          FormModel.key(path),
+          label,
+          Component.empty(),
+          control.widget(),
+          quantity.less,
+          quantity.more,
+          quantity.units);
     } else panel.field(FormModel.key(path), label, Component.empty(), control.widget());
   }
 
@@ -634,7 +662,8 @@ public final class SettingsScreen<T> extends Screen {
   }
 
   private Control createControl(
-      ValueShape declared, FieldPath path, String raw, Component label, boolean cycle) {
+      ValueShape declared, FieldPath path, DraftNode node, Component label, boolean cycle) {
+    String raw = raw(node);
     var target = actions.view().snapshot().orElseThrow().target(path).typing();
     var token = new Object();
     ValueShape shape =
@@ -653,27 +682,34 @@ public final class SettingsScreen<T> extends Screen {
                 .withInitialValue(raw)
                 .displayOnlyValue()
                 .create(0, 0, 160, 20, label, (widget, value) -> edit(path, token, value));
-        return new Control(button, button::setValue, true, declared, true, target, token);
+        return new Control(button, button::setValue, true, declared, true, target, token, null);
       }
+      Quantity quantity =
+          scalar.numericDisplay().isPresent() && node instanceof DraftNode.Scalar value
+              ? quantity(scalar, value, path, label, token)
+              : null;
+      if (quantity != null) raw = quantity.input.text();
+      int inputLimit =
+          quantity == null
+              ? scalar.maximumLength() > 0 ? scalar.maximumLength() : 128
+              : quantity.input.display().limits().maximumCharacters();
       var input = new EditBox(font, 0, 0, 160, 20, label);
-      input.setMaxLength(
-          Math.max(raw.length(), scalar.maximumLength() > 0 ? scalar.maximumLength() : 128));
+      input.setMaxLength(Math.max(raw.length(), inputLimit));
       input.setValue(raw);
       input.setResponder(value -> edit(path, token, value));
       return new Control(
           input,
           value -> {
             input.setMaxLength(
-                Math.max(
-                    scalar.maximumLength() > 0 ? scalar.maximumLength() : 128,
-                    Math.max(input.getValue().length(), value.length())));
+                Math.max(inputLimit, Math.max(input.getValue().length(), value.length())));
             input.setValue(value);
           },
           true,
           declared,
           false,
           target,
-          token);
+          token,
+          quantity);
     }
     var unavailable = new EditBox(font, 0, 0, 160, 20, label);
     unavailable.setMaxLength(Math.max(128, raw.length()));
@@ -683,7 +719,107 @@ public final class SettingsScreen<T> extends Screen {
     unavailable.setTooltip(
         Tooltip.create(
             text("unsupported_help", "This type needs a dedicated editor. Its data is retained.")));
-    return new Control(unavailable, ignored -> {}, false, declared, false, target, token);
+    return new Control(unavailable, ignored -> {}, false, declared, false, target, token, null);
+  }
+
+  private Quantity quantity(
+      ValueShape.Scalar shape,
+      DraftNode.Scalar node,
+      FieldPath path,
+      Component label,
+      Object token) {
+    var quantity = new Quantity(NumericInput.open(shape, node));
+    var mapping = quantity.input.display();
+    var ids = new ArrayList<>(mapping.units().stream().map(unit -> unit.id()).toList());
+    if (!ids.contains(quantity.input.unit())) ids.add(quantity.input.unit());
+    quantity.units =
+        CycleButton.<String>builder(
+                id ->
+                    mapping.units().stream()
+                        .filter(unit -> unit.id().equals(id))
+                        .<Component>map(
+                            unit ->
+                                Component.translatableWithFallback(
+                                    unit.translationKey(), unit.fallback()))
+                        .findFirst()
+                        .orElseGet(
+                            () ->
+                                text("unit_unavailable", "Unavailable unit")
+                                    .copy()
+                                    .append(": " + id)))
+            .withValues(ids)
+            .withInitialValue(quantity.input.unit())
+            .displayOnlyValue()
+            .create(
+                0,
+                0,
+                112,
+                20,
+                label.copy().append(": ").append(text("unit", "Display unit")),
+                (button, unit) -> changeQuantity(path, token, quantity.input.select(unit), false));
+    quantity.less =
+        Button.builder(
+                Component.literal("-"),
+                ignored -> changeQuantity(path, token, quantity.input.step(-1), true))
+            .bounds(0, 0, 24, 20)
+            .createNarration(
+                original -> label.copy().append(": ").append(text("decrease", "Decrease")))
+            .build();
+    quantity.more =
+        Button.builder(
+                Component.literal("+"),
+                ignored -> changeQuantity(path, token, quantity.input.step(1), true))
+            .bounds(0, 0, 24, 20)
+            .createNarration(
+                original -> label.copy().append(": ").append(text("increase", "Increase")))
+            .build();
+    var hint =
+        text("unit_help", "Display only; stored unit: ")
+            .copy()
+            .append(mapping.canonicalUnit())
+            .append("; ")
+            .append(text("step", "step"))
+            .append(": " + mapping.step());
+    mapping
+        .referenceTicksPerSecond()
+        .ifPresent(
+            rate ->
+                hint.append("; ")
+                    .append(text("nominal_tick_rate", "nominal ticks per second"))
+                    .append(": " + rate));
+    quantity.units.setTooltip(Tooltip.create(hint));
+    return quantity;
+  }
+
+  private void changeQuantity(
+      FieldPath path, Object token, NumericInput.Change change, boolean stage) {
+    var control = controls.get(path);
+    if (closed
+        || minecraft.screen != this
+        || control == null
+        || control.token() != token
+        || control.quantity() == null
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()) return;
+    var quantity = control.quantity();
+    updating = true;
+    try {
+      if (change.accepted()) {
+        quantity.input = change.input();
+        if (!quantity.input.text().equals(local.get(path)))
+          control.display().accept(quantity.input.text());
+        local.put(path, quantity.input.text());
+      } else notice = Component.literal(change.reason());
+      quantity.units.setValue(quantity.input.unit());
+    } finally {
+      updating = false;
+    }
+    if (change.accepted() && stage) {
+      versions.put(path, ++version);
+      submit(path, quantity.input.text());
+    } else feedback();
   }
 
   private void edit(FieldPath path, Object token, String value) {
@@ -691,16 +827,22 @@ public final class SettingsScreen<T> extends Screen {
     var current = controls.get(path);
     if (current == null || current.token() != token) return;
     if (updating || value.equals(local.get(path))) return;
+    if (current.quantity() != null) current.quantity().input = current.quantity().input.edit(value);
     local.put(path, value);
     versions.put(path, ++version);
     submit(path, value);
   }
 
   private void submit(FieldPath path, String value) {
-    var target = controls.get(path).target();
+    var control = controls.get(path);
+    var target = control.target();
+    DraftEdit.Action input =
+        control.quantity() == null
+            ? new DraftEdit.SetRaw(value)
+            : control.quantity().input.action().orElseThrow();
     pendingEdits++;
     notice = null;
-    action(() -> actions.edit(EntryPoint.GUI, new DraftEdit(target, new DraftEdit.SetRaw(value))))
+    action(() -> actions.edit(EntryPoint.GUI, new DraftEdit(target, input)))
         .whenComplete(
             (result, failed) ->
                 minecraft.execute(
@@ -719,9 +861,14 @@ public final class SettingsScreen<T> extends Screen {
         .anyMatch(
             entry ->
                 entry.getValue().editable()
-                    && !Objects.equals(
-                        local.get(entry.getKey()),
-                        raw(at(snapshot.orElseThrow().draft(), entry.getKey()))));
+                    && !matches(entry.getKey(), entry.getValue(), snapshot.orElseThrow().draft()));
+  }
+
+  private boolean matches(FieldPath path, Control control, DraftTree draft) {
+    return control.quantity() == null
+        ? Objects.equals(local.get(path), raw(at(draft, path)))
+        : control.quantity().input.text().equals(local.get(path))
+            && control.quantity().input.matches(at(draft, path));
   }
 
   private void requestSave() {
@@ -729,8 +876,7 @@ public final class SettingsScreen<T> extends Screen {
     if (unsent()) {
       var draft = actions.view().snapshot().orElseThrow().draft();
       for (var entry : controls.entrySet())
-        if (entry.getValue().editable()
-            && !Objects.equals(local.get(entry.getKey()), raw(at(draft, entry.getKey()))))
+        if (entry.getValue().editable() && !matches(entry.getKey(), entry.getValue(), draft))
           submit(entry.getKey(), local.get(entry.getKey()));
       return;
     }
@@ -805,7 +951,14 @@ public final class SettingsScreen<T> extends Screen {
       controls.forEach(
           (path, control) -> {
             if (control.editable() && Objects.equals(before.get(path), versions.get(path))) {
-              var raw = raw(at(snapshot.orElseThrow().draft(), path));
+              var node = at(snapshot.orElseThrow().draft(), path);
+              var raw = raw(node);
+              if (control.quantity() != null && node instanceof DraftNode.Scalar scalar) {
+                var quantity = control.quantity();
+                quantity.input = quantity.input.synchronize(scalar);
+                quantity.units.setValue(quantity.input.unit());
+                raw = quantity.input.text();
+              }
               if (!raw.equals(local.get(path))) control.display().accept(raw);
               local.put(path, raw);
             }
@@ -818,7 +971,8 @@ public final class SettingsScreen<T> extends Screen {
   private void feedback() {
     var current = actions.view();
     if (save == null) return;
-    save.setMessage(unsent() ? text("retry_edits", "Retry edits") : commitLabel());
+    boolean unaccepted = unsent();
+    save.setMessage(unaccepted ? text("retry_edits", "Retry edits") : commitLabel());
     save.active =
         current.snapshot().isPresent()
             && current.availability() == EditorActor.Availability.READY
@@ -828,7 +982,7 @@ public final class SettingsScreen<T> extends Screen {
             && pendingEdits == 0
             && current.pending().isEmpty()
             && current.review().isEmpty()
-            && (unsent() || current.validation().valid());
+            && (unaccepted || current.validation().valid());
     revert.active =
         defaults.active =
             current.snapshot().isPresent() && !saving && !loading && pendingEdits == 0;
@@ -841,17 +995,44 @@ public final class SettingsScreen<T> extends Screen {
                     && !loading
                     && !saving
                     && pendingEdits == 0
-                    && !unsent());
+                    && !unaccepted);
     controls.forEach(
         (path, control) -> {
           if (control.widget() instanceof EditBox input)
             input.setEditable(
                 control.editable()
                     && !loading
-                    && current.availability() == EditorActor.Availability.READY);
+                    && current.availability() == EditorActor.Availability.READY
+                    && (control.quantity() == null
+                        || control.quantity().input.display().units().stream()
+                            .anyMatch(unit -> unit.id().equals(control.quantity().input.unit()))));
           else
             control.widget().active =
                 !loading && current.availability() == EditorActor.Availability.READY;
+          if (control.quantity() != null) {
+            var quantity = control.quantity();
+            boolean available =
+                current.availability() == EditorActor.Availability.READY
+                    && !saving
+                    && !loading
+                    && pendingEdits == 0
+                    && !unaccepted;
+            quantity.units.active = available;
+            var less = quantity.input.step(-1);
+            var more = quantity.input.step(1);
+            quantity.less.active = available && less.accepted();
+            quantity.more.active = available && more.accepted();
+            quantity.less.setTooltip(
+                Tooltip.create(
+                    less.accepted()
+                        ? text("decrease", "Decrease")
+                        : Component.literal(less.reason())));
+            quantity.more.setTooltip(
+                Tooltip.create(
+                    more.accepted()
+                        ? text("increase", "Increase")
+                        : Component.literal(more.reason())));
+          }
           var issue =
               current.validation().issues().stream()
                   .filter(value -> value.path().equals(path) || value.related().contains(path))
@@ -861,7 +1042,11 @@ public final class SettingsScreen<T> extends Screen {
                   .<Component>map(
                       value ->
                           text("invalid", "Invalid").copy().append(": ").append(value.fallback()))
-                  .orElse(Component.empty());
+                  .orElseGet(
+                      () ->
+                          control.quantity() == null
+                              ? Component.empty()
+                              : Component.literal(control.quantity().input.notice()));
           panel.summary(FormModel.key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
             input.setTextColor(
