@@ -107,6 +107,8 @@ final class NativeImportCommandControls {
   private Gate gate;
   private int targets, beforeReplies;
   private boolean complete;
+  private boolean identityChecked;
+  private boolean revokeAfterCancellation;
   private String original;
 
   private static final class Gate {
@@ -193,61 +195,94 @@ final class NativeImportCommandControls {
   }
 
   private void bind() {
+    var binding =
+        new SettingsCommands.Binding<CommandSourceStack, ImportExample.Profile>() {
+          public boolean available(CommandSourceStack actual) {
+            return actual == source && available && client.isSameThread() && context.isOpen();
+          }
+
+          public SettingsCommands.Target<ImportExample.Profile> target(CommandSourceStack actual) {
+            if (!available(actual))
+              throw new PolicyRefusal("owner.permission", "Native permission required");
+            targets++;
+            if (target == null) {
+              var actor =
+                  new EditorActor<>(
+                      context,
+                      session,
+                      ImportExample.DEFINITION,
+                      JSON,
+                      DraftLimits.CONFIGURATION,
+                      32);
+              target =
+                  new SettingsCommands.Target<>(
+                      context,
+                      new DocumentActions<>(
+                          context,
+                          access,
+                          actor,
+                          OperationScope.Limits.STANDARD,
+                          JSON.maximumBytes()));
+            }
+            return target;
+          }
+
+          public Optional<SettingsCommands.Target<ImportExample.Profile>> existing(
+              CommandSourceStack actual) {
+            if (revokeAfterCancellation && heldOperation.snapshot().cancellationRequested()) {
+              revokeAfterCancellation = false;
+              readAllowed = false;
+            }
+            return available(actual) ? Optional.ofNullable(target) : Optional.empty();
+          }
+
+          public Optional<ImportCatalog<ImportExample.Profile>> imports(CommandSourceStack actual) {
+            return available(actual) && readAllowed ? Optional.of(catalog) : Optional.empty();
+          }
+
+          public void reply(CommandSourceStack actual, SettingsCommands.Reply reply) {
+            receive(reply);
+          }
+        };
     dispatcher.register(
-        SettingsCommands.branch(
-            "importprobe",
-            ImportExample.DEFINITION.id(),
-            new SettingsCommands.Binding<CommandSourceStack, ImportExample.Profile>() {
-              public boolean available(CommandSourceStack actual) {
-                return actual == source && available && client.isSameThread() && context.isOpen();
-              }
-
-              public SettingsCommands.Target<ImportExample.Profile> target(
-                  CommandSourceStack actual) {
-                if (!available(actual))
-                  throw new PolicyRefusal("owner.permission", "Native permission required");
-                targets++;
-                if (target == null) {
-                  var actor =
-                      new EditorActor<>(
-                          context,
-                          session,
-                          ImportExample.DEFINITION,
-                          JSON,
-                          DraftLimits.CONFIGURATION,
-                          32);
-                  target =
-                      new SettingsCommands.Target<>(
-                          context,
-                          new DocumentActions<>(
-                              context,
-                              access,
-                              actor,
-                              OperationScope.Limits.STANDARD,
-                              JSON.maximumBytes()));
-                }
-                return target;
-              }
-
-              public Optional<SettingsCommands.Target<ImportExample.Profile>> existing(
-                  CommandSourceStack actual) {
-                return available(actual) ? Optional.ofNullable(target) : Optional.empty();
-              }
-
-              public Optional<ImportCatalog<ImportExample.Profile>> imports(
-                  CommandSourceStack actual) {
-                return available(actual) && readAllowed ? Optional.of(catalog) : Optional.empty();
-              }
-
-              public void reply(CommandSourceStack actual, SettingsCommands.Reply reply) {
-                receive(reply);
-              }
-            },
-            8192));
+        SettingsCommands.branch("importprobe", ImportExample.DEFINITION.id(), binding, 8192));
+    dispatcher.register(
+        SettingsCommands.branch("shortimport", ImportExample.DEFINITION.id(), binding, 128));
   }
 
   private void receive(SettingsCommands.Reply reply) {
     check("native bounded feedback " + reply.kind(), reply.message().getString().length() <= 8192);
+    if (reply.operation().isPresent()) {
+      var snapshot = reply.operation().orElseThrow();
+      check(
+          "typed feedback retains actual identity and response channel",
+          reply.operationId().filter(snapshot.id()::equals).isPresent()
+              && reply.correlation().orElseThrow().responseKind() == reply.kind());
+      if (!identityChecked) {
+        identityChecked = true;
+        refuseIdentity(
+            () -> new SettingsCommands.Correlation(snapshot.id(), SettingsCommands.Kind.ERROR));
+        refuseIdentity(
+            () ->
+                new SettingsCommands.Reply(
+                    reply.kind(),
+                    reply.level(),
+                    reply.message(),
+                    reply.operation(),
+                    Optional.of(
+                        new SettingsCommands.Correlation(UUID.randomUUID(), reply.kind()))));
+        refuseIdentity(
+            () ->
+                new SettingsCommands.Reply(
+                    reply.kind(),
+                    reply.level(),
+                    reply.message(),
+                    reply.operation(),
+                    Optional.of(
+                        new SettingsCommands.Correlation(
+                            snapshot.id(), SettingsCommands.Kind.STATUS))));
+      }
+    }
     replies.add(reply);
     if (reply.kind() == SettingsCommands.Kind.QUEUED) {
       submittedId = reply.operation().orElseThrow().id();
@@ -260,11 +295,32 @@ final class NativeImportCommandControls {
       var result = cancellations.remove(reply.operation().orElseThrow().id());
       if (result == null) throw new AssertionError("Unmatched cancellation reply");
       result.complete(reply);
+    } else if (reply.kind() == SettingsCommands.Kind.ERROR && reply.correlation().isPresent()) {
+      var identity = reply.correlation().orElseThrow();
+      var selected =
+          identity.responseKind() == SettingsCommands.Kind.CANCELLATION ? cancellations : pending;
+      var result = selected.remove(identity.operationId());
+      if (result == null) throw new AssertionError("Unmatched correlated refusal");
+      try {
+        check(
+            "late refusal retains its queued operation identity",
+            reply.message().getString().contains(identity.operationId().toString()));
+        check("late refusal exposes no result snapshot", reply.operation().isEmpty());
+        result.complete(reply);
+      } catch (Throwable failed) {
+        result.completeExceptionally(failed);
+      }
     } else if (submitting != null) submitting.complete(reply);
-    else if (reply.kind() == SettingsCommands.Kind.ERROR && pending.size() == 1) {
-      var first = pending.keySet().iterator().next();
-      pending.remove(first).complete(reply);
-    } else throw new AssertionError("Unmatched native command feedback: " + reply.kind());
+    else throw new AssertionError("Unmatched native command feedback: " + reply.kind());
+  }
+
+  private void refuseIdentity(Runnable attempted) {
+    try {
+      attempted.run();
+      throw new AssertionError("Mismatched feedback identity accepted");
+    } catch (IllegalArgumentException expected) {
+      check("mismatched feedback identity/channel refused", true);
+    }
   }
 
   private CompletionStage<SettingsCommands.Reply> command(String text, int expected) {
@@ -274,9 +330,11 @@ final class NativeImportCommandControls {
     submitting = result;
     submittedId = null;
     try {
-      if (text.startsWith("importprobe import cancel "))
-        cancellations.put(
-            UUID.fromString(text.substring("importprobe import cancel ".length())), result);
+      for (String root : List.of("importprobe", "shortimport")) {
+        String prefix = root + " import cancel ";
+        if (text.startsWith(prefix))
+          cancellations.put(UUID.fromString(text.substring(prefix.length())), result);
+      }
       check("native dispatch " + text, dispatcher.execute(text, source) == expected);
     } catch (Throwable failed) {
       result.completeExceptionally(failed);
@@ -692,6 +750,120 @@ final class NativeImportCommandControls {
                     }));
   }
 
+  private CompletionStage<Void> overlappingControls() {
+    var firstGate = new Gate();
+    var secondGate = new Gate();
+    gate = firstGate;
+    var first = command("importprobe import preview example:held reform:import/value_json");
+    var firstId = submittedId;
+    return firstGate
+        .entered
+        .thenCompose(
+            ignored ->
+                context.onOwner(
+                    () -> {
+                      gate = secondGate;
+                      var second =
+                          command(
+                              "importprobe import preview example:held reform:import/value_json");
+                      var secondId = submittedId;
+                      return secondGate
+                          .entered
+                          .thenCompose(
+                              unused ->
+                                  context.onOwner(
+                                      () -> {
+                                        check(
+                                            "two native requests remain outstanding",
+                                            pending.size() == 2
+                                                && pending.containsKey(firstId)
+                                                && pending.containsKey(secondId));
+                                        firstGate.release.countDown();
+                                        return null;
+                                      }))
+                          .thenCompose(unused -> first)
+                          .thenCompose(
+                              reply ->
+                                  context.onOwner(
+                                      () -> {
+                                        check(
+                                            "retired request refusal does not settle its successor",
+                                            reply.kind() == SettingsCommands.Kind.ERROR
+                                                && reply
+                                                    .operationId()
+                                                    .filter(firstId::equals)
+                                                    .isPresent()
+                                                && reply.correlation().orElseThrow().responseKind()
+                                                    == SettingsCommands.Kind.COMPLETED
+                                                && pending.size() == 1
+                                                && pending.containsKey(secondId)
+                                                && !second.toCompletableFuture().isDone());
+                                        secondGate.release.countDown();
+                                        return null;
+                                      }))
+                          .thenCompose(unused -> second)
+                          .thenAccept(
+                              reply ->
+                                  check(
+                                      "successor returns its own complete result",
+                                      reply.operationId().filter(secondId::equals).isPresent()
+                                          && completed(reply) instanceof DocumentImports.Preview));
+                    }))
+        .thenCompose(stage -> stage);
+  }
+
+  private CompletionStage<Void> cancellationDisclosureControls() {
+    gate = new Gate();
+    var result = command("shortimport import preview example:held reform:import/value_json");
+    var id = submittedId;
+    heldOperation = target.actions().activeImports().orElseThrow().operation(id).orElseThrow();
+    return gate.entered
+        .thenCompose(
+            ignored ->
+                context.onOwner(
+                    () -> {
+                      revokeAfterCancellation = true;
+                      return command("shortimport import cancel " + id);
+                    }))
+        .thenCompose(stage -> stage)
+        .thenCompose(
+            reply -> {
+              check(
+                  "cancel refusal retains its channel while completion remains pending",
+                  reply.kind() == SettingsCommands.Kind.ERROR
+                      && reply.operation().isEmpty()
+                      && reply.operationId().filter(id::equals).isPresent()
+                      && reply.correlation().orElseThrow().responseKind()
+                          == SettingsCommands.Kind.CANCELLATION
+                      && heldOperation.snapshot().cancellationRequested()
+                      && pending.containsKey(id)
+                      && !result.toCompletableFuture().isDone());
+              check(
+                  "minimum feedback bound retains cancellation identity",
+                  reply.message().getString().length() <= 128
+                      && reply.message().getString().startsWith("Cancellation reply"));
+              gate.release.countDown();
+              return result;
+            })
+        .thenAccept(
+            reply -> {
+              check(
+                  "same operation separately settles its refused completion channel",
+                  reply.kind() == SettingsCommands.Kind.ERROR
+                      && reply.operation().isEmpty()
+                      && reply.operationId().filter(id::equals).isPresent()
+                      && reply.correlation().orElseThrow().responseKind()
+                          == SettingsCommands.Kind.COMPLETED
+                      && !pending.containsKey(id)
+                      && !cancellations.containsKey(id));
+              check(
+                  "minimum feedback bound retains completion identity",
+                  reply.message().getString().length() <= 128
+                      && reply.message().getString().startsWith("Completion reply"));
+              readAllowed = true;
+            });
+  }
+
   CompletionStage<JsonObject> run(boolean reopen) {
     return context
         .onWorker(
@@ -778,6 +950,8 @@ final class NativeImportCommandControls {
               return coldControls()
                   .thenCompose(unused -> refusalControls())
                   .thenCompose(unused -> heldControls())
+                  .thenCompose(unused -> overlappingControls())
+                  .thenCompose(unused -> cancellationDisclosureControls())
                   .thenCompose(
                       unused ->
                           command(

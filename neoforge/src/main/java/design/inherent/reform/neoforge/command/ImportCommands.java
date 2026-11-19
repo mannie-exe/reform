@@ -215,7 +215,9 @@ final class ImportCommands<S, T> {
                                 if (bridge.current(source, target)) {
                                   try {
                                     requireReview(source, target, catalog, review);
-                                    if (failed != null) bridge.error(source, failed);
+                                    if (failed != null)
+                                      bridge.error(
+                                          source, failed, id, SettingsCommands.Kind.CANCELLATION);
                                     else
                                       bridge.deliver(
                                           source,
@@ -225,7 +227,8 @@ final class ImportCommands<S, T> {
                                               target.actions(),
                                               null));
                                   } catch (RuntimeException refused) {
-                                    bridge.error(source, refused);
+                                    bridge.error(
+                                        source, refused, id, SettingsCommands.Kind.CANCELLATION);
                                   }
                                 }
                                 return null;

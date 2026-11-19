@@ -46,4 +46,8 @@ The [conflict branch](conflicts.md#native-commands) exposes explicit review, cho
 
 Bindings resolve actual actors, provide noncreating availability/lookup and route feedback on the current native executor. Late delivery requires the same context and actions instance. A UUID looks up only that scope's retained work. Feedback failure cannot replay an effect or change its acceptance. The generic bridge introduces no command root, server gateway or remote protocol.
 
+`Reply.correlation()` identifies an already admitted operation and its response channel (`QUEUED`, `COMPLETED`, `STATUS` or `CANCELLATION`). Replies carrying a snapshot must agree with its actual ID and channel; the four-argument constructor derives that correlation. A late disclosure/source guard can instead return ERROR with the same correlation and no snapshot. Its bounded human message also identifies the operation/channel. An earlier admission refusal has no invented operation identity. `operationId()` provides the ID without requiring a material snapshot.
+
+Route asynchronous replies by operation ID and response channel. Completion and cancellation can overlap for the same operation; an older request can also refuse while its successor remains pending. Neither a single-pending-request guess nor parsing visible text supplies that identity. Correlation preserves current recipient/owner/source checks and grants no authority to disclose a refused result.
+
 Updates to Brigadier, Components, executors or lifecycle require rechecking quoting/suggestions, bounded feedback, revoked/stale recipients, cold bursts and actual receipt semantics. [Verification](verification.md) records native execution and its limits.

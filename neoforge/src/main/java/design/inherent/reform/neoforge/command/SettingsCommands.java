@@ -45,8 +45,51 @@ public final class SettingsCommands {
     ERROR
   }
 
+  /** Identity and response channel remain distinct when completion and cancellation overlap. */
+  public record Correlation(UUID operationId, Kind responseKind) {
+    public Correlation {
+      Objects.requireNonNull(operationId);
+      if (Objects.requireNonNull(responseKind) == Kind.ERROR)
+        throw new IllegalArgumentException("Select the original response channel, not ERROR");
+    }
+  }
+
+  /** An admitted identity survives a refused result-disclosure guard without exposing its data. */
   public record Reply(
-      Kind kind, Level level, Component message, Optional<OperationSnapshot<?>> operation) {}
+      Kind kind,
+      Level level,
+      Component message,
+      Optional<OperationSnapshot<?>> operation,
+      Optional<Correlation> correlation) {
+    public Reply {
+      Objects.requireNonNull(kind);
+      Objects.requireNonNull(level);
+      Objects.requireNonNull(message);
+      Objects.requireNonNull(operation);
+      Objects.requireNonNull(correlation);
+      if (operation.isPresent()
+          && !correlation.equals(operation.map(snapshot -> new Correlation(snapshot.id(), kind))))
+        throw new IllegalArgumentException("Feedback must retain its actual operation identity");
+      if (kind != Kind.ERROR
+          && correlation.isPresent()
+          && correlation.orElseThrow().responseKind() != kind)
+        throw new IllegalArgumentException("Feedback must retain its actual response channel");
+    }
+
+    public Reply(
+        Kind kind, Level level, Component message, Optional<OperationSnapshot<?>> operation) {
+      this(
+          kind,
+          level,
+          message,
+          operation,
+          operation.map(snapshot -> new Correlation(snapshot.id(), kind)));
+    }
+
+    public Optional<UUID> operationId() {
+      return correlation.map(Correlation::operationId);
+    }
+  }
 
   public record Target<T>(OwnerContext context, DocumentActions<T> actions) {
     public Target {
@@ -259,6 +302,7 @@ public final class SettingsCommands {
         if (selected != null && target.actions().fields().field(selected).isEmpty())
           throw new PolicyRefusal("field.unavailable", "Select a declared field");
         var handle = action.apply(target.actions());
+        var id = handle.snapshot().id();
         queued(source, handle);
         handle
             .completion()
@@ -271,14 +315,14 @@ public final class SettingsCommands {
                               if (current(source, target)) {
                                 try {
                                   beforeReply.run();
-                                  if (failed != null) error(source, failed);
+                                  if (failed != null) error(source, failed, id);
                                   else
                                     deliver(
                                         source,
                                         reply(
                                             Kind.COMPLETED, observed, target.actions(), selected));
                                 } catch (RuntimeException refused) {
-                                  error(source, refused);
+                                  error(source, refused, id);
                                 }
                               }
                               return null;
@@ -318,7 +362,7 @@ public final class SettingsCommands {
                           .onOwner(
                               () -> {
                                 if (current(source, target)) {
-                                  if (failed != null) error(source, failed);
+                                  if (failed != null) error(source, failed, id, Kind.CANCELLATION);
                                   else
                                     deliver(
                                         source,
@@ -541,20 +585,49 @@ public final class SettingsCommands {
     }
 
     void error(S source, Throwable failed) {
+      error(source, failed, Optional.empty());
+    }
+
+    void error(S source, Throwable failed, UUID operation) {
+      error(source, failed, operation, Kind.COMPLETED);
+    }
+
+    void error(S source, Throwable failed, UUID operation, Kind responseKind) {
+      error(source, failed, Optional.of(new Correlation(operation, responseKind)));
+    }
+
+    private void error(S source, Throwable failed, Optional<Correlation> correlation) {
       while (failed instanceof CompletionException && failed.getCause() != null)
         failed = failed.getCause();
       String text =
           failed instanceof PolicyRefusal refused
               ? first(refused.report())
               : "Settings operation is unavailable";
+      String prefix =
+          correlation
+              .map(
+                  id -> {
+                    String channel =
+                        switch (id.responseKind()) {
+                          case QUEUED -> "Admission";
+                          case COMPLETED -> "Completion";
+                          case STATUS -> "Status";
+                          case CANCELLATION -> "Cancellation";
+                          case ERROR ->
+                              throw new IllegalArgumentException("Unknown original response");
+                        };
+                    return channel + " reply for " + id.operationId() + ": ";
+                  })
+              .orElse("");
       if (available(source))
         deliver(
             source,
             new Reply(
                 Kind.ERROR,
                 Level.ERROR,
-                Component.literal(bounded(text, maximum)),
-                Optional.empty()));
+                Component.literal(prefix + bounded(text, maximum - prefix.length())),
+                Optional.empty(),
+                correlation));
     }
   }
 

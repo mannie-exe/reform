@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Correlated native command refusals
+
+The feedback snapshot passes `spotlessApply check build --warning-mode all`: 454 core cases, eight native adapter tests, eighteen tooling cases, packaged public headless execution and native addon/probe compilation. All 126 owned Java sources match their source entries. Combined artifact `6b8f7eebc2839743c30f932269fb080814db581bea747ac8076b780747ac894e`, sources `de1ab226ec1007f31979885e0bd44631a5d89f4727fca99145dc0b1bee0594f9` and unchanged core `53656a60687517adc55b81b5746b2200cb98d815e1ae3571bccdda061a51d25f` identify this cut.
+
+The pre-fix actual native import runner reproduces a late refused reply losing the identity of its queued operation on the preceding factory artifact. The corrected `--command-imports-only` clients pass in 11.991/10.833 seconds with 220/thirteen assertions. Replies now carry the actual admitted operation ID and response channel independently of a disclosed result. Three malformed identity/channel controls are refused. Native completion, cancellation, source/READ revocation and departed-recipient controls retain their guards and expose no refused material snapshot.
+
+Two held native requests remain outstanding while replacing an import workflow. The older request refuses under its own identity; its successor remains pending and later returns its own complete result. A separate control revokes READ after the actual cancellation flag is set: cancellation refusal and eventual completion refusal share one operation UUID while retaining distinct channels. Both fit the minimum 128-character feedback bound, retain the full UUID and disclose no result. The fixture routes these by typed identity/channel, removing the former single-pending-request guess. A refused reply does not establish that the underlying effect failed or rolled back.
+
+The same artifact's `--command-conflicts-only` regression passes in 13.145/10.896 seconds with 131/six assertions, retaining native parsing, choices, authority/scope checks, cancellation and saved reopen. All four final native clients close their contexts and remove their marked fixtures/logs. Earlier factory, key UI and dedicated evidence remains attributed to its own preceding artifact; this is not a new complete client/server matrix.
+
+[Operations](operations.md#native-commands) owns the public reply contract. These are actual native local command/executor checks with the packaged Maven library and named source-container addon/probe. They do not qualify a remote transport, player chat delivery, full-pack behavior or the remaining operation workspace/recovery UI. Phase 1 remains incomplete and publication/personal rollout remain outside this execution.
+
 ## Ordinary native key factory and shared client lifetime
 
 The factory snapshot passes `spotlessApply check build --warning-mode all`: 454 core cases, eight native adapter tests, eighteen tooling cases, packaged public headless execution and independent native addon/probe compilation. All 126 owned Java sources match the sources artifact. Combined artifact `d69a56e292a7477cea1d9706a8023ece58285e13a15fb8d2a0fa8d66bf57d1cb`, sources `828b131e5fe33a6a517cf1f1a38d31a60e183e0c20f24287e29e11ec49ce60bc` and unchanged core `53656a60687517adc55b81b5746b2200cb98d815e1ae3571bccdda061a51d25f` identify this cut.
@@ -11,6 +23,8 @@ The factory snapshot passes `spotlessApply check build --warning-mode all`: 454 
 The pre-fix native run exhausts owner lifetime hooks on refused key-screen construction attempt 63. Full screen construction now shares guarded ownership transfer with JSON entry. The corrected native control refuses seventy key views and seventy JSON views, then successfully opens each valid form. This establishes resource cleanup for those construction failures, not a general exception rollback or arbitrary consumer callback guarantee.
 
 The same artifact's registered COMMON-owner runner passes two dedicated boots in 9.989/8.237 seconds: 39/six owner assertions, sixteen structural and 27 reference assertions each, six/zero native saves and zero off-thread validators. Both runners load the exact packaged Maven library; example/probe remain named ModDev source containers. Their marked native fixtures/logs are removed and personal instances remain untouched.
+
+The same factory artifact additionally passes `--lifecycle-only` in 11.269 seconds and `--recipe-only` in 12.411 seconds. The former settles the initialization observer's held reentrant retry at actual shutdown; the latter retains the original native unsaved world-creation recipe and managed-context lifetime. These are disposable real clients, and the recipe fixture creates no playable world. Both marked run trees/logs are removed.
 
 [Native keys](native-keys.md#ordinary-registration-and-entry) owns the factory, native timing and update contract. [Client JSON](client-json.md) owns the shared worker/status/lifetime conventions. This is focused factory and dedicated qualification, not a new complete twenty-nine-client suite or physical-device, integrated/full-pack, language/font/resource-reload or cost qualification. Broader composition and remaining Phase 1 requirements stay open; no consumer migration, publication, push or personal rollout is included.
 

@@ -206,7 +206,9 @@ final class ConflictCommands<S, T> {
                               if (bridge.current(source, target)) {
                                 try {
                                   active(source, target, conflicts);
-                                  if (failed != null) bridge.error(source, failed);
+                                  if (failed != null)
+                                    bridge.error(
+                                        source, failed, id, SettingsCommands.Kind.CANCELLATION);
                                   else
                                     bridge.deliver(
                                         source,
@@ -216,7 +218,8 @@ final class ConflictCommands<S, T> {
                                             target.actions(),
                                             null));
                                 } catch (RuntimeException refused) {
-                                  bridge.error(source, refused);
+                                  bridge.error(
+                                      source, refused, id, SettingsCommands.Kind.CANCELLATION);
                                 }
                               }
                               return null;
