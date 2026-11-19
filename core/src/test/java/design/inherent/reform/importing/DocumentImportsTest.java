@@ -17,7 +17,7 @@ import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.serialization.JsonLimits;
@@ -722,7 +722,7 @@ class DocumentImportsTest {
     final Path path = root.resolve("imported.json");
     final long ownerThread;
     final OwnerContext context;
-    final JsonOwner<Profile> settings;
+    final FileOwner<Profile> settings;
     final DocumentActions<Profile> actions;
     CountDownLatch release;
 
@@ -749,7 +749,7 @@ class DocumentImportsTest {
               JsonStore.Format.NEW_ENVELOPE,
               JSON,
               draftLimits);
-      settings = owner(() -> new JsonOwner<>(context, store, 16));
+      settings = owner(() -> new FileOwner<>(context, store, 16));
       var access = owner(() -> context.access(read::get, write::get));
       var session = owner(() -> settings.open(access));
       assertEquals(CommitReceipt.Persistence.SAVED, await(session.initialize()).persistence());

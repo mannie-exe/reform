@@ -161,3 +161,15 @@ class NativeFormFixtureGuards(unittest.TestCase):
             "form-review-narrow.png", "form-review-narrow-entry.png")}
         self.assertTrue(PROBE.successful_report(report, ("review",), "exact-jar"))
         self.assertFalse(PROBE.successful_report(report, ("review",), "different-jar"))
+        report["runs"].insert(0, {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "catalog",
+            "librarySha256": "exact-jar", "catalog": {"status": "PASS",
+                "editorClosed": True, "factoryClosed": True}}})
+        self.assertFalse(PROBE.successful_report(report, ("catalog", "review"), "exact-jar"))
+        report["screenshots"].update({name: "a" * 64 for name in (
+            "form-catalog-wide.png", "form-catalog-wide-entry.png",
+            "form-catalog-narrow.png", "form-catalog-narrow-entry.png",
+            "form-catalog-localized.png", "form-catalog-localized-entry.png")})
+        self.assertTrue(PROBE.successful_report(report, ("catalog", "review"), "exact-jar"))
+        del report["screenshots"]["form-review-narrow.png"]
+        self.assertFalse(PROBE.successful_report(report, ("catalog", "review"), "exact-jar"))

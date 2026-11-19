@@ -2,11 +2,11 @@
 
 `DocumentSession<T>` connects an actual owner to the shared editor. `DocumentRead`, `OwnerObservation`, opaque `PreparedEdit` and `CommitReceipt` separate saved state, context/session identity, one-shot preparation and persistence/application outcomes. Matching identifiers do not make a foreign proposal an issued token. Supported operations are explicit: an owner without an application-only path must refuse it rather than repeat persistence.
 
-`JsonOwner<T>` supplies owned JSON storage and worker-prepared runtime publication. [Unsaved world recipes](world-recipes.md) use actual context admission with no file persistence. [Registered NeoForge settings](native-settings.md) supply their actual native serializer/callback path through the same editor boundary. These are experimental explicit-infrastructure APIs. Other actor gateways/factories/backends, complete operation/cancellation views and real consumer migrations remain required by [coverage](coverage.md).
+`FileOwner<T>` connects a declared [text store](storage.md) to the shared lifetime, actor authorization, operation lane and receipts. Its ordinary construction publishes the owner's runtime value after saving; its startup factory stages future choices without replacing the current selection. [Unsaved world recipes](world-recipes.md) use actual context admission with no file persistence. [Registered NeoForge settings](native-settings.md) supply their actual native serializer/callback path through the same editor boundary. These are experimental explicit-infrastructure APIs. Other actor gateways/factories/backends, complete operation/cancellation views and real consumer migrations remain required by [coverage](coverage.md).
 
 ## Construct one document owner
 
-Create `OwnerContext` with an explicitly admitted native executor, worker executor, native-thread verifier and resource limits. Construct `JsonOwner` on that native thread with its actual `JsonStore` and a maximum number of outstanding document operations. Executors are borrowed; the platform/factory retains their queue bounds and shutdown ownership. There is no common-pool fallback or hidden per-document thread.
+Create `OwnerContext` with an explicitly admitted native executor, worker executor, native-thread verifier and resource limits. Construct `FileOwner` on that native thread with its actual `TextStore` and a maximum number of outstanding document operations. JSON and properties use this same owner rather than separate authorization or write implementations. Executors are borrowed; the platform/factory retains their queue bounds and shutdown ownership. There is no common-pool fallback or hidden per-document thread.
 
 The native gateway creates `OwnerContext.Access` using read/write callbacks bound to the actual actor and opens an owner session with it. A GUI or payload must not supply those callbacks. Registration requires the same context; observations and one-shot prepared proposals additionally belong to the particular document session. An identifier, filename, old successful read or complete candidate does not grant permission.
 
@@ -25,6 +25,14 @@ An access can serve several document sessions. Closing one session invalidates t
 All actor sessions of one document share a bounded logical lane through persistence **and** publication. A physical file lock alone would permit a second session to act between those stages. A competing session prepared against the prior effective revision is refused before its own persistence. External file changes remain subject to the backend's exact observed-byte conflict checks; this does not create a cross-process transaction.
 
 `Session.applySaved(observation)` reads saved bytes again, refuses a changed saved revision and attempts publication from that actual saved candidate. It performs no file write. It supports application-only retry after a successful save and refused application; it never substitutes a new unsaved candidate for the saved observation. A new observation allows an explicit review of externally changed values.
+
+## Immutable startup files
+
+`FileOwner.startup(context, storage, maximumOperations, active)` is an asynchronous registration factory for choices read only at game or dedicated-server process start. The trusted loader owner supplies an optional actual active `Candidate<T>` from the exact definition. Its validation/copy runs on the worker before the owner is exposed. Registration performs no source read or initialization, and an absent active snapshot stays unknown rather than borrowing saved values or defaults.
+
+This owner shares ordinary read, complete preparation, fresh authority, one-shot proposals, exact-byte conflicts and serialized persistence. A successful save acknowledges the file baseline with `STAGED` application and a game-restart requirement. It never changes the active snapshot or its revision. Invalid saved data likewise does not invalidate a separately qualified startup selection. Current source diagnostics and active-value observation remain separate.
+
+The session advertises no `APPLY_SAVED`, and a direct application-only request refuses without reading or writing the file. Closing its original context closes the active handle. Only a new context whose trusted loader actually supplies the next startup snapshot can present the new selection as active. This is not a permission bypass, live mixin reload or world-generation migration mechanism. The ordinary constructor's application metadata overload remains a notice; callers must choose the startup factory to obtain this immutable policy.
 
 ## Keep editing off native threads
 

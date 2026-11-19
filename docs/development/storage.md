@@ -1,6 +1,6 @@
 # Owned storage
 
-The experimental storage core connects real files to definitions and [edit sessions](editing.md). It is a synchronous worker-side backend, not the full asynchronous owner service. It supplies no actor authorization, context lifetime, native callback, effective-value publication or GUI. An owner must admit those boundaries and keep this work off render/tick threads; a widget must not receive the storage backend as its save authority. [Coverage](coverage.md) retains those remaining requirements.
+The experimental storage core connects real files to definitions and [edit sessions](editing.md). `TextStore<T>` shares observed-file identity, complete candidate admission, explicit initialization, no-op preservation and guarded replacement between format implementations. It is a synchronous worker-side backend, not the asynchronous owner service. It supplies no actor authorization, context lifetime, native callback, effective-value publication or GUI. An owner must admit those boundaries and keep this work off render/tick threads; a widget must not receive the storage backend as its save authority. [Coverage](coverage.md) retains those remaining requirements.
 
 ## Bind a declared location
 
@@ -26,7 +26,7 @@ Per-path locks coordinate all live library bindings to the canonical location. R
 
 ## Typed JSON storage
 
-`JsonStore<T>` attaches a definition, admitted file, explicit format and JSON/draft limits. `NEW_ENVELOPE` uses exactly `schemaVersion` and `values`; the positive owner-declared version is independent of library, wire, world-generation and runtime revisions. `EXISTING_BARE` retains the original unwrapped JSON shape. Properties, custom parsers and native NeoForge files still require their actual adapters; they do not become this backend merely by being configurable.
+`JsonStore<T>` attaches a definition, admitted file, explicit format and JSON/draft limits. `NEW_ENVELOPE` uses exactly `schemaVersion` and `values`; the positive owner-declared version is independent of library, wire, world-generation and runtime revisions. `EXISTING_BARE` retains the original unwrapped JSON shape. Native NeoForge files keep their actual registered serializer and callbacks rather than using this backend.
 
 Read returns missing, invalid, unavailable or ready state with its exact saved snapshot, available draft, complete candidate and diagnostics. Envelope selection preserves original scalar spelling in `values`. Malformed JSON, unsupported/fractional/string versions, unknown envelope fields and invalid values do not turn into loaded defaults. Invalid typed drafts remain available when structurally admissible. Unreadable/invalid UTF-8 file access fails explicitly and does not rewrite data.
 
@@ -38,4 +38,20 @@ Pretty output preserves explicitly declared JSON nulls, including nullable recor
 
 The [public headless consumer](../../examples/headless/src/main/java/example/ReviewProfile.java) performs this sequence using only the packaged Maven artifact and removes its own temporary directory. It does not qualify native permissions, execution or application policies. [Verification](verification.md) owns tested artifacts and limits.
 
-For backend changes, retain concurrent initialization, exact-byte conflicts, read-only/regular/symlink checks, UTF-8/byte bounds, source spelling, malformed/unsupported input, no-op behavior, post-write failure/unknown outcomes, temporary cleanup and lock lifetime controls. Native TOML serializers/events must keep their own owner executor and callback order during migration; this JSON backend does not replace them.
+## Typed properties storage
+
+`PropertiesStore<T>` uses the JDK's `Properties.load(Reader)` semantics over the admitted UTF-8 source. Registration requires a flat record of scalar fields, optionally wrapped by reference metadata or declared defaults. It rejects structural/optional fields instead of inventing a dotted-key encoding. Missing defaulted fields stay omitted, explicit equal-default values remain explicit and the existing filename/keys acquire no JSON envelope or schema field.
+
+Logical duplicate keys are refused, including differently escaped spellings of the same key. Booleans must be exactly lowercase `true` or `false`; logical trailing whitespace is significant. Numeric values pass strict JSON numeric admission and the declared codec/ranges. Text and choices remain strings. Unknown fields remain invalid until explicitly removed or repaired. Malformed native escapes and unsupported projection input preserve source bytes; no read silently supplies defaults or repairs a file. The shared JSON value projection also refuses unpaired logical surrogates.
+
+The writer preserves comments, blank lines, unchanged assignments, escaped keys, continuations and their line endings. A changed assignment uses the public native property serializer without its timestamp header; new assignments use declared field order and the source's first line-ending convention. An unfinished EOF continuation receives a separating blank line before appended assignments. The complete transformed logical map must equal the intended authored map before file effects. The public native parser is the semantic check for both original chunk boundaries and final output; the library does not copy JDK-private parsing or writing code.
+
+`PropertiesStore.Limits.STANDARD` admits 1,024 properties, 16,384 physical lines, 4,096 characters per logical key and 32,768 per logical value. File-byte, JSON-projection and draft bounds remain independently declared. Exhaustion returns unavailable/incomplete without a partial draft or candidate. These are input admission bounds, not measured heap or latency guarantees.
+
+The [public properties example](../../examples/headless/src/main/java/example/PropertiesEditing.java) connects this format to the same owner, editor and GUI/command services, preserving an immutable active startup snapshot while saving future choices. [Owners](owners.md#immutable-startup-files) owns that application policy. Properties serialization alone does not make a live startup switch safe.
+
+## Additional text formats
+
+A `TextStore<T>` subclass supplies pure bounded `decode`, `encode` and `validateEncoded` hooks. Format diagnostics use `InvalidData` with a complete or unavailable `ValidationReport`. Unexpected format failures expose a fixed diagnostic. Hooks run on the admitted worker; they must not perform separate file effects, native callbacks, authority checks or runtime publication. Reuse the actual shared file identity/write boundary rather than building a second owner or writer. This extension API is not an arbitrary path or parser endpoint.
+
+For backend changes, retain concurrent initialization, exact-byte conflicts, read-only/regular/symlink checks, UTF-8/byte bounds, source spelling, malformed/unsupported input, no-op behavior, post-write failure/unknown outcomes, temporary cleanup and lock lifetime controls. Native TOML serializers/events must keep their own owner executor and callback order during migration; this text-store backend does not replace them.

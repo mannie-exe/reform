@@ -14,7 +14,7 @@ import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.serialization.JsonLimits;
@@ -96,7 +96,7 @@ class ReferenceSelectionTest {
     final AtomicReference<Runnable> beforeSourceRead = new AtomicReference<>();
     final AtomicReference<Runnable> beforeDocumentRead = new AtomicReference<>();
     final OwnerContext context;
-    final JsonOwner<Profile> owner;
+    final FileOwner<Profile> owner;
     final DocumentActions<Profile> actions;
     final ReferenceActions<String, List<String>> references;
     final Path file = root.resolve("profile.json");
@@ -117,7 +117,7 @@ class ReferenceSelectionTest {
               JsonStore.Format.NEW_ENVELOPE,
               json,
               DraftLimits.CONFIGURATION);
-      owner = nativeCall(() -> new JsonOwner<>(context, store, 16));
+      owner = nativeCall(() -> new FileOwner<>(context, store, 16));
       var access =
           nativeCall(
               () ->

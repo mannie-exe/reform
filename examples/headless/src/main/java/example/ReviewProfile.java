@@ -17,7 +17,7 @@ import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonLimits;
@@ -167,8 +167,9 @@ public final class ReviewProfile {
     UnitsEditing.verify();
     RangeEditing.verify();
     DependentEditing.verify();
+    PropertiesEditing.verify();
     System.out.println(
-        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe/typed-maps/sets/field-defaults/optionals/variants/composition/units/ranges/dependencies/scalar-selection/manual-conflict-service; game classes absent");
+        "Packaged public consumer passed: decode/draft/history/late-save/conflict/reload/real-file/async-owner/context-recipe/typed-maps/sets/field-defaults/optionals/variants/composition/units/ranges/dependencies/scalar-selection/manual-conflict-service/properties-startup; game classes absent");
   }
 
   private static void verifyStorage(DocumentDefinition<Profile> definition, JsonLimits limits)
@@ -195,7 +196,7 @@ public final class ReviewProfile {
               },
               OwnerContext.Limits.STANDARD);
       try {
-        var owner = ownerExecutor.submit(() -> new JsonOwner<>(context, store, 8)).get();
+        var owner = ownerExecutor.submit(() -> new FileOwner<>(context, store, 8)).get();
         var writable = new AtomicBoolean(true);
         var access = ownerExecutor.submit(() -> context.access(() -> true, writable::get)).get();
         var bound = ownerExecutor.submit(() -> owner.open(access)).get();

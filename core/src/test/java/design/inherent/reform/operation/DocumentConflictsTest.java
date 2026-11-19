@@ -14,7 +14,7 @@ import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.OwnerObservation;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -363,7 +363,7 @@ class DocumentConflictsTest {
     final CompletableFuture<Void> validationRelease = new CompletableFuture<>();
     final Path path = root.resolve(UUID.randomUUID() + ".json");
     final OwnerContext context;
-    final JsonOwner<Profile> settings;
+    final FileOwner<Profile> settings;
     final EditorActor<Profile> actor;
     final DocumentActions<Profile> actions;
     final DocumentConflicts<Profile> conflicts;
@@ -385,7 +385,7 @@ class DocumentConflictsTest {
               JsonStore.Format.NEW_ENVELOPE,
               JSON,
               DraftLimits.CONFIGURATION);
-      settings = owner(() -> new JsonOwner<>(context, store, 8));
+      settings = owner(() -> new FileOwner<>(context, store, 8));
       var access =
           owner(
               () ->

@@ -19,7 +19,7 @@ import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.NumericDisplay;
@@ -681,8 +681,8 @@ class DocumentActionsTest {
     final Path path = root.resolve("actions.json");
     final OwnerContext context;
     final OwnerContext.Access access;
-    final JsonOwner<Profile> owner;
-    final JsonOwner<Profile>.Session session;
+    final FileOwner<Profile> owner;
+    final FileOwner<Profile>.Session session;
     final EditorActor<Profile> actor;
     final DocumentActions<Profile> actions;
 
@@ -732,7 +732,7 @@ class DocumentActionsTest {
               JsonStore.Format.NEW_ENVELOPE,
               JSON,
               DraftLimits.CONFIGURATION);
-      owner = nativeCall(() -> new JsonOwner<>(context, store, 16));
+      owner = nativeCall(() -> new FileOwner<>(context, store, 16));
       access = nativeCall(() -> context.access(read::get, write::get));
       session = nativeCall(() -> owner.open(access));
       assertEquals(CommitReceipt.Persistence.SAVED, await(session.initialize()).persistence());

@@ -14,7 +14,7 @@ import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.validation.ValidationReport;
@@ -79,8 +79,8 @@ class EditorActorTest {
     final CountDownLatch reading = new CountDownLatch(1), releaseRead = new CountDownLatch(1);
     final OwnerContext context;
     final OwnerContext.Access access;
-    final JsonOwner<Profile> owner;
-    final JsonOwner<Profile>.Session source;
+    final FileOwner<Profile> owner;
+    final FileOwner<Profile>.Session source;
     final DocumentDefinition<Profile> definition;
     final EditorActor<Profile> actor;
     final Path path = root.resolve("settings.json");
@@ -122,7 +122,7 @@ class EditorActorTest {
               workers,
               () -> assertEquals(nativeThread, Thread.currentThread().threadId()),
               OwnerContext.Limits.STANDARD);
-      owner = nativeCall(() -> new JsonOwner<>(context, store, 8));
+      owner = nativeCall(() -> new FileOwner<>(context, store, 8));
       access =
           nativeCall(
               () ->

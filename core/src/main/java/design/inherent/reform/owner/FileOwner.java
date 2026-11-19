@@ -7,8 +7,8 @@ import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.CommitReceipt.Application;
 import design.inherent.reform.owner.CommitReceipt.Persistence;
-import design.inherent.reform.storage.JsonStore;
 import design.inherent.reform.storage.OwnedFile;
+import design.inherent.reform.storage.TextStore;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.List;
@@ -23,15 +23,23 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * A context-owned JSON document. All actor sessions share one bounded persistence/publication lane.
+ * A context-owned text document. All actor sessions share one bounded persistence/publication lane.
  * Native gateways supply actual actor access; a snapshot or proposal is never an authority grant.
  */
-public final class JsonOwner<T> {
+public final class FileOwner<T> {
+  private static final String STARTUP_EXPLANATION =
+      "Read at the next game or dedicated-server process start. Saved choices do not change this"
+          + " process's active selection.";
+  private static final List<CommitReceipt.Requirement> STARTUP_REQUIREMENTS =
+      List.of(
+          new CommitReceipt.Requirement(
+              FieldPath.ROOT, CommitReceipt.RequirementKind.GAME_RESTART, STARTUP_EXPLANATION));
+
   /** An authorized observation, bound to this document and this particular actor session. */
   public static final class Observation<T> implements OwnerObservation<T> {
     private final Object owner;
     private final UUID context, session;
-    private final JsonStore.Read<T> saved;
+    private final TextStore.Read<T> saved;
     private final SettingsHandle.View<T> effective;
     private final SourceInfo provenance;
     private final ApplicationEffects applicationEffects;
@@ -40,7 +48,7 @@ public final class JsonOwner<T> {
         Object owner,
         UUID context,
         UUID session,
-        JsonStore.Read<T> saved,
+        TextStore.Read<T> saved,
         SettingsHandle.View<T> effective,
         SourceInfo provenance,
         ApplicationEffects applicationEffects) {
@@ -66,7 +74,7 @@ public final class JsonOwner<T> {
       return saved;
     }
 
-    public JsonStore.Read<T> saved() {
+    public TextStore.Read<T> saved() {
       return saved;
     }
 
@@ -92,7 +100,7 @@ public final class JsonOwner<T> {
 
   private record Proposal<T>(Observation<T> baseline, Candidate<T> candidate) {}
 
-  private record Initialization<T>(JsonStore<T> storage, SettingsHandle.Revision expected) {}
+  private record Initialization<T>(TextStore<T> storage, SettingsHandle.Revision expected) {}
 
   private record Applied(Application state, ValidationReport report) {}
 
@@ -148,7 +156,8 @@ public final class JsonOwner<T> {
       Optional<String> savedRevision,
       Optional<Observation<T>> observation,
       ValidationReport persistenceReport,
-      ValidationReport applicationReport)
+      ValidationReport applicationReport,
+      List<Requirement> requirements)
       implements CommitReceipt<T> {
     public Receipt {
       Objects.requireNonNull(persistence);
@@ -157,6 +166,7 @@ public final class JsonOwner<T> {
       Objects.requireNonNull(observation);
       Objects.requireNonNull(persistenceReport);
       Objects.requireNonNull(applicationReport);
+      requirements = List.copyOf(requirements);
     }
   }
 
@@ -187,7 +197,9 @@ public final class JsonOwner<T> {
 
     @Override
     public Set<Operation> operations() {
-      return Set.of(Operation.READ, Operation.COMMIT, Operation.APPLY_SAVED);
+      return startup
+          ? Set.of(Operation.READ, Operation.COMMIT)
+          : Set.of(Operation.READ, Operation.COMMIT, Operation.APPLY_SAVED);
     }
 
     public UUID id() {
@@ -357,6 +369,11 @@ public final class JsonOwner<T> {
      * file write, even when a previous save succeeded but its application was refused.
      */
     public CompletionStage<Receipt<T>> applySaved(OwnerObservation<T> input) {
+      if (startup)
+        return CompletableFuture.<Receipt<T>>failedFuture(
+                new PolicyRefusal(
+                    "owner.unsupported", "Startup choices cannot be applied to this process"))
+            .minimalCompletionStage();
       final Observation<T> observed;
       try {
         observed = ownObservation(input);
@@ -398,7 +415,7 @@ public final class JsonOwner<T> {
     }
 
     private CompletionStage<Receipt<T>> write(
-        Callable<JsonStore.Write<T>> writer, SettingsHandle.Revision expected) {
+        Callable<TextStore.Write<T>> writer, SettingsHandle.Revision expected) {
       var started = new AtomicBoolean();
       return context
           .onWorker(
@@ -446,7 +463,7 @@ public final class JsonOwner<T> {
     private CompletionStage<Receipt<T>> finish(
         Persistence persistence,
         Optional<String> savedRevision,
-        JsonStore.Read<T> saved,
+        TextStore.Read<T> saved,
         ValidationReport persistenceReport,
         SettingsHandle.Revision expected,
         ValidationReport prevented) {
@@ -485,13 +502,14 @@ public final class JsonOwner<T> {
     }
 
     private CompletionStage<Applied> application(
-        JsonStore.Read<T> saved, SettingsHandle.Revision expected, ValidationReport prevented) {
+        TextStore.Read<T> saved, SettingsHandle.Revision expected, ValidationReport prevented) {
       if (prevented != null) return CompletableFuture.completedStage(applicationFailure(prevented));
       if (saved == null)
         return CompletableFuture.completedStage(
             applicationFailure(
                 problem("owner.observation", "Saved values are unavailable", false)));
-      if (saved.candidate().isEmpty())
+      if (saved.candidate().isEmpty()) {
+        if (startup) return CompletableFuture.completedStage(applicationFailure(saved.report()));
         return context
             .onOwner(
                 () -> {
@@ -500,6 +518,10 @@ public final class JsonOwner<T> {
                   return applicationFailure(saved.report());
                 })
             .exceptionally(failure -> applicationFailure(report(failure)));
+      }
+      if (startup)
+        return CompletableFuture.completedStage(
+            new Applied(Application.STAGED, ValidationReport.VALID));
       return runtime
           .publishAsync(context, expected, saved.candidate().orElseThrow(), this::authorizedWrite)
           .handle(
@@ -514,15 +536,14 @@ public final class JsonOwner<T> {
       return true;
     }
 
-    private Observation<T> observation(JsonStore.Read<T> saved) {
+    private Observation<T> observation(TextStore.Read<T> saved) {
       return new Observation<>(
           identity,
           context.id(),
           id,
           saved,
           runtime.handle().view(),
-          new SourceInfo(
-              "json", "Owned JSON source", Optional.of(storage.binding().path().toString())),
+          storage.provenance(),
           applicationEffects);
     }
 
@@ -547,23 +568,41 @@ public final class JsonOwner<T> {
   private final RuntimePolicy<T> runtime;
   private final SerialLane lane;
   private final ApplicationEffects applicationEffects;
-  private volatile JsonStore<T> storage;
+  private final boolean startup;
+  private volatile TextStore<T> storage;
 
-  public JsonOwner(OwnerContext context, JsonStore<T> storage, int maximumOperations) {
+  public FileOwner(OwnerContext context, TextStore<T> storage, int maximumOperations) {
     this(context, storage, maximumOperations, ApplicationEffects.OWNER_PUBLICATION);
   }
 
-  public JsonOwner(
+  public FileOwner(
       OwnerContext context,
-      JsonStore<T> storage,
+      TextStore<T> storage,
       int maximumOperations,
       ApplicationEffects applicationEffects) {
+    this(
+        context,
+        storage,
+        maximumOperations,
+        applicationEffects,
+        new RuntimePolicy<>(storage.definition(), context::checkOwnerThread),
+        false);
+  }
+
+  private FileOwner(
+      OwnerContext context,
+      TextStore<T> storage,
+      int maximumOperations,
+      ApplicationEffects applicationEffects,
+      RuntimePolicy<T> runtime,
+      boolean startup) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.storage = Objects.requireNonNull(storage);
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
+    this.startup = startup;
     lane = new SerialLane(maximumOperations);
-    runtime = new RuntimePolicy<>(storage.definition(), context::checkOwnerThread);
+    this.runtime = runtime;
     context.onClose(
         () -> {
           try {
@@ -573,6 +612,53 @@ public final class JsonOwner<T> {
             runtime.close();
           }
         });
+  }
+
+  /**
+   * An immutable process-start selection, independently supplied by its trusted loader owner.
+   * Registration does not read or initialize the source. The optional actual active candidate is
+   * validated/copied on the worker before the owner is exposed; absence never substitutes defaults.
+   * Saves only stage the next process's choices and offer no application-only operation.
+   */
+  public static <T> CompletionStage<FileOwner<T>> startup(
+      OwnerContext context,
+      TextStore<T> storage,
+      int maximumOperations,
+      Optional<Candidate<T>> active) {
+    Objects.requireNonNull(context).requireOwner();
+    Objects.requireNonNull(storage);
+    Objects.requireNonNull(active);
+    if (maximumOperations < 1)
+      throw new IllegalArgumentException("Document operation limit must be positive");
+    if (active.isPresent() && active.orElseThrow().definition() != storage.definition())
+      throw new IllegalArgumentException("Active startup selection belongs to another definition");
+    var runtime = new RuntimePolicy<>(storage.definition(), context::checkOwnerThread);
+    CompletionStage<?> prepared =
+        active.isEmpty()
+            ? CompletableFuture.completedStage(null)
+            : runtime.publishAsync(
+                context,
+                runtime.handle().view().revision(),
+                active.orElseThrow(),
+                () -> {
+                  context.requireCurrent();
+                  return true;
+                });
+    return prepared
+        .thenCompose(
+            ignored ->
+                context.onOwner(
+                    () ->
+                        new FileOwner<>(
+                            context,
+                            storage,
+                            maximumOperations,
+                            ApplicationEffects.root(
+                                ApplicationEffects.Timing.GAME_RESTART, STARTUP_EXPLANATION),
+                            runtime,
+                            true)))
+        .toCompletableFuture()
+        .minimalCompletionStage();
   }
 
   /**
@@ -620,7 +706,7 @@ public final class JsonOwner<T> {
     return new ValidationReport(List.of(Issue.error(code, FieldPath.ROOT, message)), complete);
   }
 
-  private static <T> Receipt<T> receipt(
+  private Receipt<T> receipt(
       Persistence persistence,
       Application application,
       Optional<String> savedRevision,
@@ -628,6 +714,12 @@ public final class JsonOwner<T> {
       ValidationReport persistenceReport,
       ValidationReport applicationReport) {
     return new Receipt<>(
-        persistence, application, savedRevision, observation, persistenceReport, applicationReport);
+        persistence,
+        application,
+        savedRevision,
+        observation,
+        persistenceReport,
+        applicationReport,
+        application == Application.STAGED ? STARTUP_REQUIREMENTS : List.of());
   }
 }

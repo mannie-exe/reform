@@ -14,7 +14,7 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormModel;
@@ -417,7 +417,7 @@ final class CompositionEditing {
         workers = Executors.newFixedThreadPool(2);
     final Path directory, file;
     final OwnerContext context;
-    final JsonOwner<Profile> owner;
+    final FileOwner<Profile> owner;
     final DocumentActions<Profile> actions;
     final ReferenceActions<String, String> references;
 
@@ -445,7 +445,7 @@ final class CompositionEditing {
                 DraftLimits.CONFIGURATION);
         owner =
             nativeCall(
-                () -> new JsonOwner<>(context, store, 16, ApplicationEffects.OWNER_PUBLICATION));
+                () -> new FileOwner<>(context, store, 16, ApplicationEffects.OWNER_PUBLICATION));
         var access = nativeCall(() -> context.access(() -> true, () -> true));
         var session = nativeCall(() -> owner.open(access));
         await(session.initialize());

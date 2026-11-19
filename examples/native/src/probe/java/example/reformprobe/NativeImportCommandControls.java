@@ -23,7 +23,7 @@ import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.serialization.JsonLimits;
@@ -98,8 +98,8 @@ final class NativeImportCommandControls {
   private List<ImportSource> sources;
   private ImportCatalog<ImportExample.Profile> catalog;
   private SettingsCommands.Target<ImportExample.Profile> target;
-  private JsonOwner<ImportExample.Profile> owner;
-  private JsonOwner<ImportExample.Profile>.Session session;
+  private FileOwner<ImportExample.Profile> owner;
+  private FileOwner<ImportExample.Profile>.Session session;
   private CompletableFuture<SettingsCommands.Reply> submitting;
   private UUID submittedId;
   private DocumentImports.Preview preview;
@@ -886,7 +886,7 @@ final class NativeImportCommandControls {
                 context.onOwner(
                     () -> {
                       owner =
-                          new JsonOwner<>(
+                          new FileOwner<>(
                               context,
                               new JsonStore<>(
                                   ImportExample.DEFINITION,

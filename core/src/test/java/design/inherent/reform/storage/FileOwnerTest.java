@@ -11,7 +11,7 @@ import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.CommitReceipt;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class JsonOwnerTest {
+class FileOwnerTest {
   @TempDir Path root;
 
   record Profile(int count) {}
@@ -63,7 +63,7 @@ class JsonOwnerTest {
     }
   }
 
-  private static DraftTree changed(JsonOwner.Observation<Profile> observed, String count) {
+  private static DraftTree changed(FileOwner.Observation<Profile> observed, String count) {
     return observed
         .saved()
         .draft()
@@ -81,8 +81,8 @@ class JsonOwnerTest {
     final AtomicBoolean closeOnRead = new AtomicBoolean();
     final CountDownLatch reached = new CountDownLatch(1), release = new CountDownLatch(1);
     final OwnerContext context;
-    final JsonOwner<Profile> owner;
-    final JsonOwner<Profile>.Session session;
+    final FileOwner<Profile> owner;
+    final FileOwner<Profile>.Session session;
     final Path path = root.resolve("preferences.json");
 
     Harness() throws Exception {
@@ -129,7 +129,7 @@ class JsonOwnerTest {
                 assertEquals(nativeThread, Thread.currentThread().threadId());
               },
               OwnerContext.Limits.STANDARD);
-      owner = nativeCall(() -> new JsonOwner<>(context, source, 8));
+      owner = nativeCall(() -> new FileOwner<>(context, source, 8));
       session =
           nativeCall(
               () ->

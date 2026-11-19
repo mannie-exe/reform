@@ -14,7 +14,7 @@ import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.JsonStore;
@@ -75,8 +75,8 @@ final class NativeConflictCommandControls {
           },
           OwnerContext.Limits.STANDARD);
   private final OwnerContext.Access access = context.access(() -> readAllowed, () -> writeAllowed);
-  private JsonOwner<ConflictExample.Profile> owner;
-  private JsonOwner<ConflictExample.Profile>.Session session;
+  private FileOwner<ConflictExample.Profile> owner;
+  private FileOwner<ConflictExample.Profile>.Session session;
   private SettingsCommands.Target<ConflictExample.Profile> target;
   private CompletableFuture<SettingsCommands.Reply> waiting;
   private int maximum = 8192, targets;
@@ -232,7 +232,7 @@ final class NativeConflictCommandControls {
               nativeCall(
                   () -> {
                     owner =
-                        new JsonOwner<>(
+                        new FileOwner<>(
                             context,
                             new JsonStore<>(
                                 ConflictExample.DEFINITION,

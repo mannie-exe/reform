@@ -42,6 +42,7 @@ import org.lwjgl.glfw.GLFW;
 final class NativeReviewControls {
   private static final FieldPath MIN = CatalogExample.GLOBAL.field("minimum");
   private static final FieldPath MAX = CatalogExample.GLOBAL.field("maximum");
+  private static final String LONG_NAME = "Alpha review " + "x".repeat(100);
   private final Minecraft client = Minecraft.getInstance();
   private final Screen parent = client.screen;
   private final SettingsScreen<CatalogExample.Profiles> form;
@@ -50,6 +51,7 @@ final class NativeReviewControls {
   private final Consumer<String> progress;
   private final BiConsumer<String, Runnable> capture;
   private final String original;
+  private String originalName;
   private final List<SettingsCommands.Reply> replies = new ArrayList<>();
   private ReviewScreen<?> view, retiredView;
   private FieldPath first;
@@ -57,6 +59,7 @@ final class NativeReviewControls {
   private EditBox filter;
   private DocumentReview captured;
   private int stage;
+  private int nameCharacters;
   private boolean complete;
 
   @SuppressWarnings("unchecked") // Ready public factory uses this exact definition.
@@ -66,7 +69,9 @@ final class NativeReviewControls {
     this.reopen = reopen;
     this.progress = progress;
     this.capture = capture;
-    original = Files.readString(path());
+    var witness = client.gameDirectory.toPath().resolve("native-review-original.json");
+    if (!reopen) Files.writeString(witness, Files.readString(path()));
+    original = Files.readString(witness);
     form =
         (SettingsScreen<CatalogExample.Profiles>)
             CatalogExample.settings()
@@ -141,7 +146,7 @@ final class NativeReviewControls {
         if (reopen) {
           check(
               "fresh JVM sees no discarded inspection edits",
-              raw(first.field("name")).equals("Land")
+              Files.readString(path()).equals(original)
                   && raw(MIN).equals("1")
                   && ((DraftNode.Sequence) node(CatalogExample.PROFILES)).rows().size() == 2
                   && !form.editorView().dirty());
@@ -155,11 +160,26 @@ final class NativeReviewControls {
         }
         check(
             "profile can be selected through actual public navigation", form.selectSection(first));
-        replace(form, field(first.field("name")), "Alpha review " + "x".repeat(100));
+        originalName = raw(first.field("name"));
+        var name = field(first.field("name"));
+        check("long text input receives native focus", focus(form, name));
+        name.moveCursorToEnd(false);
+        name.setHighlightPos(0);
         next("inspection retains unsaved profile text");
       }
       case 1 -> {
-        if (!ready() || !raw(first.field("name")).startsWith("Alpha review")) return false;
+        if (!ready()) return false;
+        if (nameCharacters < LONG_NAME.length()) {
+          // Real typing yields to owner completion; a same-tick 113-event burst exhausts its
+          // intentionally bounded operation queue. Keep the long-value test without bypassing it.
+          int end = Math.min(LONG_NAME.length(), nameCharacters + 4);
+          for (; nameCharacters < end; nameCharacters++)
+            check(
+                "paced native text event is consumed",
+                form.charTyped(LONG_NAME.charAt(nameCharacters), 0));
+          return false;
+        }
+        if (!raw(first.field("name")).equals(LONG_NAME)) return false;
         check("range field can be selected", form.focusField(MIN));
         replace(form, field(MIN), "9");
         next("cross-field invalid input entered");
@@ -273,8 +293,8 @@ final class NativeReviewControls {
             "large authored collection retains complete captured data",
             values.wholeValue()
                 && values.draft().length() > 512
-                && values.baseline().contains("Land")
-                && values.effective().orElseThrow().contains("Land"));
+                && !values.baseline().equals(values.draft())
+                && values.baseline().equals(values.effective().orElseThrow()));
         press(button(view, "Expand"));
         check(
             "expansion does not repeat source work",
@@ -375,7 +395,7 @@ final class NativeReviewControls {
         if (!ready() || form.editorView().dirty()) return false;
         check(
             "revert retains source and effective values",
-            raw(first.field("name")).equals("Land")
+            raw(first.field("name")).equals(originalName)
                 && raw(MIN).equals("1")
                 && ((DraftNode.Sequence) node(CatalogExample.PROFILES)).rows().size() == 2
                 && Files.readString(path()).equals(original));

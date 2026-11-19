@@ -12,7 +12,7 @@ import design.inherent.reform.neoforge.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
-import design.inherent.reform.owner.JsonOwner;
+import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
@@ -64,15 +64,15 @@ public final class ClientJsonSettings<T> {
       Lifecycle lifecycle,
       Optional<SettingsHandle.View<T>> effective,
       ValidationReport report,
-      Optional<JsonOwner.Receipt<T>> initializationReceipt) {}
+      Optional<FileOwner.Receipt<T>> initializationReceipt) {}
 
   private record State<T>(
       Lifecycle lifecycle,
-      JsonOwner<T> owner,
+      FileOwner<T> owner,
       OwnerContext context,
       OwnerContext.Access access,
       ValidationReport report,
-      JsonOwner.Receipt<T> receipt) {}
+      FileOwner.Receipt<T> receipt) {}
 
   private static final JsonLimits JSON = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
 
@@ -158,7 +158,7 @@ public final class ClientJsonSettings<T> {
    * Read the actual published handle only after the native owner exists. No IO or fallback value.
    */
   public Optional<SettingsHandle<T>> runtime() {
-    return Optional.ofNullable(state.get().owner()).map(JsonOwner::handle);
+    return Optional.ofNullable(state.get().owner()).map(FileOwner::handle);
   }
 
   /** Explicit native menu registration; an existing owner factory is never replaced. */
@@ -351,7 +351,7 @@ public final class ClientJsonSettings<T> {
                     JsonStore.Format.NEW_ENVELOPE,
                     JSON,
                     DraftLimits.CONFIGURATION);
-            var owner = new JsonOwner<>(context, store, 16, applicationEffects);
+            var owner = new FileOwner<>(context, store, 16, applicationEffects);
             var access = context.access(() -> true, () -> true);
             initialize(
                 new State<>(
