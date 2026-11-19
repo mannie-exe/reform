@@ -168,6 +168,7 @@ public final class SettingsScreen<T> extends FormScreen {
   private final Map<FieldPath, Control> controls = new LinkedHashMap<>();
   private final Map<FieldPath, String> local = new LinkedHashMap<>();
   private final Map<FieldPath, Long> versions = new LinkedHashMap<>();
+  private final Map<FieldPath, Long> acceptedVersions = new LinkedHashMap<>();
   private final List<AbstractWidget> footer = new ArrayList<>();
   private final List<FieldPath> visibleFields = new ArrayList<>();
   private final Map<AbstractWidget, Boolean> structureButtons = new LinkedHashMap<>();
@@ -226,7 +227,12 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   boolean retainedInput() {
-    return unsent();
+    return controls.entrySet().stream()
+        .anyMatch(
+            entry ->
+                entry.getValue().editable()
+                    && !Objects.equals(
+                        versions.get(entry.getKey()), acceptedVersions.get(entry.getKey())));
   }
 
   boolean pendingWork() {
@@ -462,6 +468,9 @@ public final class SettingsScreen<T> extends FormScreen {
 
   @Override
   protected void init() {
+    // Reconcile only acknowledged local input with edits made through another view/service.
+    // A refused or still-pending local edit must remain available for explicit recovery.
+    synchronize(Map.copyOf(acceptedVersions));
     if (catalog != null) catalog.remember(panel);
     if (catalog != null) {
       controls.forEach(
@@ -617,6 +626,7 @@ public final class SettingsScreen<T> extends FormScreen {
     controls.keySet().retainAll(visibleFields);
     local.keySet().retainAll(visibleFields);
     versions.keySet().retainAll(visibleFields);
+    acceptedVersions.keySet().retainAll(visibleFields);
     if (bodyVisible) addRenderableWidget(panel);
     panel.finish(catalog == null ? scroll : 0);
     if (catalog == null) {
@@ -935,6 +945,7 @@ public final class SettingsScreen<T> extends FormScreen {
         || !control.target().session().equals(formSession)) {
       local.put(path, raw);
       versions.put(path, 0L);
+      acceptedVersions.put(path, 0L);
       control = createControl(shape, path, node, label, cycle);
       if (control.quantity() != null) local.put(path, control.quantity().input.text());
       controls.put(path, control);
@@ -1830,6 +1841,7 @@ public final class SettingsScreen<T> extends FormScreen {
 
   private void submit(FieldPath path, String value) {
     var control = controls.get(path);
+    var submittedVersion = versions.get(path);
     var target = control.target();
     DraftEdit.Action input =
         control.quantity() == null
@@ -1843,6 +1855,10 @@ public final class SettingsScreen<T> extends FormScreen {
                 minecraft.execute(
                     () -> {
                       pendingEdits--;
+                      if (failed == null
+                          && controls.get(path) != null
+                          && controls.get(path).token() == control.token())
+                        acceptedVersions.merge(path, submittedVersion, Math::max);
                       if (failed != null) {
                         notice = failure(failed);
                         controls
@@ -2046,6 +2062,7 @@ public final class SettingsScreen<T> extends FormScreen {
               }
               if (!raw.equals(local.get(path))) control.display().accept(raw);
               local.put(path, raw);
+              acceptedVersions.put(path, versions.get(path));
             }
           });
     } finally {
@@ -2211,6 +2228,7 @@ public final class SettingsScreen<T> extends FormScreen {
       return;
     }
     if (displayed != actions.view()) {
+      synchronize(Map.copyOf(acceptedVersions));
       displayed = actions.view();
       boolean changed = layoutChanged(displayed);
       if (catalog != null) {

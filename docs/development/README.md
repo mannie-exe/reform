@@ -15,6 +15,7 @@
 - [Numeric presentation](numbers.md) owns exact display/storage units and their validation boundary.
 - [Dependent settings](dependencies.md) owns bounded local availability, retained values and cached input evidence.
 - [Client files](client-files.md) owns physical-client registration, startup selection, initialization, entry and recovery defaults.
+- [Document batches](batches.md) owns complete-vector preflight, cross-document validation and ordered owner submission.
 - [Client workflows](client-workflows.md) owns composed native views and retained per-document editors.
 - [Server settings](server-settings.md) owns actual-server lifecycle, policy/native binding and local native-source access.
 - [World recipes](world-recipes.md) owns unsaved creation-context admission and domain compilation.

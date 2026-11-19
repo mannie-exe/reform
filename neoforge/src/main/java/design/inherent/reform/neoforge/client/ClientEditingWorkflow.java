@@ -1,9 +1,11 @@
 package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.operation.DocumentBatch;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.FormGeometry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -62,11 +64,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private final LinkedHashMap<DocumentId, Entry> entries = new LinkedHashMap<>();
   private final OwnerContext lifetime;
   private final Overview overview;
+  private final DocumentBatch.Validator validator;
+  private DocumentBatch batch;
+  private BatchReviewScreen batchView;
   private boolean closed;
 
-  private ClientEditingWorkflow(Screen parent, Component title, List<ClientForm> forms) {
+  private ClientEditingWorkflow(
+      Screen parent, Component title, List<ClientForm> forms, DocumentBatch.Validator validator) {
     ClientSettingsRuntime.requireClientThread();
     Objects.requireNonNull(title);
+    this.validator = Objects.requireNonNull(validator);
     var declared = List.copyOf(forms);
     if (declared.isEmpty() || declared.size() > MAXIMUM_DOCUMENTS)
       throw new IllegalArgumentException("A client workflow requires between 1 and 32 documents");
@@ -95,7 +102,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
    * Call on the native client thread when entering the UI, not during mod metadata registration.
    */
   public static ClientEditingWorkflow open(Screen parent, Component title, List<ClientForm> forms) {
-    return new ClientEditingWorkflow(parent, title, forms);
+    return open(parent, title, forms, ignored -> DocumentBatch.Check.VALID);
+  }
+
+  public static ClientEditingWorkflow open(
+      Screen parent, Component title, List<ClientForm> forms, DocumentBatch.Validator validator) {
+    return new ClientEditingWorkflow(parent, title, forms, validator);
   }
 
   public boolean isOpen() {
@@ -144,6 +156,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
    */
   public void discard(DocumentId document) {
     requireOpen();
+    if (batch != null && batch.hasActiveOperations())
+      throw new PolicyRefusal("client.batch_busy", "Wait for the batch operation to settle");
     var entry = entry(document);
     if (entry.editor == null) return;
     if (entry.editor.isOpen() && entry.editor.busy())
@@ -247,6 +261,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (closed) return;
     closed = true;
     Throwable failure = null;
+    try {
+      if (batch != null) batch.close();
+    } catch (RuntimeException | Error failed) {
+      failure = failed;
+    }
     for (var entry : entries.values()) {
       try {
         if (entry.editor != null) entry.editor.close();
@@ -257,12 +276,83 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       entry.editor = null;
     }
     entries.clear();
+    batch = null;
+    batchView = null;
     if (failure instanceof RuntimeException failed) throw failed;
     if (failure instanceof Error failed) throw failed;
   }
 
   private static Component text(String key, String fallback) {
     return Component.translatableWithFallback("reform.workflow." + key, fallback);
+  }
+
+  /**
+   * Explicitly enter every declared owner and review the complete vector, not a filtered subset.
+   */
+  public void reviewAll() {
+    requireOpen();
+    if (Minecraft.getInstance().screen != overview)
+      throw new PolicyRefusal("client.workflow_view", "Return to this workflow's overview first");
+    if (batch != null && batch.hasActiveOperations())
+      throw new PolicyRefusal("client.batch_busy", "Wait for the batch operation to settle");
+    var members = new ArrayList<DocumentBatch.Member<?>>();
+    for (var id : entries.keySet()) {
+      var selected = editor(id);
+      if (selected.busy())
+        throw new PolicyRefusal(
+            "client.editor_busy", "Wait for pending document work before review");
+      if (selected.screen().retainedInput())
+        throw new PolicyRefusal(
+            "client.unaccepted_input",
+            "Return to the document and retry or explicitly revert unaccepted input before batch review");
+      members.add(
+          DocumentBatch.member(
+              selected.actions(),
+              selected.dirty() ? DocumentBatch.Intent.COMMIT : DocumentBatch.Intent.CHECK));
+    }
+    if (batch != null) batch.close();
+    batch =
+        new DocumentBatch(
+            lifetime,
+            lifetime.access(() -> true, () -> true),
+            DocumentId.parse("reform:client_workflow"),
+            members,
+            validator,
+            DocumentBatch.Limits.STANDARD);
+    batchView =
+        new BatchReviewScreen(
+            text("review_all", "Review all documents"),
+            batch,
+            this::isOpen,
+            id -> entry(id).form.title(),
+            this::inspectBatch,
+            () -> Minecraft.getInstance().setScreen(overview),
+            this::close);
+    overview.navigate(batchView);
+  }
+
+  private void inspectBatch(DocumentBatch.Entry captured, Screen parent) {
+    var selected = editor(captured.document());
+    var report = captured.preflight();
+    var cross =
+        batchView.reviewedInput().orElseThrow().check().documents().get(captured.document());
+    if (cross != null) report = report.and(cross);
+    var screen =
+        new ReviewScreen<>(
+            text("review_fields", "Reviewed source and fields"),
+            entry(captured.document()).form.title(),
+            selected.actions(),
+            () -> isOpen() && selected.isOpen(),
+            path -> {
+              if (path.isPresent()) {
+                Minecraft.getInstance().setScreen(selected.screen());
+                selected.screen().focusField(path.orElseThrow());
+              } else Minecraft.getInstance().setScreen(parent);
+            },
+            this::close,
+            captured.review(),
+            report);
+    Minecraft.getInstance().setScreen(screen);
   }
 
   private final class Overview extends FormScreen {
@@ -298,20 +388,73 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       filter.setResponder(ignored -> rebuildWidgets());
       addRenderableWidget(filter);
       var token = generation;
+      var footer = new ArrayList<Button>();
       var done =
           Button.builder(
                   text("done", "Done"),
                   ignored -> {
                     if (current(token)) onClose();
                   })
-              .bounds(12, height - 32, Math.min(120, Math.max(1, width - 24)), 20)
+              .bounds(0, 0, Math.max(60, font.width(text("done", "Done")) + 20), 20)
               .build();
-      addRenderableWidget(done);
+      footer.add(done);
+      var review =
+          Button.builder(
+                  text("review_all", "Review all documents"),
+                  ignored -> {
+                    if (!current(token)) return;
+                    try {
+                      reviewAll();
+                    } catch (PolicyRefusal refused) {
+                      notice =
+                          ClientStatusScreen.reason(
+                              refused.report(), text("unavailable", "Review unavailable"));
+                      rebuildWidgets();
+                    }
+                  })
+              .bounds(
+                  0,
+                  0,
+                  Math.max(60, font.width(text("review_all", "Review all documents")) + 20),
+                  20)
+              .build();
+      review.active =
+          documents().stream().noneMatch(DocumentState::busy)
+              && (batch == null || !batch.hasActiveOperations());
+      footer.add(review);
+      if (batchView != null) {
+        var result =
+            Button.builder(
+                    text("batch_result", "Last batch review/result"),
+                    ignored -> {
+                      if (current(token)) navigate(batchView);
+                    })
+                .bounds(
+                    0,
+                    0,
+                    Math.max(60, font.width(text("batch_result", "Last batch review/result")) + 20),
+                    20)
+                .build();
+        footer.add(result);
+      }
+      var geometry =
+          FormGeometry.controls(
+              footer.stream().map(value -> new FormGeometry.Size(value.getWidth(), 20)).toList(),
+              Math.max(1, width - 24),
+              4);
+      int footerTop = height - 12 - geometry.height();
+      for (int i = 0; i < footer.size(); i++) {
+        var at = geometry.placements().get(i);
+        var control = footer.get(i);
+        control.setPosition(12 + at.x(), footerTop + at.y());
+        control.setWidth(at.width());
+        addRenderableWidget(control);
+      }
       float scroll = panel == null ? 0 : panel.scroll();
       String focus = panel == null ? null : panel.focusKey();
       panel =
           new FormPanel(
-              minecraft, 12, 62, Math.max(1, width - 24), Math.max(1, height - 102), false);
+              minecraft, 12, 62, Math.max(1, width - 24), Math.max(1, footerTop - 70), false);
       displayed = documents();
       var query = filter.getValue().strip().toLowerCase(Locale.ROOT);
       if (notice != null) panel.row(Component.empty(), notice);
@@ -440,7 +583,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     public void onClose() {
       if (!isOpen() || minecraft.screen != this) return;
       var current = documents();
-      if (current.stream().anyMatch(DocumentState::busy)) {
+      if (current.stream().anyMatch(DocumentState::busy)
+          || batch != null && batch.hasActiveOperations()) {
         notice =
             text(
                 "wait",
@@ -456,18 +600,23 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 title,
                 text(
                     "exit_help",
-                    "Review and save each document, discard the remaining drafts, or keep editing. Previously completed saves are retained; documents do not form one atomic transaction."),
+                    "Review all documents before ordered saving, discard the remaining drafts, or keep editing. Previously completed saves are retained; documents do not form one atomic transaction."),
                 text("review", "Review changes"),
                 Optional::empty,
                 choice -> {
                   if (choice == UnsavedChangesScreen.Choice.DISCARD) finish();
                   else {
                     minecraft.setScreen(this);
-                    if (choice == UnsavedChangesScreen.Choice.SAVE)
-                      current.stream()
-                          .filter(state -> state.available() && state.dirty())
-                          .findFirst()
-                          .ifPresent(state -> openDocument(state.document()));
+                    if (choice == UnsavedChangesScreen.Choice.SAVE) {
+                      try {
+                        reviewAll();
+                      } catch (PolicyRefusal refused) {
+                        notice =
+                            ClientStatusScreen.reason(
+                                refused.report(), text("unavailable", "Review unavailable"));
+                        rebuildWidgets();
+                      }
+                    }
                   }
                 },
                 ClientEditingWorkflow.this::close));
@@ -476,7 +625,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void finish() {
       // A domain/custom view may have started work after the decision was displayed.
-      if (documents().stream().anyMatch(DocumentState::busy)) {
+      if (documents().stream().anyMatch(DocumentState::busy)
+          || batch != null && batch.hasActiveOperations()) {
         if (minecraft.screen != this) minecraft.setScreen(this);
         notice =
             text(

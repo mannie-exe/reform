@@ -85,6 +85,7 @@ public final class NativeFormProbe {
   private NativeStartupControls startup;
   private NativeRegisteredControls registered;
   private NativeWorkflowControls workflow;
+  private NativeBatchControls batch;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -152,7 +153,9 @@ public final class NativeFormProbe {
               "registered",
               "registered-reopen",
               "workflow",
-              "workflow-reopen")
+              "workflow-reopen",
+              "batch",
+              "batch-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -381,6 +384,25 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("batch")) {
+        if (batch == null) {
+          if (!(mc.screen instanceof TitleScreen)) return;
+          recordArtifact();
+          batch =
+              new NativeBatchControls(
+                  mode.endsWith("-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (batch.tick()) {
+          report.add("batch", batch.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("workflow")) {
@@ -1221,6 +1243,7 @@ public final class NativeFormProbe {
     report.addProperty("ticks", ticks);
     report.addProperty("status", failure == null ? "PASS" : "FAIL");
     if (workflow != null) report.add("workflow", workflow.report());
+    if (batch != null) report.add("batch", batch.report());
     if (numeric != null) report.add("numeric", numeric.report());
     if (dependencies != null) report.add("dependencies", dependencies.report());
     if (collections != null) report.add("collections", collections.report());
@@ -1268,6 +1291,7 @@ public final class NativeFormProbe {
 
   private void shutdown(GameShuttingDownEvent event) {
     if (workflow != null) report.add("workflow", workflow.report());
+    if (batch != null) report.add("batch", batch.report());
     if (files != null) report.add("files", files.report());
     if (keyFactory != null) report.add("keyFactory", keyFactory.report());
     if (keyControls != null) {

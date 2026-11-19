@@ -86,6 +86,35 @@ public final class ReviewScreen<T> extends FormScreen {
     this(title, contextLabel, actions, selected, available, returned, abandoned, Optional.empty());
   }
 
+  /** Borrow an exact batch capture; this inspection performs no individual submission. */
+  ReviewScreen(
+      Component title,
+      Component contextLabel,
+      DocumentActions<T> actions,
+      BooleanSupplier available,
+      Consumer<Optional<FieldPath>> returned,
+      Runnable abandoned,
+      DocumentReview captured,
+      ValidationReport preflight) {
+    this(title, contextLabel, actions, Optional.empty(), available, returned, abandoned);
+    if (!captured.target().document().equals(actions.definition().id()))
+      throw new IllegalArgumentException("Review capture belongs to another document");
+    review = captured;
+    requested = true;
+    selected = captured.entries().isEmpty() ? null : captured.entries().getFirst().path();
+    var target = captured.target();
+    validated =
+        new EditorActor.Validation(
+            target.context(),
+            target.session(),
+            target.generation(),
+            target.version(),
+            target.sourceRevision(),
+            preflight);
+    updateDiagnostics();
+    index();
+  }
+
   public ReviewScreen(
       Component title,
       Component contextLabel,

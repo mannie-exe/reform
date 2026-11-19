@@ -2,6 +2,7 @@ package design.inherent.reform.owner;
 
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftEditRefusal;
@@ -136,6 +137,29 @@ public final class EditorActor<T> implements AutoCloseable {
       ValidationReport observationReport,
       Optional<CommitReceipt<T>> lastReceipt,
       ApplicationEffects applicationEffects) {}
+
+  /** One captured complete candidate plus actual read-authorized backend preparation. No effect. */
+  public record Preflight<T>(
+      Inspection<T> observation, Optional<Candidate<T>> candidate, ValidationReport report) {
+    public Preflight {
+      Objects.requireNonNull(observation);
+      Objects.requireNonNull(candidate);
+      Objects.requireNonNull(report);
+      if (candidate
+          .filter(value -> value.definition() != observation.snapshot().definition())
+          .isPresent())
+        throw new IllegalArgumentException("Preflight candidate belongs to another definition");
+      if (report.valid() && candidate.isEmpty())
+        throw new IllegalArgumentException("Successful preflight requires a complete candidate");
+    }
+
+    public DraftRevision target() {
+      return DraftRevision.of(observation.snapshot());
+    }
+  }
+
+  private record PreflightPlan<T>(
+      Inspection<T> observation, OwnerObservation<T> source, DraftTree.Inspection<T> inspected) {}
 
   private record Checked<T>(
       EditSession.Snapshot<T> snapshot, OwnerObservation<T> source, ValidationReport report) {}
@@ -285,18 +309,57 @@ public final class EditorActor<T> implements AutoCloseable {
   }
 
   public CompletionStage<Inspection<T>> inspect() {
-    return act(
-        () -> {
+    return act(() -> inspection(ready()));
+  }
+
+  private Inspection<T> inspection(Model selected) {
+    return new Inspection<>(
+        selected.editor.snapshot(),
+        selected.editor.baseline(),
+        selected.source.provenance(),
+        selected.source.effectiveView(),
+        selected.observationReport,
+        Optional.ofNullable(selected.lastReceipt),
+        selected.source.applicationEffects());
+  }
+
+  /** Backend preparation is intentionally not retained as a future write capability. */
+  public CompletionStage<Preflight<T>> preflight() {
+    return act(() -> {
           var selected = ready();
-          return new Inspection<>(
-              selected.editor.snapshot(),
-              selected.editor.baseline(),
-              selected.source.provenance(),
-              selected.source.effectiveView(),
-              selected.observationReport,
-              Optional.ofNullable(selected.lastReceipt),
-              selected.source.applicationEffects());
-        });
+          var observed = inspection(selected);
+          return new PreflightPlan<>(observed, selected.source, observed.snapshot().inspect());
+        })
+        .thenCompose(
+            plan -> {
+              if (!plan.inspected().report().valid())
+                return java.util.concurrent.CompletableFuture.completedStage(
+                    new Preflight<>(
+                        plan.observation(),
+                        plan.inspected().candidate(),
+                        plan.inspected().report()));
+              return source
+                  .read()
+                  .thenCompose(
+                      current -> {
+                        if (!current
+                            .document()
+                            .revision()
+                            .equals(plan.observation().snapshot().sourceRevision()))
+                          throw new PolicyRefusal(
+                              "owner.revision",
+                              "Saved source changed; observe it again before preflight");
+                        return source.prepare(plan.source(), plan.observation().snapshot().draft());
+                      })
+                  .handle(
+                      (prepared, failed) ->
+                          new Preflight<>(
+                              plan.observation(),
+                              plan.inspected().candidate(),
+                              failed == null
+                                  ? plan.inspected().report()
+                                  : plan.inspected().report().and(report(failed))));
+            });
   }
 
   /** Retry only the owner's actual saved-value application, retaining later drafts/history. */

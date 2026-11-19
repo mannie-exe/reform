@@ -16,6 +16,8 @@ This separate NeoForge mod consumes only the staged `design.inherent:reform` Mav
 
 `WorkflowExample` composes JSON, Controls and both native registrations through [retained client workflows](../../docs/development/client-workflows.md). `--workflow-only` checks invalid drafts/history across navigation, real key capture, independent persistence/receipts, pending-save exit refusal, competing-owner revision guards, explicit editor replacement, unexpected-navigation cleanup, native compact reflow and another JVM's saved values. Its UI draft lifetime is distinct from each borrowed document runtime. Game shutdown must also close an opened workflow that was never displayed.
 
+`--batch-only` selects complete-vector preflight over those four ordinary owners, typed cross-document validation, exact captured field inspection, stale-review refusal, measured combined review, ordered native saves, separate staged receipts and actual fresh-JVM values. Clean Controls participate as a read-only check without writing Options. The optional `DocumentBatch.Validator` belongs to the consumer and runs on a worker over complete immutable candidates; it does not query a native registry or replace any owner.
+
 Run `./gradlew --no-daemon check build` from the repository root to compile this example and its probe against the exact candidate artifact. This compiles native APIs without launching a game. It also runs the independent headless consumer and core/tooling checks.
 
 For a disposable client check, first build/stage the library, obtain sustained desktop focus, then run from the repository root:

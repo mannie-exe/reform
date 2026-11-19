@@ -154,6 +154,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationDescriptor<Empty, Description> describe;
   private final OperationDescriptor<Empty, ExportArtifact> export;
   private final OperationDescriptor<Empty, DocumentReview> review;
+  private final OperationDescriptor<Empty, EditorActor.Preflight<T>> preflight;
 
   public DocumentActions(
       OwnerContext context,
@@ -175,8 +176,8 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (!context.id().equals(actor.context()) || maximumExportBytes < 1)
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
-    if (limits.maximumDefinitions() < 18)
-      throw new IllegalArgumentException("Actions require room for eighteen operation definitions");
+    if (limits.maximumDefinitions() < 19)
+      throw new IllegalArgumentException("Actions require room for nineteen operation definitions");
     this.context = context;
     this.access = access;
     this.actor = actor;
@@ -318,6 +319,22 @@ public final class DocumentActions<T> implements AutoCloseable {
                                   if (current.availability() != EditorActor.Availability.READY)
                                     throw unavailable(current);
                                   return captured;
+                                })));
+    preflight =
+        query(
+            "preflight",
+            OperationDescriptor.Effect.INSPECT,
+            execution ->
+                actor
+                    .preflight()
+                    .thenCompose(
+                        result ->
+                            context.onOwner(
+                                () -> {
+                                  requireBatch(
+                                      OwnerContext.Right.READ, Optional.of(result.target()));
+                                  execution.checkpoint();
+                                  return result;
                                 })));
     scope.freeze();
   }
@@ -616,6 +633,50 @@ public final class DocumentActions<T> implements AutoCloseable {
   /** One captured draft/source/effective comparison; no reload, preparation or effect. */
   public OperationHandle<DocumentReview> review(OperationDescriptor.EntryPoint entry) {
     return scope.submit(review, entry, Empty.VALUE, readiness(entry));
+  }
+
+  /** Complete identified candidate/backend checks, without marking a submission or writing. */
+  public OperationHandle<EditorActor.Preflight<T>> preflight(OperationDescriptor.EntryPoint entry) {
+    return scope.submit(preflight, entry, Empty.VALUE, readiness(entry));
+  }
+
+  /** Package orchestration is confined to this actual owner thread, not just a context UUID. */
+  void requireBatchThread() {
+    context.requireOwner();
+  }
+
+  void requireBatch(OwnerContext.Right right, Optional<DraftRevision> expected) {
+    access.require(right);
+    requireBatchRead();
+    var current = actor.view();
+    if (expected.filter(value -> !value.matches(current.snapshot().orElseThrow())).isPresent())
+      throw new PolicyRefusal(
+          "editor.review_changed", "A reviewed document changed; review it again");
+    if (current.pending().isPresent())
+      throw new PolicyRefusal("batch.pending", "Reconcile the document's previous operation first");
+    if (current.review().isPresent())
+      throw new PolicyRefusal(
+          "batch.conflict", "Resolve the document's current source conflict first");
+  }
+
+  void requireBatchRead() {
+    access.require(OwnerContext.Right.READ);
+    if (closed) throw new PolicyRefusal("editor.closed", "This editing service is closed");
+    var current = actor.view();
+    if (current.availability() != EditorActor.Availability.READY || current.snapshot().isEmpty())
+      throw unavailable(current);
+  }
+
+  /** Pure bounded projection from the already captured preflight; caller uses a worker lane. */
+  DocumentReview reviewPreflight(EditorActor.Preflight<T> prepared) {
+    var observed = prepared.observation();
+    if (observed.snapshot().definition() != definition)
+      throw new IllegalArgumentException("Preflight belongs to another definition");
+    return DocumentReview.capture(
+        observed,
+        compare(observed, reviewLimits.maximumFields(), reviewLimits.maximumCharacters()),
+        fields,
+        reviewLimits);
   }
 
   public OperationHandle<Description> describe(OperationDescriptor.EntryPoint entry) {

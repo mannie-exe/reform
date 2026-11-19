@@ -18,6 +18,23 @@ with patch.dict(sys.modules, {"native_config_probe": CONFIG}):
 
 
 class NativeFormFixtureGuards(unittest.TestCase):
+    def test_batch_requires_native_completion_shutdown_and_complete_captures(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "batch",
+            "librarySha256": "exact-jar", "batch": {"status": "PASS"}}}
+        self.assertFalse(PROBE.successful_run(result, "batch", "exact-jar"))
+        result["native"]["batch"]["workflowClosed"] = True
+        self.assertTrue(PROBE.successful_run(result, "batch", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "batch", "another-jar"))
+        report = {"runs": [result], "screenshots": {}}
+        self.assertFalse(PROBE.successful_report(report, ["batch"], "exact-jar"))
+        report["screenshots"] = {f"form-batch-{name}{frame}.png": "digest"
+                                 for name in ("invalid", "wide", "narrow", "result")
+                                 for frame in ("", "-entry")}
+        self.assertTrue(PROBE.successful_report(report, ["batch"], "exact-jar"))
+        result["native"]["batch"]["status"] = "RUNNING"
+        self.assertFalse(PROBE.successful_report(report, ["batch"], "exact-jar"))
+
     def test_composed_workflow_requires_all_lifetimes_and_both_viewports(self):
         result = {"exitCode": 0, "termination": None, "native": {
             "status": "PASS", "nativeShutdownClosed": True, "mode": "workflow",

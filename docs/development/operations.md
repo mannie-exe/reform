@@ -18,7 +18,7 @@ Inputs remain immutable during admission. Workers freeze, encode and strictly de
 
 An optional prerequisite gates entry, not authority. Native rights are checked again after it completes. `DocumentActions` coalesces first-use loading and preserves edit/save order while a baseline loads. An unavailable source never substitutes factory defaults or silently retries; reload is explicit.
 
-Standard scope bounds are 64 definitions, 16 active operations and 64 retained operations. Input admission allows 64 KiB, 64 depth levels, 16,384 nodes, 32,768 string characters, 128 numeric characters and absolute decimal scale 4,096. Only terminal operations can be evicted. These local limits are independent of files, networking and domain workloads. `DocumentActions` needs room for all eighteen definitions, including identified review and conditional commit.
+Standard scope bounds are 64 definitions, 16 active operations and 64 retained operations. Input admission allows 64 KiB, 64 depth levels, 16,384 nodes, 32,768 string characters, 128 numeric characters and absolute decimal scale 4,096. Only terminal operations can be evicted. These local limits are independent of files, networking and domain workloads. `DocumentActions` needs room for all nineteen definitions, including identified review, backend preflight and conditional commit.
 
 `OperationHandle` exposes immutable snapshots and a completion stage. Snapshots identify the context/target and carry revision, phase, completed count, optional total, cancellation request and result/report. Progress cannot retreat in the same phase. Unknown totals stay unknown. `COMPLETED` means the provider produced a result; its save receipt may still report refused, partial, unknown or unapplied effects.
 
@@ -51,6 +51,10 @@ Raw projection defaults admit 512 field entries, 65,536 visited nodes and 524,28
 `applicationEffects()` retains the observation's [owner-declared application boundaries](owners.md#declared-application-boundaries). Each entry's optional `application()` is the nearest containing declaration; absence remains unknown. The full metadata and each projected entry notice share the raw-description character budget. Invalid drafts can retain their declarations without becoming saveable. These notices are not inferred from a past receipt and do not change the separately observed effective value.
 
 The native [inspection view](presentation.md#source-and-value-inspection) borrows these services and labels stale captures. Its opt-in [submission and operation feedback](presentation.md#identified-submission-and-operation-feedback) uses the exact conditional operation below. Inspection by itself remains read-only and never promises that the current world can accept new settings.
+
+## Complete backend preflight
+
+`DocumentActions.preflight(entry)` captures an identified inspection and complete typed candidate, freshly reads the actual backend revision and prepares that candidate without submitting or writing. READ suffices; a prepared result grants no WRITE authority. Invalid values retain their diagnostics without constructing a temporary owner value. Final disclosure requires the same current editor target, source availability and READ authority. Backend preparation is discarded rather than retained as a future write capability. [Document batches](batches.md) combine these actual captures across owners and repeat preflight before ordered effects.
 
 ## Conditional submission
 
