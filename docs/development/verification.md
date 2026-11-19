@@ -2,6 +2,20 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Draft-close decisions
+
+The draft-close snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 22 tooling cases, independent public-artifact execution and native addon/probe compilation. All 136 owned Java sources match their source entries. Combined artifact `1ea6981d05cac50894d08488d78c6158b90cdfb0d859c284a7e2a342169debc4`, sources `0ce6cc635546cd6157385c1786805b2226bc6dd740c900882bc3e918f75611d0` and unchanged core `513801fd28cf1eb706a5bb470dc9be88df23b15a2fe8697555f779563b8bc880` identify this cut.
+
+`native_form_probe.py --close-only` passes six disposable clients in 12.522/10.821/11.041/13.906/13.516/15.483 seconds. Ordinary form save/reopen/malformed-source and Keep/Discard controls remain intact. The dedicated file-close pair records 27/five assertions: disabled invalid Save, explicit reason, native Escape, stable initial/resize focus, retired callbacks, actual saved-but-refused publication, application-only recovery, later edits before acknowledgement, final Save and close, fresh-JVM reopen and actual context/worker shutdown. Completed wide and compact decision screenshots were inspected. The runner requires both frames and actual context/worker completion; a tooling control refuses missing lifecycle facts.
+
+The independent addon uses only public APIs. Its test-only value-comparison policy revokes WRITE or holds worker publication after actual source replacement, preserving normal value equality. It adds no production write hook or fabricated receipt. File contents, modification time and replacement identity remain unchanged across application-only recovery and existing-file initialization. These are local filesystem witnesses, not cross-platform or universal crash-durability claims.
+
+The same six-client selection includes 39 original native creation-context assertions. Direct admission, original generator/other dimensions, stale same-value context refusal and actual post-update callback uncertainty remain intact. An unknown admission disables another apply from the close decision. A deliberately reopened current context then applies its recipe and closes at actual depth sixteen, without creating a JSON source or playable world. The remaining unapplied managed recipe closes at game shutdown. Discarding the earlier unknown draft does not undo its already observed native update.
+
+The same artifact passes the registered dedicated owner in two boots of 10.079/8.749 seconds: 40/six owner assertions, sixteen structural and 27 reference assertions each, six/zero native saves and zero off-thread validators. All selected native runtimes are terminal and their marked trees/logs removed. This is selected close/recipe and common regression qualification, not a new full 35-client suite, physical input/spoken narration, integrated/full-pack or cost qualification.
+
+[Presentation](presentation.md) owns the reusable decision and completion conditions. Effect-aware submission confirmation, durable operation/recovery presentation, broader owners/contexts and the remaining Phase 1 gates stay open. No consumer migration, publication or personal rollout is included.
+
 ## Text storage and immutable startup selection
 
 The text-storage snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 21 tooling cases, independent public-artifact execution and native addon/probe compilation. All 135 owned Java sources match their source entries. Combined artifact `dd2f59818286100f45b799acd469b2fced8017c17f295b86d364b7bd204bfb50`, sources `320a3809ab24ebd4cbf4dbb5b9f0ee8746ae4b311ba3104cbb35b1a9cfb9c13a` and core `513801fd28cf1eb706a5bb470dc9be88df23b15a2fe8697555f779563b8bc880` identify this cut. The shared owner is now `FileOwner`; JSON and properties retain separate format implementations over `TextStore`.

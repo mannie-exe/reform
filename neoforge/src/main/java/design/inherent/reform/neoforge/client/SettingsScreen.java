@@ -48,7 +48,6 @@ import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.events.GuiEventListener;
-import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
@@ -1688,6 +1687,10 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private void requestSave() {
+    requestSave(false);
+  }
+
+  private void requestSave(boolean closeAfterSave) {
     if (saving || loading || pendingEdits > 0 || actions.view().snapshot().isEmpty()) return;
     if (unsent()) {
       var draft = actions.view().snapshot().orElseThrow().draft();
@@ -1718,6 +1721,31 @@ public final class SettingsScreen<T> extends FormScreen {
                                 receipt -> {
                                   notice = saved(receipt);
                                   if (receipt.acknowledgesBaseline()) synchronize(before);
+                                  var after = actions.view();
+                                  boolean finished =
+                                      receipt.application() == CommitReceipt.Application.APPLIED
+                                          || receipt.application()
+                                              == CommitReceipt.Application.STAGED
+                                          || receipt.persistence()
+                                                  == CommitReceipt.Persistence.UNCHANGED
+                                              && receipt.application()
+                                                  == CommitReceipt.Application.NOT_ATTEMPTED;
+                                  if (closeAfterSave
+                                      && minecraft.screen == this
+                                      && !closed
+                                      && receipt.acknowledgesBaseline()
+                                      && receipt.persistenceReport().valid()
+                                      && receipt.applicationReport().valid()
+                                      && finished
+                                      && after.availability() == EditorActor.Availability.READY
+                                      && after.snapshot().isPresent()
+                                      && after.pending().isEmpty()
+                                      && after.review().isEmpty()
+                                      && after.validation().valid()
+                                      && pendingEdits == 0
+                                      && !loading
+                                      && !after.dirty()
+                                      && !unsent()) finish();
                                 });
                       if (minecraft.screen == this) {
                         if (layoutChanged(actions.view())) rebuildWidgets();
@@ -2068,34 +2096,59 @@ public final class SettingsScreen<T> extends FormScreen {
       return;
     }
     if (actions.view().dirty() || unsent() || actions.view().review().isPresent()) {
-      boolean[] decided = {false};
       handoff = true;
-      minecraft.setScreen(
-          new ConfirmScreen(
-              choice -> {
-                decided[0] = true;
-                if (choice) finish();
-                else minecraft.setScreen(this);
-              },
-              contextRecipe()
-                  ? text("discard_recipe_title", "Discard unapplied recipe edits?")
-                  : text("discard_title", "Discard unsaved edits?"),
-              contextRecipe()
-                  ? text(
-                      "discard_recipe_help",
-                      "Discard this draft. This does not undo a creation-context update that already took place.")
-                  : text(
-                      "discard_help",
-                      "Discard this draft. This does not undo any save that has already taken place."),
-              text("discard", "Discard draft"),
-              text("keep_editing", "Keep editing")) {
-            @Override
-            public void removed() {
-              if (!decided[0]) actions.close();
-            }
-          });
-      handoff = false;
+      try {
+        minecraft.setScreen(
+            new UnsavedChangesScreen(
+                contextRecipe()
+                    ? text("unsaved_recipe_title", "Unapplied recipe changes")
+                    : text("unsaved_title", "Unsaved changes"),
+                contextLabel,
+                contextRecipe()
+                    ? text(
+                        "discard_recipe_help",
+                        "Apply this recipe, discard the draft, or keep editing. Discarding does not undo a creation-context update that already took place.")
+                    : text(
+                        "discard_help",
+                        "Save these changes, discard the draft, or keep editing. Discarding does not undo any save that has already taken place."),
+                contextRecipe()
+                    ? text("apply_close", "Apply recipe and close")
+                    : text("save_close", "Save and close"),
+                this::closeSaveBlocked,
+                choice -> {
+                  if (choice == UnsavedChangesScreen.Choice.DISCARD) finish();
+                  else {
+                    minecraft.setScreen(this);
+                    if (choice == UnsavedChangesScreen.Choice.SAVE) requestSave(true);
+                  }
+                },
+                actions::close));
+      } finally {
+        handoff = false;
+      }
     } else finish();
+  }
+
+  private Optional<Component> closeSaveBlocked() {
+    var view = actions.view();
+    if (closed
+        || view.availability() != EditorActor.Availability.READY
+        || view.snapshot().isEmpty())
+      return Optional.of(text("closed", "This editing context is unavailable."));
+    if (saving || loading || pendingEdits > 0)
+      return Optional.of(text("wait_close", "Wait for the current operation before closing."));
+    if (unsent())
+      return Optional.of(
+          text("close_unsent", "Keep editing and retry the unaccepted input before saving."));
+    if (view.pending().isPresent())
+      return Optional.of(
+          text(
+              "close_pending",
+              "Keep editing and reconcile the previous result before saving again."));
+    if (view.review().isPresent())
+      return Optional.of(
+          text("close_conflict", "Keep editing and resolve the current conflict before saving."));
+    return view.validation().valid() ? Optional.empty() : Optional.of(first(view.validation()));
   }
 
   private void finish() {

@@ -117,6 +117,18 @@ class NativeFormFixtureGuards(unittest.TestCase):
         self.assertFalse(PROBE.successful_run(result, "keys-factory-reopen", "exact-jar"))
         self.assertFalse(PROBE.successful_run(result, "keys-factory", "different-jar"))
 
+    def test_close_requires_actual_context_end_and_worker_drain(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "close",
+            "librarySha256": "exact-jar", "close": {"status": "PASS"}}}
+        self.assertFalse(PROBE.successful_run(result, "close", "exact-jar"))
+        result["native"]["close"]["contextClosed"] = True
+        self.assertFalse(PROBE.successful_run(result, "close", "exact-jar"))
+        result["native"]["close"]["workerTerminated"] = True
+        self.assertTrue(PROBE.successful_run(result, "close", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "close-reopen", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "close", "different-jar"))
+
     def test_catalog_success_requires_editor_and_owner_shutdown(self):
         result = {"exitCode": 0, "termination": None, "native": {
             "status": "PASS", "nativeShutdownClosed": True, "mode": "catalog",

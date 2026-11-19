@@ -7,6 +7,7 @@ import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.neoforge.client.ClientJsonSettings;
 import design.inherent.reform.neoforge.client.ClientKeyBindings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
+import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.ClientExample;
@@ -24,7 +25,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.components.events.GuiEventListener;
-import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.neoforged.api.distmarker.Dist;
@@ -80,6 +80,7 @@ public final class NativeFormProbe {
   private NativeKeyFactoryControls keyFactory;
   private NativeCatalogControls catalog;
   private NativeReviewControls review;
+  private NativeCloseControls closing;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -135,7 +136,9 @@ public final class NativeFormProbe {
               "catalog",
               "catalog-reopen",
               "review",
-              "review-reopen")
+              "review-reopen",
+              "close",
+              "close-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -332,6 +335,25 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("close")) {
+        if (closing == null) {
+          if (!(mc.screen instanceof TitleScreen)) return;
+          recordArtifact();
+          closing =
+              new NativeCloseControls(
+                  mode.equals("close-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (closing.tick()) {
+          report.add("close", closing.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("review")) {
@@ -768,7 +790,8 @@ public final class NativeFormProbe {
           next("narrow reflow preserves native field identity/focus/caret/selection");
         }
         case 7 -> {
-          check(mc.screen instanceof ConfirmScreen, "Dirty close did not request a decision");
+          check(
+              mc.screen instanceof UnsavedChangesScreen, "Dirty close did not request a decision");
           click(button(mc.screen, "Keep editing"));
           next("dirty close kept draft");
         }
@@ -796,7 +819,7 @@ public final class NativeFormProbe {
           next("defaults stage a dirty draft without writing");
         }
         case 11 -> {
-          check(mc.screen instanceof ConfirmScreen, "Default draft closed without review");
+          check(mc.screen instanceof UnsavedChangesScreen, "Default draft closed without review");
           click(button(mc.screen, "Discard draft"));
           check(
               mc.screen == parent && view().availability() == EditorActor.Availability.CLOSED,
@@ -1087,6 +1110,10 @@ public final class NativeFormProbe {
     if (keyFactory != null) report.add("keyFactory", keyFactory.report());
     if (catalog != null) report.add("catalog", catalog.report());
     if (review != null) report.add("review", review.report());
+    if (closing != null) {
+      closing.shutdown();
+      report.add("close", closing.report());
+    }
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());

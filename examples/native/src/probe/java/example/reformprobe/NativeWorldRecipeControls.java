@@ -5,6 +5,7 @@ import static example.reformprobe.NativeFormProbe.*;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.EditSession;
+import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
 import design.inherent.reform.neoforge.client.WorldRecipe;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
@@ -17,7 +18,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
@@ -87,7 +87,13 @@ final class NativeWorldRecipeControls {
 
   private void discard() {
     form.onClose();
-    check("dirty recipe close requests explicit review", client.screen instanceof ConfirmScreen);
+    check(
+        "dirty recipe close requests explicit review",
+        client.screen instanceof UnsavedChangesScreen);
+    if (actions.view().pending().isPresent())
+      check(
+          "unresolved admission cannot be repeated from close decision",
+          !button(client.screen, "Apply recipe and close").active);
     click(client.screen, button(client.screen, "Discard draft"));
     check("discard returns actual creation parent", client.screen == parent);
     check(
@@ -295,14 +301,45 @@ final class NativeWorldRecipeControls {
         check(
             "discard did not undo native update",
             depth(parent.getUiState().getSettings()) == 12 && callbackCalls == 1);
+        open(CreationExample.editor(parent, parent.getUiState().getSettings()));
+        step("actual post-update uncertainty retained; current context reopened explicitly");
+      }
+      case 11 -> {
+        if (!ready()) return false;
+        soil = input(form, "Soil depth");
+        check("fresh recipe observes the actual uncertain update", soil.getValue().equals("12"));
+        replace(form, soil, "16");
+        step("creation close draft staged");
+      }
+      case 12 -> {
+        if (!ready() || !actions.view().dirty() || !soil.getValue().equals("16")) return false;
+        form.onClose();
+        check(
+            "dirty creation close offers actual context application",
+            client.screen instanceof UnsavedChangesScreen
+                && button(client.screen, "Apply recipe and close").active);
+        click(client.screen, button(client.screen, "Apply recipe and close"));
+        step("native application and close requested");
+      }
+      case 13 -> {
+        if (client.screen != parent
+            || actions.view().availability() != EditorActor.Availability.CLOSED) return false;
+        check(
+            "creation closes after actual native admission without file persistence",
+            depth(parent.getUiState().getSettings()) == 16
+                && !Files.exists(
+                    client
+                        .gameDirectory
+                        .toPath()
+                        .resolve("config/reform_native_example/creation.json")));
         recipe = CreationExample.editor(parent, parent.getUiState().getSettings());
         retained = recipe.actions();
         pending =
             DocumentActions.result(retained.edit(EntryPoint.INTERNAL, "soil_depth", "14"))
                 .toCompletableFuture();
-        step("actual post-update uncertainty retained; managed shutdown control opened");
+        step("native close applied; managed shutdown control opened");
       }
-      case 11 -> {
+      case 14 -> {
         if (!pending.isDone()) return false;
         pending.join();
         check(
@@ -311,7 +348,7 @@ final class NativeWorldRecipeControls {
                 && retained.view().dirty());
         check(
             "unapplied shutdown draft did not alter generator",
-            depth(parent.getUiState().getSettings()) == 12);
+            depth(parent.getUiState().getSettings()) == 16);
         check(
             "no playable world or server was created",
             client.level == null
