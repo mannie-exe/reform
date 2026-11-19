@@ -338,7 +338,15 @@ public final class SettingsCommands {
 
     int control(S source, String identity, boolean cancel) {
       try {
-        var target = target(source);
+        var target =
+            (available(source) ? binding.existing(source) : Optional.<Target<T>>empty())
+                .filter(found -> found.actions().definition().id().equals(document))
+                .orElseThrow(
+                    () ->
+                        new PolicyRefusal(
+                            "operation.unavailable",
+                            "Operation is not retained in this actor scope"));
+        target.context().requireOwner();
         final UUID id;
         try {
           id = UUID.fromString(identity);

@@ -72,7 +72,7 @@ An explicitly supplied `ImportCatalog` adds the [registered import branch](impor
 
 The [conflict branch](conflicts.md#native-commands) exposes explicit review, choices and draft-only resolution. GUI and command frontends share its admission rules. Resolution and subsequent complete validation are distinct outcomes; saving remains explicit.
 
-Bindings resolve actual actors, provide noncreating availability/lookup and route feedback on the current native executor. Late delivery requires the same context and actions instance. A UUID looks up only that scope's retained work. Feedback failure cannot replay an effect or change its acceptance. The generic bridge introduces no command root, server gateway or remote protocol.
+Bindings resolve actual actors, provide noncreating availability and lookup, and route feedback on the current native executor. Late delivery requires the same context and actions instance. Status and cancellation look up a UUID in an existing editor's retained work. Feedback failure cannot replay an effect or change its acceptance. [Server policy commands](server-settings.md#native-server-commands) bind the same bridge to the dedicated console and current players.
 
 `Reply.correlation()` identifies an already admitted operation and its response channel (`QUEUED`, `COMPLETED`, `STATUS` or `CANCELLATION`). Replies carrying a snapshot must agree with its actual ID and channel; the four-argument constructor derives that correlation. A late disclosure/source guard can instead return ERROR with the same correlation and no snapshot. Its bounded human message also identifies the operation/channel. An earlier admission refusal has no invented operation identity. `operationId()` provides the ID without requiring a material snapshot.
 

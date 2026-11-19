@@ -17,9 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def successful_boot(boot, digest, policies=False):
     native = boot.get("native", {})
     result = boot.get("run", {})
+    commands = native.get("actualCommands")
     return (result.get("exitCode") == 0 and result.get("termination") is None
             and native.get("status") == "PASS" and native.get("librarySha256") == digest
-            and (not policies or native.get("serverShutdownClosed") is True))
+            and (not policies or (native.get("serverShutdownClosed") is True
+                                  and isinstance(commands, list) and len(commands) >= 12)))
 
 
 def run(java_home, timeout, registered=False, policies=False):
@@ -58,6 +60,7 @@ def run(java_home, timeout, registered=False, policies=False):
                    example / "build.gradle", example / "src/probe/java/example/reformprobe/NativeAddonServerProbe.java",
                    example / "src/probe/java/example/reformprobe/RegisteredOwnerProbe.java",
                    example / "src/probe/java/example/reformprobe/NativeServerPolicyProbe.java",
+                   example / "src/probe/java/example/reformprobe/NativeServerCommandControls.java",
                    example / "src/main/java/example/reform/ServerPolicyExample.java",
                    example / "src/main/java/example/reform/NativeExample.java",
                    example / "src/probe/java/example/reformprobe/NativeReferenceChecks.java",

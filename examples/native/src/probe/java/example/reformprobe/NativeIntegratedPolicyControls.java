@@ -32,6 +32,8 @@ import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -62,6 +64,10 @@ final class NativeIntegratedPolicyControls {
   private Screen gate;
   private SettingsScreen<?> form;
   private DocumentActions<?> fileActions, nativeActions;
+  private final ArrayList<String> commandFeedback = new ArrayList<>();
+  private String retiredOperation;
+  private LocalPlayer previousPlayer;
+  private ClientPacketListener previousConnection;
   private CompletableFuture<?> pending;
   private int step;
   private boolean complete;
@@ -81,6 +87,22 @@ final class NativeIntegratedPolicyControls {
   private void next(String label) {
     step++;
     progress.accept(label);
+  }
+
+  void receive(Component message) {
+    var text = message.getString();
+    if (commandFeedback.size() < 32
+        && (text.startsWith(ServerPolicyExample.DEFINITION.id().toString())
+            || text.contains("Operation is not retained"))) commandFeedback.add(text);
+  }
+
+  private void command(String action) {
+    commandFeedback.clear();
+    client.getConnection().sendCommand("reformpolicy file " + action);
+  }
+
+  private boolean received(String part) {
+    return commandFeedback.stream().anyMatch(reply -> reply.contains(part));
   }
 
   private void open(boolean toml) {
@@ -499,7 +521,76 @@ final class NativeIntegratedPolicyControls {
       }
       case 17 -> {
         if (!reopen && !done()) return false;
-        if (!reopen) check("FML callback is owned by actual integrated server thread", true);
+        if (reopen) {
+          step = 24;
+          return false;
+        }
+        check("FML callback is owned by actual integrated server thread", true);
+        command("set level 19");
+        next("actual host sends a vanilla command over the memory connection");
+      }
+      case 18 -> {
+        if (!received("dirty=true")) return false;
+        var prefix = ServerPolicyExample.DEFINITION.id() + ": queued ";
+        retiredOperation =
+            UUID.fromString(
+                    commandFeedback.stream()
+                        .filter(reply -> reply.startsWith(prefix))
+                        .findFirst()
+                        .orElseThrow()
+                        .substring(prefix.length()))
+                .toString();
+        check(
+            "native player command stages its own draft without persistence",
+            savedLevel() == 10 && effectiveLevel() == 10);
+        command("status " + retiredOperation);
+        next("inspect the exact retained operation via actual player chat");
+      }
+      case 19 -> {
+        if (!received("dirty=true")) return false;
+        check(
+            "native operator receives retained status through real system chat",
+            !received("queued"));
+        previousPlayer = client.player;
+        previousConnection = client.getConnection();
+        pending = server.submit(() -> server.getPlayerList().getPlayer(player).kill());
+        next("native fixture performs an ordinary same-connection respawn");
+      }
+      case 20 -> {
+        if (!done() || !client.player.isDeadOrDying()) return false;
+        client.player.respawn();
+        next("native client requests respawn");
+      }
+      case 21 -> {
+        if (client.player == previousPlayer
+            || !client.player.hasPermissions(2)
+            || nativeActions.isOpen()) return false;
+        check(
+            "respawn retires previous forms while retaining actual server and play connection",
+            server == client.getSingleplayerServer()
+                && previousConnection == client.getConnection()
+                && registered.context().isOpen()
+                && file.context().isOpen());
+        command("status " + retiredOperation);
+        next("status request from replacement player uses the old operation identity");
+      }
+      case 22 -> {
+        if (!received("Operation is not retained")) return false;
+        check("native stale operation cannot follow the new player", true);
+        command("get level");
+        next("replacement player opens a new command draft from the actual source");
+      }
+      case 23 -> {
+        if (!received("draft level = 10")) return false;
+        check(
+            "replacement command draft observes saved 10 and does not inherit unsaved 19",
+            savedLevel() == 10 && effectiveLevel() == 10);
+        open(true);
+        next("reopen independent native policy for disconnect control");
+      }
+      case 24 -> {
+        if (!ready()) return false;
+        nativeActions = form.editingActions();
         check(
             "current TOML presentation remains associated with running server before disconnect",
             nativeActions.isOpen());
@@ -507,7 +598,7 @@ final class NativeIntegratedPolicyControls {
         client.level.disconnect();
         client.disconnect(new TitleScreen());
       }
-      case 18 -> {
+      case 25 -> {
         if (client.getSingleplayerServer() != null || client.player != null || !server.isShutdown())
           return false;
         check(

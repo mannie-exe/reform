@@ -4,10 +4,12 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordTypes;
+import design.inherent.reform.neoforge.configuration.ServerPolicyCommands;
 import design.inherent.reform.neoforge.configuration.ServerSettings;
 import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.value.ValueTypes;
 import java.util.Objects;
+import net.minecraft.commands.Commands;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.IEventBus;
@@ -17,6 +19,7 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
 /**
@@ -55,6 +58,16 @@ public final class ServerPolicyExample {
     bus.addListener(this::reloading);
     bus.addListener(this::unloading);
     NeoForge.EVENT_BUS.addListener(this::starting);
+    NeoForge.EVENT_BUS.addListener(this::commands);
+  }
+
+  private void commands(RegisterCommandsEvent event) {
+    event
+        .getDispatcher()
+        .register(
+            Commands.literal("reformpolicy")
+                .then(ServerPolicyCommands.branch("file", DEFINITION))
+                .then(ServerPolicyCommands.registeredBranch("toml", NATIVE)));
   }
 
   private void loading(ModConfigEvent.Loading event) {

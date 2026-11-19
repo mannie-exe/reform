@@ -38,6 +38,14 @@ A draft revision describes the client editor. A source observation or receipt re
 
 `ServerSettings.admittedDocument(server, id)` is the noncreating registration lookup for the exact native server. `Document.localPresentation` and `LocalPresentation.attach` are the lower-level handoff for an already admitted host. Attach transfers one native source session into a separate owned editing context. Abandoning admission or closing the context releases the native session and access slot. Lookups and queued admission use the existing document limit and executor. The ordinary factory needs no packet protocol, custom executor or duplicate owner.
 
+## Native server commands
+
+In `RegisterCommandsEvent`, add `ServerPolicyCommands.branch(literal, definition)` for the actual declared file policy, or `registeredBranch(literal, documentId)` for a server-admitted native config. Register documents separately on server startup. These branches resolve registrations from the command's current server, so a dispatcher built before registration or rebuilt after data reload can use the current source. The library chooses no root. The two-argument factories use operator level two. The overloads let an addon choose one level for both reading and writing.
+
+The native console and each current player have separate drafts held under the document's existing bounds. Commands share the generated form's typed validation, comparison, export and persistence services. A draft opened through commands is independent of a draft opened through the integrated form. Saves meet at the same owner and source revision checks. Lowered command permission and foreign feedback sources cannot inherit an existing editor's authority.
+
+Availability and suggestions perform noncreating lookups. Status and cancellation require an already retained editor and exact operation UUID. Replies go to the original native recipient only while its current source and editor still match. Logout or native player replacement retires that command editor, including on a same-connection respawn. Reopening reads the new baseline. The server context closes its remaining editors when the world stops. Long-lived domain operations choose their own actor and respawn policy separately.
+
 ## Lifetime and resources
 
 The runtime admits eight simultaneous actual server scopes and 128 document identities per scope. Each document retains standard core context bounds, a sixteen-operation owner lane and a 64-edit actor lane. Its actions admit 32 definitions, 64 active operations and 128 retained observations. File-backed editors inherit their store's value/draft limits; registered editors use their actual native owner's value bounds. These limits are admission policy, not measured heap or responsiveness claims.

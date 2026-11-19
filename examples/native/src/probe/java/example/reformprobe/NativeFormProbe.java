@@ -196,6 +196,11 @@ public final class NativeFormProbe {
     NeoForge.EVENT_BUS.addListener(this::tick);
     NeoForge.EVENT_BUS.addListener(this::rendered);
     NeoForge.EVENT_BUS.addListener(this::renderedFrame);
+    if (mode.startsWith("integrated"))
+      NeoForge.EVENT_BUS.addListener(
+          (net.neoforged.neoforge.client.event.ClientChatReceivedEvent.System event) -> {
+            if (integrated != null && !event.isOverlay()) integrated.receive(event.getMessage());
+          });
     NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, this::shutdown);
   }
 

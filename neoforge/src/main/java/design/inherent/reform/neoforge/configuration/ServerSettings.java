@@ -20,6 +20,7 @@ import design.inherent.reform.storage.OwnedFile;
 import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.storage.TextStore;
 import design.inherent.reform.value.ValueType;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -36,12 +37,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
@@ -54,9 +58,13 @@ public final class ServerSettings implements AutoCloseable {
   private static final OperationScope.Limits ACTIONS =
       new OperationScope.Limits(32, 64, 128, OperationScope.Limits.STANDARD.input());
 
+  private record CommandEditor<T>(ServerGamePacketListenerImpl connection, Editor<T> editor) {}
+
   static {
     NeoForge.EVENT_BUS.addListener(ServerSettings::stopping);
     NeoForge.EVENT_BUS.addListener(ServerSettings::stopped);
+    NeoForge.EVENT_BUS.addListener(ServerSettings::loggedOut);
+    NeoForge.EVENT_BUS.addListener(ServerSettings::cloned);
   }
 
   /** One native editor owns its access; closing it leaves its document and other editors alive. */
@@ -154,6 +162,8 @@ public final class ServerSettings implements AutoCloseable {
     private final DraftLimits drafts;
     private final Optional<SettingsHandle<T>> runtime;
     private final String file;
+    private final Map<CommandSource, Map<Integer, CommandEditor<T>>> commandEditors =
+        new IdentityHashMap<>();
     private CompletionStage<CommitReceipt<T>> initialization;
 
     private Document(
@@ -173,6 +183,7 @@ public final class ServerSettings implements AutoCloseable {
       this.drafts = drafts;
       this.runtime = runtime;
       this.file = file;
+      context.onClose(commandEditors::clear);
     }
 
     public DocumentDefinition<T> definition() {
@@ -203,19 +214,53 @@ public final class ServerSettings implements AutoCloseable {
       return editor(source, 2, 2);
     }
 
+    boolean commandAvailable(CommandSourceStack source, int level) {
+      if (!source.getServer().isSameThread()
+          || scope.server != source.getServer()
+          || !scope.current()) return false;
+      var player = source.getPlayer();
+      return scope.permitted(source, player, player == null ? null : player.connection, level);
+    }
+
+    Optional<Editor<T>> commandEditor(CommandSourceStack source, int level, boolean create) {
+      scope.requireCurrent();
+      if (!commandAvailable(source, level)) return Optional.empty();
+      var editors = commandEditors.get(source.source);
+      var retained = editors == null ? null : editors.get(level);
+      var player = source.getPlayer();
+      var connection = player == null ? null : player.connection;
+      if (retained != null && retained.connection() == connection)
+        return Optional.of(retained.editor());
+      if (!create) return Optional.empty();
+      if (retained != null) retireCommands(source.source);
+      var opened = editor(source, level, level);
+      commandEditors
+          .computeIfAbsent(source.source, ignored -> new HashMap<>())
+          .put(level, new CommandEditor<>(connection, opened));
+      return Optional.of(opened);
+    }
+
+    private void retireCommands(CommandSource actor) {
+      var editors = commandEditors.remove(actor);
+      if (editors != null) editors.values().forEach(retained -> retained.editor().close());
+    }
+
     /** Captured command permission is a restriction; actual native permission is checked afresh. */
     public Editor<T> editor(CommandSourceStack source, int readLevel, int writeLevel) {
       var access = actorAccess(source, readLevel, writeLevel, () -> true);
+      DocumentSession<T> session = null;
       EditorActor<T> actor = null;
       DocumentActions<T> actions = null;
       try {
-        actor = new EditorActor<>(context, session(access), definition, values, drafts, 64);
+        session = session(access);
+        actor = new EditorActor<>(context, session, definition, values, drafts, 64);
         actions = new DocumentActions<>(context, access, actor, ACTIONS, values.maximumBytes());
         return new Editor<>(context, access, actions);
-      } catch (RuntimeException failed) {
+      } catch (RuntimeException | Error failed) {
         try {
           if (actions != null) actions.close();
           else if (actor != null) actor.close();
+          else if (session != null) session.close();
         } finally {
           access.close();
         }
@@ -416,6 +461,23 @@ public final class ServerSettings implements AutoCloseable {
     }
   }
 
+  @SuppressWarnings("unchecked") // Exact definition identity pairs its document's value type.
+  static <T> Optional<Document<T>> admittedDocument(
+      MinecraftServer server, DocumentDefinition<T> definition) {
+    return admittedDocument(server, definition.id())
+        .filter(doc -> doc.definition() == definition)
+        .map(doc -> (Document<T>) doc);
+  }
+
+  @SuppressWarnings(
+      "unchecked") // The registered factory alone supplies a document without a handle.
+  static Optional<Document<Map<String, Object>>> admittedRegistered(
+      MinecraftServer server, DocumentId id) {
+    return admittedDocument(server, id)
+        .filter(doc -> doc.runtime().isEmpty())
+        .map(doc -> (Document<Map<String, Object>>) doc);
+  }
+
   private void admit(ModContainer container, DocumentId id, String file) {
     requireCurrent();
     if (!Objects.requireNonNull(container).getModId().equals(id.namespace()))
@@ -467,7 +529,7 @@ public final class ServerSettings implements AutoCloseable {
   private boolean permitted(
       CommandSourceStack source,
       ServerPlayer player,
-      net.minecraft.server.network.ServerGamePacketListenerImpl connection,
+      ServerGamePacketListenerImpl connection,
       int level) {
     requireCurrent();
     if (source.getServer() != server || !source.hasPermission(level)) return false;
@@ -498,6 +560,24 @@ public final class ServerSettings implements AutoCloseable {
 
   private static void stopped(ServerStoppedEvent event) {
     release(event.getServer());
+  }
+
+  private static void loggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+    if (event.getEntity() instanceof ServerPlayer player) retireCommands(player);
+  }
+
+  private static void cloned(PlayerEvent.Clone event) {
+    if (event.getOriginal() instanceof ServerPlayer player) retireCommands(player);
+  }
+
+  private static void retireCommands(ServerPlayer player) {
+    var server = player.getServer();
+    if (server == null || !server.isSameThread()) return;
+    final ServerSettings scope;
+    synchronized (SERVERS) {
+      scope = SERVERS.get(server);
+    }
+    if (scope != null) scope.documents.values().forEach(doc -> doc.retireCommands(player));
   }
 
   private static void release(MinecraftServer server) {

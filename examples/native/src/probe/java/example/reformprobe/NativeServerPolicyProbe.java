@@ -508,12 +508,20 @@ final class NativeServerPolicyProbe {
                                                 }));
                           }))
               .thenCompose(stage -> stage);
-      work.whenComplete(
-          (ignored, failed) -> {
-            if (failed != null) report.addProperty("failure", failed.toString());
-            else passed = true;
-            server.halt(false);
-          });
+      work.thenCompose(
+              ignored ->
+                  file.context()
+                      .onOwner(() -> NativeServerCommandControls.run(server, file, filePath))
+                      .thenCompose(stage -> stage))
+          .whenComplete(
+              (observed, failed) -> {
+                if (failed != null) report.addProperty("failure", failed.toString());
+                else {
+                  report.add("actualCommands", new Gson().toJsonTree(observed));
+                  passed = true;
+                }
+                server.halt(false);
+              });
     } catch (Throwable failed) {
       report.addProperty("failure", failed.toString());
       server.halt(false);

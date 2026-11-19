@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Native server policy commands
+
+The combined artifact is `0f96aee0b904a3fa9a5c84d82dd627d52494c7a3a545bcf6cf048c6259948243`, sources `baff7fe6a770e590da7821caa93dec478af9503c161643f25305b061e632012c` and core `0e0ae9c4ef8f605d810b8f7f553c7fd829f0b36ae07c7e5d3b92410a84a58422`. All 147 owned Java entries match their source files. `spotlessApply check build` and `mise run check` pass with 523 core cases, eight adapter cases, 31 tooling cases and both independent packaged consumers.
+
+`native_addon_server_probe.py --policies` passes two dedicated 2 GiB boots in 8.981 and 8.799 seconds on that artifact. Each repeats the 29 source and lifetime checks and records 12 command observations. The actual console refuses a lowered source and foreign source substitution. Status on an unknown UUID returns a refusal and leaves the native editor capacity available. Describe, Set, Validate, Compare, Review and Export use the shared services. Save reports persistence and application separately and agrees with the world file and runtime handle through `12 → 15 → 12`. Get reads the registered TOML value through the same native branch. The console tests run without a connected client.
+
+`native_form_probe.py --integrated-only` passes the same artifact in 15.989 and 13.731 seconds with 30 and 11 assertions. Actual vanilla command and system chat packets stage a player's separate draft and retrieve its retained status. A native respawn on the same play connection retires the prior form and command draft. Its old operation UUID is refused and the new draft loads the saved value. The previous integrated file, TOML, permission and disconnect/reopen checks also pass. Both runners remove their marked fixtures and the reports retain the exact input and artifact identities.
+
+[Server policy commands](server-settings.md#native-server-commands) owns the contract. This covers the console and actual local host. TCP recipients, concurrent servers, connection replacement without native player replacement, domain locator reporting and the remaining pack/cost/release gates need separate evidence. Phase 1 remains incomplete.
+
 ## Integrated host policy editing
 
 The combined artifact is `e4fec15af279449ef197220d963501d32b9c772a29c5ebb0b6c84346e78fcc4c`, sources `e77bf6ea7f01063bf8da9d97421b5fda0bf6a275fa733e481a5654607c625d69` and core `0e0ae9c4ef8f605d810b8f7f553c7fd829f0b36ae07c7e5d3b92410a84a58422`. All 146 owned Java source entries match their repository files. `spotlessApply check build` and `mise run check` cover formatting, packaging, 523 core cases, eight adapter cases, 31 tooling cases and both independent consumers.

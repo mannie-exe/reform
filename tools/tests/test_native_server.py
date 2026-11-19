@@ -24,12 +24,14 @@ with patch.dict(sys.modules, {"native_config_probe": CONFIG}):
 
 
 class NativeServerResultGuards(unittest.TestCase):
-    def test_policy_pass_requires_actual_shutdown_on_the_selected_artifact(self):
+    def test_policy_pass_requires_actual_commands_and_shutdown_on_the_selected_artifact(self):
         boot = {"run": {"exitCode": 0, "termination": None},
                 "native": {"status": "PASS", "librarySha256": "selected"}}
         self.assertTrue(SERVER.successful_boot(boot, "selected"))
         self.assertFalse(SERVER.successful_boot(boot, "selected", policies=True))
         boot["native"]["serverShutdownClosed"] = True
+        self.assertFalse(SERVER.successful_boot(boot, "selected", policies=True))
+        boot["native"]["actualCommands"] = ["actual console result"] * 12
         self.assertTrue(SERVER.successful_boot(boot, "selected", policies=True))
         self.assertFalse(SERVER.successful_boot(boot, "different", policies=True))
         boot["run"]["exitCode"] = 1
