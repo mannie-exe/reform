@@ -129,6 +129,22 @@ class NativeFormFixtureGuards(unittest.TestCase):
         self.assertFalse(PROBE.successful_run(result, "close-reopen", "exact-jar"))
         self.assertFalse(PROBE.successful_run(result, "close", "different-jar"))
 
+    def test_submission_requires_actual_outcomes_drain_and_complete_frames(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "outcomes",
+            "librarySha256": "exact-jar", "outcome": {"status": "PASS", "contextClosed": True}}}
+        self.assertFalse(PROBE.successful_run(result, "outcomes", "exact-jar"))
+        result["native"]["outcome"]["workerTerminated"] = True
+        self.assertTrue(PROBE.successful_run(result, "outcomes", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "outcomes-reopen", "exact-jar"))
+        report = {"runs": [result], "screenshots": {
+            f"form-{kind}{frame}.png": "a" * 64
+            for kind in ("submit-wide", "outcome-wide", "outcome-narrow")
+            for frame in ("", "-entry")}}
+        self.assertTrue(PROBE.successful_report(report, ("outcomes",), "exact-jar"))
+        del report["screenshots"]["form-outcome-narrow.png"]
+        self.assertFalse(PROBE.successful_report(report, ("outcomes",), "exact-jar"))
+
     def test_catalog_success_requires_editor_and_owner_shutdown(self):
         result = {"exitCode": 0, "termination": None, "native": {
             "status": "PASS", "nativeShutdownClosed": True, "mode": "catalog",

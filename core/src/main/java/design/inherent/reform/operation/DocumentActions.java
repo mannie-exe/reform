@@ -477,6 +477,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     return actor.commitKind();
   }
 
+  /** Cached owner declaration; every actual operation still checks its authority and context. */
+  public Set<DocumentSession.Operation> supportedOperations() {
+    return actor.supportedOperations();
+  }
+
   public OperationHandle<EditorActor.Commit<T>> commit(OperationDescriptor.EntryPoint entry) {
     return commitKind() == DocumentSession.CommitKind.PERSIST ? save(entry) : admit(entry);
   }

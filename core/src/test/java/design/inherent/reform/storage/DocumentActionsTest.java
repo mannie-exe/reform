@@ -182,6 +182,12 @@ class DocumentActionsTest {
       var reviewed = h.run(() -> h.actions.review(EntryPoint.GUI));
       var original = Files.readString(h.path);
       h.write.set(false);
+      assertTrue(
+          h.actions
+              .supportedOperations()
+              .contains(design.inherent.reform.owner.DocumentSession.Operation.COMMIT));
+      assertThrows(
+          UnsupportedOperationException.class, () -> h.actions.supportedOperations().clear());
       var denied =
           assertThrows(
               java.util.concurrent.ExecutionException.class,

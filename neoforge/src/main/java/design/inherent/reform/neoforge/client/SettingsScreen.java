@@ -143,7 +143,19 @@ public final class SettingsScreen<T> extends FormScreen {
   private long formGeneration;
   private FormPanel panel;
   private EditorActor.View<T> displayed;
-  private Button save, undo, redo, revert, defaults, reload, importData, conflict, done, inspection;
+  private Button save,
+      undo,
+      redo,
+      revert,
+      defaults,
+      reload,
+      importData,
+      conflict,
+      done,
+      inspection,
+      reviewSubmission,
+      outcomeButton;
+  private OperationHandle<EditorActor.Commit<T>> lastCommit;
   private Object widgetGeneration;
   private int bodyTop, statusTop, statusWidth, pendingEdits;
   private long version;
@@ -385,6 +397,9 @@ public final class SettingsScreen<T> extends FormScreen {
     var current = actions.view();
     bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
     save = button(commitLabel(), this::requestSave);
+    reviewSubmission =
+        button(text("review_changes", "Review changes…"), () -> openInspection(true));
+    outcomeButton = button(text("operation", "Operation…"), this::openOutcome);
     undo = button(text("undo", "Undo"), () -> requestHistory(false));
     redo = button(text("redo", "Redo"), () -> requestHistory(true));
     revert =
@@ -1084,6 +1099,10 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private void openInspection() {
+    openInspection(false);
+  }
+
+  private void openInspection(boolean submitting) {
     var view = actions.view();
     if (closed
         || minecraft.screen != this
@@ -1102,7 +1121,9 @@ public final class SettingsScreen<T> extends FormScreen {
             .or(() -> catalog == null ? Optional.empty() : catalog.selectedPath());
     var screen =
         new ReviewScreen<>(
-            text("inspect_title", "Source and value inspection"),
+            submitting
+                ? text("review_title", "Review changes")
+                : text("inspect_title", "Source and value inspection"),
             contextLabel,
             actions,
             selected,
@@ -1119,6 +1140,56 @@ public final class SettingsScreen<T> extends FormScreen {
                               "That field is unavailable in the current draft.");
                   });
             },
+            actions::close,
+            submitting
+                ? Optional.of(
+                    new ReviewScreen.Submission(
+                        contextRecipe()
+                            ? text("apply_reviewed", "Apply reviewed recipe")
+                            : text("save_reviewed", "Save reviewed changes"),
+                        target -> {
+                          synchronize(Map.copyOf(versions));
+                          minecraft.setScreen(this);
+                          requestSave(false, Optional.of(target), true);
+                        }))
+                : Optional.empty());
+    handoff = true;
+    try {
+      minecraft.setScreen(screen);
+    } finally {
+      handoff = false;
+    }
+  }
+
+  private void openOutcome() {
+    var selected = lastCommit;
+    if (closed || minecraft.screen != this || selected == null) return;
+    var id = selected.snapshot().id();
+    var screen =
+        new OperationScreen<>(
+            text("operation_title", "Operation result"),
+            contextLabel,
+            selected,
+            () ->
+                !closed
+                    && actions.view().availability() == EditorActor.Availability.READY
+                    && actions.operation(id).filter(handle -> handle == selected).isPresent(),
+            CommitFeedback::details,
+            List.of(
+                new OperationScreen.Action(
+                    "apply_saved",
+                    text("retry_application", "Apply saved values"),
+                    () -> applicationBlocked(selected),
+                    () -> {
+                      synchronize(Map.copyOf(versions));
+                      minecraft.setScreen(this);
+                      if (applicationBlocked(selected).isEmpty())
+                        beginCommit(() -> actions.applySaved(EntryPoint.GUI), false, true);
+                    })),
+            () -> {
+              synchronize(Map.copyOf(versions));
+              minecraft.setScreen(this);
+            },
             actions::close);
     handoff = true;
     try {
@@ -1126,6 +1197,43 @@ public final class SettingsScreen<T> extends FormScreen {
     } finally {
       handoff = false;
     }
+  }
+
+  private Optional<Component> applicationBlocked(OperationHandle<EditorActor.Commit<T>> selected) {
+    if (closed
+        || selected != lastCommit
+        || actions.view().availability() != EditorActor.Availability.READY)
+      return Optional.of(text("application_unavailable", "This editing context is unavailable."));
+    if (!selected.snapshot().terminal() || saving || loading || pendingEdits > 0)
+      return Optional.of(text("application_wait", "Wait for the current operation to settle."));
+    if (!actions.supportedOperations().contains(DocumentSession.Operation.APPLY_SAVED))
+      return Optional.of(
+          text(
+              "application_unsupported",
+              "This owner has no application-only service. Follow its declared restart or context procedure."));
+    if (actions.view().pending().isPresent() || actions.view().review().isPresent())
+      return Optional.of(
+          text(
+              "application_reconcile",
+              "Reconcile the pending outcome or source conflict before applying saved values."));
+    var result = selected.snapshot().result();
+    var receipt = result.flatMap(EditorActor.Commit::receipt);
+    if (receipt.isEmpty()
+        || receipt.orElseThrow().baselineOutcomeUnknown()
+        || !receipt.orElseThrow().acknowledgesBaseline())
+      return Optional.of(
+          text(
+              "application_no_receipt",
+              "No confirmed saved baseline is available for this recovery."));
+    var application = receipt.orElseThrow().application();
+    if (application == CommitReceipt.Application.APPLIED
+        || application == CommitReceipt.Application.STAGED
+        || application == CommitReceipt.Application.NOT_ATTEMPTED)
+      return Optional.of(
+          text(
+              "application_not_needed",
+              "No application-only recovery is indicated by this receipt."));
+    return Optional.empty();
   }
 
   private void openImport() {
@@ -1691,6 +1799,13 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private void requestSave(boolean closeAfterSave) {
+    requestSave(closeAfterSave, Optional.empty(), false);
+  }
+
+  private void requestSave(
+      boolean closeAfterSave,
+      Optional<design.inherent.reform.edit.DraftRevision> reviewed,
+      boolean showOutcome) {
     if (saving || loading || pendingEdits > 0 || actions.view().snapshot().isEmpty()) return;
     if (unsent()) {
       var draft = actions.view().snapshot().orElseThrow().draft();
@@ -1702,10 +1817,33 @@ public final class SettingsScreen<T> extends FormScreen {
     if (!actions.view().validation().valid()
         || actions.view().pending().isPresent()
         || actions.view().review().isPresent()) return;
+    beginCommit(
+        () ->
+            reviewed
+                .map(target -> actions.commit(EntryPoint.GUI, target))
+                .orElseGet(() -> actions.commit(EntryPoint.GUI)),
+        closeAfterSave,
+        showOutcome);
+  }
+
+  private void beginCommit(
+      Supplier<OperationHandle<EditorActor.Commit<T>>> submit,
+      boolean closeAfterSave,
+      boolean showOutcome) {
     var before = Map.copyOf(versions);
     saving = true;
     notice = null;
-    action(() -> actions.commit(EntryPoint.GUI))
+    final OperationHandle<EditorActor.Commit<T>> operation;
+    try {
+      operation = submit.get();
+      lastCommit = operation;
+    } catch (RuntimeException refused) {
+      saving = false;
+      notice = failure(refused);
+      feedback();
+      return;
+    }
+    DocumentActions.result(operation)
         .whenComplete(
             (result, failed) ->
                 minecraft.execute(
@@ -1719,7 +1857,7 @@ public final class SettingsScreen<T> extends FormScreen {
                             .receipt()
                             .ifPresent(
                                 receipt -> {
-                                  notice = saved(receipt);
+                                  notice = CommitFeedback.summary(receipt);
                                   if (receipt.acknowledgesBaseline()) synchronize(before);
                                   var after = actions.view();
                                   boolean finished =
@@ -1752,6 +1890,7 @@ public final class SettingsScreen<T> extends FormScreen {
                         else feedback();
                       }
                     }));
+    if (showOutcome && !closed && minecraft.screen == this) openOutcome();
   }
 
   private void perform(CompletionStage<EditorActor.View<T>> operation, boolean synchronize) {
@@ -1827,6 +1966,8 @@ public final class SettingsScreen<T> extends FormScreen {
     redo.active = historyReady && current.canRedo();
     importData.active = historyReady && current.pending().isEmpty() && current.review().isEmpty();
     inspection.active = historyReady && current.snapshot().isPresent();
+    reviewSubmission.active = inspection.active;
+    outcomeButton.active = lastCommit != null;
     if (conflict != null)
       conflict.active = historyReady && current.review().isPresent() && current.pending().isEmpty();
     editorButtons.forEach(
@@ -2139,15 +2280,17 @@ public final class SettingsScreen<T> extends FormScreen {
       return Optional.of(text("wait_close", "Wait for the current operation before closing."));
     if (unsent())
       return Optional.of(
-          text("close_unsent", "Keep editing and retry the unaccepted input before saving."));
+          text("close_unsent", "Keep editing and retry the unaccepted input before submitting."));
     if (view.pending().isPresent())
       return Optional.of(
           text(
               "close_pending",
-              "Keep editing and reconcile the previous result before saving again."));
+              "Keep editing and reconcile the previous result before submitting again."));
     if (view.review().isPresent())
       return Optional.of(
-          text("close_conflict", "Keep editing and resolve the current conflict before saving."));
+          text(
+              "close_conflict",
+              "Keep editing and resolve the current conflict before submitting."));
     return view.validation().valid() ? Optional.empty() : Optional.of(first(view.validation()));
   }
 
@@ -2218,37 +2361,5 @@ public final class SettingsScreen<T> extends FormScreen {
     while (failed instanceof CompletionException && failed.getCause() != null)
       failed = failed.getCause();
     return Component.literal(Objects.toString(failed.getMessage(), "The operation is unavailable"));
-  }
-
-  private static Component saved(CommitReceipt<?> receipt) {
-    if (receipt.persistence() == CommitReceipt.Persistence.NOT_ATTEMPTED
-        && receipt.acknowledgesBaseline())
-      return receipt.applicationReport().valid()
-          ? text("recipe_applied", "Applied to this creation context; no file saved")
-          : text(
-              "recipe_applied_unobserved",
-              "Application confirmed; the accepted recipe could not be observed");
-    if (receipt.baselineOutcomeUnknown())
-      return receipt.persistence() == CommitReceipt.Persistence.NOT_ATTEMPTED
-          ? text(
-              "context_outcome_unknown",
-              "Application outcome needs review; reopen the recipe from the current creation context")
-          : text("outcome_unknown", "The operation outcome needs review; do not repeat it blindly");
-    if (receipt.persistence() == CommitReceipt.Persistence.SAVED
-        || receipt.persistence() == CommitReceipt.Persistence.UNCHANGED) {
-      if (receipt.application() == CommitReceipt.Application.STAGED)
-        return text(
-            "saved_staged", "Saved; review the owner's application and restart requirements.");
-      if (receipt.application() == CommitReceipt.Application.PARTIAL)
-        return text("saved_partial", "Saved; only part of the application was confirmed.");
-      if (receipt.persistence() == CommitReceipt.Persistence.UNCHANGED
-          && receipt.application() == CommitReceipt.Application.NOT_ATTEMPTED)
-        return text("unchanged", "No changes to save");
-      return receipt.application() == CommitReceipt.Application.APPLIED
-          ? text("saved", "Saved and applied")
-          : text(
-              "saved_not_applied", "Saved; application did not complete. Review the owner result.");
-    }
-    return first(receipt.persistenceReport());
   }
 }

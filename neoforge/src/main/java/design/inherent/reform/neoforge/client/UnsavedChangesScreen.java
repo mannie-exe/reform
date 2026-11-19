@@ -64,7 +64,7 @@ public final class UnsavedChangesScreen extends FormScreen {
       return Objects.requireNonNull(saveBlocked.get()).map(Component::copy);
     } catch (RuntimeException unavailable) {
       return Optional.of(
-          text("unavailable", "Save readiness is unavailable; keep the draft open."));
+          text("unavailable", "Submission readiness is unavailable; keep the draft open."));
     }
   }
 
@@ -103,7 +103,7 @@ public final class UnsavedChangesScreen extends FormScreen {
             Math.max(1, footerTop - bodyTop - 8),
             false);
     panel.row(Component.empty(), explanation);
-    blocked.ifPresent(reason -> panel.row(text("save_blocked", "Before saving"), reason));
+    blocked.ifPresent(reason -> panel.row(text("save_blocked", "Before submitting"), reason));
     panel.finish(0);
     addRenderableWidget(panel);
     var preferred = controls.get(preferredFocus);

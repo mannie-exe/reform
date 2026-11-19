@@ -2,11 +2,13 @@
 
 `DocumentActions<T>` binds one admitted `EditorActor<T>` to typed services shared by native forms and commands. It receives the real `OwnerContext` and its actual `Access`. Field selectors, operation UUIDs and document names grant no authority. The [client JSON factory](client-json.md) supplies this wiring for ordinary client preferences; other owners can construct it without replacing their parser, serializer or application policy.
 
-The current services cover reload, cached inspection, raw scalar editing, undo/redo, revert/defaults, validation, source/effective inspection, semantic comparison, value export, save and application-only retry. Attached [local import](imports.md) supplies admitted-source preview and reviewed draft replacement; [manual conflicts](conflicts.md) supplies explicit comparison/choice/resolution. Each has its own bounded scope over the same actor. GUI and command editors retain separate drafts over the shared owner. Full operation presentation and domain operations remain required by [coverage](coverage.md).
+The current services cover reload, cached inspection, raw scalar editing, undo/redo, revert/defaults, validation, source/effective inspection, semantic comparison, value export, save and application-only retry. Attached [local import](imports.md) supplies admitted-source preview and reviewed draft replacement; [manual conflicts](conflicts.md) supplies explicit comparison/choice/resolution. Each has its own bounded scope over the same actor. GUI and command editors retain separate drafts over the shared owner. The native [operation view](presentation.md#identified-submission-and-operation-feedback) presents identified outcomes and application-only recovery; broader owners and domain jobs remain required by [coverage](coverage.md).
 
 `DocumentActions.edit(entry, DraftEdit)` additionally exposes [shape-checked structural editing](editing.md#public-structural-edits) through typed local inputs. This service addresses actual editor/row/variant identities and requires READ; it changes a draft only. The native Brigadier tree below retains its declared-field scalar syntax. A custom frontend can use the shared structural service without introducing an arbitrary patch operation.
 
 [Reference actions](references.md) use the same local operation services for explicit source lookup and filtering. They bind source/context freshness and admit only bounded owned results; frontend draft/request identity remains a separate presentation requirement.
+
+`supportedOperations()` exposes the immutable registration-time source declaration for frontend hints. It supplies neither current permission nor a success promise. Unsupported application-only owners must not be emulated by another save. Actual commands and operations still check native authority, source and context at their own boundaries.
 
 ## Registration and execution
 
@@ -48,7 +50,7 @@ Raw projection defaults admit 512 field entries, 65,536 visited nodes and 524,28
 
 `applicationEffects()` retains the observation's [owner-declared application boundaries](owners.md#declared-application-boundaries). Each entry's optional `application()` is the nearest containing declaration; absence remains unknown. The full metadata and each projected entry notice share the raw-description character budget. Invalid drafts can retain their declarations without becoming saveable. These notices are not inferred from a past receipt and do not change the separately observed effective value.
 
-The native [inspection view](presentation.md#source-and-value-inspection) borrows these services and labels stale captures. Full effect-aware save review remains separate: an inspection is not a save capability or a promise that the current world can accept new settings.
+The native [inspection view](presentation.md#source-and-value-inspection) borrows these services and labels stale captures. Its opt-in [submission and operation feedback](presentation.md#identified-submission-and-operation-feedback) uses the exact conditional operation below. Inspection by itself remains read-only and never promises that the current world can accept new settings.
 
 ## Conditional submission
 

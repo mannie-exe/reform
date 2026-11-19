@@ -186,6 +186,7 @@ public final class EditorActor<T> implements AutoCloseable {
   private final OwnerContext context;
   private final DocumentSession<T> source;
   private final DocumentSession.CommitKind commitKind;
+  private final java.util.Set<DocumentSession.Operation> supportedOperations;
   private final DocumentDefinition<T> definition;
   private final JsonLimits jsonLimits;
   private final DraftLimits draftLimits;
@@ -218,6 +219,7 @@ public final class EditorActor<T> implements AutoCloseable {
     context.requireOwner();
     this.source = Objects.requireNonNull(source);
     commitKind = Objects.requireNonNull(source.commitKind());
+    supportedOperations = java.util.Set.copyOf(source.operations());
     if (!source.context().equals(context.id()) || source.definition() != definition)
       throw new IllegalArgumentException("Editor requires its actual context and owner definition");
     this.definition = Objects.requireNonNull(definition);
@@ -242,6 +244,11 @@ public final class EditorActor<T> implements AutoCloseable {
 
   public DocumentSession.CommitKind commitKind() {
     return commitKind;
+  }
+
+  /** Registration-time capabilities, not current permission or a promise of a successful effect. */
+  public java.util.Set<DocumentSession.Operation> supportedOperations() {
+    return supportedOperations;
   }
 
   /** Runs owner validation without saving, marking a submission or publishing effective values. */

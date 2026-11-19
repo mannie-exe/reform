@@ -30,8 +30,21 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 
-/** Read-only source/value inspection over the parent's editor; field navigation grants no edit. */
+/** Identified source/value inspection, with an optional explicit conditional-submit handoff. */
 public final class ReviewScreen<T> extends FormScreen {
+  /** A borrowed frontend action; its recipient must submit the supplied exact revision. */
+  public record Submission(Component label, Consumer<DraftRevision> submit) {
+    public Submission {
+      label = Objects.requireNonNull(label).copy();
+      Objects.requireNonNull(submit);
+    }
+
+    @Override
+    public Component label() {
+      return label.copy();
+    }
+  }
+
   private enum Value {
     BASELINE,
     DRAFT,
@@ -44,6 +57,7 @@ public final class ReviewScreen<T> extends FormScreen {
   private final BooleanSupplier available;
   private final Consumer<Optional<FieldPath>> returned;
   private final Runnable abandoned;
+  private final Optional<Submission> submission;
   private final List<AbstractWidget> footer = new ArrayList<>();
   private final Map<FieldPath, String> searchIndex = new LinkedHashMap<>();
   private final EnumSet<Value> expanded = EnumSet.noneOf(Value.class);
@@ -55,9 +69,10 @@ public final class ReviewScreen<T> extends FormScreen {
   private FieldPath selected;
   private ValidationReport diagnostics = ValidationReport.VALID;
   private Component notice, narration = Component.empty();
+  private Optional<Component> submissionReason = Optional.empty();
   private Language language;
   private Object widgets;
-  private int statusTop, issuePage;
+  private int statusTop, issuePage, changePage;
   private boolean requested, validating, closed, returning, wasCurrent, wasAvailable;
 
   public ReviewScreen(
@@ -68,6 +83,18 @@ public final class ReviewScreen<T> extends FormScreen {
       BooleanSupplier available,
       Consumer<Optional<FieldPath>> returned,
       Runnable abandoned) {
+    this(title, contextLabel, actions, selected, available, returned, abandoned, Optional.empty());
+  }
+
+  public ReviewScreen(
+      Component title,
+      Component contextLabel,
+      DocumentActions<T> actions,
+      Optional<FieldPath> selected,
+      BooleanSupplier available,
+      Consumer<Optional<FieldPath>> returned,
+      Runnable abandoned,
+      Optional<Submission> submission) {
     super(title);
     this.contextLabel = Objects.requireNonNull(contextLabel).copy();
     this.actions = Objects.requireNonNull(actions);
@@ -75,6 +102,7 @@ public final class ReviewScreen<T> extends FormScreen {
     this.available = Objects.requireNonNull(available);
     this.returned = Objects.requireNonNull(returned);
     this.abandoned = Objects.requireNonNull(abandoned);
+    this.submission = Objects.requireNonNull(submission);
   }
 
   private static Component text(String key, String fallback, Object... arguments) {
@@ -125,11 +153,19 @@ public final class ReviewScreen<T> extends FormScreen {
     language = Language.getInstance();
     wasCurrent = current();
     wasAvailable = ready();
+    submissionReason = submission.isPresent() ? submitBlocked() : Optional.empty();
     footer.clear();
     var refresh = button(text("refresh", "Refresh view"), () -> request(false));
     refresh.active = ready() && operation == null;
     var validate = button(text("validate", "Validate"), () -> request(true));
     validate.active = ready() && operation == null;
+    submission.ifPresent(
+        action -> {
+          var commit = button(action.label(), this::submit);
+          var blocked = submitBlocked();
+          commit.active = blocked.isEmpty();
+          blocked.ifPresent(reason -> commit.setTooltip(Tooltip.create(reason)));
+        });
     if (operation != null) {
       var cancel = button(text("cancel", "Cancel"), this::cancel);
       cancel.active = !operation.snapshot().cancellationRequested();
@@ -190,6 +226,7 @@ public final class ReviewScreen<T> extends FormScreen {
             review.target().version(),
             review.target().sourceRevision()));
     narration = narration.copy().append(". ").append(source);
+    if (submission.isPresent()) changes();
     if (!current())
       panel.row(
           "stale",
@@ -267,15 +304,7 @@ public final class ReviewScreen<T> extends FormScreen {
         text("application", "Owner-declared application"),
         entry
             .application()
-            .<Component>map(
-                rule ->
-                    Component.literal(
-                            rule.timings().stream()
-                                .sorted()
-                                .map(value -> timing(value).getString())
-                                .collect(java.util.stream.Collectors.joining(", ")))
-                        .append("\n")
-                        .append(rule.explanation()))
+            .<Component>map(this::application)
             .orElseGet(
                 () ->
                     text(
@@ -332,6 +361,127 @@ public final class ReviewScreen<T> extends FormScreen {
           Component.empty(),
           text("characters", "%s characters in the complete captured value", raw.length()));
     } else panel.row("value:" + kind, title, summary);
+  }
+
+  private Optional<Component> submitBlocked() {
+    if (!current())
+      return Optional.of(
+          text("submit_stale", "Refresh this capture before submitting its changes."));
+    if (operation != null)
+      return Optional.of(text("submit_wait", "Wait for the current review operation to finish."));
+    var view = actions.view();
+    if (view.pending().isPresent())
+      return Optional.of(
+          text("submit_pending", "Reconcile the previous outcome before submitting again."));
+    if (view.review().isPresent())
+      return Optional.of(
+          text("submit_conflict", "Return to the editor and resolve the source conflict."));
+    if (!view.validation().valid() || !review.comparison().report().valid())
+      return Optional.of(text("submit_invalid", "Repair the invalid draft before submitting."));
+    return Optional.empty();
+  }
+
+  private void submit() {
+    if (submission.isEmpty() || submitBlocked().isPresent()) return;
+    var target = review.target();
+    var callback = submission.orElseThrow().submit();
+    returning = true;
+    release();
+    callback.accept(target);
+  }
+
+  private void changes() {
+    var comparison = review.comparison();
+    panel.heading(text("changes", "Changes in this capture"));
+    panel.row(
+        text("scope", "Affected owner"), Component.literal(review.target().document().toString()));
+    panel.row(
+        text("summary", "Compared with the observed baseline"),
+        text(
+            "summary_detail",
+            "%s semantic changes. Authored input changed: %s.",
+            comparison.changes().size(),
+            comparison.authoredChanges()));
+    panel.row(
+        Component.empty(),
+        text(
+            "submit_boundary",
+            "Submission rechecks the exact captured draft, complete validation, current authority and source. These declarations do not certify live world changes."));
+    submitBlocked()
+        .ifPresent(reason -> panel.row(text("before_submit", "Before submitting"), reason));
+    var changes = comparison.changes();
+    int pages = Math.max(1, (changes.size() + ISSUE_PAGE - 1) / ISSUE_PAGE);
+    changePage = Math.clamp(changePage, 0, pages - 1);
+    if (pages > 1) {
+      var token = widgets;
+      var previous =
+          Button.builder(
+                  text("previous_changes", "Previous changes"),
+                  ignored -> {
+                    if (!closed && widgets == token && minecraft.screen == this && changePage > 0) {
+                      changePage--;
+                      rebuildWidgets();
+                    }
+                  })
+              .bounds(0, 0, 125, 20)
+              .build();
+      var next =
+          Button.builder(
+                  text("next_changes", "Next changes"),
+                  ignored -> {
+                    if (!closed
+                        && widgets == token
+                        && minecraft.screen == this
+                        && changePage + 1 < pages) {
+                      changePage++;
+                      rebuildWidgets();
+                    }
+                  })
+              .bounds(0, 0, 110, 20)
+              .build();
+      previous.active = changePage > 0;
+      next.active = changePage + 1 < pages;
+      panel.row(
+          text("change_page", "Page %s of %s · %s changes", changePage + 1, pages, changes.size()),
+          Component.empty(),
+          previous,
+          next);
+    }
+    for (int index = changePage * ISSUE_PAGE;
+        index < Math.min(changes.size(), (changePage + 1) * ISSUE_PAGE);
+        index++) {
+      var change = changes.get(index);
+      var application = review.applicationEffects().forField(change.path());
+      var detail =
+          Component.literal(preview(change.beforeJson()) + " → " + preview(change.afterJson()));
+      detail
+          .append("\n")
+          .append(
+              application
+                  .<Component>map(this::application)
+                  .orElseGet(
+                      () ->
+                          text(
+                              "application_unknown",
+                              "No application boundary is declared for this field. Saving does not certify live effects.")));
+      panel.row("change:" + index, label(change.path()), detail);
+    }
+  }
+
+  private static String preview(String value) {
+    return value.length() > SUMMARY_CHARACTERS
+        ? value.substring(0, SUMMARY_CHARACTERS) + "…"
+        : value;
+  }
+
+  private Component application(ApplicationEffects.Rule rule) {
+    return Component.literal(
+            rule.timings().stream()
+                .sorted()
+                .map(value -> timing(value).getString())
+                .collect(java.util.stream.Collectors.joining(", ")))
+        .append("\n")
+        .append(rule.explanation());
   }
 
   private void diagnosis() {
@@ -520,6 +670,7 @@ public final class ReviewScreen<T> extends FormScreen {
                     () -> review.entries().isEmpty() ? null : review.entries().getFirst().path());
         expanded.clear();
         issuePage = 0;
+        changePage = 0;
         index();
         notice = null;
       } else if (ready()
@@ -548,7 +699,8 @@ public final class ReviewScreen<T> extends FormScreen {
         updateDiagnostics();
       }
       rebuildWidgets();
-    } else if (wasCurrent != current()) rebuildWidgets();
+    } else if (wasCurrent != current()
+        || submission.isPresent() && !submissionReason.equals(submitBlocked())) rebuildWidgets();
   }
 
   private Button button(Component caption, Runnable callback) {
@@ -575,7 +727,10 @@ public final class ReviewScreen<T> extends FormScreen {
     if (focus != null) {
       setFocused(panel);
       panel.restoreFocus(focus);
-    } else if (footerFocus >= 0 && footerFocus < footer.size()) setFocused(footer.get(footerFocus));
+    } else if (footerFocus >= 0
+        && footerFocus < footer.size()
+        && footer.get(footerFocus).active
+        && footer.get(footerFocus).visible) setFocused(footer.get(footerFocus));
   }
 
   @Override

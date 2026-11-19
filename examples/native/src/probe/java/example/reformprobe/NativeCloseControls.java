@@ -11,6 +11,9 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftRevision;
+import design.inherent.reform.neoforge.client.OperationScreen;
+import design.inherent.reform.neoforge.client.ReviewScreen;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
 import design.inherent.reform.operation.DocumentActions;
@@ -72,7 +75,7 @@ final class NativeCloseControls {
   private final Screen parent = client.screen;
   private final Consumer<String> progress;
   private final BiConsumer<String, Runnable> capture;
-  private final boolean reopen;
+  private final boolean reopen, outcomes;
   private final long nativeThread = Thread.currentThread().threadId();
   private final ExecutorService worker =
       Executors.newSingleThreadExecutor(
@@ -81,7 +84,7 @@ final class NativeCloseControls {
             thread.setDaemon(true);
             return thread;
           });
-  private final AtomicBoolean write = new AtomicBoolean(true);
+  private final AtomicBoolean read = new AtomicBoolean(true), write = new AtomicBoolean(true);
   private final AtomicInteger confirmedSaves = new AtomicInteger();
   private final CountDownLatch reached = new CountDownLatch(1), release = new CountDownLatch(1);
   private final JsonArray checks = new JsonArray();
@@ -96,6 +99,10 @@ final class NativeCloseControls {
   private DocumentActions<Options> actions;
   private CompletableFuture<EditorActor.Commit<Options>> recovery;
   private UnsavedChangesScreen decision;
+  private ReviewScreen<?> review;
+  private OperationScreen<EditorActor.Commit<Options>> outcome;
+  private DraftRevision reviewed;
+  private java.util.UUID operationId;
   private Button retired;
   private String original;
   private SavedFile originalFile, recoveryFile;
@@ -105,7 +112,17 @@ final class NativeCloseControls {
   NativeCloseControls(
       boolean reopen, Consumer<String> progress, BiConsumer<String, Runnable> capture)
       throws IOException {
+    this(reopen, false, progress, capture);
+  }
+
+  NativeCloseControls(
+      boolean reopen,
+      boolean outcomes,
+      Consumer<String> progress,
+      BiConsumer<String, Runnable> capture)
+      throws IOException {
     this.reopen = reopen;
+    this.outcomes = outcomes;
     this.progress = progress;
     this.capture = capture;
     var type =
@@ -126,7 +143,8 @@ final class NativeCloseControls {
             });
     definition =
         new DocumentDefinition<>(
-            DocumentId.parse("reform_native_example:close"),
+            DocumentId.parse(
+                outcomes ? "reform_native_example:outcomes" : "reform_native_example:close"),
             1,
             type,
             () -> new Options(4, "before"));
@@ -153,7 +171,7 @@ final class NativeCloseControls {
             DraftLimits.CONFIGURATION);
     owner = new FileOwner<>(context, source, 8);
     if (reopen) originalFile = savedFile();
-    access = context.access(() -> true, write::get);
+    access = context.access(read::get, write::get);
     var session = owner.open(access);
     initialized = session.initialize().toCompletableFuture();
     initialized.whenComplete((ignored, failure) -> session.close());
@@ -236,7 +254,326 @@ final class NativeCloseControls {
     click(client.screen, button);
   }
 
+  @SuppressWarnings("unchecked") // The current form owns this exact typed operation.
+  private OperationScreen<EditorActor.Commit<Options>> outcome() {
+    check("native operation view is public and typed", client.screen instanceof OperationScreen<?>);
+    return (OperationScreen<EditorActor.Commit<Options>>) client.screen;
+  }
+
+  private boolean settled() {
+    return outcome
+            .observedOperation()
+            .filter(value -> value.terminal() && value.result().isPresent())
+            .isPresent()
+        && button(form, "Done").active;
+  }
+
+  private CommitReceipt<Options> receipt() {
+    return outcome.observedOperation().orElseThrow().result().orElseThrow().receipt().orElseThrow();
+  }
+
+  private boolean tickOutcomes() throws Exception {
+    switch (stage) {
+      case 0 -> {
+        if (!initialized.isDone()) return false;
+        check(
+            "actual outcome owner initialized",
+            initialized.join().application() == CommitReceipt.Application.APPLIED);
+        originalFile = savedFile();
+        confirmedSaves.incrementAndGet();
+        open();
+        next("outcome owner ready");
+      }
+      case 1 -> {
+        if (!ready()) return false;
+        replace(form, field(COUNT_PATH), "-");
+        next("invalid review draft entered");
+      }
+      case 2 -> {
+        if (!ready() || form.editorView().validation().valid()) return false;
+        press(button(form, "Review changes…"));
+        review = (ReviewScreen<?>) client.screen;
+        next("invalid submit review opened");
+      }
+      case 3 -> {
+        if (review.reviewedInput().isEmpty()) return false;
+        retired = button(review, "Save reviewed changes");
+        check("invalid reviewed submission is disabled", !retired.active);
+        retired.onPress();
+        check(
+            "invalid reviewed callback cannot write",
+            client.screen == review && savedFile().equals(originalFile));
+        review.onClose();
+        replace(form, field(COUNT_PATH), "7");
+        next("valid reviewed draft entered");
+      }
+      case 4 -> {
+        if (!ready() || !raw(COUNT_PATH).equals("7")) return false;
+        press(button(form, "Review changes…"));
+        review = (ReviewScreen<?>) client.screen;
+        next("identified valid review opened");
+      }
+      case 5 -> {
+        if (review.reviewedInput().isEmpty()) return false;
+        reviewed = review.reviewedInput().orElseThrow().target();
+        retired = button(review, "Save reviewed changes");
+        check(
+            "valid review retains actual source and changes",
+            retired.active
+                && review.reviewedInput().orElseThrow().comparison().changes().size() == 1
+                && review
+                    .reviewedInput()
+                    .orElseThrow()
+                    .source()
+                    .location()
+                    .orElseThrow()
+                    .equals(source.binding().path().toString()));
+        check("identified submit control accepts native focus", focus(review, retired));
+        actions.edit(EntryPoint.COMMAND, "label", "queued");
+        next("another admitted edit changed the captured revision");
+      }
+      case 6 -> {
+        if (!raw(LABEL_PATH).equals("queued") || button(review, "Save reviewed changes").active)
+          return false;
+        check(
+            "a stale review cannot restore focus to its disabled submit control",
+            review.getFocused() != button(review, "Save reviewed changes"));
+        retired.onPress();
+        check(
+            "stale native review callback never submits a replacement draft",
+            client.screen == review && savedFile().equals(originalFile));
+        press(button(review, "Refresh view"));
+        next("explicit review refresh requested");
+      }
+      case 7 -> {
+        if (review.reviewedInput().isEmpty()
+            || review.reviewedInput().orElseThrow().target().equals(reviewed)
+            || !button(review, "Save reviewed changes").active) return false;
+        geometry(review);
+        capture.accept("form-submit-wide.png", () -> next("wide identified submission captured"));
+      }
+      case 8 -> {
+        effect = Effect.REVOKE_WRITE;
+        press(button(review, "Save reviewed changes"));
+        outcome = outcome();
+        next("actual reviewed save submitted with refused publication");
+      }
+      case 9 -> {
+        if (!settled()) return false;
+        check(
+            "completed operation retains actual saved-but-refused effects",
+            receipt().persistence() == CommitReceipt.Persistence.SAVED
+                && receipt().application() == CommitReceipt.Application.REFUSED
+                && !form.editorView().dirty()
+                && owner.handle().view().value().orElseThrow().count() == 4
+                && source
+                    .read()
+                    .candidate()
+                    .orElseThrow()
+                    .value()
+                    .equals(new Options(7, "queued")));
+        confirmedSaves.incrementAndGet();
+        operationId = outcome.observedOperation().orElseThrow().id();
+        recoveryFile = savedFile();
+        check(
+            "outcome narration distinguishes saved and unapplied effects",
+            outcome
+                .getNarrationMessage()
+                .getString()
+                .contains("Saved; application did not complete"));
+        geometry(outcome);
+        capture.accept("form-outcome-wide.png", () -> next("actual split outcome captured"));
+      }
+      case 10 -> {
+        press(button(outcome, "Back"));
+        check(
+            "leaving feedback retains its editing lifetime",
+            client.screen == form && actions.view().snapshot().isPresent());
+        press(button(form, "Operation…"));
+        outcome = outcome();
+        check(
+            "operation result reopens by exact retained identity",
+            outcome.observedOperation().orElseThrow().id().equals(operationId));
+        retired = button(outcome, "Apply saved values");
+        read.set(false);
+        next("result disclosure revoked");
+      }
+      case 11 -> {
+        if (outcome.observedOperation().isPresent()) return false;
+        check(
+            "revoked outcome narration drops earlier receipt details",
+            !outcome.getNarrationMessage().getString().contains("Saved;"));
+        retired.onPress();
+        check(
+            "READ revocation hides result and rejects retired recovery control",
+            client.screen == outcome
+                && savedFile().equals(recoveryFile)
+                && owner.handle().view().value().orElseThrow().count() == 4);
+        read.set(true);
+        write.set(true);
+        effect = Effect.NORMAL;
+        next("actual result access restored");
+      }
+      case 12 -> {
+        if (outcome.observedOperation().isEmpty() || !button(outcome, "Apply saved values").active)
+          return false;
+        press(button(outcome, "Apply saved values"));
+        outcome = outcome();
+        next("native application-only recovery requested");
+      }
+      case 13 -> {
+        if (!settled()) return false;
+        check(
+            "native recovery changes only application, not bytes mtime or replacement identity",
+            receipt().persistence() == CommitReceipt.Persistence.NOT_ATTEMPTED
+                && receipt().application() == CommitReceipt.Application.APPLIED
+                && !outcome.observedOperation().orElseThrow().id().equals(operationId)
+                && owner.handle().view().value().orElseThrow().equals(new Options(7, "queued"))
+                && savedFile().equals(recoveryFile));
+        check(
+            "successful application does not offer redundant recovery",
+            !button(outcome, "Apply saved values").active);
+        check(
+            "recovery narration confirms application without inventing a write",
+            outcome
+                .getNarrationMessage()
+                .getString()
+                .contains("Values applied without attempting persistence."));
+        press(button(outcome, "Back"));
+        replace(form, field(COUNT_PATH), "8");
+        next("held reviewed candidate entered");
+      }
+      case 14 -> {
+        if (!ready() || !raw(COUNT_PATH).equals("8")) return false;
+        press(button(form, "Review changes…"));
+        review = (ReviewScreen<?>) client.screen;
+        next("held submission review opened");
+      }
+      case 15 -> {
+        if (review.reviewedInput().isEmpty() || !button(review, "Save reviewed changes").active)
+          return false;
+        effect = Effect.HOLD;
+        press(button(review, "Save reviewed changes"));
+        outcome = outcome();
+        next("reviewed source replaced with publication held");
+      }
+      case 16 -> {
+        if (reached.getCount() != 0) return false;
+        check(
+            "actual pending save reports unknown total without success",
+            outcome.observedOperation().isPresent()
+                && !outcome.observedOperation().orElseThrow().terminal()
+                && outcome.observedOperation().orElseThrow().progress().total().isEmpty()
+                && source.read().candidate().orElseThrow().value().count() == 8);
+        operationId = outcome.observedOperation().orElseThrow().id();
+        press(button(outcome, "Request cancellation"));
+        next("cancellation requested after actual source replacement");
+      }
+      case 17 -> {
+        if (!outcome.observedOperation().orElseThrow().cancellationRequested()) return false;
+        check(
+            "cancellation request remains nonterminal until entered work drains",
+            !outcome.observedOperation().orElseThrow().terminal());
+        retired = button(outcome, "Request cancellation");
+        press(button(outcome, "Back"));
+        check(
+            "returning during drain leaves actual editing and operation alive",
+            client.screen == form);
+        replace(form, field(LABEL_PATH), "later");
+        next("later native input entered during drain");
+      }
+      case 18 -> {
+        check(
+            "native input is retained while its worker admission waits",
+            field(LABEL_PATH).getValue().equals("later"));
+        release.countDown();
+        next("entered publication released");
+      }
+      case 19 -> {
+        if (!ready() || form.editorView().lastReceipt().isEmpty()) return false;
+        check(
+            "entered cancellation drains a successful receipt without losing later input",
+            form.editorView().lastReceipt().orElseThrow().application()
+                    == CommitReceipt.Application.APPLIED
+                && form.editorView().dirty()
+                && raw(LABEL_PATH).equals("later")
+                && source
+                    .read()
+                    .candidate()
+                    .orElseThrow()
+                    .value()
+                    .equals(new Options(8, "queued")));
+        confirmedSaves.incrementAndGet();
+        press(button(form, "Operation…"));
+        outcome = outcome();
+        check(
+            "cancelled request and actual completed result remain separate",
+            outcome.observedOperation().orElseThrow().id().equals(operationId)
+                && outcome.observedOperation().orElseThrow().cancellationRequested()
+                && receipt().persistence() == CommitReceipt.Persistence.SAVED
+                && receipt().application() == CommitReceipt.Application.APPLIED
+                && !button(outcome, "Request cancellation").active);
+        retired.onPress();
+        check("retired cancellation control is inert", client.screen == outcome);
+        client.options.guiScale().set(3);
+        GLFW.glfwSetWindowSize(client.getWindow().getWindow(), 480, 360);
+        client.resizeDisplay();
+        next("native feedback compact reflow requested");
+      }
+      case 20 -> {
+        if (outcome.width > 340 || outcome.height > 250) return false;
+        geometry(outcome);
+        check(
+            "compact result retains actual identity and return focus",
+            outcome.observedOperation().orElseThrow().id().equals(operationId)
+                && outcome.getFocused() == button(outcome, "Back"));
+        capture.accept("form-outcome-narrow.png", () -> next("compact actual result captured"));
+      }
+      case 21 -> {
+        press(button(outcome, "Back"));
+        check(
+            "feedback return keeps later unsaved draft",
+            raw(LABEL_PATH).equals("later") && form.editorView().dirty());
+        press(button(form, "Revert"));
+        next("later draft explicitly reverted");
+      }
+      case 22 -> {
+        if (!ready() || form.editorView().dirty()) return false;
+        replace(form, field(COUNT_PATH), "9");
+        replace(form, field(LABEL_PATH), "before");
+        next("final source candidate authored");
+      }
+      case 23 -> {
+        if (!ready() || !raw(COUNT_PATH).equals("9") || !raw(LABEL_PATH).equals("before"))
+          return false;
+        effect = Effect.NORMAL;
+        press(button(form, "Save and apply"));
+        next("ordinary direct save remains available");
+      }
+      case 24 -> {
+        if (!ready() || form.editorView().dirty()) return false;
+        check(
+            "ordinary save preserves actual final source and effective value",
+            source.read().candidate().orElseThrow().value().equals(new Options(9, "before"))
+                && owner.handle().view().value().orElseThrow().equals(new Options(9, "before")));
+        confirmedSaves.incrementAndGet();
+        form.onClose();
+        shutdown();
+        next("outcome fixture context ended");
+      }
+      case 25 -> {
+        if (!worker.isTerminated()) return false;
+        check("outcome native context and worker actually close", closed && !context.isOpen());
+        complete = true;
+        return true;
+      }
+      default -> throw new AssertionError("Unexpected outcome stage " + stage);
+    }
+    return false;
+  }
+
   boolean tick() throws Exception {
+    if (outcomes && !reopen) return tickOutcomes();
     switch (stage) {
       case 0 -> {
         if (!initialized.isDone()) return false;
@@ -485,6 +822,7 @@ final class NativeCloseControls {
     var result = new JsonObject();
     result.addProperty("status", complete ? "PASS" : "PENDING");
     result.addProperty("stage", stage);
+    result.addProperty("workflow", outcomes ? "review-and-outcome" : "draft-close");
     result.addProperty(
         "contextClosed",
         closed && owner.handle().view().availability() == SettingsHandle.Availability.CLOSED);

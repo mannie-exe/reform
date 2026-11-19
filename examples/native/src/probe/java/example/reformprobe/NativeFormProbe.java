@@ -138,7 +138,9 @@ public final class NativeFormProbe {
               "review",
               "review-reopen",
               "close",
-              "close-reopen")
+              "close-reopen",
+              "outcomes",
+              "outcomes-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -337,13 +339,14 @@ public final class NativeFormProbe {
         action.run();
         return;
       }
-      if (mode.startsWith("close")) {
+      if (mode.startsWith("close") || mode.startsWith("outcomes")) {
         if (closing == null) {
           if (!(mc.screen instanceof TitleScreen)) return;
           recordArtifact();
           closing =
               new NativeCloseControls(
-                  mode.equals("close-reopen"),
+                  mode.endsWith("-reopen"),
+                  mode.startsWith("outcomes"),
                   this::next,
                   (name, action) -> {
                     capture = name;
@@ -351,7 +354,7 @@ public final class NativeFormProbe {
                   });
         }
         if (closing.tick()) {
-          report.add("close", closing.report());
+          report.add(mode.startsWith("outcomes") ? "outcome" : "close", closing.report());
           finish(null);
         }
         return;

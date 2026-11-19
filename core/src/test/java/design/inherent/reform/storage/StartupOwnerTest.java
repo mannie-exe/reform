@@ -228,6 +228,23 @@ class StartupOwnerTest {
       assertEquals(
           java.util.Set.of(DocumentSession.Operation.READ, DocumentSession.Operation.COMMIT),
           h.session.operations());
+      h.nativeCall(
+          () -> {
+            var editor =
+                new EditorActor<>(
+                    h.context,
+                    h.settings.open(h.access),
+                    DEFINITION,
+                    JSON,
+                    DraftLimits.CONFIGURATION,
+                    8);
+            var actions = new DocumentActions<>(h.context, h.access, editor);
+            assertEquals(h.session.operations(), actions.supportedOperations());
+            assertFalse(
+                actions.supportedOperations().contains(DocumentSession.Operation.APPLY_SAVED));
+            actions.close();
+            return null;
+          });
       String malformed = "terrain=NOT_A_BOOLEAN\n";
       Files.writeString(h.source.binding().path(), malformed);
       var failed =

@@ -297,6 +297,18 @@ final class NativeWorldRecipeControls {
             actions.view().pending().orElseThrow() == EditSession.PendingState.UNKNOWN
                 && actions.view().dirty()
                 && !button(form, "Apply recipe").active);
+        click(form, button(form, "Operation…"));
+        check(
+            "native unknown can be inspected without another admission",
+            client.screen instanceof design.inherent.reform.neoforge.client.OperationScreen<?>);
+        var feedback = (design.inherent.reform.neoforge.client.OperationScreen<?>) client.screen;
+        check(
+            "actual unknown feedback forbids application-only fallback",
+            feedback.observedOperation().orElseThrow().result().isPresent()
+                && !button(feedback, "Apply saved values").active
+                && callbackCalls == 1
+                && depth(parent.getUiState().getSettings()) == 12);
+        click(feedback, button(feedback, "Back"));
         discard();
         check(
             "discard did not undo native update",
