@@ -146,6 +146,8 @@ final class NativeKeyOwnerControls {
     for (var invalid :
         List.of(
             new KeyBindingOptions.Binding("not-a-native-key", KeyModifier.NONE),
+            new KeyBindingOptions.Binding("key.keyboard.31", KeyModifier.NONE),
+            new KeyBindingOptions.Binding("key.keyboard.0000000", KeyModifier.NONE),
             new KeyBindingOptions.Binding("scancode.99999999", KeyModifier.NONE),
             binding(
                 InputConstants.Type.KEYSYM.getOrCreate(GLFW.GLFW_KEY_LEFT_SHIFT),
@@ -158,6 +160,16 @@ final class NativeKeyOwnerControls {
             "invalid native key/modifier refuses before effects",
             () -> expected.getCause() instanceof PolicyRefusal);
       }
+    }
+    for (char digit = '0'; digit <= '9'; digit++) {
+      var nameOfKey = "key.keyboard." + digit;
+      var prepared = prepare(initial, new KeyBindingOptions.Binding(nameOfKey, KeyModifier.NONE));
+      verify(
+          "canonical symbolic digit binding prepares without mutation: " + digit,
+          () ->
+              prepared.document().equals(owner.definition().id())
+                  && KeyExample.PRIMARY.isDefault()
+                  && java.util.Arrays.equals(original, Files.readAllBytes(path)));
     }
     var shifted =
         binding(InputConstants.Type.KEYSYM.getOrCreate(GLFW.GLFW_KEY_H), KeyModifier.SHIFT);

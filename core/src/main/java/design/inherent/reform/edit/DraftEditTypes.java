@@ -66,6 +66,16 @@ final class DraftEditTypes {
                   .field("text", FieldKey.of("text", ValueTypes.text(32768)))
                   .build())
           .variant(
+              "record_scalars",
+              DraftEdit.SetRecordScalars.class,
+              RecordTypes.record(DraftEdit.SetRecordScalars.class)
+                  .field(
+                      "values",
+                      FieldKey.of(
+                          "values",
+                          ValueTypes.objectMap(ValueTypes.text(4096), ValueTypes.text(32768), 32)))
+                  .build())
+          .variant(
               "insert",
               DraftEdit.InsertRow.class,
               RecordTypes.record(DraftEdit.InsertRow.class)

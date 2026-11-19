@@ -83,6 +83,95 @@ class DraftEditsTest {
   }
 
   @Test
+  void compoundScalarFieldsRetainInvalidInputWithOneUndoAndExactIdentity() {
+    var first = FieldKey.of("first", NUMBER);
+    var second = FieldKey.of("second", NUMBER);
+    record Pair(int first, int second) {}
+    var type =
+        RecordType.<Pair>builder(v -> new Pair(v.get(first), v.get(second)))
+            .field(first, Pair::first)
+            .field(second, Pair::second)
+            .build();
+    try (var s = session(type, new Pair(1, 2))) {
+      var target = s.snapshot().target(FieldPath.ROOT);
+      s.execute(
+          new DraftEdit(
+              target, new DraftEdit.SetRecordScalars(Map.of("first", "-", "second", "12"))));
+      assertFalse(s.snapshot().inspect().report().valid());
+      assertEquals(
+          "-", ((DraftNode.Scalar) s.snapshot().draft().at(FieldPath.ROOT.field("first"))).raw());
+      assertEquals(
+          "12", ((DraftNode.Scalar) s.snapshot().draft().at(FieldPath.ROOT.field("second"))).raw());
+      assertThrows(
+          DraftEditRefusal.class,
+          () ->
+              s.execute(
+                  new DraftEdit(target, new DraftEdit.SetRecordScalars(Map.of("first", "3")))));
+      s.undo();
+      assertEquals(new Pair(1, 2), s.snapshot().inspect().candidate().orElseThrow().value());
+      assertFalse(s.canUndo());
+      s.redo();
+      assertFalse(s.snapshot().inspect().report().valid());
+    }
+  }
+
+  @Test
+  void compoundRecordRefusalsLeaveAllFieldsAndHistoryIntact() {
+    var name = FieldKey.of("name", ValueTypes.text(32));
+    var children = FieldKey.of("children", ValueTypes.list(NUMBER, 4));
+    record Record(String name, List<Integer> children) {}
+    var type =
+        RecordType.<Record>builder(v -> new Record(v.get(name), v.get(children)))
+            .field(name, Record::name)
+            .field(children, Record::children)
+            .build();
+    try (var s = session(type, new Record("before", List.of(1)))) {
+      var before = s.snapshot();
+      var rows = ((DraftNode.Sequence) before.draft().at(FieldPath.ROOT.field("children"))).rows();
+      for (var values :
+          List.of(
+              Map.of("name", "after", "unknown", "3"), Map.of("name", "after", "children", "3")))
+        assertThrows(
+            DraftEditRefusal.class,
+            () -> edit(s, FieldPath.ROOT, new DraftEdit.SetRecordScalars(values)));
+      assertEquals(before.version(), s.snapshot().version());
+      assertFalse(s.canUndo());
+      assertEquals(
+          rows,
+          ((DraftNode.Sequence) s.snapshot().draft().at(FieldPath.ROOT.field("children"))).rows());
+      edit(s, FieldPath.ROOT, new DraftEdit.SetRecordScalars(Map.of("name", "after")));
+      assertEquals(
+          rows,
+          ((DraftNode.Sequence) s.snapshot().draft().at(FieldPath.ROOT.field("children"))).rows());
+    }
+  }
+
+  @Test
+  void compoundScalarInputsAreOwnedBoundedAndUseTheSharedCodec() {
+    var mutable = new java.util.LinkedHashMap<String, String>();
+    mutable.put("count", "3");
+    var action = new DraftEdit.SetRecordScalars(mutable);
+    mutable.put("count", "4");
+    assertEquals("3", action.values().get("count"));
+    try (var s = session(COUNTER, new Counter(1))) {
+      var edit = new DraftEdit(s.snapshot().target(FieldPath.ROOT), action);
+      for (var ops : List.of(JsonOps.INSTANCE, JsonOps.COMPRESSED)) {
+        var encoded = DraftEdits.type().codec().encodeStart(ops, edit).getOrThrow();
+        assertEquals(edit, DraftEdits.type().codec().parse(ops, encoded).getOrThrow());
+      }
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> new DraftEdit(s.snapshot().target(FieldPath.ROOT).typing(), action));
+    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new DraftEdit.SetRecordScalars(Map.of("x", "x".repeat(32769))));
+    var excessive = new java.util.LinkedHashMap<String, String>();
+    for (int i = 0; i < 33; i++) excessive.put("f" + i, "");
+    assertThrows(IllegalArgumentException.class, () -> new DraftEdit.SetRecordScalars(excessive));
+  }
+
+  @Test
   void nestedDuplicatesHaveFreshIdentitiesAndAnchoredMovesRetainOriginalRows() {
     var type = ValueTypes.list(ValueTypes.list(NUMBER, 4), 3);
     try (var s = session(type, List.of(List.of(1, 2)))) {

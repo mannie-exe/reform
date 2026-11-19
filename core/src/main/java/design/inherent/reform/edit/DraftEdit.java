@@ -1,6 +1,7 @@
 package design.inherent.reform.edit;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -18,6 +19,7 @@ public record DraftEdit(DraftTarget target, Action action) {
   public sealed interface Action
       permits SetRaw,
           SetUnitRaw,
+          SetRecordScalars,
           ChangeScalarRows,
           InsertRow,
           DuplicateRow,
@@ -43,6 +45,28 @@ public record DraftEdit(DraftTarget target, Action action) {
     public SetUnitRaw {
       Objects.requireNonNull(unit);
       Objects.requireNonNull(text);
+    }
+  }
+
+  /** Explicit immediate scalar fields in one declared record, with one history boundary. */
+  public record SetRecordScalars(Map<String, String> values) implements Action {
+    public SetRecordScalars {
+      Objects.requireNonNull(values);
+      if (values.size() > 32)
+        throw new IllegalArgumentException("Too many scalar fields in one action");
+      values = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(values));
+      if (values.size() > 32)
+        throw new IllegalArgumentException("Too many scalar fields in one action");
+      long characters = 0;
+      for (var entry : values.entrySet()) {
+        Objects.requireNonNull(entry.getKey());
+        Objects.requireNonNull(entry.getValue());
+        if (entry.getKey().isEmpty()
+            || entry.getKey().length() > 4096
+            || entry.getValue().length() > 32768
+            || (characters += (long) entry.getKey().length() + entry.getValue().length()) > 131072)
+          throw new IllegalArgumentException("Scalar record input exceeds its admitted budget");
+      }
     }
   }
 

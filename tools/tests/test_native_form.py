@@ -93,7 +93,7 @@ class NativeFormFixtureGuards(unittest.TestCase):
         self.assertFalse(PROBE.successful_run(result, "conflicts", "exact-jar"))
 
     def test_native_owned_workflows_require_a_closed_context(self):
-        for mode, field in [("command-conflicts", "commandConflicts"), ("keys-owner", "keyOwner")]:
+        for mode, field in [("command-conflicts", "commandConflicts"), ("keys-owner", "keyOwner"), ("keys-controls", "keyControls")]:
             with self.subTest(mode=mode):
                 result = {"exitCode": 0, "termination": None, "native": {
                     "status": "PASS", "nativeShutdownClosed": True, "mode": mode,

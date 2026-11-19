@@ -1,3 +1,7 @@
 {
-  "reform_native_example:settings/collections/fields/tones/choices/CAFE": "CAFÉ"
+  "reform_native_example:settings/collections/fields/tones/choices/CAFE": "CAFÉ",
+  "key.reform_native_example.primary": "Example primary action",
+  "key.reform_native_example.secondary": "Example secondary action",
+  "reform_native_example:settings/native_keys/fields/key.reform_native_example.primary": "Primary action",
+  "reform_native_example:settings/native_keys/fields/key.reform_native_example.secondary": "Secondary action"
 }

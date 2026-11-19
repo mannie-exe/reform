@@ -38,6 +38,25 @@ public final class DraftEdits {
       return new DraftNode.Scalar(
           mapped.text(), new DraftNode.UnitInput(input.unit(), input.text(), mapped.state()));
     }
+    if (shape instanceof ValueShape.ObjectValue object
+        && node instanceof DraftNode.ObjectValue value
+        && action instanceof DraftEdit.SetRecordScalars change) {
+      var fields = new LinkedHashMap<>(value.fields());
+      for (var entry : change.values().entrySet()) {
+        var child =
+            object.fields().stream()
+                .filter(field -> field.id().equals(entry.getKey()))
+                .findFirst()
+                .orElseThrow(
+                    () -> new IllegalArgumentException("Select declared scalar record fields"));
+        if (!(child.type().shape() instanceof ValueShape.Scalar
+            || child.type().shape() instanceof ValueShape.Reference<?>))
+          throw new IllegalArgumentException(
+              "Record scalar edits cannot replace structural fields");
+        fields.put(entry.getKey(), new DraftNode.Scalar(entry.getValue()));
+      }
+      return new DraftNode.ObjectValue(fields);
+    }
     if (shape instanceof ValueShape.Sequence sequence
         && node instanceof DraftNode.Sequence values) {
       if (action instanceof DraftEdit.ChangeScalarRows change)

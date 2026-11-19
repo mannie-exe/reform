@@ -8,6 +8,8 @@ import org.lwjgl.glfw.GLFW;
 /** Existing native Controls entries; the library must neither register nor replace them. */
 public final class KeyExample {
   public static final Mapping PRIMARY = new Mapping();
+  public static final KeyMapping SECONDARY =
+      new KeyMapping("key.reform_native_example.secondary", GLFW.GLFW_KEY_H, "key.categories.misc");
 
   public static final class Mapping extends KeyMapping {
     public Runnable afterSet;
@@ -28,7 +30,32 @@ public final class KeyExample {
   }
 
   static void register(IEventBus bus) {
-    bus.addListener((RegisterKeyMappingsEvent event) -> event.register(PRIMARY));
+    bus.addListener(
+        (RegisterKeyMappingsEvent event) -> {
+          event.register(PRIMARY);
+          event.register(SECONDARY);
+        });
+  }
+
+  /** Existing native bindings use the same generated form and operations as ordinary documents. */
+  public static design.inherent.reform.neoforge.client.SettingsScreen<
+          java.util.Map<String, design.inherent.reform.neoforge.client.KeyBindingOptions.Binding>>
+      screen(
+          net.minecraft.client.gui.screens.Screen parent,
+          design.inherent.reform.neoforge.client.KeyBindingOptions.Session session,
+          design.inherent.reform.operation.DocumentActions<
+                  java.util.Map<
+                      String, design.inherent.reform.neoforge.client.KeyBindingOptions.Binding>>
+              actions) {
+    return new design.inherent.reform.neoforge.client.SettingsScreen<>(
+        parent,
+        net.minecraft.network.chat.Component.literal("Native bindings"),
+        net.minecraft.network.chat.Component.literal("Actual native Controls / options.txt"),
+        session.definition(),
+        actions,
+        java.util.Map.of(),
+        design.inherent.reform.presentation.FormPresentation.EMPTY,
+        design.inherent.reform.neoforge.client.KeyBindingEditors.forSession(session));
   }
 
   private KeyExample() {}

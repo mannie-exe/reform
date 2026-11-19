@@ -115,6 +115,10 @@ public final class SettingsScreen<T> extends FormScreen {
   private final DocumentActions<T> actions;
   private final Map<DocumentId, ReferenceActions<String, ?>> sources;
   private final FormPresentation presentation;
+  private final FieldEditors<T> fieldEditors;
+  private final java.util.Set<FieldPath> expandedEditors = new java.util.HashSet<>();
+  private final Map<FieldPath, Button> editorButtons = new LinkedHashMap<>();
+  private final Map<FieldPath, Button> disclosureButtons = new LinkedHashMap<>();
   private final FormDependencies.Bound dependencies;
   private final Map<FieldPath, Control> controls = new LinkedHashMap<>();
   private final Map<FieldPath, String> local = new LinkedHashMap<>();
@@ -168,6 +172,26 @@ public final class SettingsScreen<T> extends FormScreen {
       DocumentActions<T> actions,
       Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
       FormPresentation presentation) {
+    this(
+        parent,
+        title,
+        contextLabel,
+        definition,
+        actions,
+        sources,
+        presentation,
+        FieldEditors.builder(definition).build());
+  }
+
+  public SettingsScreen(
+      Screen parent,
+      Component title,
+      Component contextLabel,
+      DocumentDefinition<T> definition,
+      DocumentActions<T> actions,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+      FormPresentation presentation,
+      FieldEditors<T> fieldEditors) {
     super(title);
     this.parent = parent;
     this.contextLabel = Objects.requireNonNull(contextLabel);
@@ -183,6 +207,8 @@ public final class SettingsScreen<T> extends FormScreen {
         });
     this.sources = Map.copyOf(admitted);
     this.presentation = Objects.requireNonNull(presentation);
+    this.fieldEditors = Objects.requireNonNull(fieldEditors);
+    fieldEditors.requireCompatible(definition);
     dependencies = presentation.bind(definition.type());
     if (definition != actions.definition())
       throw new IllegalArgumentException("A form requires its actual owner definition");
@@ -218,14 +244,19 @@ public final class SettingsScreen<T> extends FormScreen {
 
   /** Current native control only; the caller gains no owner or persistence authority. */
   public Optional<AbstractWidget> fieldControl(FieldPath path) {
-    return Optional.ofNullable(controls.get(path)).map(Control::widget);
+    var scalar = controls.get(path);
+    return scalar != null
+        ? Optional.of(scalar.widget())
+        : Optional.ofNullable(editorButtons.get(path));
   }
 
   /** Focus and reveal a currently rendered field, including related diagnostic destinations. */
   public boolean focusField(FieldPath path) {
     var control = controls.get(path);
-    if (control == null || panel == null) return false;
-    String focus = panel.fieldFocus(FormModel.key(path), control.widget());
+    var widget = control == null ? editorButtons.get(path) : control.widget();
+    if (widget == null || panel == null) return false;
+    String focus =
+        panel.fieldFocus(FormModel.key(path) + (control == null ? ":editor" : ""), widget);
     if (focus == null) return false;
     setFocused(panel);
     panel.restoreFocus(focus);
@@ -242,6 +273,8 @@ public final class SettingsScreen<T> extends FormScreen {
     structurePaths.clear();
     availabilityButtons.clear();
     availabilityRows.clear();
+    editorButtons.clear();
+    disclosureButtons.clear();
     var current = actions.view();
     bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
     save = button(commitLabel(), this::requestSave);
@@ -305,7 +338,13 @@ public final class SettingsScreen<T> extends FormScreen {
         notice = failure(unavailable);
         panel.row(text("form_unavailable", "Form unavailable"), notice);
       }
-      if (model != null) fields(model.root(), title);
+      if (model != null) {
+        expandedEditors.retainAll(
+            formLayout.stream()
+                .map(FormModel.Layout::path)
+                .collect(java.util.stream.Collectors.toSet()));
+        fields(model.root(), title);
+      }
     }
     controls.keySet().retainAll(visibleFields);
     local.keySet().retainAll(visibleFields);
@@ -339,7 +378,7 @@ public final class SettingsScreen<T> extends FormScreen {
 
   @Override
   protected void setInitialFocus() {
-    if (panel != null && !controls.isEmpty()) {
+    if (panel != null && (!controls.isEmpty() || !editorButtons.isEmpty())) {
       setFocused(panel);
       panel.focusVisibleControl();
       if (panel.getFocused() != null) return;
@@ -366,6 +405,48 @@ public final class SettingsScreen<T> extends FormScreen {
     var path = field.path();
     var node = field.input();
     var shape = field.type().orElseThrow().shape();
+    var editor = fieldEditors.at(path, field.type().orElseThrow());
+    if (editor.isPresent()) {
+      var generation = widgetGeneration;
+      var change =
+          Button.builder(
+                  text("edit_field", "Edit…"),
+                  ignored -> {
+                    if (widgetGeneration == generation)
+                      openField(field, label, editor.orElseThrow());
+                  })
+              .bounds(0, 0, 80, 20)
+              .createNarration(original -> label.copy().append(": ").append(original.get()))
+              .build();
+      var raw =
+          Button.builder(
+                  expandedEditors.contains(path)
+                      ? text("hide_fields", "Hide fields")
+                      : text("show_fields", "Show fields"),
+                  ignored -> {
+                    if (closed
+                        || minecraft.screen != this
+                        || widgetGeneration != generation
+                        || saving
+                        || loading
+                        || pendingEdits > 0
+                        || unsent()) return;
+                    if (!expandedEditors.remove(path)) expandedEditors.add(path);
+                    rebuildWidgets();
+                  })
+              .bounds(0, 0, 100, 20)
+              .createNarration(original -> label.copy().append(": ").append(original.get()))
+              .build();
+      editorButtons.put(path, change);
+      disclosureButtons.put(path, raw);
+      panel.row(
+          FormModel.key(path) + ":editor",
+          label,
+          text("editor_help", "Edit this field, or show its raw controls to repair input."),
+          change,
+          raw);
+      if (!expandedEditors.contains(path)) return;
+    }
     if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>)
         && dependencies.affects(path)) {
       String key = FormModel.key(path) + ":availability";
@@ -805,6 +886,53 @@ public final class SettingsScreen<T> extends FormScreen {
       minecraft.setScreen(screen);
     } finally {
       handoff = false;
+    }
+  }
+
+  private void openField(FormModel.Node field, Component label, FieldEditors.Editor<T> editor) {
+    var view = actions.view();
+    if (closed
+        || minecraft.screen != this
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()
+        || view.availability() != EditorActor.Availability.READY
+        || view.snapshot().isEmpty()
+        || view.pending().isPresent()
+        || view.review().isPresent()
+        || !locallyAvailable(field.path())) return;
+    if (layoutChanged(view)) {
+      notice = text("review_changed_form", "The form changed; review this control again.");
+      rebuildWidgets();
+      return;
+    }
+    var snapshot = view.snapshot().orElseThrow();
+    try {
+      var request =
+          new FieldEditors.Request<>(
+              label,
+              contextLabel,
+              actions,
+              snapshot.target(field.path()),
+              field.type().orElseThrow(),
+              snapshot.draft(),
+              () -> !closed && locallyAvailable(field.path()),
+              () -> {
+                synchronize(Map.copyOf(versions));
+                minecraft.setScreen(this);
+              },
+              actions::close);
+      var screen = Objects.requireNonNull(editor.open(request));
+      if (screen == this) throw new IllegalArgumentException("Open a separate auxiliary screen");
+      handoff = true;
+      try {
+        minecraft.setScreen(screen);
+      } finally {
+        handoff = false;
+      }
+    } catch (RuntimeException refused) {
+      notice = failure(refused);
     }
   }
 
@@ -1377,6 +1505,27 @@ public final class SettingsScreen<T> extends FormScreen {
     importData.active = historyReady && current.pending().isEmpty() && current.review().isEmpty();
     if (conflict != null)
       conflict.active = historyReady && current.review().isPresent() && current.pending().isEmpty();
+    editorButtons.forEach(
+        (path, button) -> {
+          button.active =
+              historyReady
+                  && current.snapshot().isPresent()
+                  && current.pending().isEmpty()
+                  && current.review().isEmpty()
+                  && locallyAvailable(path);
+          button.setTooltip(locallyAvailable(path) ? null : Tooltip.create(dependencyText(path)));
+        });
+    disclosureButtons.forEach(
+        (path, button) -> {
+          button.active = !saving && !loading && pendingEdits == 0 && !unaccepted;
+          button.setTooltip(
+              button.active
+                  ? null
+                  : Tooltip.create(
+                      text(
+                          "settle_raw_input",
+                          "Finish or explicitly discard pending input before changing field visibility.")));
+        });
     save.setMessage(unaccepted ? text("retry_edits", "Retry edits") : commitLabel());
     save.active =
         current.snapshot().isPresent()

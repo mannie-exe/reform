@@ -44,6 +44,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.neoforged.neoforge.client.settings.IKeyConflictContext;
+import net.neoforged.neoforge.client.settings.KeyConflictContext;
 import net.neoforged.neoforge.client.settings.KeyModifier;
 import org.lwjgl.glfw.GLFW;
 
@@ -58,8 +59,17 @@ public final class KeyBindingOptions implements AutoCloseable {
   }
 
   public record Limits(
-      int maximumBytes, int maximumMappings, int maximumSessions, int maximumOperations) {
-    public static final Limits STANDARD = new Limits(262144, 64, 64, 16);
+      int maximumBytes,
+      int maximumMappings,
+      int maximumSessions,
+      int maximumOperations,
+      int maximumConflictMappings) {
+    public static final Limits STANDARD = new Limits(262144, 64, 64, 16, 4096);
+
+    public Limits(
+        int maximumBytes, int maximumMappings, int maximumSessions, int maximumOperations) {
+      this(maximumBytes, maximumMappings, maximumSessions, maximumOperations, 4096);
+    }
 
     public Limits {
       if (maximumBytes < 1
@@ -67,9 +77,29 @@ public final class KeyBindingOptions implements AutoCloseable {
           || maximumMappings < 1
           || maximumMappings > 1024
           || maximumSessions < 1
-          || maximumOperations < 1) throw new IllegalArgumentException("Invalid native key limits");
+          || maximumOperations < 1
+          || maximumConflictMappings < 1
+          || maximumConflictMappings > 16384)
+        throw new IllegalArgumentException("Invalid native key limits");
     }
   }
+
+  /** A warning snapshot, not permission to save or a promise that no mod has custom dispatch. */
+  public record Conflicts(
+      String mapping,
+      Binding proposed,
+      List<String> mappings,
+      int inspected,
+      boolean nativeCurrent) {
+    public Conflicts {
+      Objects.requireNonNull(mapping);
+      Objects.requireNonNull(proposed);
+      mappings = List.copyOf(mappings);
+      if (inspected < mappings.size()) throw new IllegalArgumentException("Invalid conflict count");
+    }
+  }
+
+  private record ConflictInput(KeyMapping mapping, Binding binding, IKeyConflictContext context) {}
 
   private record Capture(Map<String, Binding> values, Map<String, IKeyConflictContext> contexts) {}
 
@@ -227,6 +257,159 @@ public final class KeyBindingOptions implements AutoCloseable {
 
     public CompletionStage<Observation> read() {
       return lane.submit(() -> observe(this));
+    }
+
+    /** Actual registered defaults, without resetting the native mapping or creating a file. */
+    public Binding defaultBinding(String name) {
+      context.requireOwner();
+      require(OwnerContext.Right.READ);
+      capture();
+      var value = defaults.get(name);
+      if (value == null) throw refusal("keys.mapping", "Select an admitted native mapping");
+      require(OwnerContext.Right.READ);
+      return value;
+    }
+
+    public List<String> mappingNames() {
+      context.requireOwner();
+      require(OwnerContext.Right.READ);
+      capture();
+      return List.copyOf(defaults.keySet());
+    }
+
+    /**
+     * Explicit bounded review of this proposed binding and the rest of the same draft. It changes
+     * no mapping. Unchanged bindings use actual native conflict methods; changed drafts project the
+     * pinned default context/modifier rules, without creating globally registered preview mappings.
+     */
+    public CompletionStage<Conflicts> conflicts(String name, Binding proposed, DraftTree draft) {
+      Objects.requireNonNull(name);
+      Objects.requireNonNull(proposed);
+      Objects.requireNonNull(draft);
+      return lane.submit(
+          () ->
+              context
+                  .onOwner(
+                      () -> {
+                        require(OwnerContext.Right.READ);
+                        capture();
+                        if (!defaults.containsKey(name))
+                          throw refusal("keys.mapping", "Select an admitted native mapping");
+                        nativeKey(proposed);
+                        return null;
+                      })
+                  .thenCompose(
+                      ignored ->
+                          context.onWorker(
+                              () -> {
+                                var next =
+                                    draft.change(
+                                        FieldPath.ROOT.field(name),
+                                        node -> {
+                                          if (!(node
+                                              instanceof
+                                              design.inherent.reform.edit.DraftNode.ObjectValue
+                                                  record))
+                                            throw refusal(
+                                                "keys.input",
+                                                "Repair this binding's record fields first");
+                                          var fields = new LinkedHashMap<>(record.fields());
+                                          fields.put(
+                                              "key",
+                                              new design.inherent.reform.edit.DraftNode.Scalar(
+                                                  proposed.key()));
+                                          fields.put(
+                                              "modifier",
+                                              new design.inherent.reform.edit.DraftNode.Scalar(
+                                                  proposed.modifier().name()));
+                                          return new design.inherent.reform.edit.DraftNode
+                                              .ObjectValue(fields);
+                                        });
+                                var inspected = next.inspect(definition, json);
+                                if (inspected.candidate().isEmpty())
+                                  throw new PolicyRefusal(inspected.report());
+                                return inspected.candidate().orElseThrow().value();
+                              }))
+                  .thenCompose(
+                      values ->
+                          context.onOwner(
+                              () -> {
+                                require(OwnerContext.Right.READ);
+                                var before = capture();
+                                validate(values);
+                                if (options.keyMappings.length > limits.maximumConflictMappings())
+                                  throw refusal(
+                                      "keys.conflict_budget",
+                                      "Native conflict review exceeds its mapping budget; no complete result is available");
+                                var inputs = new ArrayList<ConflictInput>();
+                                KeyMapping selected = null;
+                                for (var mapping : options.keyMappings) {
+                                  var value =
+                                      new Binding(
+                                          mapping.getKey().getName(), mapping.getKeyModifier());
+                                  nativeKey(value);
+                                  inputs.add(
+                                      new ConflictInput(
+                                          mapping, value, mapping.getKeyConflictContext()));
+                                  if (mapping.getName().equals(name)) selected = mapping;
+                                }
+                                if (selected == null)
+                                  throw refusal(
+                                      "keys.mapping", "Native mapping is no longer available");
+                                var selectedMapping = selected;
+                                var key = nativeKey(proposed);
+                                var ownContext = selected.getKeyConflictContext();
+                                boolean current = before.values().equals(values);
+                                var result = new ArrayList<String>();
+                                if (!key.equals(InputConstants.UNKNOWN)) {
+                                  for (var input : inputs) {
+                                    var other = input.mapping();
+                                    if (other == selectedMapping) continue;
+                                    var otherValue =
+                                        values.getOrDefault(other.getName(), input.binding());
+                                    boolean collision =
+                                        current
+                                            ? selectedMapping.same(other)
+                                                || other.hasKeyModifierConflict(selectedMapping)
+                                            : projectedConflict(
+                                                key,
+                                                proposed.modifier(),
+                                                ownContext,
+                                                nativeKey(otherValue),
+                                                otherValue.modifier(),
+                                                input.context());
+                                    if (collision) {
+                                      if (other.getName().length() > 512)
+                                        throw refusal(
+                                            "keys.conflict_name",
+                                            "A native conflict name exceeds the review budget");
+                                      result.add(other.getName());
+                                    }
+                                  }
+                                }
+                                // Conflict-context implementations are consumer callbacks, not
+                                // trusted pure functions.
+                                verify(before);
+                                if (options.keyMappings.length != inputs.size())
+                                  throw refusal(
+                                      "keys.native_changed",
+                                      "Native Controls changed during conflict review");
+                                for (int index = 0; index < inputs.size(); index++) {
+                                  var input = inputs.get(index);
+                                  var actual = options.keyMappings[index];
+                                  if (actual != input.mapping()
+                                      || actual.getKeyConflictContext() != input.context()
+                                      || !new Binding(
+                                              actual.getKey().getName(), actual.getKeyModifier())
+                                          .equals(input.binding()))
+                                    throw refusal(
+                                        "keys.native_changed",
+                                        "Native Controls changed during conflict review");
+                                }
+                                require(OwnerContext.Right.READ);
+                                return new Conflicts(
+                                    name, proposed, result, inputs.size(), current);
+                              })));
     }
 
     public CompletionStage<Prepared> prepare(
@@ -466,8 +649,26 @@ public final class KeyBindingOptions implements AutoCloseable {
     }
   }
 
-  private static InputConstants.Key nativeKey(Binding binding) {
+  static InputConstants.Key nativeKey(Binding binding) {
     return nativeKey(binding, true);
+  }
+
+  /** Project the pinned Controls metadata rules, including its equal-key context fallback. */
+  private static boolean projectedConflict(
+      InputConstants.Key first,
+      KeyModifier firstModifier,
+      IKeyConflictContext firstContext,
+      InputConstants.Key second,
+      KeyModifier secondModifier,
+      IKeyConflictContext secondContext) {
+    if (firstContext.conflicts(secondContext) || secondContext.conflicts(firstContext)) {
+      if (firstModifier.matches(second) || secondModifier.matches(first)) return true;
+      if (first.equals(second))
+        return firstModifier == secondModifier
+            || firstContext.conflicts(KeyConflictContext.IN_GAME)
+                && (firstModifier == KeyModifier.NONE || secondModifier == KeyModifier.NONE);
+    }
+    return first.equals(second);
   }
 
   private static InputConstants.Key nativeKey(Binding binding, boolean canonical) {
@@ -478,6 +679,8 @@ public final class KeyBindingOptions implements AutoCloseable {
             && !numericKey(name.substring(10), 1, GLFW.GLFW_MOUSE_BUTTON_LAST + 1)
         || name.startsWith("key.keyboard.")
             && name.substring(13).matches("[+-]?[0-9]+")
+            // The one-character digit names are symbolic keys (ASCII 48..57), not raw codes.
+            && !(name.length() == 14 && name.charAt(13) >= '0' && name.charAt(13) <= '9')
             && !name.substring(13).equals("-1")
             && !numericKey(name.substring(13), GLFW.GLFW_KEY_SPACE, GLFW.GLFW_KEY_LAST))
       throw refusal("keys.key", "Native numeric key code exceeds its admitted range");

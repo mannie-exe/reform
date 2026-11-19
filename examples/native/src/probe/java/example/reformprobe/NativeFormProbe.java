@@ -73,6 +73,7 @@ public final class NativeFormProbe {
   private java.util.concurrent.CompletableFuture<JsonObject> conflictCommands;
   private NativeKeyOwnerControls keyOwner;
   private java.util.concurrent.CompletableFuture<JsonObject> keyOwnerResult;
+  private NativeKeyControls keyControls;
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -115,7 +116,9 @@ public final class NativeFormProbe {
               "command-conflicts",
               "command-conflicts-reopen",
               "keys-owner",
-              "keys-owner-reopen")
+              "keys-owner-reopen",
+              "keys-controls",
+              "keys-controls-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -254,6 +257,25 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("keys-controls")) {
+        if (keyControls == null) {
+          if (!(mc.screen instanceof TitleScreen)) return;
+          recordArtifact();
+          keyControls =
+              new NativeKeyControls(
+                  mode.equals("keys-controls-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (keyControls.tick()) {
+          report.add("keyControls", keyControls.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("keys-owner")) {
@@ -908,6 +930,7 @@ public final class NativeFormProbe {
     if (commandImports != null) report.add("commandImports", commandImports.report());
     if (commandConflicts != null) report.add("commandConflicts", commandConflicts.report());
     if (keyOwner != null) report.add("keyOwner", keyOwner.report());
+    if (keyControls != null) report.add("keyControls", keyControls.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -937,6 +960,10 @@ public final class NativeFormProbe {
   }
 
   private void shutdown(GameShuttingDownEvent event) {
+    if (keyControls != null) {
+      keyControls.shutdown();
+      report.add("keyControls", keyControls.report());
+    }
     if (keyOwner != null) {
       keyOwner.shutdown();
       report.add("keyOwner", keyOwner.report());

@@ -1,6 +1,6 @@
 # Measured presentation
 
-The current presentation supplies native-free `FormGeometry`/`SectionNavigation`/`FormModel`, an internal client-only `FormPanel`/`ControlSizing` and an experimental public recursive `SettingsScreen<T>` over an admitted owner-backed actor. Native client qualification uses JSON; native registered settings separately exercise the shared actor headlessly. Catalog/detail composition, additional editors and complete operation presentation remain required. [Coverage](coverage.md) owns the complete Phase 1 remainder.
+The current presentation supplies native-free `FormGeometry`/`SectionNavigation`/`FormModel`, an internal client-only `FormPanel`/`ControlSizing` and an experimental public recursive `SettingsScreen<T>` over an admitted owner-backed actor. Native client qualification uses JSON and actual native keybindings; native registered settings separately exercise the shared actor headlessly. Catalog/detail composition, additional editors and complete operation presentation remain required. [Coverage](coverage.md) owns the complete Phase 1 remainder.
 
 These parts derive from the owned MIT implementation in Skyweave: Compatibility Patches, as identified in `NOTICE`. The extraction changes packages/type names, library translation fallbacks and the location of the native text-reflow helper. Compat still uses its original implementation until the actual consumer migration; that mod and the modpack are not library dependencies.
 
@@ -37,6 +37,14 @@ Native widgets retain raw text/caret/selection through reflow and their own save
 The internal native screen makes reselecting its current focused container idempotent, preserving the child's focus during native click dispatch. The panel forwards a captured left-button drag to that child and retains NeoForge's own scrollbar fallback. It clears nested focus when the parent actually changes, rather than after every repeated selection.
 
 Declared [numeric presentation](numbers.md) uses the same measured row for exact text, canonical steps and a display-only unit selector. Its local immutable state distinguishes displayed text from the expected shared draft and retry action. Native rendering never performs owner validation or persistence; field/unit changes enter the existing typed services.
+
+## Auxiliary field editors
+
+`FieldEditors.builder(definition)` registers an explicit field path or exact `ValueType` identity with a native auxiliary-screen factory. Exact field registrations take precedence; type registrations also match actual stable collection rows of that type. Registration is immutable when built, bounded to 256 entries and tied to the actual definition. It performs no source lookup, actor construction or native registration. A generated form accepts this registry through its public constructor.
+
+The factory receives a `Request` containing the actual borrowed `DocumentActions`, original immutable draft, declared type, exact target, captions and return/abandon callbacks. `current()` checks cached input/lifetime/availability; operations still enforce real authority. An editor uses the existing typed edit/history/services rather than creating another persistence path. On normal return it calls `finish()` once; unexpected removal calls `abandon()` to release the editing lifetime. Factories construct a separate screen without switching screens themselves. Child implementations must guard obsolete native callbacks and retain their local state across reflow.
+
+The generated row keeps **Show fields** alongside the auxiliary entry, allowing invalid or unsupported input to be repaired through ordinary controls. Visibility changes wait for pending/unsent input rather than discarding its widgets. Expansion retains only paths in the bounded current form. `fieldControl` and `focusField` also expose/reveal the current auxiliary entry; callers obtain no extra owner authority. [Native key controls](native-keys.md#capture-and-draft-review) demonstrate this path with one undoable key/modifier edit and a separate native Save.
 
 ## Qualification boundary
 
