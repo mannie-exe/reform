@@ -314,6 +314,9 @@ public final class DocumentActions<T> implements AutoCloseable {
                                 () -> {
                                   access.require(OwnerContext.Right.READ);
                                   execution.checkpoint();
+                                  var current = actor.view();
+                                  if (current.availability() != EditorActor.Availability.READY)
+                                    throw unavailable(current);
                                   return captured;
                                 })));
     scope.freeze();
@@ -526,27 +529,23 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   private CompletionStage<?> readiness(OperationDescriptor.EntryPoint entry) {
-    if (actor.view().availability() == EditorActor.Availability.READY)
+    var observed = actor.view();
+    if (observed.availability() == EditorActor.Availability.READY)
       return CompletableFuture.completedStage(null);
-    if (actor.view().availability() == EditorActor.Availability.LOADING)
+    if (observed.availability() == EditorActor.Availability.LOADING)
       return result(ensureLoaded(entry))
           .thenApply(
               view -> {
-                if (view.availability() != EditorActor.Availability.READY)
-                  throw new PolicyRefusal(
-                      view.validation().valid()
-                          ? new ValidationReport(
-                              List.of(
-                                  design.inherent.reform.validation.Issue.error(
-                                      "editor.unavailable",
-                                      FieldPath.ROOT,
-                                      "No editing baseline is ready")),
-                              false)
-                          : view.validation());
+                if (view.availability() != EditorActor.Availability.READY) throw unavailable(view);
                 return null;
               });
-    return CompletableFuture.failedFuture(
-        new PolicyRefusal("editor.unavailable", "No editing baseline is ready"));
+    return CompletableFuture.failedFuture(unavailable(observed));
+  }
+
+  private static PolicyRefusal unavailable(EditorActor.View<?> observed) {
+    return observed.validation().valid()
+        ? new PolicyRefusal("editor.unavailable", "No editing baseline is ready")
+        : new PolicyRefusal(observed.validation());
   }
 
   public OperationHandle<EditorActor.View<T>> inspect(OperationDescriptor.EntryPoint entry) {

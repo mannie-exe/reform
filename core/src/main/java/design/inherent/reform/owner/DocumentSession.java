@@ -31,6 +31,9 @@ public interface DocumentSession<T> extends AutoCloseable {
 
   UUID id();
 
+  /**
+   * Cached thread-safe liveness, including owner closure; no IO, permissions or native callbacks.
+   */
   boolean isOpen();
 
   Set<Operation> operations();

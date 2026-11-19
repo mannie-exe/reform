@@ -76,6 +76,75 @@ class DocumentActionsTest {
   }
 
   @Test
+  void closedSourceRefusesFreshInspectionWithoutClosingItsSharedOwnerContext() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "4", EntryPoint.GUI);
+      var retained = h.actions.view().snapshot().orElseThrow();
+      var original = Files.readString(h.path);
+      h.nativeCall(
+          () -> {
+            h.session.close();
+            return null;
+          });
+      assertFalse(h.session.isOpen());
+      var direct =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class, () -> await(h.session.read()));
+      assertEquals(
+          "owner.closed",
+          assertInstanceOf(PolicyRefusal.class, direct.getCause())
+              .report()
+              .issues()
+              .getFirst()
+              .code());
+      var inspection = await(h.nativeCall(() -> h.actions.review(EntryPoint.GUI)).completion());
+      assertEquals(OperationSnapshot.State.REFUSED, inspection.state());
+      assertEquals("owner.closed", inspection.report().issues().getFirst().code());
+      assertEquals(EditorActor.Availability.UNAVAILABLE, h.actions.view().availability());
+      assertTrue(h.actions.view().snapshot().isEmpty());
+      assertEquals(
+          "4", ((DraftNode.Scalar) retained.draft().at(FieldPath.ROOT.field("count"))).raw());
+      assertTrue(h.context.isOpen());
+      assertEquals(original, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+      var independent = h.nativeCall(() -> h.owner.open(h.access));
+      try {
+        assertTrue(await(independent.read()).document().report().valid());
+      } finally {
+        independent.close();
+      }
+    }
+  }
+
+  @Test
+  void sourceClosingDuringReviewWithholdsItsLateMaterialAtTheOwnerDisclosureGate()
+      throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "3", EntryPoint.GUI);
+      var original = Files.readString(h.path);
+      h.pauseValidation.set(true);
+      var request = h.nativeCall(() -> h.actions.review(EntryPoint.GUI));
+      waitFor(h.reached);
+      h.nativeCall(
+          () -> {
+            h.session.close();
+            return null;
+          });
+      h.release.countDown();
+      var refused = await(request.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, refused.state());
+      assertEquals("owner.closed", refused.report().issues().getFirst().code());
+      assertTrue(refused.result().isEmpty());
+      assertEquals(EditorActor.Availability.UNAVAILABLE, h.actions.view().availability());
+      assertEquals(original, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+      assertTrue(h.context.isOpen());
+    }
+  }
+
+  @Test
   void reviewedCommitChecksAfterQueuedTypingInsteadOfItsPublishedCallerTimeView() throws Exception {
     try (var h = new Harness()) {
       h.run(() -> h.actions.load(EntryPoint.GUI));

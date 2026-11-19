@@ -73,12 +73,14 @@ class EditorActorTest {
     final AtomicBoolean delayWrite = new AtomicBoolean(), delayRead = new AtomicBoolean();
     final AtomicBoolean readAllowed = new AtomicBoolean(true);
     final AtomicInteger nativeValidators = new AtomicInteger();
+    final AtomicInteger writes = new AtomicInteger();
     final ConcurrentHashMap<Integer, Long> validationThreads = new ConcurrentHashMap<>();
     final CountDownLatch written = new CountDownLatch(1), releaseWrite = new CountDownLatch(1);
     final CountDownLatch reading = new CountDownLatch(1), releaseRead = new CountDownLatch(1);
     final OwnerContext context;
     final OwnerContext.Access access;
     final JsonOwner<Profile> owner;
+    final JsonOwner<Profile>.Session source;
     final DocumentDefinition<Profile> definition;
     final EditorActor<Profile> actor;
     final Path path = root.resolve("settings.json");
@@ -105,6 +107,7 @@ class EditorActorTest {
                   8192,
                   4096,
                   () -> {
+                    writes.incrementAndGet();
                     if (delayWrite.get()) {
                       written.countDown();
                       waitFor(releaseWrite);
@@ -132,7 +135,7 @@ class EditorActorTest {
                         return readAllowed.get();
                       },
                       () -> true));
-      var source = nativeCall(() -> owner.open(access));
+      source = nativeCall(() -> owner.open(access));
       if (initialize)
         assertEquals(CommitReceipt.Persistence.SAVED, await(source.initialize()).persistence());
       actor =
@@ -211,6 +214,46 @@ class EditorActorTest {
         firstRelease.countDown();
         secondRelease.countDown();
         firstAgainRelease.countDown();
+      }
+    }
+  }
+
+  @Test
+  void sourceClosureAfterReplacementDrainsActualReceiptAndPermitsFreshApplyOnlyRecovery()
+      throws Exception {
+    try (var h = new Harness(true)) {
+      await(h.actor.setRaw(COUNT_PATH, "3"));
+      h.delayWrite.set(true);
+      var saving = h.actor.save();
+      waitFor(h.written);
+      h.nativeCall(
+          () -> {
+            h.source.close();
+            return null;
+          });
+      assertEquals(EditorActor.Availability.UNAVAILABLE, h.actor.view().availability());
+      h.releaseWrite.countDown();
+      var completed = await(saving);
+      var receipt = completed.receipt().orElseThrow();
+      assertEquals(CommitReceipt.Persistence.SAVED, receipt.persistence());
+      assertNotEquals(CommitReceipt.Application.APPLIED, receipt.application());
+      assertFalse(completed.editorReport().valid());
+      assertTrue(h.context.isOpen());
+      String saved = Files.readString(h.path);
+      assertTrue(saved.contains("\"count\": 3"));
+      assertEquals(1, h.owner.handle().view().value().orElseThrow().count());
+      assertEquals(2, h.writes.get());
+      var fresh = h.nativeCall(() -> h.owner.open(h.access));
+      try {
+        var observed = await(fresh.read());
+        var recovered = await(fresh.applySaved(observed));
+        assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, recovered.persistence());
+        assertEquals(CommitReceipt.Application.APPLIED, recovered.application());
+        assertEquals(3, h.owner.handle().view().value().orElseThrow().count());
+        assertEquals(saved, Files.readString(h.path));
+        assertEquals(2, h.writes.get());
+      } finally {
+        fresh.close();
       }
     }
   }

@@ -192,6 +192,15 @@ public final class EditorActor<T> implements AutoCloseable {
   private final SerialLane edits;
   private final OwnerContext.CloseHook cleanup;
   private final ThreadLocal<Boolean> inside = new ThreadLocal<>();
+  private static final ValidationReport SOURCE_CLOSED =
+      new ValidationReport(
+          List.of(
+              Issue.error(
+                  "owner.closed",
+                  FieldPath.ROOT,
+                  "The source owning this draft is closed; open its current settings again")),
+          false);
+  private final View<T> sourceUnavailable = empty(Availability.UNAVAILABLE, SOURCE_CLOSED);
   private final AtomicReference<View<T>> published =
       new AtomicReference<>(empty(Availability.LOADING, ValidationReport.VALID));
   private volatile boolean open = true;
@@ -219,7 +228,8 @@ public final class EditorActor<T> implements AutoCloseable {
   }
 
   public View<T> view() {
-    return published.get();
+    var observed = published.get();
+    return open && !source.isOpen() ? sourceUnavailable : observed;
   }
 
   public UUID context() {
@@ -355,6 +365,7 @@ public final class EditorActor<T> implements AutoCloseable {
   private void current() {
     context.requireCurrent();
     if (!open) throw new PolicyRefusal("editor.closed", "This editing workflow is closed");
+    if (!source.isOpen()) throw new PolicyRefusal(SOURCE_CLOSED);
   }
 
   private void owningTask() {
