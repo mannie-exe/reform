@@ -196,6 +196,17 @@ final class NativeReviewControls {
             captured.source().kind().equals("json")
                 && captured.source().location().orElseThrow().endsWith("catalog.json"));
         check("inspection does not persist", Files.readString(path()).equals(original));
+        check(
+            "application declaration is captured separately from a completed save",
+            count
+                    .application()
+                    .orElseThrow()
+                    .timings()
+                    .equals(
+                        java.util.Set.of(
+                            design.inherent.reform.owner.ApplicationEffects.Timing
+                                .OWNER_PUBLICATION))
+                && form.editorView().lastReceipt().isEmpty());
         var choices =
             widgets(view).stream()
                 .filter(CycleButton.class::isInstance)
@@ -204,6 +215,7 @@ final class NativeReviewControls {
                 .toList();
         check("related diagnostic uses a bounded location control", choices.size() == 2);
         var related = choices.getLast();
+        check("related diagnostic receives visible native focus", focus(view, related));
         related.onPress();
         check("related control retains actual target", related.getValue().equals(MAX));
         retiredDestination = button(view, "Go to field");
@@ -301,6 +313,7 @@ final class NativeReviewControls {
                 && view.selectedField().filter(MIN::equals).isPresent()
                 && view.reviewedInput().orElseThrow() == captured);
         geometry(view);
+        check("narrow capture reveals the retained search input", focus(view, filter));
         capture.accept("form-review-narrow.png", () -> next("narrow inspection captured"));
       }
       case 10 -> {

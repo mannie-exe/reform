@@ -6,6 +6,7 @@ import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentReview;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.FormGeometry;
@@ -261,6 +262,25 @@ public final class ReviewScreen<T> extends FormScreen {
     value(Value.BASELINE, text("baseline", "Observed baseline"), Optional.of(entry.baseline()));
     value(Value.DRAFT, text("draft", "Draft at capture"), Optional.of(entry.draft()));
     value(Value.EFFECTIVE, text("effective", "Observed effective value"), entry.effective());
+    panel.row(
+        "application",
+        text("application", "Owner-declared application"),
+        entry
+            .application()
+            .<Component>map(
+                rule ->
+                    Component.literal(
+                            rule.timings().stream()
+                                .sorted()
+                                .map(value -> timing(value).getString())
+                                .collect(java.util.stream.Collectors.joining(", ")))
+                        .append("\n")
+                        .append(rule.explanation()))
+            .orElseGet(
+                () ->
+                    text(
+                        "application_unknown",
+                        "No application boundary is declared for this field. Saving does not certify live effects.")));
     if (review.effective().isEmpty())
       panel.row(
           "effective_state",
@@ -419,6 +439,24 @@ public final class ReviewScreen<T> extends FormScreen {
 
   private Component label(FieldPath path) {
     return FieldLabels.input(actions.definition().id(), path, text("document", "Document"));
+  }
+
+  private Component timing(ApplicationEffects.Timing value) {
+    String fallback =
+        switch (value) {
+          case OWNER_PUBLICATION -> "Owner value publication";
+          case EXPLICIT_RELOAD -> "Explicit reload";
+          case REOPEN_VIEW -> "Reopen the view";
+          case NEXT_OPERATION -> "Next operation";
+          case NEXT_JOIN -> "Next join";
+          case WORLD_RESTART -> "World or server restart";
+          case GAME_RESTART -> "Game restart";
+          case NEW_WORLD -> "New world only";
+          case NEW_CHUNKS -> "Newly generated chunks";
+          case INCOMPATIBLE -> "Incompatible with this context";
+          case OWNER_MANAGED -> "Application managed by the owner";
+        };
+    return text("timing." + value.name().toLowerCase(Locale.ROOT), fallback);
   }
 
   private void index() {

@@ -135,7 +135,12 @@ public final class CatalogExample {
   private static ClientJsonSettings<Profiles> settings;
 
   static void register(IEventBus bus, ModContainer container) {
-    settings = ClientJsonSettings.clientJson(bus, container, DEFINITION);
+    settings =
+        ClientJsonSettings.clientJson(
+            bus,
+            container,
+            DEFINITION,
+            design.inherent.reform.owner.ApplicationEffects.OWNER_PUBLICATION);
     settings.registerCommands("reformcatalog");
   }
 

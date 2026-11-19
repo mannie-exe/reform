@@ -752,6 +752,10 @@ class DocumentActionsTest {
       var explanation = h.run(() -> h.actions.explain(EntryPoint.GUI));
       assertEquals("json", explanation.provenance().kind());
       assertEquals(h.path.toString(), explanation.provenance().location().orElseThrow());
+      assertEquals(
+          java.util.Set.of(
+              design.inherent.reform.owner.ApplicationEffects.Timing.OWNER_PUBLICATION),
+          explanation.applicationEffects().forField(FieldPath.ROOT).orElseThrow().timings());
       assertEquals(1, explanation.effective().orElseThrow().value().orElseThrow().count());
       var artifact = h.run(() -> h.actions.export(EntryPoint.COMMAND));
       assertEquals("document-value", artifact.representation());

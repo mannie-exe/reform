@@ -8,6 +8,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentRead;
 import design.inherent.reform.owner.DocumentSession;
@@ -116,6 +117,11 @@ public final class RegisteredConfig implements AutoCloseable {
           "neoforge",
           "Registered " + nativeType().name() + " configuration",
           Optional.of(path().toString()));
+    }
+
+    @Override
+    public ApplicationEffects applicationEffects() {
+      return owner.applicationEffects;
     }
 
     public Map<String, Object> nativeValues() {
@@ -359,6 +365,7 @@ public final class RegisteredConfig implements AutoCloseable {
   private final ModConfig config;
   private final ModConfigSpec spec;
   private final NativeSchema schema;
+  private final ApplicationEffects applicationEffects;
   private final Limits limits;
   private final JsonLimits jsonLimits;
   private final SerialLane lane;
@@ -388,6 +395,29 @@ public final class RegisteredConfig implements AutoCloseable {
           "Native document namespace must belong to its registered mod");
     spec = declared;
     schema = new NativeSchema(id, spec, Map.copyOf(explicitTypes), limits.maximumFields());
+    var effects = new ArrayList<ApplicationEffects.Rule>();
+    for (var field : schema.fields) {
+      var timing =
+          switch (field.nativeValue().getSpec().restartType()) {
+            case NONE -> ApplicationEffects.Timing.OWNER_MANAGED;
+            case WORLD -> ApplicationEffects.Timing.WORLD_RESTART;
+            case GAME -> ApplicationEffects.Timing.GAME_RESTART;
+          };
+      effects.add(
+          new ApplicationEffects.Rule(
+              field.address(),
+              Set.of(timing),
+              timing == ApplicationEffects.Timing.OWNER_MANAGED
+                  ? "Native raw values and reload callbacks do not certify domain-effective caches."
+                  : "The native owner retains this field's declared restart requirement."));
+    }
+    applicationEffects =
+        new ApplicationEffects(
+            effects,
+            new ApplicationEffects.Limits(
+                limits.maximumFields(),
+                128,
+                limits.maximumBytes() * 32 + limits.maximumFields() * 4096));
     jsonLimits = new JsonLimits(limits.maximumBytes(), 64, 16384, 32768, 128, 4096);
     lane = new SerialLane(limits.maximumOperations());
     closeHook = context.onClose(this::close);

@@ -10,6 +10,7 @@ import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.neoforge.configuration.NativeFile;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentRead;
 import design.inherent.reform.owner.DocumentSession;
@@ -156,10 +157,20 @@ public final class KeyBindingOptions implements AutoCloseable {
           Optional.of(owner.path.toString()));
     }
 
+    @Override
+    public ApplicationEffects applicationEffects() {
+      return INPUT_EFFECTS;
+    }
+
     public Map<String, Binding> currentBindings() {
       return nativeInput.values();
     }
   }
+
+  private static final ApplicationEffects INPUT_EFFECTS =
+      ApplicationEffects.root(
+          ApplicationEffects.Timing.OWNER_PUBLICATION,
+          "Refreshes admitted native Controls after successful save; custom mod dispatch remains mod-owned.");
 
   private record Proposal(Observation baseline, Candidate<Map<String, Binding>> candidate) {}
 

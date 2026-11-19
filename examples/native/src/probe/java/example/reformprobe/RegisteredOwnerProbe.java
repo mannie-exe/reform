@@ -260,6 +260,35 @@ final class RegisteredOwnerProbe {
             observed -> {
               baseline = observed;
               check(
+                  "application declarations retain actual native field restart metadata",
+                  observed
+                          .applicationEffects()
+                          .forField(FieldPath.ROOT.field("live"))
+                          .orElseThrow()
+                          .timings()
+                          .equals(
+                              Set.of(
+                                  design.inherent.reform.owner.ApplicationEffects.Timing
+                                      .OWNER_MANAGED))
+                      && observed
+                          .applicationEffects()
+                          .forField(FieldPath.ROOT.field("world"))
+                          .orElseThrow()
+                          .timings()
+                          .equals(
+                              Set.of(
+                                  design.inherent.reform.owner.ApplicationEffects.Timing
+                                      .WORLD_RESTART))
+                      && observed
+                          .applicationEffects()
+                          .forField(FieldPath.ROOT.field("game"))
+                          .orElseThrow()
+                          .timings()
+                          .equals(
+                              Set.of(
+                                  design.inherent.reform.owner.ApplicationEffects.Timing
+                                      .GAME_RESTART)));
+              check(
                   "native original saved/raw observation",
                   observed.document().report().valid()
                       && observed.nativeValues().get("live").equals(1));

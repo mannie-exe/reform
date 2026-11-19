@@ -134,7 +134,8 @@ public final class EditorActor<T> implements AutoCloseable {
       SourceInfo provenance,
       Optional<SettingsHandle.View<T>> effective,
       ValidationReport observationReport,
-      Optional<CommitReceipt<T>> lastReceipt) {}
+      Optional<CommitReceipt<T>> lastReceipt,
+      ApplicationEffects applicationEffects) {}
 
   private record Checked<T>(
       EditSession.Snapshot<T> snapshot, OwnerObservation<T> source, ValidationReport report) {}
@@ -276,7 +277,8 @@ public final class EditorActor<T> implements AutoCloseable {
               selected.source.provenance(),
               selected.source.effectiveView(),
               selected.observationReport,
-              Optional.ofNullable(selected.lastReceipt));
+              Optional.ofNullable(selected.lastReceipt),
+              selected.source.applicationEffects());
         });
   }
 

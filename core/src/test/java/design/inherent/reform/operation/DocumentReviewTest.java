@@ -12,6 +12,7 @@ import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.RuntimePolicy;
@@ -59,7 +60,8 @@ class DocumentReviewTest {
         SOURCE,
         effective,
         ValidationReport.VALID,
-        Optional.empty());
+        Optional.empty(),
+        ApplicationEffects.UNDECLARED);
   }
 
   private static DraftTree baseline() {
@@ -104,6 +106,59 @@ class DocumentReviewTest {
   }
 
   @Test
+  void declaredEffectsAreCapturedIndependentlyOfDraftValidityAndLastReceipts() {
+    var before = baseline();
+    var input =
+        inspection(
+            before.change(FieldPath.ROOT.field("count"), ignored -> new DraftNode.Scalar("-")),
+            before,
+            Optional.empty());
+    var effects =
+        ApplicationEffects.root(
+            ApplicationEffects.Timing.GAME_RESTART, "This owner requires a game restart");
+    var review =
+        capture(
+            new EditorActor.Inspection<>(
+                input.snapshot(),
+                input.baseline(),
+                input.provenance(),
+                input.effective(),
+                input.observationReport(),
+                Optional.empty(),
+                effects));
+    assertFalse(review.report().valid());
+    assertSame(effects, review.applicationEffects());
+    assertTrue(
+        review.entries().stream()
+            .allMatch(
+                entry ->
+                    entry
+                        .application()
+                        .orElseThrow()
+                        .timings()
+                        .equals(java.util.Set.of(ApplicationEffects.Timing.GAME_RESTART))));
+    var refused =
+        assertThrows(
+            PolicyRefusal.class,
+            () ->
+                DocumentReview.capture(
+                    new EditorActor.Inspection<>(
+                        input.snapshot(),
+                        input.baseline(),
+                        input.provenance(),
+                        input.effective(),
+                        input.observationReport(),
+                        Optional.empty(),
+                        ApplicationEffects.root(
+                            ApplicationEffects.Timing.GAME_RESTART, "x".repeat(4096))),
+                    comparison(input),
+                    new FieldIndex(TYPE, 32, 8),
+                    new DocumentReview.Limits(10, 1000, 1024)));
+    assertEquals("review.preview_limit", refused.report().issues().getFirst().code());
+    assertTrue(input.lastReceipt().isEmpty());
+  }
+
+  @Test
   void sourceFailureDoesNotDisappearBehindAValidUnchangedComparison() {
     var before = baseline();
     var input = inspection(before, before, Optional.empty());
@@ -119,7 +174,8 @@ class DocumentReviewTest {
                 input.provenance(),
                 input.effective(),
                 failed,
-                input.lastReceipt()));
+                input.lastReceipt(),
+                input.applicationEffects()));
     assertTrue(review.comparison().report().valid());
     assertFalse(review.comparison().authoredChanges());
     assertFalse(review.report().complete());

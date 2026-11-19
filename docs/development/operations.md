@@ -46,6 +46,8 @@ Raw projection defaults admit 512 field entries, 65,536 visited nodes and 524,28
 
 `DocumentReview.report()` combines source, comparison and effective-observation/capture diagnostics without hiding their separate reports. A clean draft comparison does not clear a failed source observation. The native `review` command uses that same aggregate and retains its existing recipient/context/operation feedback guards.
 
+`applicationEffects()` retains the observation's [owner-declared application boundaries](owners.md#declared-application-boundaries). Each entry's optional `application()` is the nearest containing declaration; absence remains unknown. The full metadata and each projected entry notice share the raw-description character budget. Invalid drafts can retain their declarations without becoming saveable. These notices are not inferred from a past receipt and do not change the separately observed effective value.
+
 The native [inspection view](presentation.md#source-and-value-inspection) borrows these services and labels stale captures. Full effect-aware save review remains separate: an inspection is not a save capability or a promise that the current world can accept new settings.
 
 ## Conditional submission

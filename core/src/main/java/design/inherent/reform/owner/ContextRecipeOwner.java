@@ -93,6 +93,11 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
     public SourceInfo provenance() {
       return new SourceInfo("creation-context", "Unsaved world-creation recipe", Optional.empty());
     }
+
+    @Override
+    public ApplicationEffects applicationEffects() {
+      return CREATION_EFFECTS;
+    }
   }
 
   private record Proposal<T, C, P>(
@@ -188,6 +193,11 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
               "Applies only to this unsaved creation context"));
     }
   }
+
+  private static final ApplicationEffects CREATION_EFFECTS =
+      ApplicationEffects.root(
+          ApplicationEffects.Timing.NEW_WORLD,
+          "Admits inputs only to the original unsaved creation context; existing worlds do not change.");
 
   private record Capture<T, C>(C nativeContext, long version, T values) {}
 

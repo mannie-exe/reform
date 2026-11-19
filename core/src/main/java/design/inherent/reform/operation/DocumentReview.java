@@ -3,6 +3,7 @@ package design.inherent.reform.operation;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
@@ -34,13 +35,15 @@ public final class DocumentReview {
       boolean wholeValue,
       String baseline,
       String draft,
-      Optional<String> effective) {
+      Optional<String> effective,
+      Optional<ApplicationEffects.Rule> application) {
     public Entry {
       Objects.requireNonNull(path);
       Objects.requireNonNull(selector);
       Objects.requireNonNull(baseline);
       Objects.requireNonNull(draft);
       Objects.requireNonNull(effective);
+      Objects.requireNonNull(application);
     }
   }
 
@@ -69,6 +72,7 @@ public final class DocumentReview {
   private final List<Entry> entries;
   private final Optional<Effective> effective;
   private final ValidationReport report;
+  private final ApplicationEffects applicationEffects;
 
   private DocumentReview(
       DraftRevision target,
@@ -76,13 +80,15 @@ public final class DocumentReview {
       ValidationReport sourceReport,
       DocumentActions.Comparison comparison,
       List<Entry> entries,
-      Optional<Effective> effective) {
+      Optional<Effective> effective,
+      ApplicationEffects applicationEffects) {
     this.target = Objects.requireNonNull(target);
     this.source = Objects.requireNonNull(source);
     this.sourceReport = Objects.requireNonNull(sourceReport);
     this.comparison = Objects.requireNonNull(comparison);
     this.entries = List.copyOf(entries);
     this.effective = Objects.requireNonNull(effective);
+    this.applicationEffects = Objects.requireNonNull(applicationEffects);
     var observations = sourceReport.and(comparison.report());
     this.report =
         effective
@@ -119,6 +125,10 @@ public final class DocumentReview {
   /** Captured source/comparison/effective diagnostics; not validation of a future save. */
   public ValidationReport report() {
     return report;
+  }
+
+  public ApplicationEffects applicationEffects() {
+    return applicationEffects;
   }
 
   static <T> List<FieldIndex.Field> admittedFields(
@@ -163,6 +173,7 @@ public final class DocumentReview {
     text.account(observed.provenance().description());
     observed.provenance().location().ifPresent(text::account);
     text.account(target.sourceRevision());
+    for (var rule : observed.applicationEffects().rules()) account(text, rule);
     DraftTree values = null;
     Optional<Effective> effective = Optional.empty();
     if (observed.effective().isPresent()) {
@@ -209,6 +220,8 @@ public final class DocumentReview {
     for (var field : declared) {
       text.account(field.selector());
       text.account(field.path().toString());
+      var application = observed.applicationEffects().forField(field.path());
+      application.ifPresent(rule -> account(text, rule));
       entries.add(
           new Entry(
               field.path(),
@@ -216,9 +229,8 @@ public final class DocumentReview {
               !field.scalar(),
               text.render(observed.baseline().at(field.path())),
               text.render(observed.snapshot().draft().at(field.path())),
-              values == null
-                  ? Optional.empty()
-                  : Optional.of(text.render(values.at(field.path())))));
+              values == null ? Optional.empty() : Optional.of(text.render(values.at(field.path()))),
+              application));
     }
     return new DocumentReview(
         target,
@@ -226,6 +238,13 @@ public final class DocumentReview {
         observed.observationReport(),
         comparison,
         entries,
-        effective);
+        effective,
+        observed.applicationEffects());
+  }
+
+  private static void account(DraftDescriptions text, ApplicationEffects.Rule rule) {
+    text.account(rule.path().toString());
+    text.account(rule.explanation());
+    for (var timing : rule.timings()) text.account(timing.name());
   }
 }

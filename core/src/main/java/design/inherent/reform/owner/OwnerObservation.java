@@ -15,6 +15,11 @@ public interface OwnerObservation<T> {
     return SourceInfo.UNKNOWN;
   }
 
+  /** Already captured immutable owner metadata; this lookup must perform no IO or native work. */
+  default ApplicationEffects applicationEffects() {
+    return ApplicationEffects.UNDECLARED;
+  }
+
   /** Empty means this owner has not qualified a domain-effective value observation. */
   default Optional<SettingsHandle.View<T>> effectiveView() {
     return Optional.empty();

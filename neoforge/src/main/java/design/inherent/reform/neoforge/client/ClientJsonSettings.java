@@ -10,6 +10,7 @@ import design.inherent.reform.importing.JsonImportFormat;
 import design.inherent.reform.neoforge.command.ImportCatalog;
 import design.inherent.reform.neoforge.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
@@ -78,6 +79,7 @@ public final class ClientJsonSettings<T> {
   private final ModContainer container;
   private final DocumentDefinition<T> definition;
   private final StorageBinding binding;
+  private final ApplicationEffects applicationEffects;
   private final AtomicReference<State<T>> state =
       new AtomicReference<>(
           new State<>(Lifecycle.REGISTERED, null, null, null, ValidationReport.VALID, null));
@@ -87,15 +89,28 @@ public final class ClientJsonSettings<T> {
   private Consumer<RegisterClientCommandsEvent> commandRegistration;
 
   private ClientJsonSettings(
-      ModContainer container, DocumentDefinition<T> definition, StorageBinding binding) {
+      ModContainer container,
+      DocumentDefinition<T> definition,
+      StorageBinding binding,
+      ApplicationEffects applicationEffects) {
     this.container = container;
     this.definition = definition;
     this.binding = binding;
+    this.applicationEffects = Objects.requireNonNull(applicationEffects);
   }
 
   /** Call from the owning physical-client mod's constructor, before FML client setup. No IO. */
   public static <T> ClientJsonSettings<T> clientJson(
       IEventBus modBus, ModContainer container, DocumentDefinition<T> definition) {
+    return clientJson(modBus, container, definition, ApplicationEffects.OWNER_PUBLICATION);
+  }
+
+  /** Explicit immutable application metadata; it does not change persistence or add callbacks. */
+  public static <T> ClientJsonSettings<T> clientJson(
+      IEventBus modBus,
+      ModContainer container,
+      DocumentDefinition<T> definition,
+      ApplicationEffects applicationEffects) {
     Objects.requireNonNull(modBus);
     Objects.requireNonNull(container);
     Objects.requireNonNull(definition);
@@ -107,7 +122,7 @@ public final class ClientJsonSettings<T> {
     // The loader declares the root. Binding construction validates metadata and performs no IO.
     var binding =
         StorageBinding.newJson(FMLPaths.CONFIGDIR.get().toAbsolutePath(), definition.id());
-    var registration = new ClientJsonSettings<>(container, definition, binding);
+    var registration = new ClientJsonSettings<>(container, definition, binding, applicationEffects);
     ClientSettingsRuntime.registerDocument(definition.id(), registration, registration::close);
     try {
       modBus.addListener(registration::setup);
@@ -336,7 +351,7 @@ public final class ClientJsonSettings<T> {
                     JsonStore.Format.NEW_ENVELOPE,
                     JSON,
                     DraftLimits.CONFIGURATION);
-            var owner = new JsonOwner<>(context, store, 16);
+            var owner = new JsonOwner<>(context, store, 16, applicationEffects);
             var access = context.access(() -> true, () -> true);
             initialize(
                 new State<>(

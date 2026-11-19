@@ -253,6 +253,9 @@ class ContextRecipeOwnerTest {
       assertEquals("creation-context", explanation.provenance().kind());
       assertTrue(explanation.provenance().location().isEmpty());
       assertTrue(explanation.effective().isEmpty());
+      assertEquals(
+          java.util.Set.of(ApplicationEffects.Timing.NEW_WORLD),
+          explanation.applicationEffects().forField(FieldPath.ROOT).orElseThrow().timings());
       var source = await(h.session.read());
       var prepared = await(h.session.prepare(source, h.draft(5)));
       h.lastCompiled.set(0, 20);

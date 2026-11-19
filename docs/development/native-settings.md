@@ -38,6 +38,8 @@ Matching saved/raw values and returned listeners are reported as `STAGED`, with 
 
 `getRaw()` is the native editing/persistence view. Native `get()` is a cached gameplay read that may initialize a previously unused cache. The fixture explicitly warms it to test restart behavior. Do not invoke it merely to invent an effective-value display without an owner-declared observation policy. Useful unknown/pending states are preferable to a false effective value; arbitrary mods can keep separate copied state in listeners.
 
+The observation also retains [application declarations](owners.md#declared-application-boundaries) captured from each field's actual `ValueSpec.restartType()` during native owner construction. This reads metadata rather than `ConfigValue.get()`, so it does not warm gameplay caches. Restart-free fields remain owner-managed. Recheck metadata access, restart enum meaning and the cold-cache control alongside serializer/listener behavior after NeoForge updates. These are future notices, not the receipt from an earlier save.
+
 ## Context and lock boundaries
 
 Use the actual admitted `ModConfig`, registered spec and loaded path. A filename or COMMON type does not establish server authority. `getFullPath()` is unavailable for a configuration without a native file backing; do not substitute an installation-default file for a synchronized or unavailable context. Keep CLIENT/COMMON/SERVER availability, actual world overrides and native synchronization with their owner.

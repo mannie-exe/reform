@@ -22,6 +22,8 @@ FML client setup supplies the actual client executor and loader root. Missing va
 
 Each document has its own owner context, one installation-local access binding and shared document admission. Pure validation/editing/IO use a common bounded worker pool; native capture/publication and lifecycle use the client thread. This is installation-local client authority, with no server permission or synchronization implied. Runtime consumers should capture/compile immutable published values at their real boundary; repeated defensive copies from `View.value()` are not a worldgen hot-path API.
 
+The four-argument `clientJson(modBus, container, definition, applicationEffects)` construction overload supplies immutable [application declarations](owners.md#declared-application-boundaries) before registration/setup. Ordinary construction declares only publication of this owner's value; it does not certify domain cache activation. Explicit metadata changes notices, not initialization, file ownership, callbacks or runtime-handle publication. No mutable post-setup configuration hook is installed.
+
 ## Entry and recovery
 
 `registerMenu(title)` explicitly installs the native mod configuration entry and refuses an existing factory. It adds no inventory button, HUD or shortcut. Custom composition can call `screen(parent, title)` instead. READY opens the same public `SettingsScreen` and shared actor services; loading/unavailable/closed opens a measured status screen with native narration and appropriate Back/Retry actions. Opening a screen never initializes a file.

@@ -11,6 +11,7 @@ import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
@@ -351,6 +352,11 @@ final class CompositionEditing {
               && review.report().valid()
               && review.source().location().orElseThrow().equals(h.file.toString())
               && roleDetails.wholeValue()
+              && roleDetails
+                  .application()
+                  .orElseThrow()
+                  .timings()
+                  .equals(java.util.Set.of(ApplicationEffects.Timing.OWNER_PUBLICATION))
               && roleDetails.draft().contains("renamed")
               && roleDetails.baseline().contains("anchor")
               && roleDetails.effective().orElseThrow().contains("anchor"),
@@ -437,7 +443,9 @@ final class CompositionEditing {
                 JsonStore.Format.EXISTING_BARE,
                 JSON,
                 DraftLimits.CONFIGURATION);
-        owner = nativeCall(() -> new JsonOwner<>(context, store, 16));
+        owner =
+            nativeCall(
+                () -> new JsonOwner<>(context, store, 16, ApplicationEffects.OWNER_PUBLICATION));
         var access = nativeCall(() -> context.access(() -> true, () -> true));
         var session = nativeCall(() -> owner.open(access));
         await(session.initialize());

@@ -34,6 +34,7 @@ public final class JsonOwner<T> {
     private final JsonStore.Read<T> saved;
     private final SettingsHandle.View<T> effective;
     private final SourceInfo provenance;
+    private final ApplicationEffects applicationEffects;
 
     private Observation(
         Object owner,
@@ -41,13 +42,15 @@ public final class JsonOwner<T> {
         UUID session,
         JsonStore.Read<T> saved,
         SettingsHandle.View<T> effective,
-        SourceInfo provenance) {
+        SourceInfo provenance,
+        ApplicationEffects applicationEffects) {
       this.owner = owner;
       this.context = context;
       this.session = session;
       this.saved = saved;
       this.effective = effective;
       this.provenance = provenance;
+      this.applicationEffects = applicationEffects;
     }
 
     public UUID context() {
@@ -74,6 +77,11 @@ public final class JsonOwner<T> {
     @Override
     public SourceInfo provenance() {
       return provenance;
+    }
+
+    @Override
+    public ApplicationEffects applicationEffects() {
+      return applicationEffects;
     }
 
     @Override
@@ -514,7 +522,8 @@ public final class JsonOwner<T> {
           saved,
           runtime.handle().view(),
           new SourceInfo(
-              "json", "Owned JSON source", Optional.of(storage.binding().path().toString())));
+              "json", "Owned JSON source", Optional.of(storage.binding().path().toString())),
+          applicationEffects);
     }
 
     private Receipt<T> unattempted(Throwable failure) {
@@ -537,12 +546,22 @@ public final class JsonOwner<T> {
   private final OwnerContext context;
   private final RuntimePolicy<T> runtime;
   private final SerialLane lane;
+  private final ApplicationEffects applicationEffects;
   private volatile JsonStore<T> storage;
 
   public JsonOwner(OwnerContext context, JsonStore<T> storage, int maximumOperations) {
+    this(context, storage, maximumOperations, ApplicationEffects.OWNER_PUBLICATION);
+  }
+
+  public JsonOwner(
+      OwnerContext context,
+      JsonStore<T> storage,
+      int maximumOperations,
+      ApplicationEffects applicationEffects) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.storage = Objects.requireNonNull(storage);
+    this.applicationEffects = Objects.requireNonNull(applicationEffects);
     lane = new SerialLane(maximumOperations);
     runtime = new RuntimePolicy<>(storage.definition(), context::checkOwnerThread);
     context.onClose(
