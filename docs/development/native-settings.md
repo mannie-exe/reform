@@ -4,6 +4,8 @@
 
 ## Admit an actual registered owner
 
+The [server factory](server-settings.md) supplies this explicit backend's actual-server context, bounded workers, local native-source editor access and native-stop cleanup. Direct backend construction remains available for advanced native owners; neither entry replaces FML loading or its serializer.
+
 Construct `RegisteredConfig` on the actual `OwnerContext` executor with the admitted `ModConfig` and a document ID in that registered mod's namespace. The adapter uses that exact registered `ModConfigSpec`, loaded configuration identity and native path. It does not register a spec, initialize a missing file, correct saved values or install lifecycle/actor lookup. The caller still owns context creation, actual access callbacks and closure before its executor stops.
 
 `definition()` exposes a fixed nested record of declared native fields. Common scalar types and nonempty string lists have built-in types; ambiguous empty lists and custom values require an explicit `FieldPath`/`ValueType` mapping. Unknown type addresses are refused. Default suppliers and native metadata are read on the owner executor; pure codecs/snapshots and draft work remain worker-safe. The virtual document's schema identity does not add a version field to TOML.
@@ -14,7 +16,7 @@ Actor sessions implement the shared `DocumentSession<Map<String, Object>>` contr
 
 Preparation requires a complete valid draft and the actual native field predicates. Commit consumes its issued proposal on submission, including permission or queue refusal, as JSON owners do. A retry needs fresh preparation. Before the first setter it rechecks access, exact loaded identity/path, uncached native values, actual predicates and the original saved bytes. A bounded synchronous last file check closes the worker-to-owner queue interval; it is a deliberate native preflight cost. Native mutation/save stays on the actual owner executor. No library file lock spans setters, native save or listeners, and there is no cross-process compare-and-swap guarantee.
 
-The shared `EditorActor` can load/edit/save this owner without a second native draft/history implementation. Registered native settings do not support `applySaved`: the adapter refuses application-only retries instead of replaying the serializer or inventing a reload event. Lifecycle convenience factories, native GUI/command entry, complete metadata/effect policy, other config types/contexts and consumer migrations remain Phase 1 work.
+The shared `EditorActor` can load/edit/save this owner without a second native draft/history implementation. Registered native settings do not support `applySaved`: the adapter refuses application-only retries instead of replaying the serializer or inventing a reload event. The server factory supplies explicit server lifecycle/editor wiring. Physical-client native registration, integrated GUI/command entry, broader metadata/effect policy and other contexts remain Phase 1 work; consumer migration follows its separately authorized scope.
 
 ## Preserve the native operation
 

@@ -10,6 +10,8 @@ This separate NeoForge mod consumes only the staged `design.inherent:reform` Mav
 
 `CreationExample.editor(parent, original)` separately demonstrates the public world-recipe factory for a bounded three-layer flat-world soil-depth setting. It preserves unedited dimensions through the native replacement API and registers no replacement editor for vanilla presets. The native form runner executes it in a real creation screen, without creating a playable world.
 
+`ServerPolicyExample` binds an explicitly world-rooted JSON policy and a real registered SERVER TOML config through [server settings](../../docs/development/server-settings.md). The library supplies server lifetime, workers, source restrictions and shared editing; native serializers and callbacks remain native. `native_addon_server_probe.py --policies` selects two isolated dedicated boots with distinct seeded/default values, source/permission refusals, competing drafts, actual file/native saves, malformed retention, editor cleanup, deliberate scope replacement and native-stop closure. It requires the exact packaged library and actual shutdown report; this is separate from integrated-client, real-player and command-routing qualification.
+
 Run `./gradlew --no-daemon check build` from the repository root to compile this example and its probe against the exact candidate artifact. This compiles native APIs without launching a game. It also runs the independent headless consumer and core/tooling checks.
 
 For a disposable client check, first build/stage the library, obtain sustained desktop focus, then run from the repository root:

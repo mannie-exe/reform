@@ -19,9 +19,15 @@ public final class NativeExample {
   public record Preferences(boolean enabled, int distance, String label) {}
 
   public static final DocumentDefinition<Preferences> DEFINITION = definition();
+  private static ServerPolicyExample serverPolicies;
 
   public NativeExample(IEventBus bus, ModContainer container) {
+    serverPolicies = new ServerPolicyExample(bus, container);
     if (FMLEnvironment.dist == Dist.CLIENT) ClientExample.register(bus, container);
+  }
+
+  public static ServerPolicyExample serverPolicies() {
+    return java.util.Objects.requireNonNull(serverPolicies);
   }
 
   private static DocumentDefinition<Preferences> definition() {

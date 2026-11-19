@@ -2,6 +2,20 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Actual-server file and native settings
+
+The server-factory snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 26 tooling cases, independent public-artifact execution and native addon/probe compilation. Combined artifact `a71aeb8fdc792fc9f2703204084a34a177c59cf045011e916c32c84d942a1208`, sources `47d100749253d5bd043261692bbbfbb11ec5dee68c828ab947d5dd6f5491f5a4` and unchanged core `87926813834dd2133f6342a612bde16b6afdc4f9150f533ca1487e768942308d` identify this cut. All 139 owned Java source entries match their files.
+
+`native_addon_server_probe.py --policies` passes two sequential disposable 2 GiB dedicated boots in 8.803/9.103 seconds, with 29 assertions each. An ordinary addon binds actual world-root JSON and registered SERVER TOML sources. Their seeded values differ from declared defaults. Library-owned workers, shared editor services and actual native callbacks need no addon executor or serializer. Changed native saving reports SAVED/STAGED and one reload; reopened no-op saving reports UNCHANGED/NOT_ATTEMPTED and no reload.
+
+Lowered command permission, foreign output sources, wrong native threads, file aliases/case variants and replacement of the admitted native writer refuse access or binding. Competing drafts preserve the refused draft and actual saved bytes. Read-only access refuses before creating an operation while retaining edited input. Eighty short-lived editors release hook/access capacity. A malformed server source stays unchanged without effective defaults. Explicit scope replacement closes its old handles/editors, starts with no inherited bindings and reads the actual saved source; actual native stopping then closes the replacement's file/native contexts and prevents new admission. This deliberately replaced scope is not a second running server or integrated reconnect witness.
+
+These controls explicitly distinguish early refusal without a commit receipt, refusal before an operation exists, and no-op persistence from a revision-changing edit. Fixture corrections retain those existing backend contracts. The player/connection permission branch, exceptional stopped-event fallback, producer exhaustion and simultaneous-server isolation remain source-reviewed rather than natively exercised here.
+
+On the same packaged library, `--registered` passes two dedicated boots in 9.191/9.244 seconds and the ordinary common-side fixture passes in 8.784 seconds. Existing actual native serializer/listener, structural/reference and client-document-absence checks remain intact. All three reports' eleven input digests match their files; all five processes terminate and marked fixtures are removed.
+
+[Server settings](server-settings.md) owns source, access, resource and lifecycle contracts. These launches use a packaged Maven library with ModDev example/probe source containers. They do not qualify client-side registered factories, real-player revocation, integrated GUI/command routing, remote administration, full-pack behavior or measured cost. Those remaining Phase 1 requirements stay open; no consumer source, personal instance or release is changed.
+
 ## Native immutable startup settings
 
 The startup-factory snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 25 tooling cases, public-artifact execution and independent native addon/probe compilation. Combined artifact `efaf51544867f68c854cf592248ba22b34b8282d29a9e9714d63a4b4e30e3e16`, sources `bf43d61ba671ef58b3bc26057fdd32f8ee6f5561747323406b66b34761103ab6` and unchanged core `87926813834dd2133f6342a612bde16b6afdc4f9150f533ca1487e768942308d` identify this cut. All 138 owned Java source entries match their files.

@@ -15,6 +15,7 @@
 - [Numeric presentation](numbers.md) owns exact display/storage units and their validation boundary.
 - [Dependent settings](dependencies.md) owns bounded local availability, retained values and cached input evidence.
 - [Client files](client-files.md) owns physical-client registration, startup selection, initialization, entry and recovery defaults.
+- [Server settings](server-settings.md) owns actual-server lifecycle, policy/native binding and local native-source access.
 - [World recipes](world-recipes.md) owns unsaved creation-context admission and domain compilation.
 - [Presentation](presentation.md) owns measured panel/geometry/navigation boundaries.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.

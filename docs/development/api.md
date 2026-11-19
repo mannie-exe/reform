@@ -74,7 +74,7 @@ The parsed input retains its original source string and scalar spellings keyed b
 
 These checks do not establish read/write permission or qualify publication. Context-dependent checks and application remain owner responsibilities. A successfully decoded value is not a persistence or application receipt.
 
-[Numeric presentation](numbers.md) decorates numeric scalar metadata without changing its codec or stored value; native unit-aware controls remain unfinished.
+[Numeric presentation](numbers.md) decorates numeric scalar metadata without changing its codec or stored value. Its unit-aware native controls and selected qualifications are documented separately from these value contracts.
 
 ## Snapshots and identity
 
