@@ -14,6 +14,8 @@ This separate NeoForge mod consumes only the staged `design.inherent:reform` Mav
 
 `RegisteredExample` binds actual CLIENT and COMMON registrations through the [native client factory](../../docs/development/native-settings.md#physical-client-registration), retaining a legacy native filename with spaces. `--registered-only` selects native review/submission, real setters and owner-thread callbacks, warmed restart-cache observations, client Brigadier, compact COMMON-default editing, explicit FML unload/load and Retry, fresh-JVM data and game-shutdown controls. A bounded event trace distinguishes startup/file-watcher wrapper replacement from owner-thread Save. Native loaded values and generic application declarations do not stand in for domain-effective observations.
 
+`WorkflowExample` composes JSON, Controls and both native registrations through [retained client workflows](../../docs/development/client-workflows.md). `--workflow-only` checks invalid drafts/history across navigation, real key capture, independent persistence/receipts, pending-save exit refusal, competing-owner revision guards, explicit editor replacement, unexpected-navigation cleanup, native compact reflow and another JVM's saved values. Its UI draft lifetime is distinct from each borrowed document runtime. Game shutdown must also close an opened workflow that was never displayed.
+
 Run `./gradlew --no-daemon check build` from the repository root to compile this example and its probe against the exact candidate artifact. This compiles native APIs without launching a game. It also runs the independent headless consumer and core/tooling checks.
 
 For a disposable client check, first build/stage the library, obtain sustained desktop focus, then run from the repository root:

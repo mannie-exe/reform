@@ -148,6 +148,13 @@ public final class ClientKeyBindings {
         IConfigScreenFactory.class, (ignored, parent) -> screen(parent, title));
   }
 
+  /** Declares native Controls as one independently saved document in a composed workflow. */
+  public ClientForm form(Component title) {
+    var label = Objects.requireNonNull(title).copy();
+    return ClientForm.bound(
+        document, label, this::statusDisplay, parent -> screen(parent, label), Optional.empty());
+  }
+
   public Screen screen(Screen parent, Component title) {
     ClientSettingsRuntime.requireClientThread();
     var current = state.get();

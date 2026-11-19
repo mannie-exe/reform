@@ -290,6 +290,30 @@ public final class ClientFileSettings<T> {
     return screen(parent, title, Map.of());
   }
 
+  /** Declares a workflow entry without opening a session or reading its source. */
+  public ClientForm form(Component title) {
+    return form(title, Map.of(), FormPresentation.EMPTY);
+  }
+
+  public ClientForm form(Component title, FormPresentation presentation) {
+    return form(title, Map.of(), presentation);
+  }
+
+  public ClientForm form(
+      Component title,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+      FormPresentation presentation) {
+    Objects.requireNonNull(presentation).requireCompatible(definition.type());
+    var references = Map.copyOf(sources);
+    var label = Objects.requireNonNull(title).copy();
+    return ClientForm.bound(
+        definition.id(),
+        label,
+        this::statusDisplay,
+        parent -> screen(parent, label, references, presentation),
+        Optional.of(this::retryInitialization));
+  }
+
   public Screen screen(Screen parent, Component title, FormPresentation presentation) {
     return screen(parent, title, Map.of(), presentation);
   }

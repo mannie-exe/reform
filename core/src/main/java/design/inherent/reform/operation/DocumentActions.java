@@ -520,8 +520,18 @@ public final class DocumentActions<T> implements AutoCloseable {
     return actor.view();
   }
 
+  /** Cached service/context lifetime, not current authority or saved-data availability. */
+  public boolean isOpen() {
+    return !closed && context.isOpen();
+  }
+
   public List<OperationSnapshot<?>> operations() {
     return scope.snapshots();
+  }
+
+  /** Cached scope work; a terminal unknown receipt can still require actor reconciliation. */
+  public boolean hasActiveOperations() {
+    return scope.hasActiveOperations();
   }
 
   public OperationHandle<EditorActor.View<T>> load(OperationDescriptor.EntryPoint entry) {

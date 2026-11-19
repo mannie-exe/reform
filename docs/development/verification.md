@@ -2,6 +2,24 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Retained multi-owner client workflows
+
+The composed-client snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 29 tooling cases, public-artifact execution and independent native addon/probe compilation. Combined artifact `5e63bb4953ab9c56855813700a7f0fe23f42380df82281b9a89b96511ddf1fc4`, sources `ef689a6292dd2ea6b4a51d0de6fa88e3dac8d6a98bea7ba7e984d27d96f2bc8f` and core `a34d4bc122e02867839077c964f81bd195cfb0d1778c453d4452d30bd01f6963` identify this cut. All 143 owned Java source entries match their files.
+
+`native_form_probe.py --workflow-only` passes two disposable clients in 12.665/10.936 seconds, with 81/32 assertions. Four ordinary owners retain real JSON, Options and native CLIENT/COMMON sources. Native text/key capture, invalid drafts, undo/redo and actual actors survive navigation. Saves produce independent receipts without writing the other sources; another JVM observes the completed values and no discarded native draft. Empty, duplicate and excessive declarations refuse before source entry; 32 unavailable metadata entries remain complete without opening a source.
+
+A real second workflow saves through the shared JSON owner. The first actor preserves its draft and reports the specific managed-owner revision refusal; it does not fabricate an available manual conflict review. Retired editors require explicit discard before replacement. Normal closure, unexpected child removal and actual game shutdown close the appropriate editors, including a workflow that was opened but never displayed.
+
+An added native negative reproduced a custom-view source operation remaining pending while its retained editor reported idle. Cached constant-time operation-scope accounting now covers public-action work as well as generated-view work and unreconciled submissions. Core controls retain activity through actual provider cancellation/drain. Native controls also start real source work after a workflow-wide or per-document discard dialog appears: confirmation rechecks current activity, keeps the actor open and reports refusal without throwing. These checks do not establish cross-file transactions or rollback.
+
+Search consumes native text/backspace events across focused rebuilds. Completed wide and actual 320 by 240 logical viewport frames were inspected. Row-action narration includes the document identity, and a prior recorded receipt is labelled separately from a newer refusal. This is native event-method/narration-structure qualification, not physical-device or spoken-audio testing.
+
+Nine selected standalone regression clients pass on the immediately preceding artifact `62d32d22b5a2e0652948a6034130c6b854d4d86bd13daf3dc4eba655c74a4ae5`: seven submission/outcome/review/recipe/close clients and two native key-factory clients. The final JAR differs only in the two composed-workflow class entries for receipt captions and row narration; its final workflow pair checks those changes. Regression manifests retain their actual older probe input identity rather than being relabelled as final runs. All client runs terminate and remove their marked fixtures.
+
+The final packaged library also passes a disposable 2 GiB dedicated common-side boot in 8.802 seconds. Its actual report verifies native server startup, derived-record codec use and absence of the client document. The marked server fixture is removed. This is separate from integrated-world, real-player permission or full-pack qualification.
+
+[Client workflows](client-workflows.md) owns the API and lifetime rules. Multi-document preflight/ordered submission, integrated authority, native server/domain jobs and broader selected-pack/cost qualification remain Phase 1 work. No consumer migration, publication or personal rollout is claimed.
+
 ## Native CLIENT and local COMMON factory
 
 The registered-client snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 28 tooling cases, public-artifact execution and independent native addon/probe compilation. Combined artifact `78c7b38129656f00e409001352f484b2ba6575a03d14e834e92e8e271030f5da`, sources `8c5ddd2f425d36f35b3e7eca4ebbce676bfd3ce5cc568b19dc353122fcc00225` and unchanged core `87926813834dd2133f6342a612bde16b6afdc4f9150f533ca1487e768942308d` identify this cut. All 140 owned Java source entries match their files.

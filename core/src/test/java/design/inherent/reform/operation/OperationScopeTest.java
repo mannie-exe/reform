@@ -161,6 +161,7 @@ class OperationScopeTest {
             return null;
           });
       var first = h.submit(descriptor, 1);
+      assertTrue(h.scope.hasActiveOperations());
       h.nativeCall(
           () -> {
             assertThrows(
@@ -170,6 +171,7 @@ class OperationScopeTest {
           });
       provider.complete("saved but not applied");
       assertEquals(OperationSnapshot.State.COMPLETED, await(first.completion()).state());
+      assertFalse(h.scope.hasActiveOperations());
       var second = h.submit(descriptor, 2);
       await(second.completion());
       var third = h.submit(descriptor, 3);
@@ -254,8 +256,10 @@ class OperationScopeTest {
       assertTrue(h.context.isOpen());
       assertTrue(h.access.isOpen());
       assertFalse(handle.completion().toCompletableFuture().isDone());
+      assertTrue(h.scope.hasActiveOperations());
       provider.complete("actual saved receipt after cancellation");
       var result = await(handle.completion());
+      assertFalse(h.scope.hasActiveOperations());
       assertEquals(OperationSnapshot.State.COMPLETED, result.state());
       assertTrue(result.started());
       assertTrue(result.cancellationRequested());

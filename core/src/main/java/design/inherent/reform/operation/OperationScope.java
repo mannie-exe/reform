@@ -394,6 +394,13 @@ public final class OperationScope implements AutoCloseable {
     return job.handle;
   }
 
+  /** Cached admitted work, including queued and cancellation-draining jobs; not authorization. */
+  public boolean hasActiveOperations() {
+    synchronized (gate) {
+      return active > 0;
+    }
+  }
+
   public List<OperationSnapshot<?>> snapshots() {
     context.requireOwner();
     synchronized (gate) {

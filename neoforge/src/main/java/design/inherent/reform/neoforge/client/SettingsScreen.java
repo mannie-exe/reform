@@ -17,6 +17,7 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.FormDependencies;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
@@ -204,6 +205,44 @@ public final class SettingsScreen<T> extends FormScreen {
   private IllegalArgumentException modelFailure;
   private Language displayedLanguage;
   private boolean bodyVisible = true;
+  private Runnable editorAbandoned;
+
+  /** Borrow the actual session before activation; the caller closes it after the workflow ends. */
+  void borrow(Runnable abandoned) {
+    if (minecraft != null || requested || closed || editorAbandoned != null)
+      throw new IllegalStateException("Only a new inactive form can transfer editor ownership");
+    editorAbandoned = Objects.requireNonNull(abandoned);
+  }
+
+  public DocumentId document() {
+    return definition.id();
+  }
+
+  /** The same typed operations used by this view; this accessor transfers no ownership. */
+  public DocumentActions<T> editingActions() {
+    ClientSettingsRuntime.requireClientThread();
+    if (closed) throw new PolicyRefusal("editor.closed", "This form is closed");
+    return actions;
+  }
+
+  boolean retainedInput() {
+    return unsent();
+  }
+
+  boolean pendingWork() {
+    return saving || loading || pendingEdits > 0;
+  }
+
+  void releaseBorrowed() {
+    closed = true;
+    editorAbandoned = null;
+    disposePresentation();
+  }
+
+  private void abandonEditing() {
+    if (editorAbandoned == null) actions.close();
+    else editorAbandoned.run();
+  }
 
   /** No implicit initialization, actor lookup or settings ownership is inferred by the screen. */
   public SettingsScreen(
@@ -480,7 +519,12 @@ public final class SettingsScreen<T> extends FormScreen {
         current.review().isPresent()
             ? button(text("conflict", "Review conflict…"), this::openConflict)
             : null;
-    done = button(text("done", "Done"), this::onClose);
+    done =
+        button(
+            editorAbandoned == null
+                ? text("done", "Done")
+                : text("back_overview", "Back to overview"),
+            this::onClose);
     var geometry =
         FormGeometry.controls(
             footer.stream().map(widget -> new FormGeometry.Size(widget.getWidth(), 20)).toList(),
@@ -1114,7 +1158,7 @@ public final class SettingsScreen<T> extends FormScreen {
               synchronize(Map.copyOf(versions));
               minecraft.setScreen(this);
             },
-            actions::close);
+            this::abandonEditing);
     handoff = true;
     try {
       minecraft.setScreen(screen);
@@ -1145,7 +1189,7 @@ public final class SettingsScreen<T> extends FormScreen {
                 synchronize(Map.copyOf(versions));
                 minecraft.setScreen(this);
               },
-              actions::close);
+              this::abandonEditing);
       handoff = true;
       try {
         minecraft.setScreen(screen);
@@ -1199,7 +1243,7 @@ public final class SettingsScreen<T> extends FormScreen {
                               "That field is unavailable in the current draft.");
                   });
             },
-            actions::close,
+            this::abandonEditing,
             submitting
                 ? Optional.of(
                     new ReviewScreen.Submission(
@@ -1247,7 +1291,7 @@ public final class SettingsScreen<T> extends FormScreen {
               synchronize(Map.copyOf(versions));
               minecraft.setScreen(this);
             },
-            actions::close);
+            this::abandonEditing);
     handoff = true;
     try {
       minecraft.setScreen(screen);
@@ -1321,7 +1365,7 @@ public final class SettingsScreen<T> extends FormScreen {
               synchronize(Map.copyOf(versions));
               minecraft.setScreen(this);
             },
-            actions::close);
+            this::abandonEditing);
     handoff = true;
     try {
       minecraft.setScreen(screen);
@@ -1363,7 +1407,7 @@ public final class SettingsScreen<T> extends FormScreen {
                 synchronize(Map.copyOf(versions));
                 minecraft.setScreen(this);
               },
-              actions::close);
+              this::abandonEditing);
       var screen = Objects.requireNonNull(editor.open(request));
       if (screen == this) throw new IllegalArgumentException("Open a separate auxiliary screen");
       handoff = true;
@@ -1464,7 +1508,7 @@ public final class SettingsScreen<T> extends FormScreen {
                 synchronize(Map.copyOf(versions));
                 minecraft.setScreen(this);
               },
-              actions::close);
+              this::abandonEditing);
     } catch (RuntimeException refused) {
       notice = failure(refused);
       feedback();
@@ -2062,7 +2106,8 @@ public final class SettingsScreen<T> extends FormScreen {
     revert.active =
         defaults.active =
             current.snapshot().isPresent() && !saving && !loading && pendingEdits == 0;
-    reload.active = done.active = !saving && !loading && pendingEdits == 0;
+    reload.active = !saving && !loading && pendingEdits == 0;
+    done.active = (editorAbandoned != null || !saving) && !loading && pendingEdits == 0;
     structureButtons.forEach(
         (button, enabled) ->
             button.active =
@@ -2289,6 +2334,19 @@ public final class SettingsScreen<T> extends FormScreen {
   @Override
   public void onClose() {
     if (closed || minecraft.screen != this) return;
+    if (editorAbandoned != null) {
+      if (loading || pendingEdits > 0) {
+        notice = text("wait_close", "Wait for the current operation before closing.");
+        return;
+      }
+      handoff = true;
+      try {
+        minecraft.setScreen(parent);
+      } finally {
+        handoff = false;
+      }
+      return;
+    }
     if (saving || loading || pendingEdits > 0) {
       notice = text("wait_close", "Wait for the current operation before closing.");
       return;
@@ -2318,7 +2376,7 @@ public final class SettingsScreen<T> extends FormScreen {
                     if (choice == UnsavedChangesScreen.Choice.SAVE) requestSave(true);
                   }
                 },
-                actions::close));
+                this::abandonEditing));
       } finally {
         handoff = false;
       }
@@ -2351,7 +2409,7 @@ public final class SettingsScreen<T> extends FormScreen {
 
   private void finish() {
     closed = true;
-    actions.close();
+    abandonEditing();
     disposePresentation();
     minecraft.setScreen(parent);
   }
@@ -2370,7 +2428,7 @@ public final class SettingsScreen<T> extends FormScreen {
     dependencyEvaluation = null;
     dependencyVersion = -1;
     if (!handoff) {
-      if (!closed) actions.close();
+      if (!closed) abandonEditing();
       disposePresentation();
     }
   }

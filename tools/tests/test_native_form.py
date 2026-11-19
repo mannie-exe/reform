@@ -18,6 +18,22 @@ with patch.dict(sys.modules, {"native_config_probe": CONFIG}):
 
 
 class NativeFormFixtureGuards(unittest.TestCase):
+    def test_composed_workflow_requires_all_lifetimes_and_both_viewports(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "workflow",
+            "librarySha256": "exact-jar", "workflow": {"status": "PASS"}}}
+        for name in ("workflowClosed", "independentClosed", "shutdownClosed"):
+            self.assertFalse(PROBE.successful_run(result, "workflow", "exact-jar"))
+            result["native"]["workflow"][name] = True
+        self.assertTrue(PROBE.successful_run(result, "workflow", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "workflow-reopen", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "workflow", "another-jar"))
+        report = {"runs": [result], "screenshots": {}}
+        self.assertFalse(PROBE.successful_report(report, ["workflow"], "exact-jar"))
+        report["screenshots"] = {f"form-workflow-{size}{frame}.png": "digest"
+                                 for size in ("wide", "narrow") for frame in ("", "-entry")}
+        self.assertTrue(PROBE.successful_report(report, ["workflow"], "exact-jar"))
+
     def test_console_cause_is_bounded_and_never_follows_an_external_link(self):
         log = self.fixture.parent / "runtime.log"
         log.parent.mkdir(parents=True, exist_ok=True)

@@ -107,6 +107,10 @@ def successful_run(result, mode, digest):
             and (not mode.startswith("registered") or (native.get("nativeRegistered", {}).get("status") == "PASS"
                                                      and native.get("nativeRegistered", {}).get("clientClosed") is True
                                                      and native.get("nativeRegistered", {}).get("defaultsClosed") is True))
+            and (not mode.startswith("workflow") or (native.get("workflow", {}).get("status") == "PASS"
+                and native.get("workflow", {}).get("workflowClosed") is True
+                and native.get("workflow", {}).get("independentClosed") is True
+                and native.get("workflow", {}).get("shutdownClosed") is True))
             and (mode != "recipe" or native.get("recipe", {}).get("managedShutdownClosed") is True))
 
 
@@ -123,6 +127,8 @@ def successful_report(report, modes, digest):
         captures.update({"form-files-properties.png", "form-files-properties-entry.png"})
     if "startup" in modes:
         captures.update({"form-startup-review.png", "form-startup-review-entry.png"})
+    if "workflow" in modes:
+        captures.update({f"form-workflow-{size}{frame}.png" for size in ("wide", "narrow") for frame in ("", "-entry")})
     if "registered" in modes:
         captures.update({f"form-native-{name}{frame}.png" for name in ("review", "defaults") for frame in ("", "-entry")})
     return (len(report["runs"]) == len(modes)
@@ -131,7 +137,7 @@ def successful_report(report, modes, digest):
             and captures.issubset(report["screenshots"]))
 
 
-def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False, review_only=False, catalog_review_only=False, close_only=False, submission_only=False, files_only=False, startup_only=False, registered_only=False):
+def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False, review_only=False, catalog_review_only=False, close_only=False, submission_only=False, files_only=False, startup_only=False, registered_only=False, workflow_only=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
@@ -157,7 +163,9 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                           Path(__file__).resolve(), ROOT / "tools/native_config_probe.py"]):
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-form-client.log"
-    if registered_only:
+    if workflow_only:
+        modes = ("workflow", "workflow-reopen")
+    elif registered_only:
         modes = ("registered", "registered-reopen")
     elif startup_only:
         modes = ("startup", "startup-reopen")
@@ -209,9 +217,14 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                  "dependencies", "dependencies-reopen", "collections", "collections-reopen",
                  "imports", "imports-reopen", "command-imports", "command-imports-reopen", "conflicts", "conflicts-reopen",
                  "command-conflicts", "command-conflicts-reopen", "keys-owner", "keys-owner-reopen",
-                 "keys-controls", "keys-controls-reopen", "keys-factory", "keys-factory-reopen", "catalog", "catalog-reopen", "review", "review-reopen", "close", "close-reopen", "outcomes", "outcomes-reopen", "files", "files-reopen", "startup", "startup-reopen", "registered", "registered-reopen")
+                 "keys-controls", "keys-controls-reopen", "keys-factory", "keys-factory-reopen", "catalog", "catalog-reopen", "review", "review-reopen", "close", "close-reopen", "outcomes", "outcomes-reopen", "files", "files-reopen", "startup", "startup-reopen", "registered", "registered-reopen", "workflow", "workflow-reopen")
     try:
         for mode in modes:
+            if mode == "workflow":
+                sources = fixture / "config"
+                sources.mkdir(parents=True, exist_ok=True)
+                (sources / "legacy registered-client.toml").write_text('live = 4\nworld = 1\ngame = 1\n')
+                (sources / "legacy-defaults.toml").write_text('level = 3\n')
             if mode == "registered":
                 sources = fixture / "config"
                 sources.mkdir(parents=True, exist_ok=True)
@@ -307,7 +320,8 @@ if __name__ == "__main__":
     modes.add_argument("--files-only", action="store_true", help="Run explicit properties/bare/custom files, malformed recovery and unchanged native reopen")
     modes.add_argument("--startup-only", action="store_true", help="Run actual selected/saved startup choices, unknown active input and held construction shutdown")
     modes.add_argument("--registered-only", action="store_true", help="Run actual CLIENT/COMMON native form/save/command/reload and fresh-JVM checks")
+    modes.add_argument("--workflow-only", action="store_true", help="Run retained JSON/native/Controls composition, separate saves, conflicts, lifetime and fresh-JVM checks")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only, args.review_only, args.catalog_review_only, args.close_only, args.submission_only, args.files_only, args.startup_only, args.registered_only))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only, args.review_only, args.catalog_review_only, args.close_only, args.submission_only, args.files_only, args.startup_only, args.registered_only, args.workflow_only))

@@ -170,6 +170,22 @@ public final class ClientRegisteredSettings {
         IConfigScreenFactory.class, (ignored, parent) -> screen(parent, title, presentation));
   }
 
+  /** Declares this actual native owner without opening an editor or initializing native data. */
+  public ClientForm form(Component title) {
+    return form(title, FormPresentation.EMPTY);
+  }
+
+  public ClientForm form(Component title, FormPresentation presentation) {
+    Objects.requireNonNull(presentation);
+    var label = Objects.requireNonNull(title).copy();
+    return ClientForm.bound(
+        document,
+        label,
+        this::statusDisplay,
+        parent -> screen(parent, label, presentation),
+        Optional.of(this::retry));
+  }
+
   public Screen screen(Screen parent, Component title) {
     return screen(parent, title, FormPresentation.EMPTY);
   }
