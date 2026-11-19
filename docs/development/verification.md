@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Shared native client file registration
+
+The client-file snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 24 tooling cases, public-artifact execution and independent native addon/probe compilation. Combined artifact `c16d7e593cbe34ebb9c81ae3c476ea5c11aabf378ff123b17f14ca35f44b2a67`, sources `385954fa18a02db00caf3a00298ba68cf1a76e3d173c9968ffc60ecf60b4043d` and core `87926813834dd2133f6342a612bde16b6afdc4f9150f533ca1487e768942308d` identify this cut. The 138 owned source entries match their files; the combined artifact contains the new file factory and no retired JSON-factory classes.
+
+`native_form_probe.py --files-only` passes two disposable clients in 12.640/10.877 seconds, with sixteen/four assertions. Explicit properties, bare JSON and a separately implemented text format publish actual saved values different from declared defaults. Properties preserve comments, CRLFs and an omitted default. Actual save/no-op retains the expected representation; the no-op preserves bytes, modification time and replacement identity. Malformed properties stay unavailable, with no effective fallback. Explicit file repair and native Retry publish the repaired values without replacing that source. Another JVM reopens the actual saved values, and all four factories close at game shutdown. Completed property frames were inspected.
+
+The same artifact passes six existing JSON/close/creation clients in 12.854/11.111/11.079/12.273/11.268/12.647 seconds and two native key-factory clients in 12.154/11.464 seconds. Metadata registration still creates no file or runtime value. Owned-file aliases and portable-case variants refuse before initialization. Existing native keybindings retain their separate writer and lifecycle. The first new fixture incorrectly expected declared-default suppliers never to run; definition construction intentionally validates/freezes them. The corrected fixture retains that baseline and independently verifies distinct saved values rather than substituting defaults.
+
+The same packaged artifact also passes two registered-owner dedicated boots in 8.966/8.369 seconds: 40/six owner assertions, sixteen structural and 27 reference assertions each, six/zero native saves and zero off-thread validators. Client factory classes remain outside that common execution. All selected client/server fixtures are removed.
+
+These are standalone packaged-library ModDev clients, not a full 39-client rerun, physical-input, integrated/full-pack or measured cost qualification. The shared file convenience currently covers live installation-local values; immutable startup convenience and the other server/world/native owner factories remain required. No consumer source migration, publication or personal instance change is claimed. [Client file registration](client-files.md) owns the construction contract.
+
 ## Identified submission and retained outcomes
 
 The submission/outcome snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 23 tooling cases, independent public-artifact execution and native addon/probe compilation. All 138 owned Java sources match their source entries. Combined artifact `917d39ced19b22c878da1845a6529ddeee5d76e0ee5f738a48efa9cadf455839`, sources `565e9ac65cd7e48a2a7e43b5a5e89b886d94b5c42604dbe6224b9273828eb138` and core `6d0f9b6fd936ac020364f476ef77298d044212dae0e622c48bc3eb192f403e2c` identify this cut.
@@ -110,7 +122,7 @@ The same artifact's registered COMMON-owner runner passes two dedicated boots in
 
 The same factory artifact additionally passes `--lifecycle-only` in 11.269 seconds and `--recipe-only` in 12.411 seconds. The former settles the initialization observer's held reentrant retry at actual shutdown; the latter retains the original native unsaved world-creation recipe and managed-context lifetime. These are disposable real clients, and the recipe fixture creates no playable world. Both marked run trees/logs are removed.
 
-[Native keys](native-keys.md#ordinary-registration-and-entry) owns the factory, native timing and update contract. [Client JSON](client-json.md) owns the shared worker/status/lifetime conventions. This is focused factory and dedicated qualification, not a new complete twenty-nine-client suite or physical-device, integrated/full-pack, language/font/resource-reload or cost qualification. Broader composition and remaining Phase 1 requirements stay open; no consumer migration, publication, push or personal rollout is included.
+[Native keys](native-keys.md#ordinary-registration-and-entry) owns the factory, native timing and update contract. [Client JSON](client-files.md) owns the shared worker/status/lifetime conventions. This is focused factory and dedicated qualification, not a new complete twenty-nine-client suite or physical-device, integrated/full-pack, language/font/resource-reload or cost qualification. Broader composition and remaining Phase 1 requirements stay open; no consumer migration, publication, push or personal rollout is included.
 
 ## Native keybinding owner and controls
 
@@ -434,7 +446,7 @@ One loopback-only 2 GiB dedicated-server run passes in 8.830 seconds on the same
 | Source JAR       | `c5bcf051d0f1980725322881779e614606478f5c75b65c29df37d8f096a47c0b` |
 | Maven POM        | `d664d2b954c669521ed927f64052cb26a55d2b9c940357e6abcf84e9b0e3244e` |
 
-The new helper's registration/lifecycle/defaults are owned by [client JSON](client-json.md). Exact successful and product-negative receipts, sources and images are retained in the adopted evidence store. All five native processes terminate; marked fixtures/logs are removed and desktop focus released. No personal client, world, server or sibling source is changed. Full native registered/other owners, recursive/reference families, complete controls/operations/commands, both migrations, pack/absence/integrated contexts and cost qualification remain Phase 1 requirements. No release or publication is claimed.
+The new helper's registration/lifecycle/defaults are owned by [client JSON](client-files.md). Exact successful and product-negative receipts, sources and images are retained in the adopted evidence store. All five native processes terminate; marked fixtures/logs are removed and desktop focus released. No personal client, world, server or sibling source is changed. Full native registered/other owners, recursive/reference families, complete controls/operations/commands, both migrations, pack/absence/integrated contexts and cost qualification remain Phase 1 requirements. No release or publication is claimed.
 
 ## Native scalar/record JSON form
 

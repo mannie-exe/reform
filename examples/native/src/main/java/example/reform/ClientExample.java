@@ -1,6 +1,6 @@
 package example.reform;
 
-import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientFileSettings;
 import java.util.Objects;
 import net.minecraft.network.chat.Component;
 import net.neoforged.bus.api.IEventBus;
@@ -8,7 +8,7 @@ import net.neoforged.fml.ModContainer;
 
 /** Ordinary public factory use; no consumer-owned executor, storage writer or editing session. */
 public final class ClientExample {
-  private static ClientJsonSettings<NativeExample.Preferences> preferences;
+  private static ClientFileSettings<NativeExample.Preferences> preferences;
 
   static void register(IEventBus bus, ModContainer container) {
     StructuredExample.register(bus, container);
@@ -20,12 +20,13 @@ public final class ClientExample {
     ConflictExample.register(bus, container);
     KeyExample.register(bus, container);
     CatalogExample.register(bus, container);
-    preferences = ClientJsonSettings.clientJson(bus, container, NativeExample.DEFINITION);
+    FileFormatsExample.register(bus, container);
+    preferences = ClientFileSettings.clientJson(bus, container, NativeExample.DEFINITION);
     preferences.registerMenu(Component.literal("Native example settings"));
     preferences.registerCommands("reformprefs");
   }
 
-  public static ClientJsonSettings<NativeExample.Preferences> settings() {
+  public static ClientFileSettings<NativeExample.Preferences> settings() {
     return Objects.requireNonNull(preferences, "Client example has not registered");
   }
 

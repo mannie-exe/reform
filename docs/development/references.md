@@ -50,7 +50,7 @@ Search and inspection return the existing operation handles. The frontend marsha
 
 The experimental native `SettingsScreen` accepts explicit borrowed source bindings. Missing bindings leave manual text intact with an unavailable Browse state. Its auxiliary picker uses bounded explicit search, source-bound pagination, identifier inspection, preview summaries, Refresh and a separate Use selection action. A changed filter cannot reuse its old continuation. Refresh captures a new field/source target rather than reviving obsolete results. Returning preserves the parent editor; unexpected picker removal closes that editor while leaving source ownership intact. Large previews are visibly abbreviated without changing their data. Native runtime qualification is recorded separately in [verification](verification.md).
 
-The [client JSON factory](client-json.md) can create reference actions under its ready actual owner and pass explicit bindings to a screen. The independent `ReferenceExample` prepares block/tag and explicitly enumerated client resource snapshots through public APIs; it owns when those sources are refreshed. Installing the library does not enumerate resources, register a menu or start source reload work.
+The [client JSON factory](client-files.md) can create reference actions under its ready actual owner and pass explicit bindings to a screen. The independent `ReferenceExample` prepares block/tag and explicitly enumerated client resource snapshots through public APIs; it owns when those sources are refreshed. Installing the library does not enumerate resources, register a menu or start source reload work.
 
 ## Native snapshots
 

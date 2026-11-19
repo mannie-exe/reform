@@ -14,7 +14,7 @@
 - [Reference sources](references.md) owns admitted registry/tag/resource data, bounded lookup and reload freshness.
 - [Numeric presentation](numbers.md) owns exact display/storage units and their validation boundary.
 - [Dependent settings](dependencies.md) owns bounded local availability, retained values and cached input evidence.
-- [Client JSON](client-json.md) owns physical-client registration, initialization, entry and recovery defaults.
+- [Client JSON](client-files.md) owns physical-client registration, initialization, entry and recovery defaults.
 - [World recipes](world-recipes.md) owns unsaved creation-context admission and domain compilation.
 - [Presentation](presentation.md) owns measured panel/geometry/navigation boundaries.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.

@@ -4,7 +4,7 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordType;
-import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientFileSettings;
 import design.inherent.reform.neoforge.reference.NativeReferences;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.value.ValueTypes;
@@ -59,14 +59,14 @@ public final class ReferenceExample {
           () ->
               new Profile(
                   "stone", "minecraft:missing_resource", "optional:missing", "minecraft:manual"));
-  private static ClientJsonSettings<Profile> settings;
+  private static ClientFileSettings<Profile> settings;
   private static Map<DocumentId, ReferenceActions<String, List<String>>> sources;
 
   static void register(IEventBus bus, ModContainer container) {
-    settings = ClientJsonSettings.clientJson(bus, container, DEFINITION);
+    settings = ClientFileSettings.clientJson(bus, container, DEFINITION);
   }
 
-  public static ClientJsonSettings<Profile> settings() {
+  public static ClientFileSettings<Profile> settings() {
     return java.util.Objects.requireNonNull(settings);
   }
 

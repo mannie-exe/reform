@@ -20,10 +20,21 @@ final class ClientEditors {
       DocumentDefinition<T> definition,
       JsonLimits json,
       Function<DocumentActions<T>, R> entry) {
+    return open(context, access, session, definition, json, DraftLimits.CONFIGURATION, entry);
+  }
+
+  static <T, R> R open(
+      OwnerContext context,
+      OwnerContext.Access access,
+      DocumentSession<T> session,
+      DocumentDefinition<T> definition,
+      JsonLimits json,
+      DraftLimits draft,
+      Function<DocumentActions<T>, R> entry) {
     EditorActor<T> actor = null;
     DocumentActions<T> actions = null;
     try {
-      actor = new EditorActor<>(context, session, definition, json, DraftLimits.CONFIGURATION, 64);
+      actor = new EditorActor<>(context, session, definition, json, draft, 64);
       actions =
           new DocumentActions<>(
               context,

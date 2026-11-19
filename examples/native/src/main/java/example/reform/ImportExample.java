@@ -6,7 +6,7 @@ import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.importing.ImportInput;
 import design.inherent.reform.importing.ImportSource;
-import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientFileSettings;
 import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.charset.StandardCharsets;
@@ -41,10 +41,10 @@ public final class ImportExample {
               .field(NOTE, Profile::note)
               .build(),
           () -> new Profile(1, "Original", List.of("old"), Optional.empty()));
-  private static ClientJsonSettings<Profile> settings;
+  private static ClientFileSettings<Profile> settings;
 
   static void register(IEventBus bus, ModContainer container) {
-    settings = ClientJsonSettings.clientJson(bus, container, DEFINITION);
+    settings = ClientFileSettings.clientJson(bus, container, DEFINITION);
     var preset =
         ImportSource.snapshot(
             DocumentId.parse(NativeExample.ID + ":sample_profile"),
@@ -56,7 +56,7 @@ public final class ImportExample {
     settings.registerCommands("reformimports", settings.importCatalog(List.of(preset)));
   }
 
-  public static ClientJsonSettings<Profile> settings() {
+  public static ClientFileSettings<Profile> settings() {
     return java.util.Objects.requireNonNull(settings);
   }
 

@@ -6,7 +6,7 @@ import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordTypes;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientFileSettings;
 import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.NumericDisplay;
@@ -132,11 +132,11 @@ public final class CatalogExample {
                               .findFirst()
                           : Optional.empty()));
 
-  private static ClientJsonSettings<Profiles> settings;
+  private static ClientFileSettings<Profiles> settings;
 
   static void register(IEventBus bus, ModContainer container) {
     settings =
-        ClientJsonSettings.clientJson(
+        ClientFileSettings.clientJson(
             bus,
             container,
             DEFINITION,
@@ -144,7 +144,7 @@ public final class CatalogExample {
     settings.registerCommands("reformcatalog");
   }
 
-  public static ClientJsonSettings<Profiles> settings() {
+  public static ClientFileSettings<Profiles> settings() {
     return Objects.requireNonNull(settings);
   }
 

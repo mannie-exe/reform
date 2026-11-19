@@ -22,7 +22,9 @@ import design.inherent.reform.reference.ReferenceLimits;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.JsonStore;
 import design.inherent.reform.storage.OwnedFile;
+import design.inherent.reform.storage.PropertiesStore;
 import design.inherent.reform.storage.StorageBinding;
+import design.inherent.reform.storage.TextStore;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.SnapshotPolicy;
@@ -49,8 +51,10 @@ import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
 
-/** New client JSON documents only; existing/native/world owners keep their actual bindings. */
-public final class ClientJsonSettings<T> {
+/**
+ * Owned client text files share one lifecycle; native/world owners retain their actual adapters.
+ */
+public final class ClientFileSettings<T> {
   public enum Lifecycle {
     REGISTERED,
     INITIALIZING,
@@ -78,7 +82,7 @@ public final class ClientJsonSettings<T> {
 
   private final ModContainer container;
   private final DocumentDefinition<T> definition;
-  private final StorageBinding binding;
+  private final TextStore<T> store;
   private final ApplicationEffects applicationEffects;
   private final AtomicReference<State<T>> state =
       new AtomicReference<>(
@@ -88,42 +92,97 @@ public final class ClientJsonSettings<T> {
   private DocumentActions<T> commandActions;
   private Consumer<RegisterClientCommandsEvent> commandRegistration;
 
-  private ClientJsonSettings(
-      ModContainer container,
-      DocumentDefinition<T> definition,
-      StorageBinding binding,
-      ApplicationEffects applicationEffects) {
+  private ClientFileSettings(
+      ModContainer container, TextStore<T> store, ApplicationEffects applicationEffects) {
     this.container = container;
-    this.definition = definition;
-    this.binding = binding;
+    this.definition = store.definition();
+    this.store = store;
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
   }
 
   /** Call from the owning physical-client mod's constructor, before FML client setup. No IO. */
-  public static <T> ClientJsonSettings<T> clientJson(
+  public static <T> ClientFileSettings<T> clientJson(
       IEventBus modBus, ModContainer container, DocumentDefinition<T> definition) {
     return clientJson(modBus, container, definition, ApplicationEffects.OWNER_PUBLICATION);
   }
 
   /** Explicit immutable application metadata; it does not change persistence or add callbacks. */
-  public static <T> ClientJsonSettings<T> clientJson(
+  public static <T> ClientFileSettings<T> clientJson(
       IEventBus modBus,
       ModContainer container,
       DocumentDefinition<T> definition,
       ApplicationEffects applicationEffects) {
+    return clientFile(
+        modBus,
+        container,
+        new JsonStore<>(
+            definition,
+            new OwnedFile(
+                StorageBinding.newJson(FMLPaths.CONFIGDIR.get().toAbsolutePath(), definition.id()),
+                JSON.maximumBytes()),
+            JsonStore.Format.NEW_ENVELOPE,
+            JSON,
+            DraftLimits.CONFIGURATION),
+        applicationEffects);
+  }
+
+  /** An existing owned JSON source retains its explicit filename and representation. No IO. */
+  public static <T> ClientFileSettings<T> existingJson(
+      IEventBus modBus,
+      ModContainer container,
+      DocumentDefinition<T> definition,
+      JsonStore.Format format,
+      String... location) {
+    return clientFile(
+        modBus,
+        container,
+        new JsonStore<>(
+            definition,
+            new OwnedFile(configurationFile(location), JSON.maximumBytes()),
+            format,
+            JSON,
+            DraftLimits.CONFIGURATION));
+  }
+
+  /** Native-semantics UTF-8 properties with the supplied flat definition and filename. No IO. */
+  public static <T> ClientFileSettings<T> properties(
+      IEventBus modBus,
+      ModContainer container,
+      DocumentDefinition<T> definition,
+      String... location) {
+    return clientFile(
+        modBus,
+        container,
+        new PropertiesStore<>(
+            definition,
+            new OwnedFile(configurationFile(location), JSON.maximumBytes()),
+            JSON,
+            DraftLimits.CONFIGURATION));
+  }
+
+  /** Advanced owned-format binding; it supplies no parser, source defaults or path inference. */
+  public static <T> ClientFileSettings<T> clientFile(
+      IEventBus modBus, ModContainer container, TextStore<T> store) {
+    return clientFile(modBus, container, store, ApplicationEffects.OWNER_PUBLICATION);
+  }
+
+  public static <T> ClientFileSettings<T> clientFile(
+      IEventBus modBus,
+      ModContainer container,
+      TextStore<T> store,
+      ApplicationEffects applicationEffects) {
     Objects.requireNonNull(modBus);
     Objects.requireNonNull(container);
-    Objects.requireNonNull(definition);
+    Objects.requireNonNull(store);
+    var definition = store.definition();
     if (FMLEnvironment.dist != Dist.CLIENT)
       throw new IllegalStateException("Client settings require physical-client registration");
     if (!container.getModId().equals(definition.id().namespace()))
       throw new IllegalArgumentException(
-          "New client JSON must belong to its declaring mod namespace");
-    // The loader declares the root. Binding construction validates metadata and performs no IO.
-    var binding =
-        StorageBinding.newJson(FMLPaths.CONFIGDIR.get().toAbsolutePath(), definition.id());
-    var registration = new ClientJsonSettings<>(container, definition, binding, applicationEffects);
-    ClientSettingsRuntime.registerDocument(definition.id(), registration, registration::close);
+          "Client files must belong to their declaring mod namespace");
+    var registration = new ClientFileSettings<>(container, store, applicationEffects);
+    ClientSettingsRuntime.registerFile(
+        definition.id(), registration, store.binding(), registration::close);
     try {
       modBus.addListener(registration::setup);
     } catch (RuntimeException rejected) {
@@ -131,6 +190,10 @@ public final class ClientJsonSettings<T> {
       throw rejected;
     }
     return registration;
+  }
+
+  private static StorageBinding configurationFile(String... location) {
+    return StorageBinding.relative(FMLPaths.CONFIGDIR.get().toAbsolutePath(), location);
   }
 
   public DocumentDefinition<T> definition() {
@@ -212,7 +275,8 @@ public final class ClientJsonSettings<T> {
         current.access(),
         current.owner().open(current.access()),
         definition,
-        JSON,
+        store.valueLimits(),
+        store.draftLimits(),
         actions ->
             new SettingsScreen<>(
                 parent,
@@ -241,7 +305,8 @@ public final class ClientJsonSettings<T> {
         current.access(),
         current.owner().open(current.access()),
         definition,
-        JSON,
+        store.valueLimits(),
+        store.draftLimits(),
         actions -> actions);
   }
 
@@ -258,8 +323,8 @@ public final class ClientJsonSettings<T> {
         sources,
         JsonImportFormat.documentFormats(
             definition,
-            JSON,
-            DraftLimits.CONFIGURATION,
+            store.valueLimits(),
+            store.draftLimits(),
             ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE));
   }
 
@@ -342,15 +407,8 @@ public final class ClientJsonSettings<T> {
                 new OwnerContext(
                     minecraft::execute,
                     ClientSettingsRuntime.workers(),
-                    ClientJsonSettings::requireClientThread,
+                    ClientFileSettings::requireClientThread,
                     OwnerContext.Limits.STANDARD);
-            var store =
-                new JsonStore<>(
-                    definition,
-                    new OwnedFile(binding, JSON.maximumBytes()),
-                    JsonStore.Format.NEW_ENVELOPE,
-                    JSON,
-                    DraftLimits.CONFIGURATION);
             var owner = new FileOwner<>(context, store, 16, applicationEffects);
             var access = context.access(() -> true, () -> true);
             initialize(

@@ -4,7 +4,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientFileSettings;
 import design.inherent.reform.neoforge.client.ClientKeyBindings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
@@ -81,6 +81,7 @@ public final class NativeFormProbe {
   private NativeCatalogControls catalog;
   private NativeReviewControls review;
   private NativeCloseControls closing;
+  private NativeFileFormatsControls files;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -89,8 +90,8 @@ public final class NativeFormProbe {
 
   public record LifecyclePreferences(boolean enabled) {}
 
-  private ClientJsonSettings<LifecyclePreferences> reentrantSettings;
-  private java.util.concurrent.CompletableFuture<ClientJsonSettings.Status<LifecyclePreferences>>
+  private ClientFileSettings<LifecyclePreferences> reentrantSettings;
+  private java.util.concurrent.CompletableFuture<ClientFileSettings.Status<LifecyclePreferences>>
       reentrantRetry;
   private final java.util.concurrent.atomic.AtomicBoolean holdRetry =
       new java.util.concurrent.atomic.AtomicBoolean();
@@ -140,7 +141,9 @@ public final class NativeFormProbe {
               "close",
               "close-reopen",
               "outcomes",
-              "outcomes-reopen")
+              "outcomes-reopen",
+              "files",
+              "files-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -197,7 +200,7 @@ public final class NativeFormProbe {
               }
               return design.inherent.reform.validation.ValidationReport.VALID;
             });
-    reentrantSettings = ClientJsonSettings.clientJson(bus, probeContainer, definition);
+    reentrantSettings = ClientFileSettings.clientJson(bus, probeContainer, definition);
     reentrantSettings
         .initialization()
         .whenComplete(
@@ -207,7 +210,7 @@ public final class NativeFormProbe {
                   throw new AssertionError("Initial lifecycle observation failed", failed);
                 check(mc.isSameThread(), "Expected native initialization completion");
                 check(
-                    observed.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE,
+                    observed.lifecycle() == ClientFileSettings.Lifecycle.UNAVAILABLE,
                     "Expected the deliberately malformed lifecycle source");
                 var source =
                     net.neoforged.fml.loading.FMLPaths.CONFIGDIR
@@ -230,7 +233,7 @@ public final class NativeFormProbe {
     try {
       var settings = ClientExample.settings();
       check(
-          settings.status().lifecycle() == ClientJsonSettings.Lifecycle.REGISTERED,
+          settings.status().lifecycle() == ClientFileSettings.Lifecycle.REGISTERED,
           "Settings started before admitted client setup");
       check(
           settings.runtime().isEmpty() && settings.status().effective().isEmpty(),
@@ -253,6 +256,26 @@ public final class NativeFormProbe {
           "Key metadata registration supplied an invented native definition");
       keys.initialization().toCompletableFuture().cancel(false);
       var actualContainer = ModList.get().getModContainerById(NativeExample.ID).orElseThrow();
+      check(
+          example.reform.FileFormatsExample.DEFAULT_CALLS.get()
+              == example.reform.FileFormatsExample.VALIDATED_DEFAULTS,
+          "File factory reconstructed previously validated definition defaults");
+      var sameFile =
+          new design.inherent.reform.definition.DocumentDefinition<>(
+              design.inherent.reform.definition.DocumentId.parse(NativeExample.ID + ":file_alias"),
+              1,
+              example.reform.FileFormatsExample.CHOICES.type(),
+              () -> new example.reform.FileFormatsExample.Choices(true, 4, "before"));
+      expectRefusal(
+          () ->
+              ClientFileSettings.properties(
+                  bus, actualContainer, sameFile, "legacy-tools", "choices.properties"));
+      expectRefusal(
+          () ->
+              ClientFileSettings.properties(
+                  bus, actualContainer, sameFile, "LEGACY-TOOLS", "CHOICES.properties"));
+      controls.add(
+          "owned file aliases and portable-case collisions refuse metadata without defaults or IO");
       expectRefusal(
           () ->
               ClientKeyBindings.clientKeys(
@@ -277,11 +300,11 @@ public final class NativeFormProbe {
               1,
               NativeExample.DEFINITION.type(),
               NativeExample.DEFINITION::defaults);
-      expectRefusal(() -> ClientJsonSettings.clientJson(bus, actualContainer, duplicate));
+      expectRefusal(() -> ClientFileSettings.clientJson(bus, actualContainer, duplicate));
       expectRefusal(
-          () -> ClientJsonSettings.clientJson(bus, actualContainer, NativeExample.DEFINITION));
+          () -> ClientFileSettings.clientJson(bus, actualContainer, NativeExample.DEFINITION));
       expectRefusal(
-          () -> ClientJsonSettings.clientJson(bus, probeContainer, NativeExample.DEFINITION));
+          () -> ClientFileSettings.clientJson(bus, probeContainer, NativeExample.DEFINITION));
       for (String path : List.of("../escape", "double//slash", "trailing./leaf", "con")) {
         var invalid =
             new design.inherent.reform.definition.DocumentDefinition<>(
@@ -289,7 +312,7 @@ public final class NativeFormProbe {
                 1,
                 NativeExample.DEFINITION.type(),
                 NativeExample.DEFINITION::defaults);
-        expectRefusal(() -> ClientJsonSettings.clientJson(bus, actualContainer, invalid));
+        expectRefusal(() -> ClientFileSettings.clientJson(bus, actualContainer, invalid));
       }
       var existing = actualContainer.getCustomExtension(IConfigScreenFactory.class).orElseThrow();
       expectRefusal(
@@ -339,6 +362,25 @@ public final class NativeFormProbe {
         action.run();
         return;
       }
+      if (mode.startsWith("files")) {
+        if (files == null) {
+          if (!(mc.screen instanceof TitleScreen)) return;
+          recordArtifact();
+          files =
+              new NativeFileFormatsControls(
+                  mode.endsWith("-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (files.tick()) {
+          report.add("files", files.report());
+          finish(null);
+        }
+        return;
+      }
       if (mode.startsWith("close") || mode.startsWith("outcomes")) {
         if (closing == null) {
           if (!(mc.screen instanceof TitleScreen)) return;
@@ -363,7 +405,7 @@ public final class NativeFormProbe {
         if (review == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.CatalogExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           review =
               new NativeReviewControls(
@@ -384,7 +426,7 @@ public final class NativeFormProbe {
         if (catalog == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.CatalogExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           catalog =
               new NativeCatalogControls(
@@ -405,7 +447,7 @@ public final class NativeFormProbe {
         if (keyFactory == null) {
           if (!(mc.screen instanceof TitleScreen)
               || ClientExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           keyFactory =
               new NativeKeyFactoryControls(
@@ -457,7 +499,7 @@ public final class NativeFormProbe {
         if (commandConflicts == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.ConflictExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           commandConflicts = new NativeConflictCommandControls();
           conflictCommands =
@@ -473,7 +515,7 @@ public final class NativeFormProbe {
         if (commandImports == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.ImportExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           commandImports = new NativeImportCommandControls();
           importCommands =
@@ -489,7 +531,7 @@ public final class NativeFormProbe {
         if (chooser == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.ImportExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           chooser = new NativeChooserControls(this::next);
         }
@@ -503,7 +545,7 @@ public final class NativeFormProbe {
         if (conflicts == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.ConflictExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           conflicts =
               new NativeConflictControls(
@@ -523,10 +565,10 @@ public final class NativeFormProbe {
       if (mode.startsWith("imports")) {
         if (imports == null) {
           var status = example.reform.ImportExample.settings().status();
-          if (status.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE)
+          if (status.lifecycle() == ClientFileSettings.Lifecycle.UNAVAILABLE)
             throw new AssertionError("Import initialization unavailable: " + status.report());
           if (!(mc.screen instanceof TitleScreen)
-              || status.lifecycle() != ClientJsonSettings.Lifecycle.READY) return;
+              || status.lifecycle() != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           imports =
               new NativeImportControls(
@@ -546,13 +588,13 @@ public final class NativeFormProbe {
       if (mode.startsWith("collections")) {
         if (collections == null) {
           var status = example.reform.CollectionExample.settings().status();
-          if (status.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE)
+          if (status.lifecycle() == ClientFileSettings.Lifecycle.UNAVAILABLE)
             throw new AssertionError("Collection initialization unavailable: " + status.report());
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.CollectionExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY
+                  != ClientFileSettings.Lifecycle.READY
               || example.reform.ReferenceExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           collections =
               new NativeCollectionControls(
@@ -572,12 +614,12 @@ public final class NativeFormProbe {
       if (mode.startsWith("dependencies")) {
         if (dependencies == null) {
           var status = example.reform.DependencyExample.settings().status();
-          if (status.lifecycle() == ClientJsonSettings.Lifecycle.UNAVAILABLE)
+          if (status.lifecycle() == ClientFileSettings.Lifecycle.UNAVAILABLE)
             throw new AssertionError(
                 "Dependent fixture initialization unavailable: " + status.report());
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.DependencyExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           dependencies =
               new NativeDependencyControls(
@@ -598,9 +640,9 @@ public final class NativeFormProbe {
         if (numeric == null) {
           var lifecycle = example.reform.NumericExample.settings().status().lifecycle();
           if (!(mc.screen instanceof TitleScreen)
-              || lifecycle != ClientJsonSettings.Lifecycle.READY
+              || lifecycle != ClientFileSettings.Lifecycle.READY
                   && (mode.equals("numeric-reopen")
-                      || lifecycle != ClientJsonSettings.Lifecycle.UNAVAILABLE)) return;
+                      || lifecycle != ClientFileSettings.Lifecycle.UNAVAILABLE)) return;
           recordArtifact();
           numeric =
               new NativeNumericControls(
@@ -621,7 +663,7 @@ public final class NativeFormProbe {
         if (references == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.ReferenceExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           references =
               new NativeReferenceControls(
@@ -642,7 +684,7 @@ public final class NativeFormProbe {
         if (structured == null) {
           if (!(mc.screen instanceof TitleScreen)
               || example.reform.StructuredExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           structured =
               new NativeStructuredControls(
@@ -663,7 +705,7 @@ public final class NativeFormProbe {
         if (recipe == null) {
           if (!(mc.screen instanceof TitleScreen)
               || ClientExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           recipe =
               new NativeWorldRecipeControls(
@@ -697,7 +739,7 @@ public final class NativeFormProbe {
         case 0 -> {
           if (!(mc.screen instanceof TitleScreen)
               || ClientExample.settings().status().lifecycle()
-                  != ClientJsonSettings.Lifecycle.READY) return;
+                  != ClientFileSettings.Lifecycle.READY) return;
           recordArtifact();
           parent = mc.screen;
           open();
@@ -874,7 +916,7 @@ public final class NativeFormProbe {
     switch (stage) {
       case 0 -> {
         if (!(mc.screen instanceof TitleScreen)
-            || settings.status().lifecycle() != ClientJsonSettings.Lifecycle.UNAVAILABLE) return;
+            || settings.status().lifecycle() != ClientFileSettings.Lifecycle.UNAVAILABLE) return;
         recordArtifact();
         check(
             Files.readString(path()).equals("{invalid retained input"),
@@ -885,7 +927,7 @@ public final class NativeFormProbe {
             "Malformed input became effective defaults");
         check(
             settings.initialization().toCompletableFuture().join().lifecycle()
-                == ClientJsonSettings.Lifecycle.UNAVAILABLE,
+                == ClientFileSettings.Lifecycle.UNAVAILABLE,
             "Initialization future invented success");
         parent = mc.screen;
         open();
@@ -920,7 +962,7 @@ public final class NativeFormProbe {
         next("unavailable native screen reports error with explicit recovery");
       }
       case 2 -> {
-        if (settings.status().lifecycle() != ClientJsonSettings.Lifecycle.READY
+        if (settings.status().lifecycle() != ClientFileSettings.Lifecycle.READY
             || !(mc.screen instanceof SettingsScreen<?>)) return;
         form = mc.screen;
         if (!controlsReady()) return;
@@ -937,7 +979,7 @@ public final class NativeFormProbe {
             "Recovery repeated persistence");
         check(
             settings.initialization().toCompletableFuture().join().lifecycle()
-                == ClientJsonSettings.Lifecycle.UNAVAILABLE,
+                == ClientFileSettings.Lifecycle.UNAVAILABLE,
             "First-attempt history changed after retry");
         form.onClose();
         next(
@@ -1146,6 +1188,7 @@ public final class NativeFormProbe {
   }
 
   private void shutdown(GameShuttingDownEvent event) {
+    if (files != null) report.add("files", files.report());
     if (keyFactory != null) report.add("keyFactory", keyFactory.report());
     if (keyControls != null) {
       keyControls.shutdown();
@@ -1171,40 +1214,40 @@ public final class NativeFormProbe {
           "Native key factory survived game shutdown");
       if (reentrantSettings != null) {
         check(
-            reentrantSettings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
+            reentrantSettings.status().lifecycle() == ClientFileSettings.Lifecycle.CLOSED,
             "Reentrant client context survived shutdown");
         check(
             reentrantRetry != null && reentrantRetry.isDone(),
             "Reentrant retry future stranded at shutdown");
         check(
-            reentrantRetry.join().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
+            reentrantRetry.join().lifecycle() == ClientFileSettings.Lifecycle.CLOSED,
             "Held retry reported an invented effect instead of context closure");
         report.addProperty("reentrantRetryClosed", true);
       }
       if (recipe != null) recipe.shutdown();
       check(
           example.reform.StructuredExample.settings().status().lifecycle()
-              == ClientJsonSettings.Lifecycle.CLOSED,
+              == ClientFileSettings.Lifecycle.CLOSED,
           "Structured settings context survived shutdown");
       check(
           example.reform.ReferenceExample.settings().status().lifecycle()
-              == ClientJsonSettings.Lifecycle.CLOSED,
+              == ClientFileSettings.Lifecycle.CLOSED,
           "Reference settings context survived shutdown");
       check(
           example.reform.CollectionExample.settings().status().lifecycle()
-              == ClientJsonSettings.Lifecycle.CLOSED,
+              == ClientFileSettings.Lifecycle.CLOSED,
           "Collection settings context survived shutdown");
       check(
           example.reform.ImportExample.settings().status().lifecycle()
-              == ClientJsonSettings.Lifecycle.CLOSED,
+              == ClientFileSettings.Lifecycle.CLOSED,
           "Import settings context survived shutdown");
       check(
           example.reform.ConflictExample.settings().status().lifecycle()
-              == ClientJsonSettings.Lifecycle.CLOSED,
+              == ClientFileSettings.Lifecycle.CLOSED,
           "Conflict settings context survived shutdown");
       var catalogClosed =
           example.reform.CatalogExample.settings().status().lifecycle()
-                  == ClientJsonSettings.Lifecycle.CLOSED
+                  == ClientFileSettings.Lifecycle.CLOSED
               && example.reform.CatalogExample.settings()
                       .runtime()
                       .orElseThrow()
@@ -1224,7 +1267,7 @@ public final class NativeFormProbe {
       }
       var settings = ClientExample.settings();
       check(
-          settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
+          settings.status().lifecycle() == ClientFileSettings.Lifecycle.CLOSED,
           "Client settings context survived game shutdown");
       check(
           settings.runtime().orElseThrow().view().availability()

@@ -5,7 +5,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
-import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientFileSettings;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueTypes;
@@ -43,14 +43,14 @@ public final class ConflictExample {
                               FieldPath.ROOT.field("minimum"),
                               "Minimum exceeds maximum")),
                       true));
-  private static ClientJsonSettings<Profile> settings;
+  private static ClientFileSettings<Profile> settings;
 
   static void register(IEventBus bus, ModContainer container) {
-    settings = ClientJsonSettings.clientJson(bus, container, DEFINITION);
+    settings = ClientFileSettings.clientJson(bus, container, DEFINITION);
     settings.registerCommands("reformconflicts");
   }
 
-  public static ClientJsonSettings<Profile> settings() {
+  public static ClientFileSettings<Profile> settings() {
     return java.util.Objects.requireNonNull(settings);
   }
 

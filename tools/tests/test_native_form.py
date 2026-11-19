@@ -145,6 +145,20 @@ class NativeFormFixtureGuards(unittest.TestCase):
         del report["screenshots"]["form-outcome-narrow.png"]
         self.assertFalse(PROBE.successful_report(report, ("outcomes",), "exact-jar"))
 
+    def test_files_require_actual_factory_shutdown_and_completed_frames(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "files",
+            "librarySha256": "exact-jar", "files": {"status": "PASS", "factoriesClosed": False}}}
+        self.assertFalse(PROBE.successful_run(result, "files", "exact-jar"))
+        result["native"]["files"]["factoriesClosed"] = True
+        self.assertTrue(PROBE.successful_run(result, "files", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "files-reopen", "exact-jar"))
+        report = {"runs": [result], "screenshots": {
+            "form-files-properties.png": "a" * 64, "form-files-properties-entry.png": "a" * 64}}
+        self.assertTrue(PROBE.successful_report(report, ("files",), "exact-jar"))
+        del report["screenshots"]["form-files-properties.png"]
+        self.assertFalse(PROBE.successful_report(report, ("files",), "exact-jar"))
+
     def test_catalog_success_requires_editor_and_owner_shutdown(self):
         result = {"exitCode": 0, "termination": None, "native": {
             "status": "PASS", "nativeShutdownClosed": True, "mode": "catalog",

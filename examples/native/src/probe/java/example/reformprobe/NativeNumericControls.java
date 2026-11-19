@@ -6,7 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientFileSettings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.NumericExample;
@@ -516,7 +516,7 @@ final class NativeNumericControls {
   private void recover() throws Exception {
     if (!recoveryRequested) {
       if (NumericExample.settings().status().lifecycle()
-          != ClientJsonSettings.Lifecycle.UNAVAILABLE) return;
+          != ClientFileSettings.Lifecycle.UNAVAILABLE) return;
       verify(
           "malformed numeric source retained without an editor",
           Files.readString(source()).equals("{invalid numeric fixture")
@@ -539,7 +539,7 @@ final class NativeNumericControls {
       progress.accept("native numeric initialization retry requested with exact presentation");
       return;
     }
-    if (NumericExample.settings().status().lifecycle() != ClientJsonSettings.Lifecycle.READY
+    if (NumericExample.settings().status().lifecycle() != ClientFileSettings.Lifecycle.READY
         || !(client.screen instanceof SettingsScreen<?> ready)) return;
     if (ready.editorView().snapshot().isEmpty()
         || ready.editorView().availability() != EditorActor.Availability.READY) return;

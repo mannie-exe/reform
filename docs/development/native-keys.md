@@ -6,7 +6,7 @@
 
 ## Ordinary registration and entry
 
-Register during the owning physical-client mod's construction, before FML client setup. The document namespace must match the actual mod container. Native and [JSON documents](client-json.md) share identity admission: another owner cannot reuse the same document ID. Metadata registration performs no IO, does not invoke the mapping supplier and publishes no invented definition or runtime value.
+Register during the owning physical-client mod's construction, before FML client setup. The document namespace must match the actual mod container. Native and [JSON documents](client-files.md) share identity admission: another owner cannot reuse the same document ID. Metadata registration performs no IO, does not invoke the mapping supplier and publishes no invented definition or runtime value.
 
 Lifecycle states are `REGISTERED`, `WAITING_FOR_NATIVE`, `READY`, `UNAVAILABLE` and `CLOSED`. FML setup arms a one-shot `ClientTickEvent.Post` listener because the final native mapping array is registered later in Minecraft bootstrap than the Options constructor. That first admitted tick removes the listener and invokes the supplier once on the native client thread. Invalid or absent mappings produce UNAVAILABLE with their report and unchanged options; the factory does not poll, substitute defaults or retry an unchanged native registration.
 
@@ -16,7 +16,7 @@ Lifecycle states are `REGISTERED`, `WAITING_FOR_NATIVE`, `READY`, `UNAVAILABLE` 
 
 `registerCommands("bindings")` explicitly contributes one client command root; `commandBranch(literal, output)` permits native composition. Both use the [shared operations](operations.md), actual current native recipient and ready owner, retaining a command draft separate from GUI drafts. Suggestions create no editor. An explicit command Save uses the actual Options writer; no JSON mirror, server authority or synchronization is introduced. A second root cannot silently replace another native command.
 
-The physical-client runtime shares two workers and a 256-task queue across document formats, with separate 128-document and 128-managed-context budgets. Key documents close through their registered owner, without also consuming a creation-context slot. [Client JSON](client-json.md) owns the common initialization/error and worker conventions.
+The physical-client runtime shares two workers and a 256-task queue across document formats, with separate 128-document and 128-managed-context budgets. Key documents close through their registered owner, without also consuming a creation-context slot. [Client JSON](client-files.md) owns the common initialization/error and worker conventions.
 
 Construct it on the actual owner executor with its `OwnerContext`, native `Options`, a logical document ID and admitted mappings. Each instance must occur exactly once in native Controls under a unique name. Equal names do not substitute another object. An unavailable/replaced Options or mapping context is refused. Registration defaults remain the native default key and modifier; the library does not change Wayfinder or another consumer's registration.
 

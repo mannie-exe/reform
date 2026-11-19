@@ -48,7 +48,7 @@ The branch adds `import list`, `import preview <source-id> <format-id>`, `import
 
 Every actual review, stage and operation lookup checks the current native recipient/context, exact registered catalog and actual wrapped source capability. A separately attached GUI source with the same descriptive ID cannot acquire command admission. Late material feedback rechecks those identities and source authority. A departed recipient receives no late reply. Source/catalog/context revocation does not replay an effect or imply rollback of an entered read or stage. Import operation UUIDs remain in the current import scope, distinct from ordinary document status/cancel; replacing that scope expires its retained review/operation lookup.
 
-`ClientJsonSettings.importCatalog(sources)` supplies the same explicit JSON choices and limits as its generated form. `registerCommands(literal, catalog)` and `commandBranch(literal, catalog, output)` expose them without another editor, executor or parser. Custom bindings retain their actual source admission and native authority. There is no generic server filesystem reader, remote protocol or implicit registration.
+`ClientFileSettings.importCatalog(sources)` supplies the same explicit JSON choices and limits as its generated form. `registerCommands(literal, catalog)` and `commandBranch(literal, catalog, output)` expose them without another editor, executor or parser. Custom bindings retain their actual source admission and native authority. There is no generic server filesystem reader, remote protocol or implicit registration.
 
 ## Bounds and update checks
 

@@ -14,7 +14,7 @@ The internal native panel measures labels, summaries, widgets and group boundari
 
 ## Generated form
 
-`SettingsScreen` takes its parent, title/context label, definition and already admitted `DocumentActions`. It optionally accepts explicit borrowed [reference-source bindings](references.md#draft-bound-selection). It has no implicit actor lookup, initialization or file ownership. The caller owns the shared document/context; closing the screen closes its actions and editing actor/session. The [client JSON factory](client-json.md) supplies that common wiring for the [independent native example](../../examples/native/README.md). `editorView()` exposes cached read-only state to composed/native observers without returning an editing or persistence capability.
+`SettingsScreen` takes its parent, title/context label, definition and already admitted `DocumentActions`. It optionally accepts explicit borrowed [reference-source bindings](references.md#draft-bound-selection). It has no implicit actor lookup, initialization or file ownership. The caller owns the shared document/context; closing the screen closes its actions and editing actor/session. The [client JSON factory](client-files.md) supplies that common wiring for the [independent native example](../../examples/native/README.md). `editorView()` exposes cached read-only state to composed/native observers without returning an editing or persistence capability.
 
 An optional `FormPresentation` declares [numeric range relationships](numbers.md). The generated form keeps the two actual endpoint controls, localized group help and measured shared columns. These declarations neither alter the source schema nor replace the owner's complete validation.
 

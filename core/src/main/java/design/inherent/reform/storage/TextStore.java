@@ -140,6 +140,15 @@ public abstract class TextStore<T> {
     return file.binding();
   }
 
+  /** Immutable value-projection limits, separate from this source's physical file format. */
+  public JsonLimits valueLimits() {
+    return jsonLimits;
+  }
+
+  public DraftLimits draftLimits() {
+    return draftLimits;
+  }
+
   /** Pure bounded preparation for this store's exact definition and serialization limits. */
   public DraftTree.Inspection<T> inspectDraft(DraftTree draft) {
     return new DraftTree(draft.root(), draftLimits).inspect(definition, jsonLimits);

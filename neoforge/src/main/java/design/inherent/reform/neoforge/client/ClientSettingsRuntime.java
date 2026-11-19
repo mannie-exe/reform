@@ -2,8 +2,10 @@ package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.storage.StorageBinding;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -18,7 +20,7 @@ import net.neoforged.neoforge.event.GameShuttingDownEvent;
 
 /** Physical-client lifetime and bounded workers, independent of a document's native/file format. */
 final class ClientSettingsRuntime {
-  private record Document(Object owner, Runnable close) {}
+  private record Document(Object owner, Runnable close, String ownedFile) {}
 
   private static final Object GATE = new Object();
   private static final Map<DocumentId, Document> documents = new LinkedHashMap<>();
@@ -32,12 +34,25 @@ final class ClientSettingsRuntime {
 
   /** Metadata registration can occur during mod construction; no worker or file is initialized. */
   static void registerDocument(DocumentId id, Object owner, Runnable close) {
+    register(id, owner, close, null);
+  }
+
+  /** Conservative portable collision policy; registration performs no filesystem lookup. */
+  static void registerFile(DocumentId id, Object owner, StorageBinding binding, Runnable close) {
+    register(id, owner, close, binding.path().normalize().toString().toLowerCase(Locale.ROOT));
+  }
+
+  private static void register(DocumentId id, Object owner, Runnable close, String ownedFile) {
     Objects.requireNonNull(id);
-    var document = new Document(Objects.requireNonNull(owner), Objects.requireNonNull(close));
+    var document =
+        new Document(Objects.requireNonNull(owner), Objects.requireNonNull(close), ownedFile);
     synchronized (GATE) {
       if (closing) throw new IllegalStateException("Client settings registration is closed");
       if (documents.size() >= 128)
         throw new IllegalStateException("Client document registration limit reached");
+      if (ownedFile != null
+          && documents.values().stream().anyMatch(value -> ownedFile.equals(value.ownedFile())))
+        throw new IllegalArgumentException("This owned client file already has a registered owner");
       if (documents.putIfAbsent(id, document) != null)
         throw new IllegalArgumentException("This client document already has an owner");
     }

@@ -187,7 +187,7 @@ final class NativeKeyFactoryControls {
     check(
         "JSON factory still admits a view after repeated constructor refusals",
         ClientExample.settings().status().lifecycle()
-            == design.inherent.reform.neoforge.client.ClientJsonSettings.Lifecycle.READY);
+            == design.inherent.reform.neoforge.client.ClientFileSettings.Lifecycle.READY);
   }
 
   private CompletionStage<SettingsCommands.Reply> command(String input) {

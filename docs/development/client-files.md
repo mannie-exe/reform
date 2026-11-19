@@ -1,8 +1,20 @@
-# Client JSON registration
+# Client file registration
 
-`ClientJsonSettings.clientJson(modBus, container, definition)` is the physical-client convenience factory for a genuinely new JSON document. Register it in the owning client mod constructor before FML client setup. The namespace must match that actual mod container, and the declared loader configuration root plus document path must pass the existing portable binding rules. Registration validates metadata and uniqueness without filesystem IO or runtime defaults.
+`ClientFileSettings.clientJson(modBus, container, definition)` is the physical-client convenience factory for a genuinely new JSON document. Register it in the owning client mod constructor before FML client setup. The namespace must match that actual mod container, and the declared loader configuration root plus document path must pass the existing portable binding rules. Registration validates metadata and uniqueness without filesystem IO or runtime defaults.
 
 The [independent native addon](../../examples/native/src/main/java/example/reform/ClientExample.java) declares the definition and makes this factory call. It supplies no executor, writer, path resolver or editing session. Its definition uses [record derivation](api.md); constraints and defaults remain explicit.
+
+## Existing and custom owned formats
+
+`existingJson(modBus, container, definition, format, location...)` binds an explicit envelope or bare JSON representation beneath the loader's configuration root. `properties(modBus, container, definition, location...)` binds the declared flat UTF-8 properties representation. Supply portable path segments separately; neither helper renames an existing file or injects a JSON envelope into it. `clientFile(modBus, container, store)` admits an explicitly constructed `TextStore<T>` for a custom owned format. That advanced caller supplies its real binding, parser, serializer and limits; the library supplies the same lifecycle, owner, handle, generated forms and commands.
+
+All owned text-file registrations share document and conservative portable-path collision admission. A different document cannot register the same lexical normalized path, including case variants. This metadata check performs no filesystem lookup and does not replace the owned backend's actual root, regular-file, symlink and source-revision admission. Native keybindings and registered NeoForge writers retain their separate adapters and actual serializers.
+
+Constructing a definition validates and freezes its declared defaults. File registration reuses that definition; this is separate from creating a source file or publishing defaults as runtime values. An existing source can supply different values, and an invalid source stays unavailable instead of becoming those defaults.
+
+The store's immutable value-projection and draft limits also govern the generated editing and import services. Value JSON is the editing/import/export representation, not a conversion of the owned file format. The default local import catalog still accepts explicit document-value/envelope JSON; it is not an automatic properties/custom-format importer.
+
+These helpers publish live owned client values. Immutable startup selection still uses the separately qualified core startup owner; its native registration convenience remains required. A properties filename alone never makes a live owner into a startup-only owner. Installation defaults, native registered configs, world policy and server authority remain separate bindings.
 
 ## Lifecycle and published state
 
@@ -18,7 +30,7 @@ The [independent native addon](../../examples/native/src/main/java/example/refor
 
 Initialization completion concerns configuration, not the availability of a title screen, player, world or rendering resources. A completion observer can start an explicit retry immediately. The attempt being completed releases its tracking slot before invoking observers, so shutdown retains and settles a newer pending retry instead of stranding it.
 
-FML client setup supplies the actual client executor and loader root. Missing validated factory data is created once through the existing create-if-absent JSON owner. Existing valid data is read unchanged; malformed/unreadable/unsupported data is retained with an error. The default location/envelope remain `config/<mod-id>/<document-key>.json` and `{schemaVersion, values}`. This factory does not migrate existing/native/world files or add an environment/JVM/launcher settings-value provider.
+FML client setup supplies the actual client executor and loader root. Missing validated factory data is created once through the shared file owner's create-if-absent initialization. Existing valid data is read unchanged; malformed/unreadable/unsupported data is retained with an error. The new-JSON location/envelope remain `config/<mod-id>/<document-key>.json` and `{schemaVersion, values}`. Existing/custom bindings retain their declared paths and representations. No helper adds an environment/JVM/launcher settings-value provider.
 
 Each document has its own owner context, one installation-local access binding and shared document admission. Pure validation/editing/IO use a common bounded worker pool; native capture/publication and lifecycle use the client thread. This is installation-local client authority, with no server permission or synchronization implied. Runtime consumers should capture/compile immutable published values at their real boundary; repeated defensive copies from `View.value()` are not a worldgen hot-path API.
 
@@ -32,7 +44,7 @@ The four-argument `clientJson(modBus, container, definition, applicationEffects)
 
 Physical-client runtime admission and shutdown are shared with [native keybindings](native-keys.md), independently of either file format. Game shutdown closes registered documents and managed creation contexts before shutting down their shared worker executor. Cleanup continues across context failures. Core owners retain their active-effect/queued-refusal semantics; this does not promise a process-crash transaction or a universal synchronous exit drain.
 
-JSON and native form entry also share construction cleanup: ownership transfers only after the complete screen exists. If an auxiliary editor or source binding refuses construction, its newly opened session/actor/operations close without closing the borrowed document context. A later valid view can still open.
+File and native form entry also share construction cleanup: ownership transfers only after the complete screen exists. If an auxiliary editor or source binding refuses construction, its newly opened session/actor/operations close without closing the borrowed document context. A later valid view can still open.
 
 ## Reference sources
 
