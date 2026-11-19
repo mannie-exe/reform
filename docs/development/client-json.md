@@ -28,7 +28,9 @@ Each document has its own owner context, one installation-local access binding a
 
 `retryInitialization()` is explicit recovery for an unavailable admitted owner. It observes the actual source again; valid repaired data can publish without rewriting it. The first attempt's result stays historical, while current status carries the latest receipt. A file saved before a later error stays saved; closing or retrying is not rollback.
 
-Game shutdown closes registered preference documents and managed creation contexts before shutting down their shared worker executor. Cleanup continues across context failures. Core owners retain their active-effect/queued-refusal semantics; this does not promise a process-crash transaction or a universal synchronous exit drain.
+Physical-client runtime admission and shutdown are shared with [native keybindings](native-keys.md), independently of either file format. Game shutdown closes registered documents and managed creation contexts before shutting down their shared worker executor. Cleanup continues across context failures. Core owners retain their active-effect/queued-refusal semantics; this does not promise a process-crash transaction or a universal synchronous exit drain.
+
+JSON and native form entry also share construction cleanup: ownership transfers only after the complete screen exists. If an auxiliary editor or source binding refuses construction, its newly opened session/actor/operations close without closing the borrowed document context. A later valid view can still open.
 
 ## Reference sources
 

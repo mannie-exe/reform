@@ -71,11 +71,11 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
     context =
         new OwnerContext(
             client::execute,
-            ClientJsonSettings.workers(),
+            ClientSettingsRuntime.workers(),
             WorldRecipe::requireClient,
             OwnerContext.Limits.STANDARD);
     try {
-      ClientJsonSettings.manageContext(context);
+      ClientSettingsRuntime.manageContext(context);
       var limits = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
       var owner =
           new ContextRecipeOwner<>(

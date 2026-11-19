@@ -2,6 +2,18 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Ordinary native key factory and shared client lifetime
+
+The factory snapshot passes `spotlessApply check build --warning-mode all`: 454 core cases, eight native adapter tests, eighteen tooling cases, packaged public headless execution and independent native addon/probe compilation. All 126 owned Java sources match the sources artifact. Combined artifact `d69a56e292a7477cea1d9706a8023ece58285e13a15fb8d2a0fa8d66bf57d1cb`, sources `828b131e5fe33a6a517cf1f1a38d31a60e183e0c20f24287e29e11ec49ce60bc` and unchanged core `53656a60687517adc55b81b5746b2200cb98d815e1ae3571bccdda061a51d25f` identify this cut.
+
+`--keys-factory-only` passes two disposable native clients in 11.815/11.672 seconds with 181/nine assertions. The ordinary public addon supplies only its actual registered mappings and document identity. The library admits them once after native registration, retains the genuine definition and uses the same generated form, operations and actual Options writer. GUI Save persists one binding; a separate native command draft observes it, stages another and explicitly saves. A second JVM reopens that value. No JSON mirror is created. A deliberately invalid provider runs once, retains byte-equal options, exposes an accessible unavailable view and closes alongside the ready factory at actual shutdown.
+
+The pre-fix native run exhausts owner lifetime hooks on refused key-screen construction attempt 63. Full screen construction now shares guarded ownership transfer with JSON entry. The corrected native control refuses seventy key views and seventy JSON views, then successfully opens each valid form. This establishes resource cleanup for those construction failures, not a general exception rollback or arbitrary consumer callback guarantee.
+
+The same artifact's registered COMMON-owner runner passes two dedicated boots in 9.989/8.237 seconds: 39/six owner assertions, sixteen structural and 27 reference assertions each, six/zero native saves and zero off-thread validators. Both runners load the exact packaged Maven library; example/probe remain named ModDev source containers. Their marked native fixtures/logs are removed and personal instances remain untouched.
+
+[Native keys](native-keys.md#ordinary-registration-and-entry) owns the factory, native timing and update contract. [Client JSON](client-json.md) owns the shared worker/status/lifetime conventions. This is focused factory and dedicated qualification, not a new complete twenty-nine-client suite or physical-device, integrated/full-pack, language/font/resource-reload or cost qualification. Broader composition and remaining Phase 1 requirements stay open; no consumer migration, publication, push or personal rollout is included.
+
 ## Native keybinding owner and controls
 
 The key-controls snapshot passes `spotlessApply check build --warning-mode all`: 454 reported core cases, eight native adapter tests, seventeen tooling cases, packaged public headless execution and independent native addon/probe compilation. All 121 owned Java sources match their artifact entries. Combined artifact `b04f92ede0651608534aa2d81deb0ac2ad65ee3c34c26cbd7b23c68bb05d5886`, sources `1fa1be3c6109d310035c458de36c83e758a5b69d8a2369bc5cac73ea3993fa04` and core `53656a60687517adc55b81b5746b2200cb98d815e1ae3571bccdda061a51d25f` identify this cut.

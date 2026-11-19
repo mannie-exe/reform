@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.neoforge.client.ClientJsonSettings;
+import design.inherent.reform.neoforge.client.ClientKeyBindings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
@@ -76,6 +77,12 @@ public final class NativeFormProbe {
   private NativeKeyOwnerControls keyOwner;
   private java.util.concurrent.CompletableFuture<JsonObject> keyOwnerResult;
   private NativeKeyControls keyControls;
+  private NativeKeyFactoryControls keyFactory;
+  private ClientKeyBindings invalidKeys;
+  private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
+      new java.util.concurrent.atomic.AtomicInteger();
+  private final java.util.concurrent.atomic.AtomicReference<byte[]> invalidKeySource =
+      new java.util.concurrent.atomic.AtomicReference<>();
 
   public record LifecyclePreferences(boolean enabled) {}
 
@@ -120,7 +127,9 @@ public final class NativeFormProbe {
               "keys-owner",
               "keys-owner-reopen",
               "keys-controls",
-              "keys-controls-reopen")
+              "keys-controls-reopen",
+              "keys-factory",
+              "keys-factory-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -129,6 +138,26 @@ public final class NativeFormProbe {
     report.addProperty("mode", mode);
     report.add("controls", controls);
     if (mode.equals("reentrant")) registerReentrant(bus, probeContainer);
+    if (mode.startsWith("keys-factory")) {
+      invalidKeys =
+          ClientKeyBindings.clientKeys(
+              bus,
+              probeContainer,
+              design.inherent.reform.definition.DocumentId.parse(
+                  probeContainer.getModId() + ":invalid_keys"),
+              () -> {
+                if (!mc.isSameThread())
+                  throw new AssertionError("Native mapping supplier escaped client executor");
+                invalidKeySelections.incrementAndGet();
+                try {
+                  invalidKeySource.set(Files.readAllBytes(mc.options.getFile().toPath()));
+                } catch (java.io.IOException unavailable) {
+                  throw new java.io.UncheckedIOException(unavailable);
+                }
+                return List.of(
+                    example.reform.KeyExample.PRIMARY, example.reform.KeyExample.PRIMARY);
+              });
+    }
     bus.addListener((FMLClientSetupEvent ignored) -> registration(bus, probeContainer));
     NeoForge.EVENT_BUS.addListener(this::tick);
     NeoForge.EVENT_BUS.addListener(this::rendered);
@@ -203,7 +232,41 @@ public final class NativeFormProbe {
         check(Files.notExists(path()), "Registration initialized the JSON file");
       controls.add(
           "metadata registration has no file/runtime defaults; cancelled future copy does not cancel owner");
+      var keys = example.reform.KeyExample.settings();
+      check(
+          keys.status().lifecycle() == ClientKeyBindings.Lifecycle.REGISTERED
+              || keys.status().lifecycle() == ClientKeyBindings.Lifecycle.WAITING_FOR_NATIVE,
+          "Native keys bound before the completed native mapping registry");
+      check(
+          keys.definition().isEmpty() && !keys.initialization().toCompletableFuture().isDone(),
+          "Key metadata registration supplied an invented native definition");
+      keys.initialization().toCompletableFuture().cancel(false);
       var actualContainer = ModList.get().getModContainerById(NativeExample.ID).orElseThrow();
+      expectRefusal(
+          () ->
+              ClientKeyBindings.clientKeys(
+                  bus,
+                  actualContainer,
+                  example.reform.KeyExample.DOCUMENT,
+                  () -> {
+                    throw new AssertionError("Duplicate entered provider");
+                  }));
+      expectRefusal(
+          () ->
+              ClientKeyBindings.clientKeys(
+                  bus,
+                  probeContainer,
+                  example.reform.KeyExample.DOCUMENT,
+                  () -> {
+                    throw new AssertionError("Foreign namespace entered provider");
+                  }));
+      var duplicate =
+          new design.inherent.reform.definition.DocumentDefinition<>(
+              example.reform.KeyExample.DOCUMENT,
+              1,
+              NativeExample.DEFINITION.type(),
+              NativeExample.DEFINITION::defaults);
+      expectRefusal(() -> ClientJsonSettings.clientJson(bus, actualContainer, duplicate));
       expectRefusal(
           () -> ClientJsonSettings.clientJson(bus, actualContainer, NativeExample.DEFINITION));
       expectRefusal(
@@ -218,6 +281,9 @@ public final class NativeFormProbe {
         expectRefusal(() -> ClientJsonSettings.clientJson(bus, actualContainer, invalid));
       }
       var existing = actualContainer.getCustomExtension(IConfigScreenFactory.class).orElseThrow();
+      expectRefusal(
+          () ->
+              keys.registerMenu(net.minecraft.network.chat.Component.literal("Replacement keys")));
       expectRefusal(
           () -> settings.registerMenu(net.minecraft.network.chat.Component.literal("Replacement")));
       check(
@@ -260,6 +326,26 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("keys-factory")) {
+        if (keyFactory == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || ClientExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          keyFactory =
+              new NativeKeyFactoryControls(
+                  mode.equals("keys-factory-reopen"),
+                  invalidKeys,
+                  invalidKeySelections,
+                  invalidKeySource,
+                  this::next);
+        }
+        if (keyFactory.tick()) {
+          report.add("keyFactory", keyFactory.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("keys-controls")) {
@@ -950,6 +1036,7 @@ public final class NativeFormProbe {
     if (commandConflicts != null) report.add("commandConflicts", commandConflicts.report());
     if (keyOwner != null) report.add("keyOwner", keyOwner.report());
     if (keyControls != null) report.add("keyControls", keyControls.report());
+    if (keyFactory != null) report.add("keyFactory", keyFactory.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -979,6 +1066,7 @@ public final class NativeFormProbe {
   }
 
   private void shutdown(GameShuttingDownEvent event) {
+    if (keyFactory != null) report.add("keyFactory", keyFactory.report());
     if (keyControls != null) {
       keyControls.shutdown();
       report.add("keyControls", keyControls.report());
@@ -997,6 +1085,10 @@ public final class NativeFormProbe {
       report.add("commandConflicts", commandConflicts.report());
     }
     try {
+      check(
+          example.reform.KeyExample.settings().status().lifecycle()
+              == ClientKeyBindings.Lifecycle.CLOSED,
+          "Native key factory survived game shutdown");
       if (reentrantSettings != null) {
         check(
             reentrantSettings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,
