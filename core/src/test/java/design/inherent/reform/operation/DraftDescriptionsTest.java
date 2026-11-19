@@ -10,10 +10,15 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-class ConflictValuesTest {
+class DraftDescriptionsTest {
+  private static DraftDescriptions text(int nodes, int characters) {
+    return new DraftDescriptions(
+        nodes, characters, "conflict.preview_limit", "Complete conflict input exceeds its limit");
+  }
+
   @Test
   void rawValuesDistinguishMissingNullBlankAndEscapedOrInvisibleInput() {
-    var text = new ConflictValues(100, 4096);
+    var text = text(100, 4096);
     assertEquals("<missing>", text.render(new DraftNode.Missing()));
     assertEquals("<null>", text.render(new DraftNode.NullValue()));
     assertEquals("\"\"", text.render(new DraftNode.Scalar("")));
@@ -46,7 +51,7 @@ class ConflictValuesTest {
         "number",
         new DraftNode.Scalar(
             "1200", new DraftNode.UnitInput("seconds", "-", NumericDisplay.State.INCOMPLETE)));
-    var result = new ConflictValues(100, 4096).render(new DraftNode.ObjectValue(fields));
+    var result = text(100, 4096).render(new DraftNode.ObjectValue(fields));
     for (var value :
         List.of(
             "old optional",
@@ -60,8 +65,8 @@ class ConflictValuesTest {
             "incomplete")) assertTrue(result.contains(value), value);
     var first = DraftNode.Row.create(new DraftNode.Scalar("row"));
     var second = DraftNode.Row.create(new DraftNode.Scalar("row"));
-    String a = new ConflictValues(100, 4096).render(new DraftNode.Sequence(List.of(first)));
-    String b = new ConflictValues(100, 4096).render(new DraftNode.Sequence(List.of(second)));
+    String a = text(100, 4096).render(new DraftNode.Sequence(List.of(first)));
+    String b = text(100, 4096).render(new DraftNode.Sequence(List.of(second)));
     assertEquals(a, b);
     assertFalse(a.contains(first.id().toString()));
   }
@@ -69,7 +74,7 @@ class ConflictValuesTest {
   @Test
   void listSetAndDuplicateMapEntriesStayDistinct() {
     var row = DraftNode.Row.create(new DraftNode.Scalar("a"));
-    var text = new ConflictValues(100, 4096);
+    var text = text(100, 4096);
     assertEquals("list [\"a\"]", text.render(new DraftNode.Sequence(List.of(row))));
     assertEquals("set [\"a\"]", text.render(new DraftNode.Sequence(List.of(row), true)));
     var pair =
@@ -84,20 +89,18 @@ class ConflictValuesTest {
 
   @Test
   void aggregateNodeAndEscapedTextBudgetsRefuseWholeDescriptions() {
-    var text = new ConflictValues(100, 5);
+    var text = text(100, 5);
     assertEquals("\"a\"", text.render(new DraftNode.Scalar("a")));
     assertThrows(PolicyRefusal.class, () -> text.render(new DraftNode.Scalar("b")));
     assertThrows(
         PolicyRefusal.class,
         () ->
-            new ConflictValues(1, 4096)
+            text(1, 4096)
                 .render(
                     new DraftNode.Sequence(
                         List.of(DraftNode.Row.create(new DraftNode.Scalar("a"))))));
     var escaped =
-        assertThrows(
-            PolicyRefusal.class,
-            () -> new ConflictValues(100, 7).render(new DraftNode.Scalar("\n")));
+        assertThrows(PolicyRefusal.class, () -> text(100, 7).render(new DraftNode.Scalar("\n")));
     assertEquals("conflict.preview_limit", escaped.report().issues().getFirst().code());
   }
 }

@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Identified review service
+
+The review-service snapshot passes `spotlessApply check build --warning-mode all`: 475 core cases, eight native adapter tests, twenty tooling cases, the independently packaged public consumer and native addon/probe compilation. All 130 owned Java sources match their source entries. Combined artifact `143199e5c6d4238c070a6f04690332c3762d2148d8a154bf7af9d4f3137a2d39`, sources `a34eba3c7894fb7b8489fd0849fdc0b8a2a95f6ec81e8242ec497ee06f417a7f` and core `552c23e4b8003b8350ae88046d50725ead22b2582e951956e8c4524543854fde` identify this cut.
+
+Six direct review controls distinguish raw invalid input, whole collections without row alignment, absent/closed/failed effective details, a retained qualified value after reload failure, complete projection exhaustion and mismatched snapshot identities. The first malformed-root control reproduces field lookup throwing; the corrected projection preserves one whole-root value. Effective-detail failures expose a fixed diagnostic instead of private exception text. The shared raw-description extraction retains its earlier conflict error code and four existing description controls.
+
+Four actual asynchronous owner controls retain the captured review while later editing advances, refuse late material disclosure after READ revocation, stop a cancelled projection and refuse a field budget before invoking comparison validation. Each preserves actual JSON source bytes and the unchanged effective value. The public composition consumer uses `review` alongside compare/explain/export, checks one snapshot identity and distinguishes renamed draft collection data from observed baseline/effective contents.
+
+[Operations](operations.md#identified-source-and-value-review) owns this read-only API and its logical limits. This artifact is compiled for the native adapter but has no new in-game review execution or inspection screen qualification. The catalog/client/server evidence below remains attributed to its preceding exact artifact. Effect declarations, native inspection/change-review UI, conditional submission and remaining Phase 1 work stay open.
+
 ## Catalog, focused detail and native reload
 
 The catalog snapshot passes `spotlessApply check build --warning-mode all`: 465 core cases, eight native adapter tests, twenty tooling cases, packaged public headless execution and independent native addon/probe compilation. All 129 owned Java sources match their source entries. Combined artifact `87cfca2a7aefe38698863c8c10d181c36cdf1da5d20a211fe095b695ab01565a`, sources `dbeb4777f5317a79f76b3c17f9f430354f2644d48eb5de4553f8e11f408292d0` and core `d90adee0c4af7ed1cba23af8f6b5501d956d881ac089a351a149cea05bb17ad1` identify this cut.

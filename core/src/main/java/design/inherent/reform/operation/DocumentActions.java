@@ -148,6 +148,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationScope scope;
   private final FieldIndex fields;
   private final int maximumExportBytes;
+  private final DocumentReview.Limits reviewLimits;
   private boolean ownsContext;
   private boolean closed;
   private DocumentImports<T> imports;
@@ -169,6 +170,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationDescriptor<Empty, Comparison> compare;
   private final OperationDescriptor<Empty, Description> describe;
   private final OperationDescriptor<Empty, ExportArtifact> export;
+  private final OperationDescriptor<Empty, DocumentReview> review;
 
   public DocumentActions(
       OwnerContext context,
@@ -176,17 +178,29 @@ public final class DocumentActions<T> implements AutoCloseable {
       EditorActor<T> actor,
       OperationScope.Limits limits,
       int maximumExportBytes) {
+    this(context, access, actor, limits, maximumExportBytes, DocumentReview.Limits.STANDARD);
+  }
+
+  public DocumentActions(
+      OwnerContext context,
+      OwnerContext.Access access,
+      EditorActor<T> actor,
+      OperationScope.Limits limits,
+      int maximumExportBytes,
+      DocumentReview.Limits reviewLimits) {
     context.requireOwner();
-    if (!context.id().equals(actor.context())
-        || maximumExportBytes < 1
-        || limits.maximumDefinitions() < 16)
+    if (!context.id().equals(actor.context()) || maximumExportBytes < 1)
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
+    if (limits.maximumDefinitions() < 17)
+      throw new IllegalArgumentException(
+          "Actions require room for seventeen operation definitions");
     this.context = context;
     this.access = access;
     this.actor = actor;
     this.definition = actor.definition();
     this.maximumExportBytes = maximumExportBytes;
+    this.reviewLimits = java.util.Objects.requireNonNull(reviewLimits);
     fields = new FieldIndex(definition.type(), 16384, 128);
     scope = new OperationScope(context, access, limits);
     load = query("reload", OperationDescriptor.Effect.INSPECT, execution -> actor.load());
@@ -274,6 +288,37 @@ public final class DocumentActions<T> implements AutoCloseable {
             OperationDescriptor.Effect.EXPORT,
             execution ->
                 actor.inspect().thenCompose(observed -> context.onWorker(() -> export(observed))));
+    review =
+        query(
+            "review",
+            OperationDescriptor.Effect.INSPECT,
+            execution ->
+                actor
+                    .inspect()
+                    .thenCompose(
+                        observed ->
+                            context.onWorker(
+                                () -> {
+                                  execution.checkpoint();
+                                  var admitted =
+                                      DocumentReview.admittedFields(observed, fields, reviewLimits);
+                                  var comparison =
+                                      compare(
+                                          observed,
+                                          reviewLimits.maximumFields(),
+                                          reviewLimits.maximumCharacters());
+                                  execution.checkpoint();
+                                  return DocumentReview.capture(
+                                      observed, comparison, admitted, reviewLimits);
+                                }))
+                    .thenCompose(
+                        captured ->
+                            context.onOwner(
+                                () -> {
+                                  access.require(OwnerContext.Right.READ);
+                                  execution.checkpoint();
+                                  return captured;
+                                })));
     scope.freeze();
   }
 
@@ -551,6 +596,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     return scope.submit(compare, entry, Empty.VALUE, readiness(entry));
   }
 
+  /** One captured draft/source/effective comparison; no reload, preparation or effect. */
+  public OperationHandle<DocumentReview> review(OperationDescriptor.EntryPoint entry) {
+    return scope.submit(review, entry, Empty.VALUE, readiness(entry));
+  }
+
   public OperationHandle<Description> describe(OperationDescriptor.EntryPoint entry) {
     return scope.submit(describe, entry, Empty.VALUE);
   }
@@ -603,6 +653,11 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   private Comparison compare(EditorActor.Inspection<T> observed) {
+    return compare(observed, Integer.MAX_VALUE, Integer.MAX_VALUE);
+  }
+
+  private Comparison compare(
+      EditorActor.Inspection<T> observed, int maximumChanges, int maximumCharacters) {
     var before = observed.baseline().inspect(definition, observed.snapshot().jsonLimits());
     var after = observed.snapshot().inspect();
     var report = before.report().and(after.report());
@@ -612,8 +667,8 @@ public final class DocumentActions<T> implements AutoCloseable {
                 definition.type(),
                 before.candidate().orElseThrow().value(),
                 after.candidate().orElseThrow().value(),
-                Integer.MAX_VALUE,
-                Integer.MAX_VALUE)
+                maximumChanges,
+                maximumCharacters)
             : List.<Change>of();
     return new Comparison(
         ref(observed),

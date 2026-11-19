@@ -372,7 +372,12 @@ public final class DocumentConflicts<T> implements AutoCloseable {
     if (values.size() > limits.maximumEntries())
       throw new PolicyRefusal(
           "conflict.entries", "Complete conflict exceeds the admitted field count");
-    var text = new ConflictValues(limits.maximumNodes(), limits.maximumCharacters());
+    var text =
+        new DraftDescriptions(
+            limits.maximumNodes(),
+            limits.maximumCharacters(),
+            "conflict.preview_limit",
+            "Complete conflict input exceeds the admitted review limits");
     var entries = new java.util.ArrayList<Entry>();
     for (var value : values) {
       execution.checkpoint();

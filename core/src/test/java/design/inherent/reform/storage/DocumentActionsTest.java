@@ -11,8 +11,10 @@ import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.DocumentReview;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
+import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
@@ -69,6 +71,104 @@ class DocumentActionsTest {
     } catch (InterruptedException failed) {
       Thread.currentThread().interrupt();
       throw new AssertionError(failed);
+    }
+  }
+
+  @Test
+  void reviewKeepsOneCapturedRevisionWhileLaterEditingContinuesWithoutPersistence()
+      throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "3", EntryPoint.GUI);
+      var original = Files.readString(h.path);
+      var captured = DocumentActions.DraftRef.of(h.actions.view().snapshot().orElseThrow());
+      h.pauseValidation.set(true);
+      var request = h.nativeCall(() -> h.actions.review(EntryPoint.GUI));
+      assertTrue(h.reached.await(5, TimeUnit.SECONDS));
+      h.edit("count", "4", EntryPoint.COMMAND);
+      h.release.countDown();
+      var review = await(DocumentActions.result(request));
+      assertEquals(captured, review.target());
+      assertEquals(captured, review.comparison().draft());
+      var count =
+          review.entries().stream()
+              .filter(entry -> entry.selector().equals("count"))
+              .findFirst()
+              .orElseThrow();
+      assertEquals("\"3\"", count.draft());
+      assertEquals("\"1\"", count.baseline());
+      assertEquals(java.util.Optional.of("\"1\""), count.effective());
+      assertEquals("json", review.source().kind());
+      assertEquals(h.path.toString(), review.source().location().orElseThrow());
+      assertEquals(
+          "4",
+          ((DraftNode.Scalar)
+                  h.actions
+                      .view()
+                      .snapshot()
+                      .orElseThrow()
+                      .draft()
+                      .at(FieldPath.ROOT.field("count")))
+              .raw());
+      assertNotEquals(
+          review.target(), DocumentActions.DraftRef.of(h.actions.view().snapshot().orElseThrow()));
+      assertEquals(original, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
+  void lateReviewDisclosureRequiresCurrentReadAuthority() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "3", EntryPoint.GUI);
+      h.pauseValidation.set(true);
+      var request = h.nativeCall(() -> h.actions.review(EntryPoint.COMMAND));
+      assertTrue(h.reached.await(5, TimeUnit.SECONDS));
+      h.read.set(false);
+      h.release.countDown();
+      var result = await(request.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, result.state());
+      assertEquals("owner.permission", result.report().issues().getFirst().code());
+      assertTrue(result.result().isEmpty());
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
+  void reviewCancellationStopsProjectionWithoutClaimingAnEffect() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "3", EntryPoint.GUI);
+      var before = Files.readString(h.path);
+      h.pauseValidation.set(true);
+      var request = h.nativeCall(() -> h.actions.review(EntryPoint.GUI));
+      assertTrue(h.reached.await(5, TimeUnit.SECONDS));
+      await(request.requestCancellation());
+      h.release.countDown();
+      var result = await(request.completion());
+      assertTrue(result.terminal());
+      assertTrue(result.cancellationRequested());
+      assertTrue(result.result().isEmpty());
+      assertEquals("operation.cancelled", result.report().issues().getFirst().code());
+      assertEquals(before, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
+  void reviewFieldBudgetIsAnExplicitRefusalAndDoesNotChangeItsEditor() throws Exception {
+    try (var h = new Harness(TYPE, new DocumentReview.Limits(2, 100, 4096))) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var before = h.actions.view().snapshot().orElseThrow();
+      int validations = h.validationCalls.get();
+      var result = await(h.nativeCall(() -> h.actions.review(EntryPoint.GUI)).completion());
+      assertEquals(OperationSnapshot.State.REFUSED, result.state());
+      assertEquals("review.fields", result.report().issues().getFirst().code());
+      assertTrue(result.result().isEmpty());
+      assertSame(before, h.actions.view().snapshot().orElseThrow());
+      assertEquals(validations, h.validationCalls.get());
+      assertEquals(1, h.writes.get());
     }
   }
 
@@ -455,7 +555,9 @@ class DocumentActionsTest {
         write = new AtomicBoolean(true),
         revokeAfterWrite = new AtomicBoolean(),
         pauseValidation = new AtomicBoolean();
-    final AtomicInteger writes = new AtomicInteger(), nativeValidators = new AtomicInteger();
+    final AtomicInteger writes = new AtomicInteger(),
+        nativeValidators = new AtomicInteger(),
+        validationCalls = new AtomicInteger();
     final CountDownLatch reached = new CountDownLatch(1), release = new CountDownLatch(1);
     final Path path = root.resolve("actions.json");
     final OwnerContext context;
@@ -470,6 +572,10 @@ class DocumentActionsTest {
     }
 
     Harness(ValueType<Profile> rootType) throws Exception {
+      this(rootType, DocumentReview.Limits.STANDARD);
+    }
+
+    Harness(ValueType<Profile> rootType, DocumentReview.Limits reviewLimits) throws Exception {
       var nativeThread = nativeCall(() -> Thread.currentThread().threadId());
       var definition =
           new DocumentDefinition<>(
@@ -478,6 +584,7 @@ class DocumentActionsTest {
               rootType,
               () -> new Profile(1, 1.0, "original"),
               profile -> {
+                validationCalls.incrementAndGet();
                 if (Thread.currentThread().threadId() == nativeThread)
                   nativeValidators.incrementAndGet();
                 if (pauseValidation.get() && profile.count() == 3) {
@@ -515,7 +622,16 @@ class DocumentActionsTest {
               () ->
                   new EditorActor<>(
                       context, session, definition, JSON, DraftLimits.CONFIGURATION, 32));
-      actions = nativeCall(() -> new DocumentActions<>(context, access, actor));
+      actions =
+          nativeCall(
+              () ->
+                  new DocumentActions<>(
+                      context,
+                      access,
+                      actor,
+                      OperationScope.Limits.STANDARD,
+                      262144,
+                      reviewLimits));
     }
 
     <T> T nativeCall(Callable<T> work) throws Exception {

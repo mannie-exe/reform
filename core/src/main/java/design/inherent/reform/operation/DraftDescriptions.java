@@ -4,13 +4,24 @@ import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.owner.PolicyRefusal;
 
 /** Complete bounded raw-input descriptions, including inactive data; never a saved-file codec. */
-final class ConflictValues {
+final class DraftDescriptions {
   private final int maximumNodes, maximumCharacters;
+  private final String refusalCode, refusalMessage;
   private int nodes, characters;
 
-  ConflictValues(int maximumNodes, int maximumCharacters) {
+  DraftDescriptions(
+      int maximumNodes, int maximumCharacters, String refusalCode, String refusalMessage) {
+    if (maximumNodes < 1 || maximumCharacters < 1)
+      throw new IllegalArgumentException("Description bounds must be positive");
     this.maximumNodes = maximumNodes;
     this.maximumCharacters = maximumCharacters;
+    this.refusalCode = java.util.Objects.requireNonNull(refusalCode);
+    this.refusalMessage = java.util.Objects.requireNonNull(refusalMessage);
+  }
+
+  void account(String text) {
+    if (text.length() > maximumCharacters - characters) throw exhausted();
+    characters += text.length();
   }
 
   String render(DraftNode node) {
@@ -140,8 +151,7 @@ final class ConflictValues {
     out.append(value);
   }
 
-  private static PolicyRefusal exhausted() {
-    return new PolicyRefusal(
-        "conflict.preview_limit", "Complete conflict input exceeds the admitted review limits");
+  private PolicyRefusal exhausted() {
+    return new PolicyRefusal(refusalCode, refusalMessage);
   }
 }

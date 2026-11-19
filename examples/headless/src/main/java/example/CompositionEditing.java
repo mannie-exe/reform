@@ -338,7 +338,22 @@ final class CompositionEditing {
           "Renaming a public catalog row lost selection, search or breadcrumbs");
       var comparison = h.run(() -> h.actions.compare(EntryPoint.COMMAND));
       var inspection = h.run(() -> h.actions.explain(EntryPoint.GUI));
+      var review = h.run(() -> h.actions.review(EntryPoint.GUI));
       var exported = h.run(() -> h.actions.export(EntryPoint.COMMAND));
+      var roleDetails =
+          review.entries().stream()
+              .filter(entry -> entry.selector().equals("roles"))
+              .findFirst()
+              .orElseThrow();
+      require(
+          review.target().equals(comparison.draft())
+              && review.target().equals(exported.draft())
+              && review.source().location().orElseThrow().equals(h.file.toString())
+              && roleDetails.wholeValue()
+              && roleDetails.draft().contains("renamed")
+              && roleDetails.baseline().contains("anchor")
+              && roleDetails.effective().orElseThrow().contains("anchor"),
+          "Public identified review mixed source revisions or invented effective row alignment");
       require(
           comparison.report().valid()
               && comparison.authoredChanges()
