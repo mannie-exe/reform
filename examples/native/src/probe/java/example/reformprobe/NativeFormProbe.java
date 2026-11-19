@@ -83,6 +83,7 @@ public final class NativeFormProbe {
   private NativeCloseControls closing;
   private NativeFileFormatsControls files;
   private NativeStartupControls startup;
+  private NativeRegisteredControls registered;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -146,7 +147,9 @@ public final class NativeFormProbe {
               "files",
               "files-reopen",
               "startup",
-              "startup-reopen")
+              "startup-reopen",
+              "registered",
+              "registered-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -375,6 +378,25 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("registered")) {
+        if (registered == null) {
+          if (!(mc.screen instanceof TitleScreen)) return;
+          recordArtifact();
+          registered =
+              new NativeRegisteredControls(
+                  mode.endsWith("-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (registered.tick()) {
+          report.add("nativeRegistered", registered.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("startup")) {
@@ -1244,6 +1266,7 @@ public final class NativeFormProbe {
     try {
       NativeStartupControls.shutdownHeld();
       if (startup != null) report.add("startup", startup.report());
+      if (registered != null) report.add("nativeRegistered", registered.report());
       check(
           example.reform.KeyExample.settings().status().lifecycle()
               == ClientKeyBindings.Lifecycle.CLOSED,

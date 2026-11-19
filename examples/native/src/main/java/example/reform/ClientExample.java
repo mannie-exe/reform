@@ -22,6 +22,7 @@ public final class ClientExample {
     CatalogExample.register(bus, container);
     FileFormatsExample.register(bus, container);
     StartupExample.register(bus, container);
+    RegisteredExample.register(bus, container);
     preferences = ClientFileSettings.clientJson(bus, container, NativeExample.DEFINITION);
     preferences.registerMenu(Component.literal("Native example settings"));
     preferences.registerCommands("reformprefs");

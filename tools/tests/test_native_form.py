@@ -18,6 +18,32 @@ with patch.dict(sys.modules, {"native_config_probe": CONFIG}):
 
 
 class NativeFormFixtureGuards(unittest.TestCase):
+    def test_console_cause_is_bounded_and_never_follows_an_external_link(self):
+        log = self.fixture.parent / "runtime.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_bytes(b"x" * 40000 + b"actual native refusal")
+        evidence = PROBE.console_evidence(log)
+        self.assertFalse(evidence["complete"])
+        self.assertEqual(len(evidence["text"].encode()), 32768)
+        self.assertTrue(evidence["text"].endswith("actual native refusal"))
+        link = log.with_name("external.log")
+        link.symlink_to(log)
+        self.assertIsNone(PROBE.console_evidence(link))
+        self.assertIsNone(PROBE.console_evidence(log.with_name("missing.log")))
+
+    def test_registered_native_pass_requires_both_native_lifetimes_and_captures(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "registered",
+            "librarySha256": "exact-jar", "nativeRegistered": {"status": "PASS", "clientClosed": True}}}
+        self.assertFalse(PROBE.successful_run(result, "registered", "exact-jar"))
+        result["native"]["nativeRegistered"]["defaultsClosed"] = True
+        self.assertTrue(PROBE.successful_run(result, "registered", "exact-jar"))
+        report = {"runs": [result], "screenshots": {}}
+        self.assertFalse(PROBE.successful_report(report, ["registered"], "exact-jar"))
+        report["screenshots"] = {f"form-native-{kind}{frame}.png": "digest"
+                                 for kind in ("review", "defaults") for frame in ("", "-entry")}
+        self.assertTrue(PROBE.successful_report(report, ["registered"], "exact-jar"))
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="reform-form-tool-test-")
         self.addCleanup(temporary.cleanup)

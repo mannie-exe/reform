@@ -3,6 +3,7 @@ package design.inherent.reform.neoforge.client;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.storage.StorageBinding;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -20,7 +21,7 @@ import net.neoforged.neoforge.event.GameShuttingDownEvent;
 
 /** Physical-client lifetime and bounded workers, independent of a document's native/file format. */
 final class ClientSettingsRuntime {
-  private record Document(Object owner, Runnable close, String ownedFile) {}
+  private record Document(Object owner, Runnable close, String ownedFile, Object nativeIdentity) {}
 
   private static final Object GATE = new Object();
   private static final Map<DocumentId, Document> documents = new LinkedHashMap<>();
@@ -34,18 +35,55 @@ final class ClientSettingsRuntime {
 
   /** Metadata registration can occur during mod construction; no worker or file is initialized. */
   static void registerDocument(DocumentId id, Object owner, Runnable close) {
-    register(id, owner, close, null);
+    register(id, owner, close, null, null);
   }
 
   /** Conservative portable collision policy; registration performs no filesystem lookup. */
   static void registerFile(DocumentId id, Object owner, StorageBinding binding, Runnable close) {
-    register(id, owner, close, binding.path().normalize().toString().toLowerCase(Locale.ROOT));
+    register(id, owner, close, portable(binding.path()), null);
   }
 
-  private static void register(DocumentId id, Object owner, Runnable close, String ownedFile) {
+  /** Native filenames retain their native spelling/rules; metadata admission performs no IO. */
+  static void registerNative(DocumentId id, Object owner, Object spec, Path file, Runnable close) {
+    register(id, owner, close, portable(file), Objects.requireNonNull(spec));
+  }
+
+  /** Bind the actual loaded path without trusting a predicted root as the source authority. */
+  static void nativeFile(DocumentId id, Object owner, Path file) {
+    requireClientThread();
+    var path = portable(file);
+    synchronized (GATE) {
+      var current = documents.get(id);
+      if (closing
+          || current == null
+          || current.owner() != owner
+          || current.nativeIdentity() == null)
+        throw new IllegalStateException("Native client registration is closed or changed");
+      if (documents.values().stream()
+          .anyMatch(value -> value != current && path.equals(value.ownedFile())))
+        throw new IllegalArgumentException("The native file already has another client owner");
+      documents.put(
+          id, new Document(current.owner(), current.close(), path, current.nativeIdentity()));
+    }
+  }
+
+  private static String portable(Path path) {
+    return Objects.requireNonNull(path)
+        .toAbsolutePath()
+        .normalize()
+        .toString()
+        .toLowerCase(Locale.ROOT);
+  }
+
+  private static void register(
+      DocumentId id, Object owner, Runnable close, String ownedFile, Object nativeIdentity) {
     Objects.requireNonNull(id);
     var document =
-        new Document(Objects.requireNonNull(owner), Objects.requireNonNull(close), ownedFile);
+        new Document(
+            Objects.requireNonNull(owner),
+            Objects.requireNonNull(close),
+            ownedFile,
+            nativeIdentity);
     synchronized (GATE) {
       if (closing) throw new IllegalStateException("Client settings registration is closed");
       if (documents.size() >= 128)
@@ -53,6 +91,11 @@ final class ClientSettingsRuntime {
       if (ownedFile != null
           && documents.values().stream().anyMatch(value -> ownedFile.equals(value.ownedFile())))
         throw new IllegalArgumentException("This owned client file already has a registered owner");
+      if (nativeIdentity != null
+          && documents.values().stream()
+              .anyMatch(value -> value.nativeIdentity() == nativeIdentity))
+        throw new IllegalArgumentException(
+            "This native client spec already has a registered owner");
       if (documents.putIfAbsent(id, document) != null)
         throw new IllegalArgumentException("This client document already has an owner");
     }

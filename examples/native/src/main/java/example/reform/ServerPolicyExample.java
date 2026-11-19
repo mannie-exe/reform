@@ -12,6 +12,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.config.ConfigTracker;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.ModConfigSpec;
@@ -47,7 +48,8 @@ public final class ServerPolicyExample {
         .comment("Native server policy; no replacement JSON serializer.")
         .defineInRange("level", 4, 1, 32);
     spec = builder.build();
-    container.registerConfig(ModConfig.Type.SERVER, spec, NATIVE_FILE);
+    config =
+        ConfigTracker.INSTANCE.registerConfig(ModConfig.Type.SERVER, spec, container, NATIVE_FILE);
     bus.addListener(this::loading);
     bus.addListener(this::reloading);
     bus.addListener(this::unloading);
