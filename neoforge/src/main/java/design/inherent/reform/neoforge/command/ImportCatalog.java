@@ -11,7 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Explicit native command choices. Construction snapshots metadata; it never captures a source. */
+/**
+ * Explicit local GUI/command choices. Construction snapshots metadata without capturing sources.
+ */
 public final class ImportCatalog<T> {
   public record Source(DocumentId id, String label, int maximumBytes) {}
 
@@ -100,11 +102,16 @@ public final class ImportCatalog<T> {
     return sources.get(id);
   }
 
-  List<ImportFormat<T>> parsers() {
+  /** Actual explicitly admitted source capability; IDs alone confer no source authority. */
+  public java.util.Optional<ImportSource> admittedSource(DocumentId id) {
+    return java.util.Optional.ofNullable(sources.get(Objects.requireNonNull(id)));
+  }
+
+  public List<ImportFormat<T>> parsers() {
     return formats;
   }
 
-  DocumentImports.Limits limits() {
+  public DocumentImports.Limits limits() {
     return limits;
   }
 }

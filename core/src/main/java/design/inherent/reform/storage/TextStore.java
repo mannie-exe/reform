@@ -167,13 +167,42 @@ public abstract class TextStore<T> {
           new OwnedFile.Result(
               OwnedFile.Persistence.UNCHANGED, Optional.of(current.source()), Optional.empty()),
           Optional.of(current));
-    var candidate =
-        DraftTree.from(definition.type(), definition.defaults(), draftLimits)
-            .inspect(definition, jsonLimits)
-            .candidate()
-            .orElseThrow(
-                () -> new IllegalStateException("Defaults exceed storage admission or validation"));
+    var candidate = factoryCandidate();
     return write(current, candidate, currentLifetime);
+  }
+
+  /** Explicit owner-selected missing-source draft; this is neither saved data nor publication. */
+  public Read<T> withMissingDefaults(Read<T> observed) {
+    if (Objects.requireNonNull(observed).store != identity)
+      throw new IllegalArgumentException("Observation belongs to another store");
+    if (observed.state() != State.MISSING || observed.source().present()) return observed;
+    var candidate = factoryCandidate();
+    var report =
+        new ValidationReport(
+            java.util.List.of(
+                new Issue(
+                    "storage.unsaved_defaults",
+                    Issue.Severity.INFO,
+                    FieldPath.ROOT,
+                    java.util.List.of(),
+                    java.util.Map.of(),
+                    "No saved document exists; these declared defaults are an unsaved draft")),
+            true);
+    return new Read<>(
+        identity,
+        State.MISSING,
+        observed.source(),
+        Optional.of(candidate.draft()),
+        Optional.of(candidate),
+        report);
+  }
+
+  private Candidate<T> factoryCandidate() {
+    return DraftTree.from(definition.type(), definition.defaults(), draftLimits)
+        .inspect(definition, jsonLimits)
+        .candidate()
+        .orElseThrow(
+            () -> new IllegalStateException("Defaults exceed storage admission or validation"));
   }
 
   /** A complete candidate is necessary but does not authorize this persistence operation. */

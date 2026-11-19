@@ -2,6 +2,10 @@ package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.importing.ImportFormat;
+import design.inherent.reform.importing.ImportSource;
+import design.inherent.reform.importing.JsonImportFormat;
+import design.inherent.reform.neoforge.command.ImportCatalog;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.owner.ContextRecipeOwner;
@@ -10,7 +14,9 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.value.SnapshotPolicy;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
@@ -24,6 +30,8 @@ import net.neoforged.api.distmarker.OnlyIn;
 /** Ordinary unsaved native world-recipe construction; no file or existing world is initialized. */
 @OnlyIn(Dist.CLIENT)
 public final class WorldRecipe<T, P> implements AutoCloseable {
+  private static final JsonLimits JSON = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
+
   public interface Domain<T, P> {
     /** Native immutable recipe capture; do not substitute a default for the current generator. */
     T read(WorldCreationContext context);
@@ -76,7 +84,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
             OwnerContext.Limits.STANDARD);
     try {
       ClientSettingsRuntime.manageContext(context);
-      var limits = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
+      var limits = JSON;
       var owner =
           new ContextRecipeOwner<>(
               context,
@@ -150,21 +158,48 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
     return actions;
   }
 
+  /** Explicit sources become draft-only imports under this recipe's own definition and bounds. */
+  public ImportCatalog<T> importCatalog(List<? extends ImportSource> sources) {
+    context.requireOwner();
+    return new ImportCatalog<>(
+        definition,
+        sources,
+        JsonImportFormat.documentFormats(
+            definition,
+            JSON,
+            DraftLimits.CONFIGURATION,
+            ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE));
+  }
+
   public Screen screen(Component title) {
+    return screen(title, Optional.empty());
+  }
+
+  /** Explicit saved-source comparison/staging; import never admits or changes native dimensions. */
+  public Screen screen(Component title, ImportCatalog<T> imports) {
+    if (Objects.requireNonNull(imports).definition() != definition)
+      throw new IllegalArgumentException("Recipe imports require this exact recipe definition");
+    return screen(title, Optional.of(imports));
+  }
+
+  private Screen screen(Component title, Optional<ImportCatalog<T>> imports) {
     context.requireOwner();
     Objects.requireNonNull(title);
     if (screenCreated)
       throw new IllegalStateException("This recipe editor already has a native screen");
     screenCreated = true;
     try {
-      return new SettingsScreen<>(
-          parent,
-          title,
-          Component.translatableWithFallback(
-              "reform.settings.creation_context",
-              "New world recipe · affects only this unsaved creation context"),
-          definition,
-          actions);
+      var form =
+          new SettingsScreen<>(
+              parent,
+              title,
+              Component.translatableWithFallback(
+                  "reform.settings.creation_context",
+                  "New world recipe · affects only this unsaved creation context"),
+              definition,
+              actions);
+      imports.ifPresent(form::withImports);
+      return form;
     } catch (RuntimeException failed) {
       close();
       throw failed;

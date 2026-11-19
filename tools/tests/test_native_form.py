@@ -18,6 +18,21 @@ with patch.dict(sys.modules, {"native_config_probe": CONFIG}):
 
 
 class NativeFormFixtureGuards(unittest.TestCase):
+    def test_world_defaults_require_editor_and_both_source_lifetimes(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "defaults",
+            "librarySha256": "exact-jar", "defaults": {"status": "PASS"}}}
+        for key in ("editorClosed", "factoryClosed", "eagerClosed"):
+            self.assertFalse(PROBE.successful_run(result, "defaults", "exact-jar"))
+            result["native"]["defaults"][key] = True
+        self.assertTrue(PROBE.successful_run(result, "defaults", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "defaults", "another-jar"))
+        report = {"runs": [result], "screenshots": {}}
+        self.assertFalse(PROBE.successful_report(report, ["defaults"], "exact-jar"))
+        report["screenshots"] = {f"form-defaults-{name}{frame}.png": "digest"
+                                 for name in ("source", "import") for frame in ("", "-entry")}
+        self.assertTrue(PROBE.successful_report(report, ["defaults"], "exact-jar"))
+
     def test_batch_requires_native_completion_shutdown_and_complete_captures(self):
         result = {"exitCode": 0, "termination": None, "native": {
             "status": "PASS", "nativeShutdownClosed": True, "mode": "batch",

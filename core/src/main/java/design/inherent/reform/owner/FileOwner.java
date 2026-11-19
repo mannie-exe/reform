@@ -27,6 +27,23 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Native gateways supply actual actor access; a snapshot or proposal is never an authority grant.
  */
 public final class FileOwner<T> {
+  public enum Initialization {
+    CREATE_DEFAULTS,
+    DEFER_MISSING
+  }
+
+  private enum Mode {
+    LIVE,
+    STARTUP,
+    NEW_WORLD_DEFAULTS
+  }
+
+  private static final String DEFAULTS_EXPLANATION =
+      "Saved defaults are available for later new worlds. They do not change an open recipe or a running world.";
+  private static final List<CommitReceipt.Requirement> DEFAULTS_REQUIREMENTS =
+      List.of(
+          new CommitReceipt.Requirement(
+              FieldPath.ROOT, CommitReceipt.RequirementKind.NEW_WORLD, DEFAULTS_EXPLANATION));
   private static final String STARTUP_EXPLANATION =
       "Read at the next game or dedicated-server process start. Saved choices do not change this"
           + " process's active selection.";
@@ -100,7 +117,7 @@ public final class FileOwner<T> {
 
   private record Proposal<T>(Observation<T> baseline, Candidate<T> candidate) {}
 
-  private record Initialization<T>(TextStore<T> storage, SettingsHandle.Revision expected) {}
+  private record InitializationRead<T>(TextStore<T> storage, SettingsHandle.Revision expected) {}
 
   private record Applied(Application state, ValidationReport report) {}
 
@@ -197,9 +214,9 @@ public final class FileOwner<T> {
 
     @Override
     public Set<Operation> operations() {
-      return startup
-          ? Set.of(Operation.READ, Operation.COMMIT)
-          : Set.of(Operation.READ, Operation.COMMIT, Operation.APPLY_SAVED);
+      return mode == Mode.LIVE
+          ? Set.of(Operation.READ, Operation.COMMIT, Operation.APPLY_SAVED)
+          : Set.of(Operation.READ, Operation.COMMIT);
     }
 
     public UUID id() {
@@ -260,7 +277,7 @@ public final class FileOwner<T> {
                         require(OwnerContext.Right.READ);
                         return storage;
                       })
-                  .thenCompose(source -> context.onWorker(source::read))
+                  .thenCompose(source -> context.onWorker(() -> readForEditor(source)))
                   .thenCompose(
                       saved ->
                           context.onOwner(
@@ -345,13 +362,38 @@ public final class FileOwner<T> {
      * Explicit admitted initialization. Opening a form or reading a missing file never does this.
      */
     public CompletionStage<Receipt<T>> initialize() {
+      if (initialization == Initialization.DEFER_MISSING)
+        return lane.submit(
+            () ->
+                context
+                    .onOwner(
+                        () -> {
+                          require(OwnerContext.Right.READ);
+                          return new InitializationRead<>(
+                              storage, runtime.handle().view().revision());
+                        })
+                    .thenCompose(
+                        admitted ->
+                            context
+                                .onWorker(() -> readForEditor(admitted.storage()))
+                                .thenCompose(
+                                    saved ->
+                                        finish(
+                                            Persistence.NOT_ATTEMPTED,
+                                            Optional.empty(),
+                                            saved,
+                                            ValidationReport.VALID,
+                                            admitted.expected(),
+                                            null)))
+                    .exceptionally(this::unattempted));
       return lane.submit(
           () ->
               context
                   .onOwner(
                       () -> {
                         require(OwnerContext.Right.WRITE);
-                        return new Initialization<>(storage, runtime.handle().view().revision());
+                        return new InitializationRead<>(
+                            storage, runtime.handle().view().revision());
                       })
                   .<CompletionStage<Receipt<T>>>handle(
                       (admitted, failure) ->
@@ -369,10 +411,11 @@ public final class FileOwner<T> {
      * file write, even when a previous save succeeded but its application was refused.
      */
     public CompletionStage<Receipt<T>> applySaved(OwnerObservation<T> input) {
-      if (startup)
+      if (mode != Mode.LIVE)
         return CompletableFuture.<Receipt<T>>failedFuture(
                 new PolicyRefusal(
-                    "owner.unsupported", "Startup choices cannot be applied to this process"))
+                    "owner.unsupported",
+                    "Future-use choices cannot be applied to a current process or world"))
             .minimalCompletionStage();
       final Observation<T> observed;
       try {
@@ -509,7 +552,8 @@ public final class FileOwner<T> {
             applicationFailure(
                 problem("owner.observation", "Saved values are unavailable", false)));
       if (saved.candidate().isEmpty()) {
-        if (startup) return CompletableFuture.completedStage(applicationFailure(saved.report()));
+        if (mode == Mode.STARTUP)
+          return CompletableFuture.completedStage(applicationFailure(saved.report()));
         return context
             .onOwner(
                 () -> {
@@ -519,7 +563,8 @@ public final class FileOwner<T> {
                 })
             .exceptionally(failure -> applicationFailure(report(failure)));
       }
-      if (startup)
+      if (mode == Mode.STARTUP
+          || !saved.source().present() && initialization == Initialization.DEFER_MISSING)
         return CompletableFuture.completedStage(
             new Applied(Application.STAGED, ValidationReport.VALID));
       return runtime
@@ -527,7 +572,11 @@ public final class FileOwner<T> {
           .handle(
               (view, failure) ->
                   failure == null
-                      ? new Applied(Application.APPLIED, ValidationReport.VALID)
+                      ? new Applied(
+                          mode == Mode.NEW_WORLD_DEFAULTS
+                              ? Application.STAGED
+                              : Application.APPLIED,
+                          ValidationReport.VALID)
                       : applicationFailure(report(failure)));
     }
 
@@ -543,7 +592,12 @@ public final class FileOwner<T> {
           id,
           saved,
           runtime.handle().view(),
-          storage.provenance(),
+          saved.state() == TextStore.State.MISSING && saved.candidate().isPresent()
+              ? new SourceInfo(
+                  "unsaved-defaults",
+                  "Declared defaults; no saved document exists",
+                  storage.provenance().location())
+              : storage.provenance(),
           applicationEffects);
     }
 
@@ -568,7 +622,8 @@ public final class FileOwner<T> {
   private final RuntimePolicy<T> runtime;
   private final SerialLane lane;
   private final ApplicationEffects applicationEffects;
-  private final boolean startup;
+  private final Mode mode;
+  private final Initialization initialization;
   private volatile TextStore<T> storage;
 
   public FileOwner(OwnerContext context, TextStore<T> storage, int maximumOperations) {
@@ -586,7 +641,8 @@ public final class FileOwner<T> {
         maximumOperations,
         applicationEffects,
         new RuntimePolicy<>(storage.definition(), context::checkOwnerThread),
-        false);
+        Mode.LIVE,
+        Initialization.CREATE_DEFAULTS);
   }
 
   private FileOwner(
@@ -595,12 +651,14 @@ public final class FileOwner<T> {
       int maximumOperations,
       ApplicationEffects applicationEffects,
       RuntimePolicy<T> runtime,
-      boolean startup) {
+      Mode mode,
+      Initialization initialization) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.storage = Objects.requireNonNull(storage);
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
-    this.startup = startup;
+    this.mode = Objects.requireNonNull(mode);
+    this.initialization = Objects.requireNonNull(initialization);
     lane = new SerialLane(maximumOperations);
     this.runtime = runtime;
     context.onClose(
@@ -656,9 +714,33 @@ public final class FileOwner<T> {
                             ApplicationEffects.root(
                                 ApplicationEffects.Timing.GAME_RESTART, STARTUP_EXPLANATION),
                             runtime,
-                            true)))
+                            Mode.STARTUP,
+                            Initialization.CREATE_DEFAULTS)))
         .toCompletableFuture()
         .minimalCompletionStage();
+  }
+
+  /** Saved defaults belong to later new worlds; the handle never represents an active recipe. */
+  public static <T> FileOwner<T> newWorldDefaults(
+      OwnerContext context,
+      TextStore<T> storage,
+      int maximumOperations,
+      Initialization initialization) {
+    return new FileOwner<>(
+        context,
+        storage,
+        maximumOperations,
+        ApplicationEffects.root(ApplicationEffects.Timing.NEW_WORLD, DEFAULTS_EXPLANATION),
+        new RuntimePolicy<>(storage.definition(), context::checkOwnerThread),
+        Mode.NEW_WORLD_DEFAULTS,
+        initialization);
+  }
+
+  private TextStore.Read<T> readForEditor(TextStore<T> source) throws java.io.IOException {
+    var observed = source.read();
+    return initialization == Initialization.DEFER_MISSING
+        ? source.withMissingDefaults(observed)
+        : observed;
   }
 
   /**
@@ -720,6 +802,8 @@ public final class FileOwner<T> {
         observation,
         persistenceReport,
         applicationReport,
-        application == Application.STAGED ? STARTUP_REQUIREMENTS : List.of());
+        application == Application.STAGED
+            ? mode == Mode.STARTUP ? STARTUP_REQUIREMENTS : DEFAULTS_REQUIREMENTS
+            : List.of());
   }
 }

@@ -16,6 +16,18 @@ The store's immutable value-projection and draft limits also govern the generate
 
 Ordinary file helpers publish live owned client values. A properties filename alone never makes a live owner into a startup-only owner. Installation defaults, native registered configs, world policy and server authority remain separate bindings.
 
+## New-world defaults
+
+`newWorldDefaultsJson(modBus, container, definition)` registers a new owned JSON defaults source using the same portable path, envelope and create-once initialization as ordinary client JSON. It publishes saved defaults for explicit later use and returns STAGED with a NEW_WORLD requirement. It never applies them to an open recipe or running world. The generated actions say **Save defaults**, **Save reviewed defaults** and **Save defaults and close**. Application-only retry is unavailable because it cannot activate these choices in a current world.
+
+`newWorldDefaultsFile(modBus, container, store, initialization)` retains an existing/custom source and explicitly chooses `FileOwner.Initialization.CREATE_DEFAULTS` or `DEFER_MISSING`. Deferred initialization reads without creating a file or directory. A missing source supplies only an attributed unsaved draft from the declared defaults, with the original absent-source revision; the defaults handle has no qualified value. An explicit Save creates the file conditionally even when its draft equals those initial defaults. A concurrent creator is not overwritten. Invalid, unsupported or unreadable existing data never becomes factory defaults.
+
+READY in this mode admits the editor, including a deliberately unsaved default draft; it does not certify saved bytes or a selected generator. The source observation names absent data as unsaved. After initialization from an existing valid source or a confirmed save, `runtime()` represents those published saved defaults for later use, independently of their staged application requirement. Consumers must not treat that handle as the recipe of any open or running world. Native registered COMMON sources retain their own separate adapter and lifecycle.
+
+`savedValueSource(sourceId, label)` explicitly exposes a read-only admitted import source. It captures current valid **saved values** through the actual file parser on the worker, not an editor draft, a missing-file fallback or a potentially stale runtime handle. Capture checks the owner's actual lifetime and READ authority; absent/invalid data refuses import. Exported bytes are bounded document-value JSON, not the backend's file format. The source identity and captured content hash remain visible in import review. This capability grants no path-writing or world-admission authority.
+
+A [world recipe](world-recipes.md) can explicitly declare this source through its import catalog. Saving defaults leaves the selected recipe untouched; Preview compares captured values, Stage replaces one undoable draft and Apply remains the native creation owner's separate operation.
+
 ## Immutable startup selection
 
 `startupProperties(modBus, container, definition, selected, location...)` and `startupFile(modBus, container, store, selected)` edit next-start choices without changing the current startup selection. `selected` is the consumer's actual immutable bootstrap `Candidate<T>` for that exact definition. An absent selection stays unknown; neither saved values nor definition defaults fill that gap. A consumer may explicitly capture its bootstrap input before registration, using its own actual parser/admission. The convenience registration itself reads no source.
@@ -28,13 +40,13 @@ Each construction/initialization attempt has its own completion identity. It rel
 
 ## Lifecycle and published state
 
-| State        | Meaning                                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| REGISTERED   | Metadata exists; no native owner/handle has been created and no saved data has been inferred                             |
-| INITIALIZING | Admitted FML client setup is reading/initializing the actual source through the asynchronous owner                       |
-| READY        | The saved source is admitted for editing; a startup owner's actual active selection can remain unknown                   |
-| UNAVAILABLE  | Initialization or observation failed; retain the source and inspect the actual report, receipt and optional runtime view |
-| CLOSED       | The native client lifetime ended; the actual runtime handle is closed and new effects are refused                        |
+| State        | Meaning                                                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| REGISTERED   | Metadata exists; no native owner/handle has been created and no saved data has been inferred                               |
+| INITIALIZING | Admitted FML client setup is reading/initializing the actual source through the asynchronous owner                         |
+| READY        | The declared source is admitted for editing; active startup values or explicitly deferred saved defaults can remain absent |
+| UNAVAILABLE  | Initialization or observation failed; retain the source and inspect the actual report, receipt and optional runtime view   |
+| CLOSED       | The native client lifetime ended; the actual runtime handle is closed and new effects are refused                          |
 
 `status()` wraps the actual `SettingsHandle.View` where available, rather than publishing a second value authority. `runtime()` is absent before the native owner exists; its handle has explicit effective availability afterward. Reading either performs no file IO. `initialization()` describes the first attempt, including unavailable/closed outcomes. It is not a promise that every attempt succeeds, and cancelling a returned future copy does not cancel effects. Never block a native thread waiting on it.
 

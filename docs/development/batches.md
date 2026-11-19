@@ -4,7 +4,7 @@
 
 ## Construction and validation
 
-Construct a batch with its own actual `OwnerContext`, `Access`, logical `DocumentId` and ordered `Member<?>` bindings. `member(actions, COMMIT)` selects that editor for submission. `CHECK` observes a clean saved document for validation without requesting WRITE or persistence. A check-only editor with an unsaved draft refuses instead of letting a domain rule approve unsaved guard values. Duplicate documents and empty or excessive member lists refuse before registration.
+Construct a batch with its own actual `OwnerContext`, `Access`, logical `DocumentId` and ordered `Member<?>` bindings. `member(actions, COMMIT)` selects that editor for submission. `CHECK` observes a clean owner baseline for validation without requesting WRITE or persistence. An explicitly declared missing-source default remains attributed as unsaved source data. A check-only editor with uncommitted draft edits refuses instead of letting a domain rule approve unsaved guard values. Duplicate documents and empty or excessive member lists refuse before registration.
 
 `review(entry)` calls each actual editor's identified backend preflight, then runs the optional pure `Validator` on a worker. It receives immutable `Values`; `candidate(member)` uses the exact typed member identity, while `candidate(definition)` accepts the exact registered `DocumentDefinition<T>`. Equal names or a newly constructed key confer no type or source authority. Returned values use their declared defensive snapshot semantics. Invalid member candidates prevent cross-document checks, preserving their actual reports rather than passing partial data to a validator.
 

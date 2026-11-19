@@ -6,6 +6,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.importing.ImportFormat;
+import design.inherent.reform.importing.ImportInput;
 import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.importing.JsonImportFormat;
 import design.inherent.reform.neoforge.command.ImportCatalog;
@@ -88,6 +89,7 @@ public final class ClientFileSettings<T> {
   private final TextStore<T> store;
   private final ApplicationEffects applicationEffects;
   private final Optional<Startup<T>> startup;
+  private final Optional<FileOwner.Initialization> worldDefaults;
   private final AtomicReference<State<T>> state =
       new AtomicReference<>(
           new State<>(Lifecycle.REGISTERED, null, null, null, ValidationReport.VALID, null));
@@ -101,12 +103,17 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       TextStore<T> store,
       ApplicationEffects applicationEffects,
-      Optional<Startup<T>> startup) {
+      Optional<Startup<T>> startup,
+      Optional<FileOwner.Initialization> worldDefaults) {
     this.container = container;
     this.definition = store.definition();
     this.store = store;
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
     this.startup = Objects.requireNonNull(startup);
+    this.worldDefaults = Objects.requireNonNull(worldDefaults);
+    if (startup.isPresent() && worldDefaults.isPresent())
+      throw new IllegalArgumentException(
+          "Startup choices and new-world defaults are different owners");
   }
 
   /** Call from the owning physical-client mod's constructor, before FML client setup. No IO. */
@@ -121,18 +128,40 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       DocumentDefinition<T> definition,
       ApplicationEffects applicationEffects) {
-    return clientFile(
+    return clientFile(modBus, container, newJsonStore(definition), applicationEffects);
+  }
+
+  private static <T> JsonStore<T> newJsonStore(DocumentDefinition<T> definition) {
+    return new JsonStore<>(
+        definition,
+        new OwnedFile(
+            StorageBinding.newJson(FMLPaths.CONFIGDIR.get().toAbsolutePath(), definition.id()),
+            JSON.maximumBytes()),
+        JsonStore.Format.NEW_ENVELOPE,
+        JSON,
+        DraftLimits.CONFIGURATION);
+  }
+
+  /** New owned defaults initialize once; saves affect only explicitly selected later worlds. */
+  public static <T> ClientFileSettings<T> newWorldDefaultsJson(
+      IEventBus modBus, ModContainer container, DocumentDefinition<T> definition) {
+    return newWorldDefaultsFile(
+        modBus, container, newJsonStore(definition), FileOwner.Initialization.CREATE_DEFAULTS);
+  }
+
+  /** Existing/custom defaults retain their source and explicit absent-file creation policy. */
+  public static <T> ClientFileSettings<T> newWorldDefaultsFile(
+      IEventBus modBus,
+      ModContainer container,
+      TextStore<T> store,
+      FileOwner.Initialization initialization) {
+    return register(
         modBus,
         container,
-        new JsonStore<>(
-            definition,
-            new OwnedFile(
-                StorageBinding.newJson(FMLPaths.CONFIGDIR.get().toAbsolutePath(), definition.id()),
-                JSON.maximumBytes()),
-            JsonStore.Format.NEW_ENVELOPE,
-            JSON,
-            DraftLimits.CONFIGURATION),
-        applicationEffects);
+        store,
+        ApplicationEffects.UNDECLARED,
+        Optional.empty(),
+        Optional.of(Objects.requireNonNull(initialization)));
   }
 
   /** An existing owned JSON source retains its explicit filename and representation. No IO. */
@@ -187,7 +216,8 @@ public final class ClientFileSettings<T> {
         container,
         store,
         ApplicationEffects.UNDECLARED,
-        Optional.of(new Startup<>(selected)));
+        Optional.of(new Startup<>(selected)),
+        Optional.empty());
   }
 
   private static <T> PropertiesStore<T> propertiesStore(
@@ -210,7 +240,8 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       TextStore<T> store,
       ApplicationEffects applicationEffects) {
-    return register(modBus, container, store, applicationEffects, Optional.empty());
+    return register(
+        modBus, container, store, applicationEffects, Optional.empty(), Optional.empty());
   }
 
   private static <T> ClientFileSettings<T> register(
@@ -218,7 +249,8 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       TextStore<T> store,
       ApplicationEffects applicationEffects,
-      Optional<Startup<T>> startup) {
+      Optional<Startup<T>> startup,
+      Optional<FileOwner.Initialization> worldDefaults) {
     Objects.requireNonNull(modBus);
     Objects.requireNonNull(container);
     Objects.requireNonNull(store);
@@ -228,7 +260,8 @@ public final class ClientFileSettings<T> {
     if (!container.getModId().equals(definition.id().namespace()))
       throw new IllegalArgumentException(
           "Client files must belong to their declaring mod namespace");
-    var registration = new ClientFileSettings<>(container, store, applicationEffects, startup);
+    var registration =
+        new ClientFileSettings<>(container, store, applicationEffects, startup, worldDefaults);
     ClientSettingsRuntime.registerFile(
         definition.id(), registration, store.binding(), registration::close);
     try {
@@ -357,7 +390,12 @@ public final class ClientFileSettings<T> {
                     ? text(
                         "startup_context",
                         "Startup choices · saved changes require restarting the game")
-                    : text("client_context", "Client preferences · applies to this installation"),
+                    : worldDefaults.isPresent()
+                        ? text(
+                            "world_defaults_context",
+                            "New-world defaults · saving does not change an open recipe or a running world")
+                        : text(
+                            "client_context", "Client preferences · applies to this installation"),
                 definition,
                 actions,
                 sources,
@@ -368,7 +406,12 @@ public final class ClientFileSettings<T> {
                         text("save_startup", "Save for restart"),
                         text("review_startup", "Save reviewed choices"),
                         text("close_startup", "Save for restart and close"))
-                    : SettingsScreen.SubmissionLabels.standard(actions.commitKind())));
+                    : worldDefaults.isPresent()
+                        ? new SettingsScreen.SubmissionLabels(
+                            text("save_defaults", "Save defaults"),
+                            text("review_defaults", "Save reviewed defaults"),
+                            text("close_defaults", "Save defaults and close"))
+                        : SettingsScreen.SubmissionLabels.standard(actions.commitKind())));
   }
 
   /** Explicit source registration on this ready owner; caller supplies capture/reload policy. */
@@ -409,6 +452,58 @@ public final class ClientFileSettings<T> {
             store.valueLimits(),
             store.draftLimits(),
             ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE));
+  }
+
+  /** Read-only value export of this declared saved source, with its actual parser and lifetime. */
+  public ImportSource savedValueSource(DocumentId sourceId, String label) {
+    Objects.requireNonNull(sourceId);
+    if (Objects.requireNonNull(label).isBlank() || label.length() > 256)
+      throw new IllegalArgumentException("Saved source labels require one to 256 characters");
+    return new ImportSource() {
+      @Override
+      public DocumentId id() {
+        return sourceId;
+      }
+
+      @Override
+      public String label() {
+        return label;
+      }
+
+      @Override
+      public int maximumBytes() {
+        return store.valueLimits().maximumBytes();
+      }
+
+      @Override
+      public void requireCurrent() {
+        requireClientThread();
+        var current = state.get();
+        if (current.lifecycle() != Lifecycle.READY || current.context() == null)
+          throw new PolicyRefusal(
+              "import.source_unavailable", "The saved source owner is not ready");
+        current.access().require(OwnerContext.Right.READ);
+      }
+
+      @Override
+      public Capture capture() {
+        requireCurrent();
+        var captured = state.get();
+        return () -> {
+          captured.context().requireCurrent();
+          var observed = store.read();
+          if (observed.candidate().isEmpty())
+            throw new java.io.IOException("No valid saved values are available for this capture");
+          var bytes =
+              observed
+                  .candidate()
+                  .orElseThrow()
+                  .authoredJson()
+                  .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+          return new ImportInput(label, bytes, maximumBytes());
+        };
+      }
+    };
   }
 
   public LiteralArgumentBuilder<CommandSourceStack> commandBranch(
@@ -530,8 +625,12 @@ public final class ClientFileSettings<T> {
               ? CompletableFuture.completedStage(before.owner())
               : startup.isPresent()
                   ? FileOwner.startup(context, store, 16, startup.orElseThrow().selected())
-                  : CompletableFuture.completedStage(
-                      new FileOwner<>(context, store, 16, applicationEffects));
+                  : worldDefaults.isPresent()
+                      ? CompletableFuture.completedStage(
+                          FileOwner.newWorldDefaults(
+                              context, store, 16, worldDefaults.orElseThrow()))
+                      : CompletableFuture.completedStage(
+                          new FileOwner<>(context, store, 16, applicationEffects));
     } catch (RuntimeException failed) {
       construction = CompletableFuture.failedStage(failed);
     }
@@ -630,7 +729,7 @@ public final class ClientFileSettings<T> {
                             failed == null
                                 && report.valid()
                                 && receipt.application()
-                                    == (startup.isPresent()
+                                    == (startup.isPresent() || worldDefaults.isPresent()
                                         ? CommitReceipt.Application.STAGED
                                         : CommitReceipt.Application.APPLIED);
                         finishAttempt(context, result, owner, receipt, report, ready);
@@ -730,11 +829,12 @@ public final class ClientFileSettings<T> {
     var current = status();
     var message =
         current.lifecycle() == Lifecycle.REGISTERED || current.lifecycle() == Lifecycle.INITIALIZING
-            ? text("initializing", "Loading client preferences…")
+            ? text("initializing_source", "Loading settings source…")
             : ClientStatusScreen.reason(
                 current.report(),
-                Component.literal(
-                    "Client preferences are unavailable; existing data has been retained."));
+                text(
+                    "source_unavailable",
+                    "This settings source is unavailable; existing data has been retained."));
     return new ClientStatusScreen.State(
         current.lifecycle() == Lifecycle.READY,
         current.lifecycle() == Lifecycle.UNAVAILABLE && state.get().context() != null,

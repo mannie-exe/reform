@@ -4,6 +4,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.importing.FileImportSource;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.ImportSource;
+import design.inherent.reform.neoforge.command.ImportCatalog;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentImports;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
@@ -26,6 +27,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
@@ -37,6 +39,7 @@ public final class ImportScreen<T> extends FormScreen {
   private final List<ImportFormat<T>> formats;
   private final BooleanSupplier available;
   private final Runnable returned, abandoned;
+  private final Optional<ImportCatalog<T>> catalog;
   private final List<AbstractWidget> footer = new ArrayList<>();
   private ImportFormat<T> format;
   private ImportSource source;
@@ -58,6 +61,18 @@ public final class ImportScreen<T> extends FormScreen {
       BooleanSupplier available,
       Runnable returned,
       Runnable abandoned) {
+    this(title, contextLabel, actions, formats, available, returned, abandoned, Optional.empty());
+  }
+
+  public ImportScreen(
+      Component title,
+      Component contextLabel,
+      DocumentActions<T> actions,
+      List<? extends ImportFormat<T>> formats,
+      BooleanSupplier available,
+      Runnable returned,
+      Runnable abandoned,
+      Optional<ImportCatalog<T>> catalog) {
     super(title);
     this.contextLabel = Objects.requireNonNull(contextLabel);
     this.actions = Objects.requireNonNull(actions);
@@ -70,6 +85,14 @@ public final class ImportScreen<T> extends FormScreen {
     this.available = Objects.requireNonNull(available);
     this.returned = Objects.requireNonNull(returned);
     this.abandoned = Objects.requireNonNull(abandoned);
+    this.catalog = Objects.requireNonNull(catalog);
+    if (catalog
+        .filter(
+            value ->
+                value.definition() != actions.definition() || !value.parsers().equals(this.formats))
+        .isPresent())
+      throw new IllegalArgumentException(
+          "Import choices require their exact definition and parsers");
   }
 
   private static Component text(String key, String fallback, Object... arguments) {
@@ -145,6 +168,62 @@ public final class ImportScreen<T> extends FormScreen {
         Component.literal(
             actions.definition().id() + " · " + actions.definition().schemaVersion()));
     panel.row("target_context", text("context", "Editing context"), contextLabel);
+    catalog
+        .filter(value -> !value.sources().isEmpty())
+        .ifPresent(
+            choices -> {
+              var options = new ArrayList<Optional<ImportCatalog.Source>>();
+              options.add(Optional.empty());
+              choices.sources().forEach(choice -> options.add(Optional.of(choice)));
+              var selected =
+                  options.stream()
+                      .filter(
+                          choice ->
+                              choice.isPresent()
+                                  && choices
+                                      .admittedSource(choice.orElseThrow().id())
+                                      .filter(bound -> bound == source)
+                                      .isPresent())
+                      .findFirst()
+                      .orElse(Optional.empty());
+              var chooseSource =
+                  CycleButton.<Optional<ImportCatalog.Source>>builder(
+                          choice ->
+                              choice
+                                  .<Component>map(value -> Component.literal(value.label()))
+                                  .orElseGet(
+                                      () -> text("choose_registered", "Choose an admitted source")))
+                      .withValues(options)
+                      .withInitialValue(selected)
+                      .displayOnlyValue()
+                      .create(
+                          0,
+                          0,
+                          180,
+                          20,
+                          text("registered", "Registered source"),
+                          (button, choice) -> {
+                            if (minecraft.screen == this && ready() && operation == null && !picker)
+                              choice.ifPresent(
+                                  value ->
+                                      selectSource(
+                                          choices.admittedSource(value.id()).orElseThrow()));
+                          });
+              chooseSource.active = ready() && operation == null && !picker;
+              chooseSource.setTooltip(
+                  Tooltip.create(
+                      selected
+                          .<Component>map(value -> Component.literal(value.label()))
+                          .orElseGet(
+                              () -> text("choose_registered", "Choose an admitted source"))));
+              panel.row(
+                  "registered_source",
+                  text("registered", "Registered source"),
+                  text(
+                      "registered_help",
+                      "These sources are explicitly admitted by this owner. Selection alone reads no file."),
+                  chooseSource);
+            });
     var choose = action(text("choose", "Choose file…"), this::chooseFile);
     choose.active = ready() && operation == null && !picker;
     panel.row(
@@ -308,7 +387,11 @@ public final class ImportScreen<T> extends FormScreen {
     DocumentImports<T> requested = null;
     boolean adopted = false;
     try {
-      requested = actions.imports(selected, formats);
+      requested =
+          actions.imports(
+              selected,
+              formats,
+              catalog.map(ImportCatalog::limits).orElse(DocumentImports.Limits.STANDARD));
       var label = Component.literal(selected.label());
       if (closed || epoch != selectionEpoch) {
         requested.close();

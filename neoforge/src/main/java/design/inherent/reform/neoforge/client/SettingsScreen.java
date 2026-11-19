@@ -11,6 +11,7 @@ import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.JsonImportFormat;
+import design.inherent.reform.neoforge.command.ImportCatalog;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
@@ -207,6 +208,18 @@ public final class SettingsScreen<T> extends FormScreen {
   private Language displayedLanguage;
   private boolean bodyVisible = true;
   private Runnable editorAbandoned;
+  private ImportCatalog<T> declaredImports;
+
+  /** Declare admitted source choices before activation; browsing them performs no source IO. */
+  public SettingsScreen<T> withImports(ImportCatalog<T> imports) {
+    if (minecraft != null || requested || closed || declaredImports != null)
+      throw new IllegalStateException(
+          "Import choices must be declared once before form activation");
+    if (Objects.requireNonNull(imports).definition() != definition)
+      throw new IllegalArgumentException("Import choices require this form's actual definition");
+    declaredImports = imports;
+    return this;
+  }
 
   /** Borrow the actual session before activation; the caller closes it after the workflow ends. */
   void borrow(Runnable abandoned) {
@@ -1366,17 +1379,20 @@ public final class SettingsScreen<T> extends FormScreen {
             text("import_title", "Import profile"),
             contextLabel,
             actions,
-            JsonImportFormat.documentFormats(
-                definition,
-                snapshot.jsonLimits(),
-                snapshot.draft().limits(),
-                ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE),
+            declaredImports == null
+                ? JsonImportFormat.documentFormats(
+                    definition,
+                    snapshot.jsonLimits(),
+                    snapshot.draft().limits(),
+                    ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE)
+                : declaredImports.parsers(),
             () -> !closed,
             () -> {
               synchronize(Map.copyOf(versions));
               minecraft.setScreen(this);
             },
-            this::abandonEditing);
+            this::abandonEditing,
+            Optional.ofNullable(declaredImports));
     handoff = true;
     try {
       minecraft.setScreen(screen);

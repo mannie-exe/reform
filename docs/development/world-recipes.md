@@ -22,6 +22,22 @@ An entered but unconfirmed admission reports its actual application uncertainty 
 
 Factory defaults, imported profiles, validation, profile saving, in-memory export, resource publication and creation admission remain distinct operations. Loading defaults stages a draft; definition defaults never silently replace the selected generator. Saving a reusable profile requires its separately declared persistence owner. Neither an editor nor its Apply control rewrites an existing world's generation identity.
 
+## Explicit defaults and profile staging
+
+`WorldRecipe.importCatalog(sources)` supplies this actual recipe definition's standard bounded value/envelope import formats. `screen(title, catalog)` declares those admitted sources on the same generated form; it checks the exact definition before constructing a view. For example:
+
+```java
+var source = defaults.savedValueSource(sourceId, "Saved new-world defaults");
+var catalog = recipe.importCatalog(List.of(source));
+var form = recipe.screen(title, catalog);
+```
+
+The defaults document and creation recipe may have different logical IDs while their explicitly declared import format admits compatible authored values. No conversion is inferred from matching Java class names or filesystem paths. Target constraints still validate the whole imported candidate.
+
+The shared Import view lists registered source metadata without reading it. Explicit Preview captures saved values, checks them against the current draft and presents typed differences. Stage changes one undoable draft and preserves earlier work through Undo/Redo; it performs no file save, domain admission or native dimension update. Apply recipe retains the original context, compilation, generation and authority checks. Saving updated defaults while this recipe is open never installs them implicitly. A later changed or malformed source cannot silently alter an already captured import; refresh explicitly to capture different content.
+
+`SettingsScreen.withImports(catalog)` supplies the same declaration to an advanced generated form before activation. It does not create another owner or replace defaults, constraints, operation state or native source authority. [Local import](imports.md) owns review/staging semantics.
+
 ## Native lifetime and update checks
 
 Each helper permits one native screen and owns its shorter-lived context. `DocumentActions.owningContext` transfers that context's disposal to the editor; ordinary document actions keep their context borrowed. Closing/discarding the editor closes its session and context, while borrowed executors remain owned by the physical client lifecycle. The native helper clears its parent reference at closure.

@@ -23,6 +23,7 @@ public final class ClientExample {
     FileFormatsExample.register(bus, container);
     StartupExample.register(bus, container);
     RegisteredExample.register(bus, container);
+    WorldDefaultsExample.register(bus, container);
     preferences = ClientFileSettings.clientJson(bus, container, NativeExample.DEFINITION);
     preferences.registerMenu(Component.literal("Native example settings"));
     preferences.registerCommands("reformprefs");
