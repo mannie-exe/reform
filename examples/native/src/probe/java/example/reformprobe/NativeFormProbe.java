@@ -34,6 +34,7 @@ import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
@@ -46,9 +47,10 @@ public final class NativeFormProbe {
   private final Minecraft mc = Minecraft.getInstance();
   private final JsonObject report = new JsonObject();
   private final JsonArray controls = new JsonArray();
-  private int stage, ticks, stageTick;
+  private int stage, ticks, stageTick, captureFrames;
   private boolean finished;
   private Screen parent, form;
+  private Screen captureScreen;
   private EditBox distance, label;
   private String savedBytes, capture;
   private Runnable afterCapture;
@@ -130,6 +132,7 @@ public final class NativeFormProbe {
     bus.addListener((FMLClientSetupEvent ignored) -> registration(bus, probeContainer));
     NeoForge.EVENT_BUS.addListener(this::tick);
     NeoForge.EVENT_BUS.addListener(this::rendered);
+    NeoForge.EVENT_BUS.addListener(this::renderedFrame);
     NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, this::shutdown);
   }
 
@@ -910,9 +913,25 @@ public final class NativeFormProbe {
   }
 
   private void rendered(ScreenEvent.Render.Post event) {
-    if (capture != null) {
+    if (capture != null && event.getScreen() == mc.screen) captureScreen = event.getScreen();
+  }
+
+  private void renderedFrame(RenderFrameEvent.Post event) {
+    boolean matching = capture != null && captureScreen != null && captureScreen == mc.screen;
+    captureScreen = null;
+    if (matching) {
+      // Read back only after GameRenderer completes and flushes its GUI batches.
+      if (++captureFrames == 1)
+        Screenshot.grab(
+            mc.gameDirectory,
+            capture.replace(".png", "-entry.png"),
+            mc.getMainRenderTarget(),
+            ignored -> {});
+      // Retain a matched settled frame as well, including after native viewport resize.
+      if (captureFrames < 4) return;
       Screenshot.grab(mc.gameDirectory, capture, mc.getMainRenderTarget(), ignored -> {});
       capture = null;
+      captureFrames = 0;
     }
   }
 
