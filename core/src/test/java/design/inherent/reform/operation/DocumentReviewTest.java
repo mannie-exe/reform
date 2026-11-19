@@ -9,6 +9,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
 import design.inherent.reform.owner.EditorActor;
@@ -67,7 +68,7 @@ class DocumentReviewTest {
 
   private static DocumentActions.Comparison comparison(EditorActor.Inspection<Profile> input) {
     return new DocumentActions.Comparison(
-        DocumentActions.DraftRef.of(input.snapshot()),
+        DraftRevision.of(input.snapshot()),
         !input.snapshot().draft().sameValue(input.baseline()),
         List.of(),
         input.snapshot().inspect().report());
@@ -84,10 +85,11 @@ class DocumentReviewTest {
     var draft = before.change(FieldPath.ROOT.field("count"), ignored -> new DraftNode.Scalar("-"));
     var input = inspection(draft, before, Optional.empty());
     var review = capture(input);
-    assertEquals(DocumentActions.DraftRef.of(input.snapshot()), review.target());
+    assertEquals(DraftRevision.of(input.snapshot()), review.target());
     assertSame(SOURCE, review.source());
     assertTrue(review.effective().isEmpty());
     assertFalse(review.comparison().report().valid());
+    assertFalse(review.report().valid());
     assertTrue(review.comparison().authoredChanges());
     assertEquals("\"1\"", review.entries().getFirst().baseline());
     assertEquals("\"-\"", review.entries().getFirst().draft());
@@ -99,6 +101,30 @@ class DocumentReviewTest {
     assertTrue(review.entries().get(1).wholeValue());
     assertThrows(UnsupportedOperationException.class, () -> review.entries().clear());
     assertEquals("-", ((DraftNode.Scalar) draft.at(FieldPath.ROOT.field("count"))).raw());
+  }
+
+  @Test
+  void sourceFailureDoesNotDisappearBehindAValidUnchangedComparison() {
+    var before = baseline();
+    var input = inspection(before, before, Optional.empty());
+    var failed =
+        new ValidationReport(
+            List.of(Issue.error("fixture.source", FieldPath.ROOT, "Source observation failed")),
+            false);
+    var review =
+        capture(
+            new EditorActor.Inspection<>(
+                input.snapshot(),
+                input.baseline(),
+                input.provenance(),
+                input.effective(),
+                failed,
+                input.lastReceipt()));
+    assertTrue(review.comparison().report().valid());
+    assertFalse(review.comparison().authoredChanges());
+    assertFalse(review.report().complete());
+    assertEquals(failed.issues(), review.report().issues());
+    assertSame(failed, review.sourceReport());
   }
 
   @Test
@@ -121,6 +147,9 @@ class DocumentReviewTest {
       assertEquals(SettingsHandle.Availability.AVAILABLE, observed.availability());
       assertTrue(observed.valuesCaptured());
       assertSame(failure, observed.observationReport());
+      assertEquals(failure.issues(), review.report().issues());
+      assertFalse(review.report().complete());
+      assertTrue(review.comparison().report().valid());
       assertEquals(Optional.of("\"1\""), review.entries().getFirst().effective());
       assertTrue(observed.captureReport().valid());
       policy.close();
@@ -171,6 +200,8 @@ class DocumentReviewTest {
       assertFalse(effective.captureReport().toString().contains("private diagnostic"));
       assertSame(SOURCE, review.source());
       assertTrue(review.comparison().report().valid());
+      assertEquals(effective.captureReport().issues(), review.report().issues());
+      assertFalse(review.report().complete());
       assertTrue(review.entries().stream().allMatch(entry -> entry.effective().isEmpty()));
     }
   }

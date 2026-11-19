@@ -6,6 +6,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -63,7 +64,7 @@ public final class DocumentConflicts<T> implements AutoCloseable {
   /** This service's actual issued instance is required; descriptive IDs grant no authority. */
   public static final class Preview {
     private final UUID id = UUID.randomUUID();
-    private final DocumentActions.DraftRef target;
+    private final DraftRevision target;
     private final ConflictReview.Basis basis;
     private final String baselineRevision, observedRevision;
     private final SourceInfo source;
@@ -71,7 +72,7 @@ public final class DocumentConflicts<T> implements AutoCloseable {
     private final List<Entry> entries;
 
     private Preview(
-        DocumentActions.DraftRef target,
+        DraftRevision target,
         ConflictReview review,
         SourceInfo source,
         ValidationReport draftValidation,
@@ -91,7 +92,7 @@ public final class DocumentConflicts<T> implements AutoCloseable {
       return id;
     }
 
-    public DocumentActions.DraftRef target() {
+    public DraftRevision target() {
       return target;
     }
 
@@ -245,7 +246,7 @@ public final class DocumentConflicts<T> implements AutoCloseable {
         && view.conflictObservationAvailable()
         && view.review().orElse(null) == found.review
         && view.snapshot()
-            .filter(snapshot -> selected.target().equals(DocumentActions.DraftRef.of(snapshot)))
+            .filter(snapshot -> selected.target().equals(DraftRevision.of(snapshot)))
             .isPresent();
   }
 
@@ -339,9 +340,8 @@ public final class DocumentConflicts<T> implements AutoCloseable {
                           || view.snapshot()
                               .filter(
                                   value ->
-                                      DocumentActions.DraftRef.of(value)
-                                          .equals(
-                                              DocumentActions.DraftRef.of(inspection.snapshot())))
+                                      DraftRevision.of(value)
+                                          .equals(DraftRevision.of(inspection.snapshot())))
                               .isEmpty()) throw unavailable(view);
                       return new Captured<>(
                           inspection,
@@ -394,7 +394,7 @@ public final class DocumentConflicts<T> implements AutoCloseable {
     }
     var preview =
         new Preview(
-            DocumentActions.DraftRef.of(captured.inspection().snapshot()),
+            DraftRevision.of(captured.inspection().snapshot()),
             captured.review(),
             captured.inspection().provenance(),
             captured.validation(),
@@ -408,7 +408,7 @@ public final class DocumentConflicts<T> implements AutoCloseable {
     if (!view.conflictObservationAvailable()
         || view.review().orElse(null) != selected.review
         || view.snapshot()
-            .filter(value -> selected.preview.target().equals(DocumentActions.DraftRef.of(value)))
+            .filter(value -> selected.preview.target().equals(DraftRevision.of(value)))
             .isEmpty()) throw unavailable(view);
   }
 

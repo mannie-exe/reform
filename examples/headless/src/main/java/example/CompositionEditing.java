@@ -348,6 +348,7 @@ final class CompositionEditing {
       require(
           review.target().equals(comparison.draft())
               && review.target().equals(exported.draft())
+              && review.report().valid()
               && review.source().location().orElseThrow().equals(h.file.toString())
               && roleDetails.wholeValue()
               && roleDetails.draft().contains("renamed")
@@ -377,7 +378,8 @@ final class CompositionEditing {
       require(
           Files.readString(h.file).equals(original),
           "Inspection/validation/export wrote the profile");
-      var saved = h.run(() -> h.actions.save(EntryPoint.GUI)).receipt().orElseThrow();
+      var saved =
+          h.run(() -> h.actions.commit(EntryPoint.GUI, review.target())).receipt().orElseThrow();
       require(
           saved.persistence() == CommitReceipt.Persistence.SAVED
               && saved.application() == CommitReceipt.Application.APPLIED,

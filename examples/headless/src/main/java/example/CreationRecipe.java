@@ -112,8 +112,16 @@ final class CreationRecipe {
                 nativeExecutor.submit(() -> actions.edit(EntryPoint.COMMAND, "size", "8")).get())
             .toCompletableFuture()
             .get(10, TimeUnit.SECONDS);
+        var reviewed =
+            DocumentActions.result(
+                    nativeExecutor.submit(() -> actions.review(EntryPoint.GUI)).get())
+                .toCompletableFuture()
+                .get(10, TimeUnit.SECONDS);
         var committed =
-            DocumentActions.result(nativeExecutor.submit(() -> actions.admit(EntryPoint.GUI)).get())
+            DocumentActions.result(
+                    nativeExecutor
+                        .submit(() -> actions.commit(EntryPoint.GUI, reviewed.target()))
+                        .get())
                 .toCompletableFuture()
                 .get(10, TimeUnit.SECONDS);
         var receipt = committed.receipt().orElseThrow();

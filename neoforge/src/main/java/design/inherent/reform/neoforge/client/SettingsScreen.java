@@ -144,9 +144,9 @@ public final class SettingsScreen<T> extends FormScreen {
   private long formGeneration;
   private FormPanel panel;
   private EditorActor.View<T> displayed;
-  private Button save, undo, redo, revert, defaults, reload, importData, conflict, done;
+  private Button save, undo, redo, revert, defaults, reload, importData, conflict, done, inspection;
   private Object widgetGeneration;
-  private int bodyTop, statusTop, pendingEdits;
+  private int bodyTop, statusTop, statusWidth, pendingEdits;
   private long version;
   private boolean requested, updating, saving, loading, handoff, closed, formUnavailable;
   private Component notice;
@@ -415,6 +415,22 @@ public final class SettingsScreen<T> extends FormScreen {
             4);
     int footerTop = height - 12 - geometry.height();
     statusTop = footerTop - 24;
+    var inspectLabel = text("inspect", "Inspect…");
+    int inspectWidth =
+        Math.min(Math.max(20, Math.min(100, (width - 24) / 3)), font.width(inspectLabel) + 20);
+    statusWidth = Math.max(1, width - 24 - inspectWidth - 8);
+    var inspectGeneration = widgetGeneration;
+    inspection =
+        Button.builder(
+                inspectLabel,
+                ignored -> {
+                  if (widgetGeneration == inspectGeneration) openInspection();
+                })
+            .bounds(width - 12 - inspectWidth, statusTop, inspectWidth, 20)
+            .build();
+    inspection.setTooltip(
+        Tooltip.create(text("inspect_help", "Inspect source, changes and diagnostics")));
+    addRenderableWidget(inspection);
     for (int i = 0; i < footer.size(); i++) {
       var position = geometry.placements().get(i);
       var widget = footer.get(i);
@@ -521,6 +537,7 @@ public final class SettingsScreen<T> extends FormScreen {
     var bookmark = panel == null ? null : panel.bookmark();
     String focusedField = panel == null ? null : panel.focusKey();
     int focusedFooter = footer.indexOf(getFocused());
+    boolean inspectionFocused = getFocused() == inspection;
     super.rebuildWidgets();
     boolean samePage = catalog == null || Objects.equals(page, catalog.displayedDetail());
     if (bodyVisible && samePage && bookmark != null) panel.restore(bookmark);
@@ -531,6 +548,7 @@ public final class SettingsScreen<T> extends FormScreen {
     } else if (bodyVisible && catalog != null) catalog.restore(panel);
     if (catalogFocus != null && catalogFocus.area() != CatalogPane.Area.OTHER)
       catalog.restore(catalogFocus);
+    else if (inspectionFocused) setFocused(inspection);
     else if (focusedFooter >= 0 && focusedFooter < footer.size())
       setFocused(footer.get(focusedFooter));
   }
@@ -1063,6 +1081,51 @@ public final class SettingsScreen<T> extends FormScreen {
       }
     } catch (design.inherent.reform.owner.PolicyRefusal | IllegalArgumentException refused) {
       notice = failure(refused);
+    }
+  }
+
+  private void openInspection() {
+    var view = actions.view();
+    if (closed
+        || minecraft.screen != this
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()
+        || view.availability() != EditorActor.Availability.READY
+        || view.snapshot().isEmpty()) return;
+    var focused = panel == null ? null : panel.getFocused();
+    var selected =
+        controls.entrySet().stream()
+            .filter(entry -> entry.getValue().widget() == focused)
+            .map(Map.Entry::getKey)
+            .findFirst()
+            .or(() -> catalog == null ? Optional.empty() : catalog.selectedPath());
+    var screen =
+        new ReviewScreen<>(
+            text("inspect_title", "Source and value inspection"),
+            contextLabel,
+            actions,
+            selected,
+            () -> !closed,
+            path -> {
+              synchronize(Map.copyOf(versions));
+              minecraft.setScreen(this);
+              path.ifPresent(
+                  value -> {
+                    if (!focusField(value))
+                      notice =
+                          text(
+                              "inspect_field_unavailable",
+                              "That field is unavailable in the current draft.");
+                  });
+            },
+            actions::close);
+    handoff = true;
+    try {
+      minecraft.setScreen(screen);
+    } finally {
+      handoff = false;
     }
   }
 
@@ -1735,6 +1798,7 @@ public final class SettingsScreen<T> extends FormScreen {
     undo.active = historyReady && current.canUndo();
     redo.active = historyReady && current.canRedo();
     importData.active = historyReady && current.pending().isEmpty() && current.review().isEmpty();
+    inspection.active = historyReady && current.snapshot().isPresent();
     if (conflict != null)
       conflict.active = historyReady && current.review().isPresent() && current.pending().isEmpty();
     editorButtons.forEach(
@@ -1949,7 +2013,7 @@ public final class SettingsScreen<T> extends FormScreen {
     graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
     graphics.drawWordWrap(
         font, contextLabel, 12, 30, Math.max(1, width - 24), FormPanel.DESCRIPTION_TEXT);
-    var lines = font.split(status(), Math.max(1, width - 24));
+    var lines = font.split(status(), statusWidth);
     for (int i = 0; i < Math.min(2, lines.size()); i++)
       graphics.drawString(
           font, lines.get(i), 12, statusTop + i * font.lineHeight, FormPanel.DESCRIPTION_TEXT);
@@ -1968,6 +2032,10 @@ public final class SettingsScreen<T> extends FormScreen {
     if (super.keyPressed(key, scan, modifiers)) return true;
     if (loading) return false;
     if (hasControlDown()) {
+      if (key == GLFW.GLFW_KEY_I) {
+        openInspection();
+        return true;
+      }
       if (catalog != null && key == GLFW.GLFW_KEY_F) return catalog.openSearch();
       if (key == GLFW.GLFW_KEY_S || key == GLFW.GLFW_KEY_ENTER) {
         requestSave();

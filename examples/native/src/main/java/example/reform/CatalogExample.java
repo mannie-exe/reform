@@ -136,6 +136,7 @@ public final class CatalogExample {
 
   static void register(IEventBus bus, ModContainer container) {
     settings = ClientJsonSettings.clientJson(bus, container, DEFINITION);
+    settings.registerCommands("reformcatalog");
   }
 
   public static ClientJsonSettings<Profiles> settings() {

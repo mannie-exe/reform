@@ -214,6 +214,35 @@ class ContextRecipeOwnerTest {
   }
 
   @Test
+  void reviewedContextCommitRefusesStaleDraftBeforeDomainCompilation() throws Exception {
+    try (var h = new Harness()) {
+      h.load();
+      h.edit("4");
+      var reviewed = h.run(() -> h.actions.review(EntryPoint.GUI));
+      h.edit("5");
+      int compilations = h.compilations.get();
+      var stopped =
+          await(
+              h.nativeCall(() -> h.actions.commit(EntryPoint.GUI, reviewed.target())).completion());
+      assertEquals(OperationSnapshot.State.REFUSED, stopped.state());
+      assertEquals("editor.review_changed", stopped.report().issues().getFirst().code());
+      assertEquals(compilations, h.compilations.get());
+      assertEquals(0, h.admissions.get());
+      assertTrue(h.actor.view().dirty());
+      assertTrue(h.actor.view().pending().isEmpty());
+      var fresh = h.run(() -> h.actions.review(EntryPoint.COMMAND));
+      var result = h.run(() -> h.actions.commit(EntryPoint.COMMAND, fresh.target()));
+      var receipt = result.receipt().orElseThrow();
+      assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, receipt.persistence());
+      assertTrue(receipt.acknowledgesBaseline());
+      assertEquals(1, h.admissions.get());
+      assertEquals(5, h.current.get().recipe().amount());
+      assertEquals(List.of(10), h.runtime.values());
+      assertFalse(h.actor.view().dirty());
+    }
+  }
+
+  @Test
   void contextAdmissionHasNoPersistenceClaimAndCompiledInputsAreOwned() throws Exception {
     try (var h = new Harness()) {
       var untouched = h.current.get().untouchedDimensions();

@@ -79,6 +79,7 @@ public final class NativeFormProbe {
   private NativeKeyControls keyControls;
   private NativeKeyFactoryControls keyFactory;
   private NativeCatalogControls catalog;
+  private NativeReviewControls review;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -132,7 +133,9 @@ public final class NativeFormProbe {
               "keys-factory",
               "keys-factory-reopen",
               "catalog",
-              "catalog-reopen")
+              "catalog-reopen",
+              "review",
+              "review-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -329,6 +332,27 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("review")) {
+        if (review == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.CatalogExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          review =
+              new NativeReviewControls(
+                  mode.equals("review-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (review.tick()) {
+          report.add("review", review.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("catalog")) {
@@ -1062,6 +1086,7 @@ public final class NativeFormProbe {
     if (keyControls != null) report.add("keyControls", keyControls.report());
     if (keyFactory != null) report.add("keyFactory", keyFactory.report());
     if (catalog != null) report.add("catalog", catalog.report());
+    if (review != null) report.add("review", review.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -1161,6 +1186,11 @@ public final class NativeFormProbe {
         var state = catalog.report();
         state.addProperty("factoryClosed", catalogClosed);
         report.add("catalog", state);
+      }
+      if (review != null) {
+        var state = review.report();
+        state.addProperty("factoryClosed", catalogClosed);
+        report.add("review", state);
       }
       var settings = ClientExample.settings();
       check(

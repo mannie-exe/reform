@@ -293,7 +293,7 @@ final class FormPanel extends ScrollPanel {
   void restoreFocus(String key) {
     if (key != null)
       positions.stream()
-          .filter(p -> key.equals(p.key))
+          .filter(p -> key.equals(p.key) && p.widget.active && p.widget.visible)
           .findFirst()
           .ifPresent(
               p -> {

@@ -128,7 +128,8 @@ final class DraftDescriptions {
       if (value == '"' || value == '\\') {
         append('\\', out);
         append(value, out);
-      } else if (Character.isISOControl(value)
+      } else if (value == '\u00a7'
+          || Character.isISOControl(value)
           || Character.isSurrogate(value)
           || Character.getType(value) == Character.FORMAT) {
         append("\\u", out);

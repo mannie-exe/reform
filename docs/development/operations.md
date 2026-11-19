@@ -16,7 +16,7 @@ Inputs remain immutable during admission. Workers freeze, encode and strictly de
 
 An optional prerequisite gates entry, not authority. Native rights are checked again after it completes. `DocumentActions` coalesces first-use loading and preserves edit/save order while a baseline loads. An unavailable source never substitutes factory defaults or silently retries; reload is explicit.
 
-Standard scope bounds are 64 definitions, 16 active operations and 64 retained operations. Input admission allows 64 KiB, 64 depth levels, 16,384 nodes, 32,768 string characters, 128 numeric characters and absolute decimal scale 4,096. Only terminal operations can be evicted. These local limits are independent of files, networking and domain workloads. `DocumentActions` needs room for all seventeen definitions, including identified review.
+Standard scope bounds are 64 definitions, 16 active operations and 64 retained operations. Input admission allows 64 KiB, 64 depth levels, 16,384 nodes, 32,768 string characters, 128 numeric characters and absolute decimal scale 4,096. Only terminal operations can be evicted. These local limits are independent of files, networking and domain workloads. `DocumentActions` needs room for all eighteen definitions, including identified review and conditional commit.
 
 `OperationHandle` exposes immutable snapshots and a completion stage. Snapshots identify the context/target and carry revision, phase, completed count, optional total, cancellation request and result/report. Progress cannot retreat in the same phase. Unknown totals stay unknown. `COMPLETED` means the provider produced a result; its save receipt may still report refused, partial, unknown or unapplied effects.
 
@@ -36,7 +36,7 @@ Export produces bounded in-memory **document-value JSON**, with document/schema/
 
 ## Identified source and value review
 
-`DocumentActions.review(entry)` captures one actual editor observation and prepares its comparison and raw value details on the worker. `DocumentReview.target()` identifies the document/context/session/generation/version and observed source revision. Source, draft, baseline and effective details belong to that capture, even if later editing continues. They are not silently joined from separately drifting requests. Final result disclosure rechecks READ on the actual owner executor; cancellation stops projection at its cooperative boundaries. This read-only operation performs no source reload, owner preparation, save, application or domain compilation.
+`DocumentActions.review(entry)` captures one actual editor observation and prepares its comparison and raw value details on the worker. `DocumentReview.target()` is a shared `DraftRevision` identifying the document/context/session/generation/version and observed source revision. Source, draft, baseline and effective details belong to that capture, even if later editing continues. They are not silently joined from separately drifting requests. Final result disclosure rechecks READ on the actual owner executor; cancellation stops projection at its cooperative boundaries. This read-only operation performs no source reload, owner preparation, save, application or domain compilation.
 
 Entries retain observed baseline, raw draft and optional owner-observed effective value descriptions. Collections and alternatives remain whole values; no positional alignment invents stable row identities in independently materialized effective data. Invalid, inactive, missing, null, empty and retained input stay distinct. When malformed structure cannot address the declared fields, a single whole-root entry preserves that input. This is a diagnostic representation, not the saved file format or a replacement draft.
 
@@ -44,7 +44,15 @@ An absent effective observation differs from an unavailable/closed handle and fr
 
 Raw projection defaults admit 512 field entries, 65,536 visited nodes and 524,288 description characters. Source/selector/path text shares that description budget; semantic comparison has its own bounded projection using the same configured field/character ceilings. These are logical presentation bounds, separate from already retained validation data, owner callback cost, files, packets and heap bytes. Explicit exhaustion refuses the complete projection without changing the draft. The constructor overload taking `DocumentReview.Limits` changes these review limits; existing constructor overloads use the standard policy. Invalid comparisons retain diagnostics instead of claiming zero valid changes.
 
-The native inspection/change-review UI is not yet supplied by this core API. Frontends must retain the actual review identity, label stale captures and use the owner's current write/application checks for any later explicit effect. A review is not a save capability or a promise that the current world can accept new settings.
+`DocumentReview.report()` combines source, comparison and effective-observation/capture diagnostics without hiding their separate reports. A clean draft comparison does not clear a failed source observation. The native `review` command uses that same aggregate and retains its existing recipient/context/operation feedback guards.
+
+The native [inspection view](presentation.md#source-and-value-inspection) borrows these services and labels stale captures. Full effect-aware save review remains separate: an inspection is not a save capability or a promise that the current world can accept new settings.
+
+## Conditional submission
+
+`commit(entry, reviewedRevision)` submits one typed `commit_reviewed` operation. It selects actual persistence or unsaved-context admission from the owner, rechecks WRITE and compares all six revision fields inside the actor's serialized submission-capture task. Intervening queued edits, reloads or foreign identities refuse with `editor.review_changed` before preparing a submission or calling domain compilation. A caller-time comparison of a cached GUI view is insufficient.
+
+Once that exact submission is captured, later editing remains allowed. The existing prepared-owner checks, cooperative cancellation and actual receipt/acknowledgement path still govern completion. They preserve later edits and distinguish saved, refused, unknown and application outcomes. This guard is neither cross-process file CAS nor a future-effects declaration; actual source conflict detection and owner authority remain required. Ordinary unreviewed `save`, `admit` and `commit` retain their explicit behavior. Typed revision inputs admit complete UUIDs, nonnegative generation/version and a source-revision string up to 4,096 characters within the operation's existing input bounds.
 
 ## Native commands
 

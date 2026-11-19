@@ -10,6 +10,7 @@ import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
@@ -20,6 +21,8 @@ import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -209,6 +212,93 @@ class EditorActorTest {
         secondRelease.countDown();
         firstAgainRelease.countDown();
       }
+    }
+  }
+
+  @Test
+  void reviewedSaveChecksEveryIdentityBeforePreparingOrWriting() throws Exception {
+    try (var h = new Harness(true)) {
+      await(h.actor.setRaw(COUNT_PATH, "3"));
+      var revision = DraftRevision.of(h.actor.view().snapshot().orElseThrow());
+      var bytes = Files.readString(h.path);
+      for (var wrong :
+          List.of(
+              new DraftRevision(
+                  DocumentId.parse("fixture:other"),
+                  revision.context(),
+                  revision.session(),
+                  revision.generation(),
+                  revision.version(),
+                  revision.sourceRevision()),
+              new DraftRevision(
+                  revision.document(),
+                  UUID.randomUUID(),
+                  revision.session(),
+                  revision.generation(),
+                  revision.version(),
+                  revision.sourceRevision()),
+              new DraftRevision(
+                  revision.document(),
+                  revision.context(),
+                  UUID.randomUUID(),
+                  revision.generation(),
+                  revision.version(),
+                  revision.sourceRevision()),
+              new DraftRevision(
+                  revision.document(),
+                  revision.context(),
+                  revision.session(),
+                  revision.generation() + 1,
+                  revision.version(),
+                  revision.sourceRevision()),
+              new DraftRevision(
+                  revision.document(),
+                  revision.context(),
+                  revision.session(),
+                  revision.generation(),
+                  revision.version() + 1,
+                  revision.sourceRevision()),
+              new DraftRevision(
+                  revision.document(),
+                  revision.context(),
+                  revision.session(),
+                  revision.generation(),
+                  revision.version(),
+                  "another source"))) {
+        var failure =
+            assertThrows(ExecutionException.class, () -> await(h.actor.save(wrong, () -> {})));
+        var refused =
+            assertInstanceOf(design.inherent.reform.owner.PolicyRefusal.class, failure.getCause());
+        assertEquals("editor.review_changed", refused.report().issues().getFirst().code());
+        assertTrue(h.actor.view().pending().isEmpty());
+        assertEquals(bytes, Files.readString(h.path));
+        assertEquals(3, value(h.actor.view()));
+      }
+      var saved = await(h.actor.save(revision, () -> {}));
+      assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
+      assertFalse(h.actor.view().dirty());
+    }
+  }
+
+  @Test
+  void reviewedSaveAllowsLaterTypingAndAcknowledgesOnlyItsSubmittedValue() throws Exception {
+    try (var h = new Harness(true)) {
+      await(h.actor.setRaw(COUNT_PATH, "3"));
+      var reviewed = DraftRevision.of(h.actor.view().snapshot().orElseThrow());
+      h.delayWrite.set(true);
+      var saving = h.actor.save(reviewed, () -> {});
+      waitFor(h.written);
+      await(h.actor.setRaw(COUNT_PATH, "7"));
+      h.releaseWrite.countDown();
+      var saved = await(saving);
+      assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
+      assertEquals(3, h.owner.handle().view().value().orElseThrow().count());
+      assertTrue(Files.readString(h.path).contains("\"count\": 3"));
+      assertTrue(h.actor.view().dirty());
+      assertEquals(7, value(h.actor.view()));
+      assertTrue(h.actor.view().pending().isEmpty());
+      assertEquals(3, value(await(h.actor.revert())));
+      assertEquals(0, h.nativeValidators.get());
     }
   }
 

@@ -10,6 +10,7 @@ import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentReview;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
@@ -75,13 +76,63 @@ class DocumentActionsTest {
   }
 
   @Test
+  void reviewedCommitChecksAfterQueuedTypingInsteadOfItsPublishedCallerTimeView() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "2", EntryPoint.GUI);
+      var reviewed = h.run(() -> h.actions.review(EntryPoint.GUI)).target();
+      var original = Files.readString(h.path);
+      h.pauseValidation.set(true);
+      var typing = h.nativeCall(() -> h.actions.edit(EntryPoint.GUI, "count", "3"));
+      waitFor(h.reached);
+      assertTrue(reviewed.matches(h.actions.view().snapshot().orElseThrow()));
+      var saving = h.nativeCall(() -> h.actions.commit(EntryPoint.GUI, reviewed));
+      h.pauseValidation.set(false);
+      h.release.countDown();
+      await(DocumentActions.result(typing));
+      var stopped = await(saving.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, stopped.state());
+      assertEquals("editor.review_changed", stopped.report().issues().getFirst().code());
+      assertTrue(h.actions.view().dirty());
+      assertTrue(h.actions.view().pending().isEmpty());
+      assertEquals(original, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+      var fresh = h.run(() -> h.actions.review(EntryPoint.COMMAND));
+      var saved = h.run(() -> h.actions.commit(EntryPoint.COMMAND, fresh.target()));
+      assertEquals(CommitReceipt.Persistence.SAVED, saved.receipt().orElseThrow().persistence());
+      assertEquals(3, h.owner.handle().view().value().orElseThrow().count());
+      assertFalse(h.actions.view().dirty());
+    }
+  }
+
+  @Test
+  void reviewedCommitStillRequiresWriteAndNeverTreatsReviewAsAuthority() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "4", EntryPoint.GUI);
+      var reviewed = h.run(() -> h.actions.review(EntryPoint.GUI));
+      var original = Files.readString(h.path);
+      h.write.set(false);
+      var denied =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () -> h.nativeCall(() -> h.actions.commit(EntryPoint.COMMAND, reviewed.target())));
+      assertInstanceOf(PolicyRefusal.class, denied.getCause());
+      assertEquals(original, Files.readString(h.path));
+      assertTrue(h.actions.view().dirty());
+      assertTrue(h.actions.view().pending().isEmpty());
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
   void reviewKeepsOneCapturedRevisionWhileLaterEditingContinuesWithoutPersistence()
       throws Exception {
     try (var h = new Harness()) {
       h.run(() -> h.actions.load(EntryPoint.GUI));
       h.edit("count", "3", EntryPoint.GUI);
       var original = Files.readString(h.path);
-      var captured = DocumentActions.DraftRef.of(h.actions.view().snapshot().orElseThrow());
+      var captured = DraftRevision.of(h.actions.view().snapshot().orElseThrow());
       h.pauseValidation.set(true);
       var request = h.nativeCall(() -> h.actions.review(EntryPoint.GUI));
       assertTrue(h.reached.await(5, TimeUnit.SECONDS));
@@ -110,8 +161,7 @@ class DocumentActionsTest {
                       .draft()
                       .at(FieldPath.ROOT.field("count")))
               .raw());
-      assertNotEquals(
-          review.target(), DocumentActions.DraftRef.of(h.actions.view().snapshot().orElseThrow()));
+      assertNotEquals(review.target(), DraftRevision.of(h.actions.view().snapshot().orElseThrow()));
       assertEquals(original, Files.readString(h.path));
       assertEquals(1, h.writes.get());
     }

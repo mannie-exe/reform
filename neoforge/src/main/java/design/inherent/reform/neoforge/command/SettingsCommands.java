@@ -6,6 +6,7 @@ import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.DocumentReview;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.operation.OperationSnapshot;
@@ -237,6 +238,7 @@ public final class SettingsCommands {
       root.then(command("validate", actions -> actions.validate(EntryPoint.COMMAND)));
       root.then(command("compare", actions -> actions.compare(EntryPoint.COMMAND)));
       root.then(command("explain", actions -> actions.explain(EntryPoint.COMMAND)));
+      root.then(command("review", actions -> actions.review(EntryPoint.COMMAND)));
       root.then(command("export", actions -> actions.export(EntryPoint.COMMAND)));
       root.then(command("save", actions -> actions.save(EntryPoint.COMMAND)));
       root.then(command("admit", actions -> actions.admit(EntryPoint.COMMAND)));
@@ -505,6 +507,30 @@ public final class SettingsCommands {
               .append(shortText(change.beforeJson()))
               .append(" -> ")
               .append(shortText(change.afterJson()));
+        }
+      } else if (result instanceof DocumentReview review) {
+        text.append("observed source=")
+            .append(review.source().kind())
+            .append("; captured draft=")
+            .append(review.target().version())
+            .append("; fields=")
+            .append(review.entries().size())
+            .append("; authored changes=")
+            .append(review.comparison().authoredChanges())
+            .append("; effective=")
+            .append(
+                review
+                    .effective()
+                    .map(
+                        value ->
+                            value.availability().name()
+                                + (value.valuesCaptured()
+                                    ? " (captured)"
+                                    : " (details unavailable)"))
+                    .orElse("not observed by owner"));
+        if (!review.report().valid()) {
+          level = Level.WARNING;
+          text.append(" · ").append(first(review.report()));
         }
       } else if (result instanceof EditorActor.Inspection<?> inspection) {
         if (selected != null) {

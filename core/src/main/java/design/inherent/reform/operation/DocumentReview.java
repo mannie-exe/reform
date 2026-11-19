@@ -1,6 +1,7 @@
 package design.inherent.reform.operation;
 
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -61,15 +62,16 @@ public final class DocumentReview {
     }
   }
 
-  private final DocumentActions.DraftRef target;
+  private final DraftRevision target;
   private final SourceInfo source;
   private final ValidationReport sourceReport;
   private final DocumentActions.Comparison comparison;
   private final List<Entry> entries;
   private final Optional<Effective> effective;
+  private final ValidationReport report;
 
   private DocumentReview(
-      DocumentActions.DraftRef target,
+      DraftRevision target,
       SourceInfo source,
       ValidationReport sourceReport,
       DocumentActions.Comparison comparison,
@@ -81,11 +83,16 @@ public final class DocumentReview {
     this.comparison = Objects.requireNonNull(comparison);
     this.entries = List.copyOf(entries);
     this.effective = Objects.requireNonNull(effective);
+    var observations = sourceReport.and(comparison.report());
+    this.report =
+        effective
+            .map(value -> observations.and(value.observationReport()).and(value.captureReport()))
+            .orElse(observations);
     if (!target.equals(comparison.draft()))
       throw new IllegalArgumentException("Review observations require one actual draft identity");
   }
 
-  public DocumentActions.DraftRef target() {
+  public DraftRevision target() {
     return target;
   }
 
@@ -107,6 +114,11 @@ public final class DocumentReview {
 
   public Optional<Effective> effective() {
     return effective;
+  }
+
+  /** Captured source/comparison/effective diagnostics; not validation of a future save. */
+  public ValidationReport report() {
+    return report;
   }
 
   static <T> List<FieldIndex.Field> admittedFields(
@@ -138,7 +150,7 @@ public final class DocumentReview {
       DocumentActions.Comparison comparison,
       List<FieldIndex.Field> declared,
       Limits limits) {
-    var target = DocumentActions.DraftRef.of(observed.snapshot());
+    var target = DraftRevision.of(observed.snapshot());
     if (!target.equals(comparison.draft()))
       throw new IllegalArgumentException("Review comparison belongs to another captured draft");
     var text =

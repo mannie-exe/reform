@@ -9,8 +9,8 @@ import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftEdits;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
-import design.inherent.reform.edit.EditSession;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.owner.DocumentSession;
@@ -43,24 +43,6 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   public record FieldInput(String selector, String text) {}
 
-  public record DraftRef(
-      DocumentId document,
-      UUID context,
-      UUID session,
-      long generation,
-      long version,
-      String sourceRevision) {
-    public static DraftRef of(EditSession.Snapshot<?> snapshot) {
-      return new DraftRef(
-          snapshot.definition().id(),
-          snapshot.context(),
-          snapshot.session(),
-          snapshot.generation(),
-          snapshot.version(),
-          snapshot.sourceRevision());
-    }
-  }
-
   public record FieldDescription(
       FieldPath path, String selector, ValueShape shape, Optional<String> defaultText) {}
 
@@ -73,7 +55,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   public record Change(FieldPath path, String beforeJson, String afterJson) {}
 
   public record Comparison(
-      DraftRef draft, boolean authoredChanges, List<Change> changes, ValidationReport report) {
+      DraftRevision draft, boolean authoredChanges, List<Change> changes, ValidationReport report) {
     public Comparison {
       changes = List.copyOf(changes);
     }
@@ -81,12 +63,12 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   /** In-memory value JSON. This is not the owner's file format, a file write or publication. */
   public static final class ExportArtifact {
-    private final DraftRef draft;
+    private final DraftRevision draft;
     private final int schemaVersion;
     private final byte[] bytes;
     private final String sha256;
 
-    private ExportArtifact(DraftRef draft, int schemaVersion, byte[] bytes) {
+    private ExportArtifact(DraftRevision draft, int schemaVersion, byte[] bytes) {
       this.draft = draft;
       this.schemaVersion = schemaVersion;
       this.bytes = bytes.clone();
@@ -97,7 +79,7 @@ public final class DocumentActions<T> implements AutoCloseable {
       }
     }
 
-    public DraftRef draft() {
+    public DraftRevision draft() {
       return draft;
     }
 
@@ -165,6 +147,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationDescriptor<FieldInput, EditorActor.View<T>> edit;
   private final OperationDescriptor<DraftEdit, EditorActor.View<T>> structure;
   private final OperationDescriptor<Empty, EditorActor.Commit<T>> save, apply, admit;
+  private final OperationDescriptor<DraftRevision, EditorActor.Commit<T>> reviewedCommit;
   private final OperationDescriptor<Empty, EditorActor.Validation> validate;
   private final OperationDescriptor<Empty, EditorActor.Inspection<T>> explain;
   private final OperationDescriptor<Empty, Comparison> compare;
@@ -192,9 +175,8 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (!context.id().equals(actor.context()) || maximumExportBytes < 1)
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
-    if (limits.maximumDefinitions() < 17)
-      throw new IllegalArgumentException(
-          "Actions require room for seventeen operation definitions");
+    if (limits.maximumDefinitions() < 18)
+      throw new IllegalArgumentException("Actions require room for eighteen operation definitions");
     this.context = context;
     this.access = access;
     this.actor = actor;
@@ -259,6 +241,21 @@ public final class DocumentActions<T> implements AutoCloseable {
         admit,
         (execution, request) ->
             actor.admit(execution::checkpoint).thenApply(DocumentActions::checkedSave));
+    reviewedCommit =
+        descriptor(
+            "commit_reviewed",
+            DraftRevision.type(),
+            OwnerContext.Right.WRITE,
+            actor.commitKind() == DocumentSession.CommitKind.PERSIST
+                ? Set.of(OperationDescriptor.Effect.PERSIST, OperationDescriptor.Effect.APPLY)
+                : Set.of(OperationDescriptor.Effect.APPLY));
+    scope.register(
+        reviewedCommit,
+        (execution, request) ->
+            (actor.commitKind() == DocumentSession.CommitKind.PERSIST
+                    ? actor.save(request, execution::checkpoint)
+                    : actor.admit(request, execution::checkpoint))
+                .thenApply(DocumentActions::checkedSave));
     apply =
         descriptor(
             "apply_saved",
@@ -481,6 +478,12 @@ public final class DocumentActions<T> implements AutoCloseable {
     return commitKind() == DocumentSession.CommitKind.PERSIST ? save(entry) : admit(entry);
   }
 
+  /** Refuses a changed capture before preparation; later edits retain normal acknowledgement. */
+  public OperationHandle<EditorActor.Commit<T>> commit(
+      OperationDescriptor.EntryPoint entry, DraftRevision reviewed) {
+    return scope.submit(reviewedCommit, entry, reviewed, readiness(entry));
+  }
+
   public OperationHandle<EditorActor.Commit<T>> admit(OperationDescriptor.EntryPoint entry) {
     return scope.submit(admit, entry, Empty.VALUE, readiness(entry));
   }
@@ -648,8 +651,8 @@ public final class DocumentActions<T> implements AutoCloseable {
             .toList());
   }
 
-  private DraftRef ref(EditorActor.Inspection<T> observed) {
-    return DraftRef.of(observed.snapshot());
+  private DraftRevision ref(EditorActor.Inspection<T> observed) {
+    return DraftRevision.of(observed.snapshot());
   }
 
   private Comparison compare(EditorActor.Inspection<T> observed) {

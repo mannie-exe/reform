@@ -78,19 +78,24 @@ def successful_run(result, mode, digest):
             and (not mode.startswith("catalog") or (native.get("catalog", {}).get("status") == "PASS"
                                                    and native.get("catalog", {}).get("editorClosed") is True
                                                    and native.get("catalog", {}).get("factoryClosed") is True))
+            and (not mode.startswith("review") or (native.get("review", {}).get("status") == "PASS"
+                                                  and native.get("review", {}).get("editorClosed") is True
+                                                  and native.get("review", {}).get("factoryClosed") is True))
             and (mode != "recipe" or native.get("recipe", {}).get("managedShutdownClosed") is True))
 
 
 def successful_report(report, modes, digest):
-    captures = {f"form-catalog-{size}{frame}.png"
-                for size in ("wide", "narrow", "localized") for frame in ("", "-entry")} if "catalog" in modes else set()
+    captures = {f"form-{family}-{size}{frame}.png"
+                for family, sizes in {"catalog": ("wide", "narrow", "localized"),
+                                      "review": ("diagnostics", "narrow")}.items() if family in modes
+                for size in sizes for frame in ("", "-entry")}
     return (len(report["runs"]) == len(modes)
             and all(successful_run(result, mode, digest)
                     for result, mode in zip(report["runs"], modes))
             and captures.issubset(report["screenshots"]))
 
 
-def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False):
+def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False, review_only=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
@@ -116,7 +121,9 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                           Path(__file__).resolve(), ROOT / "tools/native_config_probe.py"]):
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-form-client.log"
-    if catalog_only:
+    if review_only:
+        modes = ("review", "review-reopen")
+    elif catalog_only:
         modes = ("catalog", "catalog-reopen")
     elif keys_factory_only:
         modes = ("keys-factory", "keys-factory-reopen")
@@ -154,7 +161,7 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                  "dependencies", "dependencies-reopen", "collections", "collections-reopen",
                  "imports", "imports-reopen", "command-imports", "command-imports-reopen", "conflicts", "conflicts-reopen",
                  "command-conflicts", "command-conflicts-reopen", "keys-owner", "keys-owner-reopen",
-                 "keys-controls", "keys-controls-reopen", "keys-factory", "keys-factory-reopen", "catalog", "catalog-reopen")
+                 "keys-controls", "keys-controls-reopen", "keys-factory", "keys-factory-reopen", "catalog", "catalog-reopen", "review", "review-reopen")
     try:
         for mode in modes:
             if mode == "numeric":
@@ -226,7 +233,8 @@ if __name__ == "__main__":
     modes.add_argument("--keys-controls-only", action="store_true", help="Run native key capture/reset/conflict controls and saved reopen")
     modes.add_argument("--keys-factory-only", action="store_true", help="Run ordinary native key factory, failed-view ownership and GUI/command/reopen controls")
     modes.add_argument("--catalog-only", action="store_true", help="Run native profile catalog, retained drafts, focus/reflow and saved reopen")
+    modes.add_argument("--review-only", action="store_true", help="Run native source/value inspection, related diagnostics and unchanged-source reopen")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only, args.review_only))

@@ -25,6 +25,7 @@ class DraftDescriptionsTest {
     assertEquals("\"null\"", text.render(new DraftNode.Scalar("null")));
     assertEquals(
         "\"Café\\u000a\\u202e\\ud800\"", text.render(new DraftNode.Scalar("Café\n\u202e\ud800")));
+    assertEquals("\"\\u00a7k\"", text.render(new DraftNode.Scalar("\u00a7k")));
   }
 
   @Test

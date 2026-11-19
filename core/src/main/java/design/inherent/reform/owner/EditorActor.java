@@ -6,6 +6,7 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftEditRefusal;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
@@ -629,21 +630,42 @@ public final class EditorActor<T> implements AutoCloseable {
       return java.util.concurrent.CompletableFuture.failedFuture(
           new PolicyRefusal(
               "owner.unsupported", "This source is admitted to its context, not saved to a file"));
-    return commit(beforeCommit);
+    return commit(Optional.empty(), beforeCommit);
+  }
+
+  /** The expected revision is checked inside the serialized submission-capture task, once. */
+  public CompletionStage<Commit<T>> save(DraftRevision reviewed, Runnable beforeCommit) {
+    if (commitKind() != DocumentSession.CommitKind.PERSIST)
+      return java.util.concurrent.CompletableFuture.failedFuture(
+          new PolicyRefusal("owner.unsupported", "This source uses context admission"));
+    return commit(Optional.of(reviewed), beforeCommit);
   }
 
   public CompletionStage<Commit<T>> admit(Runnable beforeCommit) {
     if (commitKind() != DocumentSession.CommitKind.CONTEXT)
       return java.util.concurrent.CompletableFuture.failedFuture(
           new PolicyRefusal("owner.unsupported", "This source uses its persistence operation"));
-    return commit(beforeCommit);
+    return commit(Optional.empty(), beforeCommit);
   }
 
-  private CompletionStage<Commit<T>> commit(Runnable beforeCommit) {
+  /** Context admission preserves the same exact-review boundary as file saving. */
+  public CompletionStage<Commit<T>> admit(DraftRevision reviewed, Runnable beforeCommit) {
+    if (commitKind() != DocumentSession.CommitKind.CONTEXT)
+      return java.util.concurrent.CompletableFuture.failedFuture(
+          new PolicyRefusal("owner.unsupported", "This source uses persistence"));
+    return commit(Optional.of(reviewed), beforeCommit);
+  }
+
+  private CompletionStage<Commit<T>> commit(
+      Optional<DraftRevision> reviewed, Runnable beforeCommit) {
     Objects.requireNonNull(beforeCommit);
     return act(() -> {
           beforeCommit.run();
           var selected = ready();
+          if (reviewed.filter(value -> !value.matches(selected.editor.snapshot())).isPresent())
+            throw new PolicyRefusal(
+                "editor.review_changed",
+                "The reviewed draft changed; review it again before saving");
           var prepared = selected.editor.prepareSubmission();
           publish(selected);
           if (prepared.submission().isEmpty()) throw new PolicyRefusal(prepared.report());

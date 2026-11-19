@@ -4,6 +4,7 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.edit.EditSession;
@@ -71,7 +72,7 @@ public final class DocumentImports<T> implements AutoCloseable {
   /** Immutable public review metadata. Only this service's actual issued instance can be staged. */
   public static final class Preview {
     private final UUID id = UUID.randomUUID();
-    private final DocumentActions.DraftRef target;
+    private final DraftRevision target;
     private final Source source;
     private final Format format;
     private final OptionalInt sourceSchemaVersion;
@@ -80,7 +81,7 @@ public final class DocumentImports<T> implements AutoCloseable {
     private final boolean comparisonAvailable, authoredChanges, inputChanges, stageable;
 
     private Preview(
-        DocumentActions.DraftRef target,
+        DraftRevision target,
         Source source,
         Format format,
         OptionalInt sourceSchemaVersion,
@@ -108,7 +109,7 @@ public final class DocumentImports<T> implements AutoCloseable {
       return id;
     }
 
-    public DocumentActions.DraftRef target() {
+    public DraftRevision target() {
       return target;
     }
 
@@ -452,11 +453,11 @@ public final class DocumentImports<T> implements AutoCloseable {
     return actor.stage(target, selected.draft(), "Import profile");
   }
 
-  private DocumentActions.DraftRef ref(EditSession.Snapshot<T> snapshot) {
-    return DocumentActions.DraftRef.of(snapshot);
+  private DraftRevision ref(EditSession.Snapshot<T> snapshot) {
+    return DraftRevision.of(snapshot);
   }
 
-  private void requireTarget(DocumentActions.DraftRef target) {
+  private void requireTarget(DraftRevision target) {
     var actual = actor.view();
     if (actual.availability() != EditorActor.Availability.READY
         || actual.snapshot().filter(value -> target.equals(ref(value))).isEmpty())
