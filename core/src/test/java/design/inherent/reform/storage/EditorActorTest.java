@@ -68,6 +68,7 @@ class EditorActorTest {
     final ExecutorService nativeExecutor = Executors.newSingleThreadExecutor();
     final ExecutorService workers = Executors.newFixedThreadPool(2);
     final AtomicBoolean delayWrite = new AtomicBoolean(), delayRead = new AtomicBoolean();
+    final AtomicBoolean readAllowed = new AtomicBoolean(true);
     final AtomicInteger nativeValidators = new AtomicInteger();
     final ConcurrentHashMap<Integer, Long> validationThreads = new ConcurrentHashMap<>();
     final CountDownLatch written = new CountDownLatch(1), releaseWrite = new CountDownLatch(1);
@@ -125,7 +126,7 @@ class EditorActorTest {
                           reading.countDown();
                           waitFor(releaseRead);
                         }
-                        return true;
+                        return readAllowed.get();
                       },
                       () -> true));
       var source = nativeCall(() -> owner.open(access));
@@ -404,6 +405,52 @@ class EditorActorTest {
                       ConflictReview.Entry::path, ignored -> ConflictReview.Choice.DRAFT));
       assertEquals(3, value(await(h.actor.resolve(currentReview, freshChoices))));
       assertTrue(Files.readString(h.path).contains("14"));
+    }
+  }
+
+  @Test
+  void aRefusedReloadCannotLeaveAnOlderSavedReviewQualified() throws Exception {
+    try (var h = new Harness(true)) {
+      await(h.actor.setRaw(COUNT_PATH, "3"));
+      Files.writeString(h.path, "{\"schemaVersion\":1,\"values\":{\"count\":13}}");
+      var review = await(h.actor.load()).review().orElseThrow();
+      var choices =
+          review.entries().stream()
+              .collect(
+                  Collectors.toMap(
+                      ConflictReview.Entry::path, ignored -> ConflictReview.Choice.DRAFT));
+      h.readAllowed.set(false);
+      assertThrows(ExecutionException.class, () -> await(h.actor.load()));
+      h.readAllowed.set(true);
+      assertSame(review, h.actor.view().review().orElseThrow());
+      assertThrows(ExecutionException.class, () -> await(h.actor.resolve(review, choices)));
+      assertFalse(h.actor.view().conflictObservationAvailable());
+      assertEquals(3, value(h.actor.view()));
+      assertTrue(Files.readString(h.path).contains("13"));
+      var refreshed = await(h.actor.load());
+      assertTrue(refreshed.conflictObservationAvailable());
+    }
+  }
+
+  @Test
+  void anOutstandingReloadCannotResolveThePreviousObservation() throws Exception {
+    try (var h = new Harness(true)) {
+      await(h.actor.setRaw(COUNT_PATH, "3"));
+      Files.writeString(h.path, "{\"schemaVersion\":1,\"values\":{\"count\":13}}");
+      var review = await(h.actor.load()).review().orElseThrow();
+      var choices =
+          review.entries().stream()
+              .collect(
+                  Collectors.toMap(
+                      ConflictReview.Entry::path, ignored -> ConflictReview.Choice.DRAFT));
+      h.delayRead.set(true);
+      var reading = h.actor.load();
+      waitFor(h.reading);
+      assertFalse(h.actor.view().conflictObservationAvailable());
+      assertThrows(ExecutionException.class, () -> await(h.actor.resolve(review, choices)));
+      assertEquals(3, value(h.actor.view()));
+      h.releaseRead.countDown();
+      assertTrue(await(reading).conflictObservationAvailable());
     }
   }
 

@@ -4,7 +4,7 @@
 
 ## Compare actual input
 
-`preview(entryPoint)` prepares a complete bounded comparison from the actor's qualified observation. A cold workflow can complete its normal first-use load; preview does not continuously reread an already loaded file. Use the shared Reload operation to observe later external changes. A failed read preserves draft work but invalidates earlier source qualification, so its previous review cannot resolve.
+`preview(entryPoint)` prepares a complete bounded comparison from the actor's qualified observation. A cold workflow can complete its normal first-use load; preview does not continuously reread an already loaded file. Use the shared Reload operation to observe later external changes. Requesting that read invalidates earlier source qualification until an admitted observation returns. A refused/thrown read or unavailable observation preserves draft work without reviving its previous resolution authority.
 
 An issued `Preview` identifies the exact editor/context/generation/version, observed revision, source description and diagnostics. Its `basis()` distinguishes the earlier observed baseline from a submitted draft during save reconciliation. Baseline input and a saved revision are different identities. Preview IDs are descriptive; only this service's actual issued instance is admitted.
 

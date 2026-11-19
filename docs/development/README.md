@@ -5,6 +5,7 @@
 - [Editing](editing.md) owns raw drafts, history, submissions and conflict review.
 - [Owned storage](storage.md) owns bounded file and typed JSON backend behavior.
 - [Native settings](native-settings.md) owns qualified serializer/callback constraints.
+- [Native keys](native-keys.md) owns admitted Controls bindings and actual Options persistence.
 - [Publication](publication.md) owns effective handles and context/revision checks.
 - [Owners](owners.md) owns asynchronous actor sessions, shared admission and outcome receipts.
 - [Operations](operations.md) owns shared local GUI/command services, progress and cancellation.

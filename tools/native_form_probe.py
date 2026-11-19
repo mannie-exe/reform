@@ -68,10 +68,12 @@ def successful_run(result, mode, digest):
             and (not mode.startswith("conflicts") or native.get("conflicts", {}).get("status") == "PASS")
             and (not mode.startswith("command-conflicts") or (native.get("commandConflicts", {}).get("status") == "PASS"
                                                             and native.get("commandConflicts", {}).get("contextClosed") is True))
+            and (not mode.startswith("keys-owner") or (native.get("keyOwner", {}).get("status") == "PASS"
+                                                      and native.get("keyOwner", {}).get("contextClosed") is True))
             and (mode != "recipe" or native.get("recipe", {}).get("managedShutdownClosed") is True))
 
 
-def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False):
+def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
@@ -97,7 +99,9 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                           Path(__file__).resolve(), ROOT / "tools/native_config_probe.py"]):
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-form-client.log"
-    if command_conflicts_only:
+    if keys_owner_only:
+        modes = ("keys-owner", "keys-owner-reopen")
+    elif command_conflicts_only:
         modes = ("command-conflicts", "command-conflicts-reopen")
     elif conflicts_only:
         modes = ("conflicts", "conflicts-reopen")
@@ -126,7 +130,7 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                  "structured-reopen", "references", "references-reopen", "numeric", "numeric-reopen",
                  "dependencies", "dependencies-reopen", "collections", "collections-reopen",
                  "imports", "imports-reopen", "command-imports", "command-imports-reopen", "conflicts", "conflicts-reopen",
-                 "command-conflicts", "command-conflicts-reopen")
+                 "command-conflicts", "command-conflicts-reopen", "keys-owner", "keys-owner-reopen")
     try:
         for mode in modes:
             if mode == "numeric":
@@ -196,7 +200,8 @@ if __name__ == "__main__":
     modes.add_argument("--chooser-only", action="store_true", help="Opt-in native OS dialog controls; requires an external desktop driver")
     modes.add_argument("--conflicts-only", action="store_true", help="Run native manual conflict choices, validation and saved reopen")
     modes.add_argument("--command-conflicts-only", action="store_true", help="Run native Brigadier manual conflict choices and saved reopen")
+    modes.add_argument("--keys-owner-only", action="store_true", help="Run actual native Options key owner and saved reopen")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only))

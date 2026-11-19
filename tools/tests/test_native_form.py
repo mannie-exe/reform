@@ -92,12 +92,14 @@ class NativeFormFixtureGuards(unittest.TestCase):
         result["native"]["nativeShutdownClosed"] = False
         self.assertFalse(PROBE.successful_run(result, "conflicts", "exact-jar"))
 
-    def test_conflict_commands_require_a_closed_native_context(self):
-        result = {"exitCode": 0, "termination": None, "native": {
-            "status": "PASS", "nativeShutdownClosed": True, "mode": "command-conflicts",
-            "librarySha256": "exact-jar", "commandConflicts": {"status": "PASS", "contextClosed": False}}}
-        self.assertFalse(PROBE.successful_run(result, "command-conflicts", "exact-jar"))
-        result["native"]["commandConflicts"]["contextClosed"] = True
-        self.assertTrue(PROBE.successful_run(result, "command-conflicts", "exact-jar"))
-        self.assertFalse(PROBE.successful_run(result, "command-conflicts-reopen", "exact-jar"))
-        self.assertFalse(PROBE.successful_run(result, "command-conflicts", "different-jar"))
+    def test_native_owned_workflows_require_a_closed_context(self):
+        for mode, field in [("command-conflicts", "commandConflicts"), ("keys-owner", "keyOwner")]:
+            with self.subTest(mode=mode):
+                result = {"exitCode": 0, "termination": None, "native": {
+                    "status": "PASS", "nativeShutdownClosed": True, "mode": mode,
+                    "librarySha256": "exact-jar", field: {"status": "PASS", "contextClosed": False}}}
+                self.assertFalse(PROBE.successful_run(result, mode, "exact-jar"))
+                result["native"][field]["contextClosed"] = True
+                self.assertTrue(PROBE.successful_run(result, mode, "exact-jar"))
+                self.assertFalse(PROBE.successful_run(result, mode + "-reopen", "exact-jar"))
+                self.assertFalse(PROBE.successful_run(result, mode, "different-jar"))

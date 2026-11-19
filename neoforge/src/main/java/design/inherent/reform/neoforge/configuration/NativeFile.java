@@ -17,8 +17,8 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Set;
 
-/** Exact admitted native file, read only. Native FML remains the sole serializer/writer. */
-final class NativeFile {
+/** Exact bounded native-source snapshot, read only. Its actual owner remains the sole writer. */
+public final class NativeFile {
   private final byte[] bytes;
   final String revision;
 
@@ -32,7 +32,9 @@ final class NativeFile {
     }
   }
 
-  static NativeFile read(Path path, int maximumBytes) throws IOException {
+  public static NativeFile read(Path path, int maximumBytes) throws IOException {
+    if (maximumBytes < 1 || maximumBytes > 16_777_216)
+      throw new IllegalArgumentException("Invalid bounded native source size");
     var before = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
     if (!before.isRegularFile() || before.size() > maximumBytes)
       throw new IOException("Native source is not an admitted regular file");
@@ -52,7 +54,7 @@ final class NativeFile {
     return new NativeFile(Arrays.copyOf(buffer.array(), buffer.position()));
   }
 
-  String text() throws CharacterCodingException {
+  public String text() throws CharacterCodingException {
     return StandardCharsets.UTF_8
         .newDecoder()
         .onMalformedInput(CodingErrorAction.REPORT)
@@ -61,7 +63,11 @@ final class NativeFile {
         .toString();
   }
 
-  boolean same(NativeFile other) {
+  public String revision() {
+    return revision;
+  }
+
+  public boolean same(NativeFile other) {
     return Arrays.equals(bytes, other.bytes);
   }
 }

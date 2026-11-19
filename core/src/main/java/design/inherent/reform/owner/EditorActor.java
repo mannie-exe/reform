@@ -415,6 +415,12 @@ public final class EditorActor<T> implements AutoCloseable {
   public CompletionStage<View<T>> load() {
     return act(() -> {
           var selected = model;
+          if (selected != null) {
+            // A requested read supersedes earlier qualification even if the owner throws or
+            // refuses before it can return an observation. Restore it only from an admitted read.
+            selected.conflictSourceAvailable = false;
+            publish(selected);
+          }
           return selected == null ? null : selected.editor.snapshot();
         })
         .thenCompose(

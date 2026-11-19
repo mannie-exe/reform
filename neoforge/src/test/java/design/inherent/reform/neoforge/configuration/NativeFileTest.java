@@ -36,6 +36,14 @@ class NativeFileTest {
   }
 
   @Test
+  void publicSnapshotRejectsInvalidBudgetsBeforeReading() {
+    var missing = directory.resolve("missing-options.txt");
+    for (int limit : new int[] {-1, 0, 16_777_217, Integer.MAX_VALUE})
+      assertThrows(IllegalArgumentException.class, () -> NativeFile.read(missing, limit));
+    assertFalse(Files.exists(missing));
+  }
+
+  @Test
   void refusesMissingDirectoryOversizeAndLinkWithoutCreatingAnything() throws Exception {
     assertThrows(IOException.class, () -> NativeFile.read(directory.resolve("absent"), 16));
     assertThrows(IOException.class, () -> NativeFile.read(directory, 16));
