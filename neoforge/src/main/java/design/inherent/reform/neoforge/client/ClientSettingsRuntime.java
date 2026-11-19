@@ -15,7 +15,9 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import net.minecraft.client.Minecraft;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
 
@@ -23,14 +25,17 @@ import net.neoforged.neoforge.event.GameShuttingDownEvent;
 final class ClientSettingsRuntime {
   private record Document(Object owner, Runnable close, String ownedFile, Object nativeIdentity) {}
 
+  private record LocalContext(OwnerContext owner, BooleanSupplier current) {}
+
   private static final Object GATE = new Object();
   private static final Map<DocumentId, Document> documents = new LinkedHashMap<>();
-  private static final Map<UUID, OwnerContext> contexts = new LinkedHashMap<>();
+  private static final Map<UUID, LocalContext> contexts = new LinkedHashMap<>();
   private static ThreadPoolExecutor workers;
   private static boolean closing;
 
   static {
     NeoForge.EVENT_BUS.addListener(ClientSettingsRuntime::shutdown);
+    NeoForge.EVENT_BUS.addListener(ClientSettingsRuntime::expire);
   }
 
   /** Metadata registration can occur during mod construction; no worker or file is initialized. */
@@ -110,12 +115,20 @@ final class ClientSettingsRuntime {
 
   /** Shorter-lived contexts have their own admission budget, separate from registered documents. */
   static void manageContext(OwnerContext context) {
+    manageContext(context, () -> true);
+  }
+
+  /**
+   * A client-thread guard can retire a presentation even while one of its child screens is open.
+   */
+  static void manageContext(OwnerContext context, BooleanSupplier current) {
     requireClientThread();
     synchronized (GATE) {
       if (closing || contexts.size() >= 128)
         throw new IllegalStateException("Client context admission is closed or full");
-      if (contexts.putIfAbsent(context.id(), context) != null)
-        throw new IllegalArgumentException("Client context already managed");
+      if (contexts.putIfAbsent(
+              context.id(), new LocalContext(context, Objects.requireNonNull(current)))
+          != null) throw new IllegalArgumentException("Client context already managed");
       try {
         context.onClose(
             () -> {
@@ -128,6 +141,15 @@ final class ClientSettingsRuntime {
         throw failed;
       }
     }
+  }
+
+  private static void expire(ClientTickEvent.Post event) {
+    final List<LocalContext> selected;
+    synchronized (GATE) {
+      if (contexts.isEmpty()) return;
+      selected = List.copyOf(contexts.values());
+    }
+    for (var context : selected) if (!context.current().getAsBoolean()) context.owner().close();
   }
 
   /** Borrow the same pool without creating/initializing any document or taking pool ownership. */
@@ -163,7 +185,7 @@ final class ClientSettingsRuntime {
 
   private static void shutdown(GameShuttingDownEvent event) {
     final List<Document> selected;
-    final List<OwnerContext> selectedContexts;
+    final List<LocalContext> selectedContexts;
     final ThreadPoolExecutor executor;
     synchronized (GATE) {
       closing = true;
@@ -186,7 +208,7 @@ final class ClientSettingsRuntime {
       }
       for (var context : selectedContexts) {
         try {
-          context.close();
+          context.owner().close();
         } catch (RuntimeException | Error failed) {
           if (failure == null) failure = failed;
           else if (failure != failed) failure.addSuppressed(failed);

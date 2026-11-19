@@ -1,7 +1,9 @@
 package example.reform;
 
 import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.IntegratedSettings;
 import java.util.Objects;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -31,6 +33,13 @@ public final class ClientExample {
 
   public static ClientFileSettings<NativeExample.Preferences> settings() {
     return Objects.requireNonNull(preferences, "Client example has not registered");
+  }
+
+  public static Screen worldPolicy(Screen parent, boolean registered) {
+    return IntegratedSettings.screen(
+        parent,
+        Component.literal(registered ? "Native server policy" : "World file policy"),
+        registered ? ServerPolicyExample.NATIVE : ServerPolicyExample.DEFINITION.id());
   }
 
   private ClientExample() {}

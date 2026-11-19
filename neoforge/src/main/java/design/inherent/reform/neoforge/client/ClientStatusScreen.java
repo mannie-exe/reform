@@ -12,9 +12,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-/**
- * Cached setup/availability UI; no source, serializer, context or editor is created by this view.
- */
+/** Cached setup/availability UI with optional entry and retirement callbacks. */
 final class ClientStatusScreen extends FormScreen {
   record State(boolean ready, boolean canRetry, Component message) {
     State {
@@ -26,6 +24,7 @@ final class ClientStatusScreen extends FormScreen {
   private final Supplier<State> state;
   private final Supplier<Screen> editor;
   private final Optional<Runnable> retry;
+  private final Runnable enter, retire;
   private State displayed;
   private FormPanel diagnostics;
   private Object widgets;
@@ -37,11 +36,24 @@ final class ClientStatusScreen extends FormScreen {
       Supplier<State> state,
       Supplier<Screen> editor,
       Optional<Runnable> retry) {
+    this(parent, title, state, editor, retry, () -> {}, () -> {});
+  }
+
+  ClientStatusScreen(
+      Screen parent,
+      Component title,
+      Supplier<State> state,
+      Supplier<Screen> editor,
+      Optional<Runnable> retry,
+      Runnable enter,
+      Runnable retire) {
     super(title);
     this.parent = parent;
     this.state = Objects.requireNonNull(state);
     this.editor = Objects.requireNonNull(editor);
     this.retry = Objects.requireNonNull(retry);
+    this.enter = Objects.requireNonNull(enter);
+    this.retire = Objects.requireNonNull(retire);
   }
 
   private static Component text(String key, String fallback) {
@@ -62,6 +74,7 @@ final class ClientStatusScreen extends FormScreen {
 
   @Override
   protected void init() {
+    enter.run();
     widgets = new Object();
     displayed = state.get();
     float scroll = diagnostics == null ? 0 : diagnostics.scroll();
@@ -140,5 +153,6 @@ final class ClientStatusScreen extends FormScreen {
   @Override
   public void removed() {
     closed = true;
+    retire.run();
   }
 }

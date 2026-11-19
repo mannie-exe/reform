@@ -87,6 +87,7 @@ public final class NativeFormProbe {
   private NativeWorkflowControls workflow;
   private NativeBatchControls batch;
   private NativeWorldDefaultsControls defaults;
+  private NativeIntegratedPolicyControls integrated;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -157,6 +158,8 @@ public final class NativeFormProbe {
               "workflow-reopen",
               "batch",
               "batch-reopen",
+              "integrated",
+              "integrated-reopen",
               "defaults",
               "defaults-reopen",
               "defaults-invalid")
@@ -388,6 +391,22 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("integrated")) {
+        if (integrated == null) {
+          if (!(mc.screen instanceof TitleScreen)) return;
+          recordArtifact();
+          integrated =
+              new NativeIntegratedPolicyControls(
+                  mode.endsWith("-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (integrated.tick()) finish(null);
         return;
       }
       if (mode.startsWith("defaults")) {
@@ -1268,6 +1287,7 @@ public final class NativeFormProbe {
     if (workflow != null) report.add("workflow", workflow.report());
     if (batch != null) report.add("batch", batch.report());
     if (defaults != null) report.add("defaults", defaults.report());
+    if (integrated != null) report.add("integrated", integrated.report());
     if (numeric != null) report.add("numeric", numeric.report());
     if (dependencies != null) report.add("dependencies", dependencies.report());
     if (collections != null) report.add("collections", collections.report());

@@ -239,12 +239,40 @@ public final class EditorActor<T> implements AutoCloseable {
       JsonLimits jsonLimits,
       DraftLimits draftLimits,
       int maximumEdits) {
+    this(context, source, definition, jsonLimits, draftLimits, maximumEdits, false);
+  }
+
+  /**
+   * Edit an already admitted in-process source under a separate presentation lifetime. The source
+   * retains authority, execution and observation identities. Closing the editor closes the supplied
+   * session, whose close operation must be safe from the presentation thread.
+   */
+  public static <T> EditorActor<T> presenting(
+      OwnerContext context,
+      DocumentSession<T> source,
+      DocumentDefinition<T> definition,
+      JsonLimits jsonLimits,
+      DraftLimits draftLimits,
+      int maximumEdits) {
+    return new EditorActor<>(
+        context, source, definition, jsonLimits, draftLimits, maximumEdits, true);
+  }
+
+  private EditorActor(
+      OwnerContext context,
+      DocumentSession<T> source,
+      DocumentDefinition<T> definition,
+      JsonLimits jsonLimits,
+      DraftLimits draftLimits,
+      int maximumEdits,
+      boolean presentation) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.source = Objects.requireNonNull(source);
     commitKind = Objects.requireNonNull(source.commitKind());
     supportedOperations = java.util.Set.copyOf(source.operations());
-    if (!source.context().equals(context.id()) || source.definition() != definition)
+    if ((!presentation && !source.context().equals(context.id()))
+        || source.definition() != definition)
       throw new IllegalArgumentException("Editor requires its actual context and owner definition");
     this.definition = Objects.requireNonNull(definition);
     this.jsonLimits = Objects.requireNonNull(jsonLimits);
@@ -342,6 +370,7 @@ public final class EditorActor<T> implements AutoCloseable {
                   .read()
                   .thenCompose(
                       current -> {
+                        requireObservation(current);
                         if (!current
                             .document()
                             .revision()
@@ -394,6 +423,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                     selected.lastReceipt = receipt;
                                     receipt
                                         .observation()
+                                        .filter(this::ownsObservation)
                                         .filter(observed -> selected.source == plan.baseline)
                                         .ifPresent(
                                             observed -> {
@@ -436,6 +466,15 @@ public final class EditorActor<T> implements AutoCloseable {
     context.requireCurrent();
     if (!open) throw new PolicyRefusal("editor.closed", "This editing workflow is closed");
     if (!source.isOpen()) throw new PolicyRefusal(SOURCE_CLOSED);
+  }
+
+  private boolean ownsObservation(OwnerObservation<T> observed) {
+    return source.context().equals(observed.context()) && source.id().equals(observed.session());
+  }
+
+  private void requireObservation(OwnerObservation<T> observed) {
+    if (!ownsObservation(observed))
+      throw new PolicyRefusal("owner.session", "Observation belongs to another source session");
   }
 
   private void owningTask() {
@@ -515,9 +554,7 @@ public final class EditorActor<T> implements AutoCloseable {
                         observed ->
                             act(
                                 () -> {
-                                  if (!observed.context().equals(context.id()))
-                                    throw new PolicyRefusal(
-                                        "owner.context", "Observation belongs to another context");
+                                  requireObservation(observed);
                                   var selected = model;
                                   if (selected != null
                                       && (expected == null
@@ -570,7 +607,7 @@ public final class EditorActor<T> implements AutoCloseable {
                                       new Model(
                                           EditSession.fromDraft(
                                               definition,
-                                              observed.context(),
+                                              context.id(),
                                               observed.document().revision(),
                                               observed.document().draft().orElseThrow(),
                                               jsonLimits,
@@ -809,7 +846,7 @@ public final class EditorActor<T> implements AutoCloseable {
     selected.lastReceipt = receipt;
     selected.operationReport = receipt.persistenceReport().and(receipt.applicationReport());
     if (receipt.acknowledgesBaseline()) {
-      var observed = receipt.observation();
+      var observed = receipt.observation().filter(this::ownsObservation);
       if (observed.isPresent() && observed.orElseThrow().document().draft().isPresent()) {
         var source = observed.orElseThrow();
         var accepted =
@@ -830,6 +867,7 @@ public final class EditorActor<T> implements AutoCloseable {
       selected.pending = null;
       receipt
           .observation()
+          .filter(this::ownsObservation)
           .ifPresent(
               observed -> {
                 selected.conflictSourceAvailable = observed.document().draft().isPresent();

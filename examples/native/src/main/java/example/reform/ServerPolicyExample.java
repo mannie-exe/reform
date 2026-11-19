@@ -40,6 +40,7 @@ public final class ServerPolicyExample {
   private final ModConfigSpec spec;
   private ModConfig config;
   private int reloads;
+  private Thread reloadThread;
 
   public ServerPolicyExample(IEventBus bus, ModContainer container) {
     this.container = container;
@@ -61,7 +62,10 @@ public final class ServerPolicyExample {
   }
 
   private void reloading(ModConfigEvent.Reloading event) {
-    if (event.getConfig() == config) reloads++;
+    if (event.getConfig() == config) {
+      reloads++;
+      reloadThread = Thread.currentThread();
+    }
   }
 
   private void unloading(ModConfigEvent.Unloading event) {
@@ -97,5 +101,9 @@ public final class ServerPolicyExample {
 
   public int reloads() {
     return reloads;
+  }
+
+  public Thread reloadThread() {
+    return reloadThread;
   }
 }

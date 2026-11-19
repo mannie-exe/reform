@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Integrated host policy editing
+
+The combined artifact is `e4fec15af279449ef197220d963501d32b9c772a29c5ebb0b6c84346e78fcc4c`, sources `e77bf6ea7f01063bf8da9d97421b5fda0bf6a275fa733e481a5654607c625d69` and core `0e0ae9c4ef8f605d810b8f7f553c7fd829f0b36ae07c7e5d3b92410a84a58422`. All 146 owned Java source entries match their repository files. `spotlessApply check build` and `mise run check` cover formatting, packaging, 523 core cases, eight adapter cases, 31 tooling cases and both independent consumers.
+
+`native_form_probe.py --integrated-only --java-home /path/to/jdk21 --timeout 150` passes 25 and 11 checks in two disposable 2 GiB clients at 14.814 and 13.370 seconds. Each uses an actual native integrated server and local memory connection. An unprivileged host with a deliberately stale positive client permission receives no source. Native console substitution is refused. The public form opens with matching actual permission. Holding the server executor limits 72 abandoned opens to 64 queued calls and releases all 64 access slots after drain. Captured reviews and receipts keep the separate draft, source and runtime identities. Native form events save JSON `6 → 10` and TOML `4 → 11`. A server-side permission revocation with a stale client mirror refuses the next save and retains the draft until the native permission update closes the presentation. Native disconnect closes actual owners and views. A second JVM reads both saved values. Matched rendered form frames were inspected.
+
+The file policy persists in its explicit world directory. The TOML is loaded from the installation config directory in this fixture, with no world override. Its receipt and fresh Explain report carry that exact path. The reload listener ran once on the integrated server thread. The first two fixture attempts had incorrect expectations about runtime handle identity and the loader's file path. Retained failure reports and their exact probe sources document those controls. Product bytes were unchanged across those attempts and the passing runs.
+
+`native_addon_server_probe.py --policies --java-home /path/to/jdk21 --timeout 150` passes 29 checks on each of two dedicated boots in 8.616 and 8.029 seconds on the same artifact, including an actual native world config override. Marked fixtures were removed after the runs. [Server settings](server-settings.md#settings-for-a-running-singleplayer-world) owns the contract. LAN guests and TCP dedicated players, same-process replacement, permission changes during a started write, server command routing and pack/cost gates remain separate qualification. Phase 1 remains incomplete. The artifact is local.
+
 ## Future-world defaults and explicit recipe staging
 
 The defaults snapshot passes `spotlessApply check build` and `mise run check`: 523 core cases, eight native adapter cases, 31 tooling cases, independent public-artifact execution and native addon/probe compilation. Combined artifact `1c3951471d2bb0259b525cb3db670a787d3fc960f82e3dd067488a4a105714e8`, sources `6f30a451858b8e501f1633848635f4de12cd5e34ccf2284acecaab631f2b9d95` and core `54d5bbe1a8437045bab9e09aee8ff12ed58b48f4c026077ae20e0c5f08b67582` identify this cut. All 145 owned source entries match their files.

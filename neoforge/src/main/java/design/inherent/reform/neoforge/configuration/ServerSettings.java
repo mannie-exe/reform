@@ -21,7 +21,6 @@ import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.storage.TextStore;
 import design.inherent.reform.value.ValueType;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -30,9 +29,12 @@ import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.MinecraftServer;
@@ -49,6 +51,8 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 public final class ServerSettings implements AutoCloseable {
   private static final Map<MinecraftServer, ServerSettings> SERVERS = new IdentityHashMap<>();
   private static final JsonLimits VALUES = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
+  private static final OperationScope.Limits ACTIONS =
+      new OperationScope.Limits(32, 64, 128, OperationScope.Limits.STANDARD.input());
 
   static {
     NeoForge.EVENT_BUS.addListener(ServerSettings::stopping);
@@ -86,6 +90,57 @@ public final class ServerSettings implements AutoCloseable {
         access.close();
         hook.close();
       }
+    }
+  }
+
+  /** One native player session awaiting transfer to a separate in-process form lifetime. */
+  public static final class LocalPresentation<T> implements AutoCloseable {
+    private final Document<T> document;
+    private final OwnerContext.Access nativeAccess;
+    private final DocumentSession<T> source;
+    private final AtomicBoolean attached = new AtomicBoolean();
+
+    private LocalPresentation(
+        Document<T> document, OwnerContext.Access nativeAccess, DocumentSession<T> source) {
+      this.document = document;
+      this.nativeAccess = nativeAccess;
+      this.source = source;
+    }
+
+    public boolean isOpen() {
+      return source.isOpen();
+    }
+
+    /** Transfer the binding and the shorter-lived presentation context to the shared editor. */
+    public DocumentActions<T> attach(OwnerContext context, OwnerContext.Access access) {
+      context.requireOwner();
+      if (context == document.context || !context.id().equals(access.context()))
+        throw new IllegalArgumentException("Presentation needs a separate local editing context");
+      if (!isOpen() || !attached.compareAndSet(false, true))
+        throw new PolicyRefusal("owner.closed", "This server policy view is closed or attached");
+      try {
+        access.require(OwnerContext.Right.READ);
+        context.onClose(this::close);
+        var actor =
+            EditorActor.presenting(
+                context, source, document.definition, document.values, document.drafts, 64);
+        return DocumentActions.owningContext(
+            context, access, actor, ACTIONS, document.values.maximumBytes());
+      } catch (RuntimeException | Error failed) {
+        try {
+          context.close();
+        } finally {
+          close();
+        }
+        throw failed;
+      }
+    }
+
+    /** The built-in file and registered sessions support disposal from the presentation thread. */
+    @Override
+    public void close() {
+      nativeAccess.close();
+      source.close();
     }
   }
 
@@ -150,28 +205,12 @@ public final class ServerSettings implements AutoCloseable {
 
     /** Captured command permission is a restriction; actual native permission is checked afresh. */
     public Editor<T> editor(CommandSourceStack source, int readLevel, int writeLevel) {
-      scope.requireCurrent();
-      if (readLevel < 0 || readLevel > 4 || writeLevel < 0 || writeLevel > 4)
-        throw new IllegalArgumentException(
-            "Native permission levels must be between zero and four");
-      Objects.requireNonNull(source);
-      var player = source.getPlayer();
-      var connection = player == null ? null : player.connection;
-      var access =
-          context.access(
-              () -> scope.permitted(source, player, connection, readLevel),
-              () -> scope.permitted(source, player, connection, writeLevel));
+      var access = actorAccess(source, readLevel, writeLevel, () -> true);
       EditorActor<T> actor = null;
       DocumentActions<T> actions = null;
       try {
         actor = new EditorActor<>(context, session(access), definition, values, drafts, 64);
-        actions =
-            new DocumentActions<>(
-                context,
-                access,
-                actor,
-                new OperationScope.Limits(32, 64, 128, OperationScope.Limits.STANDARD.input()),
-                values.maximumBytes());
+        actions = new DocumentActions<>(context, access, actor, ACTIONS, values.maximumBytes());
         return new Editor<>(context, access, actions);
       } catch (RuntimeException failed) {
         try {
@@ -182,6 +221,42 @@ public final class ServerSettings implements AutoCloseable {
         }
         throw failed;
       }
+    }
+
+    /** Admit only this integrated server's actual local host player, on the server thread. */
+    public LocalPresentation<T> localPresentation(
+        CommandSourceStack source, int level, BooleanSupplier presentationCurrent) {
+      scope.requireCurrent();
+      Objects.requireNonNull(presentationCurrent);
+      var player = Objects.requireNonNull(source).getPlayer();
+      if (scope.server.isDedicatedServer()
+          || player == null
+          || !scope.server.isSingleplayerOwner(player.getGameProfile())
+          || player.connection == null
+          || !player.connection.getConnection().isMemoryConnection())
+        throw new PolicyRefusal("owner.permission", "Use the integrated world's local host player");
+      var access = actorAccess(source, level, level, presentationCurrent);
+      try {
+        access.require(OwnerContext.Right.READ);
+        return new LocalPresentation<>(this, access, session(access));
+      } catch (RuntimeException | Error failed) {
+        access.close();
+        throw failed;
+      }
+    }
+
+    private OwnerContext.Access actorAccess(
+        CommandSourceStack source, int readLevel, int writeLevel, BooleanSupplier active) {
+      scope.requireCurrent();
+      if (readLevel < 0 || readLevel > 4 || writeLevel < 0 || writeLevel > 4)
+        throw new IllegalArgumentException(
+            "Native permission levels must be between zero and four");
+      Objects.requireNonNull(source);
+      var player = source.getPlayer();
+      var connection = player == null ? null : player.connection;
+      return context.access(
+          () -> active.getAsBoolean() && scope.permitted(source, player, connection, readLevel),
+          () -> active.getAsBoolean() && scope.permitted(source, player, connection, writeLevel));
     }
 
     private void initialize(FileOwner<T> owner) {
@@ -209,7 +284,7 @@ public final class ServerSettings implements AutoCloseable {
 
   private MinecraftServer server;
   private boolean open = true;
-  private final Map<DocumentId, Document<?>> documents = new LinkedHashMap<>();
+  private final Map<DocumentId, Document<?>> documents = new ConcurrentHashMap<>();
   private ThreadPoolExecutor workers;
 
   private ServerSettings(MinecraftServer server) {
@@ -273,8 +348,8 @@ public final class ServerSettings implements AutoCloseable {
               store.draftLimits(),
               Optional.of(owner.handle()),
               file);
-      documents.put(definition.id(), document);
       document.initialize(owner);
+      documents.put(definition.id(), document);
       return document;
     } catch (RuntimeException failed) {
       documents.remove(definition.id());
@@ -329,6 +404,16 @@ public final class ServerSettings implements AutoCloseable {
   public Optional<Document<?>> document(DocumentId id) {
     requireCurrent();
     return Optional.ofNullable(documents.get(Objects.requireNonNull(id)));
+  }
+
+  /** Cross-thread lookup of immutable registration metadata for this exact server. No creation. */
+  public static Optional<Document<?>> admittedDocument(MinecraftServer server, DocumentId id) {
+    Objects.requireNonNull(server);
+    Objects.requireNonNull(id);
+    synchronized (SERVERS) {
+      var scope = SERVERS.get(server);
+      return scope == null ? Optional.empty() : Optional.ofNullable(scope.documents.get(id));
+    }
   }
 
   private void admit(ModContainer container, DocumentId id, String file) {
@@ -393,6 +478,7 @@ public final class ServerSettings implements AutoCloseable {
     return source.source == player
         && connection != null
         && player.connection == connection
+        && connection.isAcceptingMessages()
         && server.getPlayerList().getPlayer(player.getUUID()) == player
         && player.createCommandSourceStack().hasPermission(level);
   }

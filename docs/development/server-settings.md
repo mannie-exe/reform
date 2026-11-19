@@ -26,6 +26,18 @@ An `Editor` owns its access and shared actions. Close it on the native server th
 
 Advanced adapters can borrow `Document.context()` and open `Document.session(access)` with an actual context-bound access capability. They retain responsibility for their real actor checks and shorter-lived cleanup. A payload identity or a path cannot construct that authority. No command root, packet endpoint, client menu or gameplay shortcut is installed automatically.
 
+## Settings for a running singleplayer world
+
+On the physical client, `IntegratedSettings.screen(parent, title, documentId)` opens a generated form for a policy the current integrated server has already registered. The same entry works for a world-root file and an admitted SERVER TOML. The overload accepts `FormPresentation` and an explicit native permission level from zero through four. The default requires level two for opening and saving. A client mod supplies the entry point. Missing worlds, missing registrations and insufficient permission show an explanation with a Back action.
+
+The entry uses the native local memory connection and resolves the actual host player within this server on its own thread. Console and remote player sources cannot stand in for that host. The client's synchronized permission level limits the presentation. The server checks its current player, connection and native permission at admission and through the backend's normal read, preparation, persistence and publication boundaries. Editing a draft works on the client. Validation, writes, native callbacks and application retain their original owners and execution policies.
+
+Inspect and Review show the actual persistence source. A registered SERVER setting can use the installation config when NeoForge has no world override. Its saved value can then be picked up by other worlds that load the same installation source. A world-root `serverPolicy` keeps the root supplied by its addon. The running-world caption describes the authority and available effects in the current session.
+
+A draft revision describes the client editor. A source observation or receipt retains its server source session, and an effective-value observation retains its runtime handle identity. Detaching a screen retires its editing scope. Losing the current world, player, connection or client permission also retires that scope, including while a child screen is open. Reopening resolves a fresh scope and source. Context closure leaves already issued receipts intact. In-flight native effects follow the backend's existing cancellation and reconciliation rules.
+
+`ServerSettings.admittedDocument(server, id)` is the noncreating registration lookup for the exact native server. `Document.localPresentation` and `LocalPresentation.attach` are the lower-level handoff for an already admitted host. Attach transfers one native source session into a separate owned editing context. Abandoning admission or closing the context releases the native session and access slot. Lookups and queued admission use the existing document limit and executor. The ordinary factory needs no packet protocol, custom executor or duplicate owner.
+
 ## Lifetime and resources
 
 The runtime admits eight simultaneous actual server scopes and 128 document identities per scope. Each document retains standard core context bounds, a sixteen-operation owner lane and a 64-edit actor lane. Its actions admit 32 definitions, 64 active operations and 128 retained observations. File-backed editors inherit their store's value/draft limits; registered editors use their actual native owner's value bounds. These limits are admission policy, not measured heap or responsiveness claims.
@@ -34,4 +46,4 @@ Each server lazily supplies two daemon workers, a 256-task queue and thirty-seco
 
 Explicit scope closure invalidates its documents, handles and editors. A deliberate replacement scope for the same still-running server starts with no inherited bindings and cannot revive old access. Normal native stopping prevents new binding. A stopped world never falls back to another server's handle or installation defaults.
 
-The ordinary [server example](../../examples/native/src/main/java/example/reform/ServerPolicyExample.java) selects a world-root JSON policy and an actual registered SERVER TOML config. It supplies no executor, private serializer or cleanup loop. [Verification](verification.md) separates tested dedicated-side behavior from remaining integrated/client, real-player, command-routing, full-pack and cost qualification.
+The ordinary [server example](../../examples/native/src/main/java/example/reform/ServerPolicyExample.java) selects a world-root JSON policy and an actual registered SERVER TOML config. It supplies no executor, private serializer or cleanup loop. [Verification](verification.md) records the dedicated and local host checks and the limits of their coverage.

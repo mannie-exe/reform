@@ -50,7 +50,9 @@ Closing a source session independently of its shared context makes the editor's 
 
 An entered write still drains its actual receipt after source closure. A saved file remains saved even when editor acknowledgement or runtime publication can no longer finish. An explicitly opened fresh session can observe the saved source and use its qualified application-only recovery path; it does not repeat the write. Previously delivered immutable snapshots remain owned observations. Recheck cached liveness and close ordering when implementing or updating a native/custom `DocumentSession`.
 
-This actor connects file and explicit registered native owners. The [native form](presentation.md) has focused file/control/creation checks; the registered native backend separately exercises the actor on a real dedicated server. [Client files](client-files.md) and [server settings](server-settings.md) supply their distinct lifecycle bindings. Shared [local operations](operations.md) supply GUI/command validation, inspection, comparison/export and cancellation. Broader owner contexts, composed views and domain jobs remain required. Core worker qualification does not establish native lifecycle or UI behavior.
+This actor connects file and explicit registered native owners. The ordinary constructor requires the source and editor to share an `OwnerContext`. `EditorActor.presenting` borrows an already admitted in-process source session for a separate editor lifetime. Draft identities use the editor context. Source observations must match the source context and session, including observations used for preflight or acknowledgement. The actual owner still prepares and consumes commits. Presentation requires a source whose session can be closed from the editor's thread.
+
+[Client files](client-files.md) and [server settings](server-settings.md) supply their distinct lifetime bindings. Shared [local operations](operations.md) supply GUI and command validation, inspection, comparison, export and cancellation. [Verification](verification.md) records the actual native forms, callbacks and lifecycle checks.
 
 ## Preserve truthful outcomes
 
