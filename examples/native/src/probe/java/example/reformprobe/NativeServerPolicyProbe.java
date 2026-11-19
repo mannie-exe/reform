@@ -513,11 +513,18 @@ final class NativeServerPolicyProbe {
                   file.context()
                       .onOwner(() -> NativeServerCommandControls.run(server, file, filePath))
                       .thenCompose(stage -> stage))
+          .thenCompose(
+              commands -> {
+                report.add("actualCommands", new Gson().toJsonTree(commands));
+                return file.context()
+                    .onOwner(() -> NativeServerSearchControls.run(server, file.context()))
+                    .thenCompose(stage -> stage);
+              })
           .whenComplete(
               (observed, failed) -> {
                 if (failed != null) report.addProperty("failure", failed.toString());
                 else {
-                  report.add("actualCommands", new Gson().toJsonTree(observed));
+                  report.add("actualSearch", new Gson().toJsonTree(observed));
                   passed = true;
                 }
                 server.halt(false);

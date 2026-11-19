@@ -32,6 +32,8 @@ class NativeServerResultGuards(unittest.TestCase):
         boot["native"]["serverShutdownClosed"] = True
         self.assertFalse(SERVER.successful_boot(boot, "selected", policies=True))
         boot["native"]["actualCommands"] = ["actual console result"] * 12
+        self.assertFalse(SERVER.successful_boot(boot, "selected", policies=True))
+        boot["native"]["actualSearch"] = ["actual native search result"] * 15
         self.assertTrue(SERVER.successful_boot(boot, "selected", policies=True))
         self.assertFalse(SERVER.successful_boot(boot, "different", policies=True))
         boot["run"]["exitCode"] = 1

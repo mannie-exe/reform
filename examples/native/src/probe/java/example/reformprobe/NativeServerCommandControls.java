@@ -17,11 +17,6 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.core.LogEvent;
-import org.apache.logging.log4j.core.Logger;
-import org.apache.logging.log4j.core.appender.AbstractAppender;
-import org.apache.logging.log4j.core.config.Property;
 
 /** Real Brigadier entry and console feedback in a disposable dedicated world. */
 final class NativeServerCommandControls {
@@ -31,18 +26,9 @@ final class NativeServerCommandControls {
   private final ServerSettings.Document<?> document;
   private final Path file;
   private final CompletableFuture<List<String>> result = new CompletableFuture<>();
-  private final ArrayList<String> lines = new ArrayList<>();
   private final ArrayList<String> observed = new ArrayList<>();
   private final Consumer<ServerTickEvent.Post> callback = this::tick;
-  private final Logger logger = (Logger) LogManager.getLogger(MinecraftServer.class);
-  private final AbstractAppender console =
-      new AbstractAppender("reform-policy-console", null, null, true, Property.EMPTY_ARRAY) {
-        @Override
-        public void append(LogEvent event) {
-          if (server.isSameThread() && lines.size() < 32)
-            lines.add(event.getMessage().getFormattedMessage());
-        }
-      };
+  private final NativeConsoleCapture console;
   private final List<Invocation> commands =
       List.of(
           new Invocation("file status " + new UUID(0L, 0L), 0, "Operation is not retained"),
@@ -64,13 +50,12 @@ final class NativeServerCommandControls {
     this.server = server;
     this.document = document;
     this.file = file;
+    this.console = new NativeConsoleCapture(server);
   }
 
   static CompletionStage<List<String>> run(
       MinecraftServer server, ServerSettings.Document<?> document, Path file) {
     var controls = new NativeServerCommandControls(server, document, file);
-    controls.console.start();
-    controls.logger.addAppender(controls.console);
     NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, controls.callback);
     return controls.result.minimalCompletionStage();
   }
@@ -79,7 +64,7 @@ final class NativeServerCommandControls {
     if (event.getServer() != server || result.isDone()) return;
     try {
       if (++ticks > 300)
-        throw new AssertionError("Timed out awaiting native console: " + index + " " + lines);
+        throw new AssertionError("Timed out awaiting native console: " + index + " " + console);
       if (index == 0 && !submitted) {
         var source = server.createCommandSourceStack();
         requireDenied(source.withPermission(0));
@@ -88,14 +73,13 @@ final class NativeServerCommandControls {
       }
       var invocation = commands.get(index);
       if (!submitted) {
-        lines.clear();
+        console.clear();
         if (invoke(invocation.command(), server.createCommandSourceStack())
             != invocation.accepted())
           throw new AssertionError("Unexpected Brigadier result for " + invocation.command());
         submitted = true;
       }
-      var feedback =
-          lines.stream().filter(line -> line.contains(invocation.feedback())).findFirst();
+      var feedback = console.find(invocation.feedback());
       if (feedback.isEmpty()) return;
       observed.add(invocation.command() + " => " + feedback.orElseThrow());
       if (index == 0) {
@@ -142,8 +126,7 @@ final class NativeServerCommandControls {
 
   private void finish(Throwable failure) {
     NeoForge.EVENT_BUS.unregister(callback);
-    logger.removeAppender(console);
-    console.stop();
+    console.close();
     if (failure == null) result.complete(List.copyOf(observed));
     else result.completeExceptionally(failure);
   }

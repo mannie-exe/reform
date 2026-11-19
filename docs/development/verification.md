@@ -2,6 +2,16 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Native search reporting
+
+The combined artifact is `e1b6ec109abad4e0c1e1575ed49356d998c93c4535a028974330779c75fe03a1`, sources `5073074fb250a07d5755680b0152b21e579ef627d6252daa7c888a8eec982c75` and core `be7cc28baeee4f62b1cc5e56aeb46b575e81261c12118cd0255bfce3989bd1b5`. `spotlessApply check build` and `mise run check` pass with 532 core cases, eight adapter cases, 31 tooling cases and both independent packaged consumers. Nine new core checks cover precise cursors, snapshot eviction, notification cadence, coverage bounds, cancellation, late settlement and isolated ticket cleanup on normal and failed paths.
+
+The before witness executes the notification gate, page slice, link arguments and stopped-callback accounting from Compat `56864b6` in a minimal Java driver. Eleven admitted matches produce one immediate notice. Inserting a nearer result changes the second page. Opening an old unbound link selects the successor job. A late callback decrements the shared pending count while leaving the stopped job's count at one. The retained driver and source hashes identify the exact fragments. This evidence is limited to the extracted logic with controlled provider and recipient inputs.
+
+`native_addon_server_probe.py --policies` passes in 8.942 and 8.725 seconds on the final package. Both dedicated boots add 15 search assertions to the existing settings and command checks. They exercise real Brigadier and console output for unknown totals, stable earlier pages, later notices, watch pause and resume, partial cancellation, stale actions and complete zero. The fixture adds two distinct native tickets at one already loaded chunk and uses an off-thread `STRUCTURE_STARTS` request without forcing its generation. Cancelling one job preserves the other ticket and both reservations until settlement. Delivery of the real old result clears exactly one job and shared slot. The force-tick flag is used only in the fixture to observe native ticket membership. The late delivery occurs after cancellation by construction.
+
+`native_form_probe.py --integrated-only` passes in 15.152 and 13.332 seconds with 32 and 11 assertions. The first client receives a native chat notice and keeps its actual `RUN_COMMAND` page link. A native same-world teleport preserves the search's original position. Following the issued link after real respawn on the same play connection returns the original row. The independent settings draft still retires on respawn. The runners remove their marked fixtures. [Native search reporting](search-reporting.md) owns the contract. Consumer scheduler adoption, dimension and login replacement tests, pack behavior and cost remain separate qualification.
+
 ## Native server policy commands
 
 The combined artifact is `0f96aee0b904a3fa9a5c84d82dd627d52494c7a3a545bcf6cf048c6259948243`, sources `baff7fe6a770e590da7821caa93dec478af9503c161643f25305b061e632012c` and core `0e0ae9c4ef8f605d810b8f7f553c7fd829f0b36ae07c7e5d3b92410a84a58422`. All 147 owned Java entries match their source files. `spotlessApply check build` and `mise run check` pass with 523 core cases, eight adapter cases, 31 tooling cases and both independent packaged consumers.

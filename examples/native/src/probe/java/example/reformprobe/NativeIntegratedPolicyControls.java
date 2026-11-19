@@ -8,9 +8,13 @@ import com.google.gson.JsonParser;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.neoforge.client.IntegratedSettings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
+import design.inherent.reform.neoforge.command.SearchCommands;
+import design.inherent.reform.neoforge.command.SearchRecipient;
 import design.inherent.reform.neoforge.configuration.ServerSettings;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
+import design.inherent.reform.operation.SearchReport;
+import design.inherent.reform.operation.WorkBudget;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
@@ -23,6 +27,9 @@ import example.reform.ServerPolicyExample;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -35,7 +42,9 @@ import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.GameRules;
@@ -66,6 +75,8 @@ final class NativeIntegratedPolicyControls {
   private DocumentActions<?> fileActions, nativeActions;
   private final ArrayList<String> commandFeedback = new ArrayList<>();
   private String retiredOperation;
+  private String capturedSearchLink;
+  private boolean searchRowReceived;
   private LocalPlayer previousPlayer;
   private ClientPacketListener previousConnection;
   private CompletableFuture<?> pending;
@@ -94,6 +105,14 @@ final class NativeIntegratedPolicyControls {
     if (commandFeedback.size() < 32
         && (text.startsWith(ServerPolicyExample.DEFINITION.id().toString())
             || text.contains("Operation is not retained"))) commandFeedback.add(text);
+    if (text.equals("[retained native search result]")) searchRowReceived = true;
+    for (var part : message.getSiblings()) {
+      var click = part.getStyle().getClickEvent();
+      if (click != null
+          && click.getAction() == ClickEvent.Action.RUN_COMMAND
+          && click.getValue().startsWith("/reformplayer locate page at "))
+        capturedSearchLink = click.getValue();
+    }
   }
 
   private void command(String action) {
@@ -522,7 +541,7 @@ final class NativeIntegratedPolicyControls {
       case 17 -> {
         if (!reopen && !done()) return false;
         if (reopen) {
-          step = 24;
+          step = 26;
           return false;
         }
         check("FML callback is owned by actual integrated server thread", true);
@@ -553,15 +572,23 @@ final class NativeIntegratedPolicyControls {
             !received("queued"));
         previousPlayer = client.player;
         previousConnection = client.getConnection();
+        pending = server.submit(this::startSearch);
+        next("receive an exact page link over the actual native play connection");
+      }
+      case 20 -> {
+        if (!done() || capturedSearchLink == null) return false;
+        check(
+            "native match notice emits an identified page link",
+            capturedSearchLink.split(" ").length == 7);
         pending = server.submit(() -> server.getPlayerList().getPlayer(player).kill());
         next("native fixture performs an ordinary same-connection respawn");
       }
-      case 20 -> {
+      case 21 -> {
         if (!done() || !client.player.isDeadOrDying()) return false;
         client.player.respawn();
         next("native client requests respawn");
       }
-      case 21 -> {
+      case 22 -> {
         if (client.player == previousPlayer
             || !client.player.hasPermissions(2)
             || nativeActions.isOpen()) return false;
@@ -574,21 +601,27 @@ final class NativeIntegratedPolicyControls {
         command("status " + retiredOperation);
         next("status request from replacement player uses the old operation identity");
       }
-      case 22 -> {
+      case 23 -> {
         if (!received("Operation is not retained")) return false;
         check("native stale operation cannot follow the new player", true);
         command("get level");
         next("replacement player opens a new command draft from the actual source");
       }
-      case 23 -> {
+      case 24 -> {
         if (!received("draft level = 10")) return false;
         check(
             "replacement command draft observes saved 10 and does not inherit unsaved 19",
             savedLevel() == 10 && effectiveLevel() == 10);
+        client.getConnection().sendCommand(capturedSearchLink.substring(1));
+        next("follow the exact native search page issued before the respawn");
+      }
+      case 25 -> {
+        if (!searchRowReceived) return false;
+        check("actual search recipient follows same-connection respawn and retains its page", true);
         open(true);
         next("reopen independent native policy for disconnect control");
       }
-      case 24 -> {
+      case 26 -> {
         if (!ready()) return false;
         nativeActions = form.editingActions();
         check(
@@ -598,7 +631,7 @@ final class NativeIntegratedPolicyControls {
         client.level.disconnect();
         client.disconnect(new TitleScreen());
       }
-      case 25 -> {
+      case 27 -> {
         if (client.getSingleplayerServer() != null || client.player != null || !server.isShutdown())
           return false;
         check(
@@ -617,6 +650,40 @@ final class NativeIntegratedPolicyControls {
       default -> throw new AssertionError("Unexpected integrated policy stage " + step);
     }
     return false;
+  }
+
+  private void startSearch() {
+    var host = server.getPlayerList().getPlayer(player);
+    var recipient = SearchRecipient.capture(host.createCommandSourceStack(), 2);
+    var original = recipient.origin();
+    host.teleportTo(original.x + 2, original.y, original.z);
+    if (recipient.current().orElseThrow().getPosition().equals(original)
+        || !recipient.origin().equals(original)
+        || recipient.owns(server.createCommandSourceStack()))
+      throw new AssertionError("Search origin or recipient changed with a same-world teleport");
+    Runnable thread = file.context()::checkOwnerThread;
+    var report = new SearchReport<String>(SearchReport.Limits.STANDARD, thread);
+    var budget = new WorkBudget(2, thread);
+    var job =
+        new SearchCommands.Job<>(
+            recipient,
+            report,
+            budget.group(2),
+            Component::literal,
+            () -> {
+              throw new AssertionError("Unexpected fixture cancellation");
+            });
+    var bridge = new SearchCommands<String>("reformplayer locate", ignored -> Optional.of(job));
+    server
+        .getCommands()
+        .getDispatcher()
+        .register(Commands.literal("reformplayer").then(bridge.branch()));
+    report.observe(
+        new SearchReport.Progress(1, 1, 0, OptionalLong.empty()),
+        1,
+        List.of("[retained native search result]"));
+    if (!bridge.notifyMatches(job, 1))
+      throw new AssertionError("Current host did not receive search notice");
   }
 
   JsonObject report() {

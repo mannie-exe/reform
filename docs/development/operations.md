@@ -79,3 +79,5 @@ Bindings resolve actual actors, provide noncreating availability and lookup, and
 Route asynchronous replies by operation ID and response channel. Completion and cancellation can overlap for the same operation; an older request can also refuse while its successor remains pending. Neither a single-pending-request guess nor parsing visible text supplies that identity. Correlation preserves current recipient/owner/source checks and grants no authority to disclose a refused result.
 
 Updates to Brigadier, Components, executors or lifecycle require rechecking quoting/suggestions, bounded feedback, revoked/stale recipients, cold bursts and actual receipt semantics. [Verification](verification.md) records native execution and its limits.
+
+Long-running discovery providers use [search reporting](search-reporting.md) for stable result pages and separate native cleanup. A discovery provider supplies its own scheduler and audience lifetime.
