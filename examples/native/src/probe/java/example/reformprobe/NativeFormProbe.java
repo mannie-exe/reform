@@ -82,6 +82,7 @@ public final class NativeFormProbe {
   private NativeReviewControls review;
   private NativeCloseControls closing;
   private NativeFileFormatsControls files;
+  private NativeStartupControls startup;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -143,7 +144,9 @@ public final class NativeFormProbe {
               "outcomes",
               "outcomes-reopen",
               "files",
-              "files-reopen")
+              "files-reopen",
+              "startup",
+              "startup-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -152,6 +155,7 @@ public final class NativeFormProbe {
     report.addProperty("mode", mode);
     report.add("controls", controls);
     if (mode.equals("reentrant")) registerReentrant(bus, probeContainer);
+    if (mode.equals("startup")) NativeStartupControls.registerHeld(bus, probeContainer);
     if (mode.startsWith("keys-factory")) {
       invalidKeys =
           ClientKeyBindings.clientKeys(
@@ -256,6 +260,17 @@ public final class NativeFormProbe {
           "Key metadata registration supplied an invented native definition");
       keys.initialization().toCompletableFuture().cancel(false);
       var actualContainer = ModList.get().getModContainerById(NativeExample.ID).orElseThrow();
+      if (mode.equals("startup")) {
+        check(
+            example.reform.StartupExample.knownSelected().level() == 2
+                && example.reform.StartupExample.brokenSelected().level() == 3,
+            "Consumer bootstrap did not read the actual initial choices");
+        var sourceRoot = mc.gameDirectory.toPath().resolve("config/startup-tools");
+        Files.writeString(sourceRoot.resolve("known.properties"), "level=6\n");
+        Files.writeString(sourceRoot.resolve("broken.properties"), "level=invalid\n");
+        controls.add(
+            "fixture changes saved choices after actual consumer bootstrap, before native source initialization");
+      }
       check(
           example.reform.FileFormatsExample.DEFAULT_CALLS.get()
               == example.reform.FileFormatsExample.VALIDATED_DEFAULTS,
@@ -360,6 +375,25 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("startup")) {
+        if (startup == null) {
+          if (!(mc.screen instanceof TitleScreen)) return;
+          recordArtifact();
+          startup =
+              new NativeStartupControls(
+                  mode.endsWith("-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (startup.tick()) {
+          report.add("startup", startup.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("files")) {
@@ -1208,6 +1242,8 @@ public final class NativeFormProbe {
       report.add("commandConflicts", commandConflicts.report());
     }
     try {
+      NativeStartupControls.shutdownHeld();
+      if (startup != null) report.add("startup", startup.report());
       check(
           example.reform.KeyExample.settings().status().lifecycle()
               == ClientKeyBindings.Lifecycle.CLOSED,

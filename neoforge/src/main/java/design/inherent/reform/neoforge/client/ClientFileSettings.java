@@ -3,6 +3,7 @@ package design.inherent.reform.neoforge.client;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.ImportSource;
@@ -78,26 +79,34 @@ public final class ClientFileSettings<T> {
       ValidationReport report,
       FileOwner.Receipt<T> receipt) {}
 
+  private record Startup<T>(Optional<Candidate<T>> selected) {}
+
   private static final JsonLimits JSON = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
 
   private final ModContainer container;
   private final DocumentDefinition<T> definition;
   private final TextStore<T> store;
   private final ApplicationEffects applicationEffects;
+  private final Optional<Startup<T>> startup;
   private final AtomicReference<State<T>> state =
       new AtomicReference<>(
           new State<>(Lifecycle.REGISTERED, null, null, null, ValidationReport.VALID, null));
   private final CompletableFuture<Status<T>> initialization = new CompletableFuture<>();
-  private CompletableFuture<Status<T>> activeInitialization;
+  private final AtomicReference<CompletableFuture<Status<T>>> activeInitialization =
+      new AtomicReference<>();
   private DocumentActions<T> commandActions;
   private Consumer<RegisterClientCommandsEvent> commandRegistration;
 
   private ClientFileSettings(
-      ModContainer container, TextStore<T> store, ApplicationEffects applicationEffects) {
+      ModContainer container,
+      TextStore<T> store,
+      ApplicationEffects applicationEffects,
+      Optional<Startup<T>> startup) {
     this.container = container;
     this.definition = store.definition();
     this.store = store;
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
+    this.startup = Objects.requireNonNull(startup);
   }
 
   /** Call from the owning physical-client mod's constructor, before FML client setup. No IO. */
@@ -150,14 +159,44 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       DocumentDefinition<T> definition,
       String... location) {
-    return clientFile(
+    return clientFile(modBus, container, propertiesStore(definition, location));
+  }
+
+  /** Selected startup inputs must be the consumer's actual immutable bootstrap selection. */
+  public static <T> ClientFileSettings<T> startupProperties(
+      IEventBus modBus,
+      ModContainer container,
+      DocumentDefinition<T> definition,
+      Optional<Candidate<T>> selected,
+      String... location) {
+    return startupFile(modBus, container, propertiesStore(definition, location), selected);
+  }
+
+  /** Save next-start choices; absent actual selection stays unknown, never inferred from disk. */
+  public static <T> ClientFileSettings<T> startupFile(
+      IEventBus modBus,
+      ModContainer container,
+      TextStore<T> store,
+      Optional<Candidate<T>> selected) {
+    Objects.requireNonNull(store);
+    Objects.requireNonNull(selected);
+    if (selected.isPresent() && selected.orElseThrow().definition() != store.definition())
+      throw new IllegalArgumentException("Selected startup inputs require the actual definition");
+    return register(
         modBus,
         container,
-        new PropertiesStore<>(
-            definition,
-            new OwnedFile(configurationFile(location), JSON.maximumBytes()),
-            JSON,
-            DraftLimits.CONFIGURATION));
+        store,
+        ApplicationEffects.UNDECLARED,
+        Optional.of(new Startup<>(selected)));
+  }
+
+  private static <T> PropertiesStore<T> propertiesStore(
+      DocumentDefinition<T> definition, String... location) {
+    return new PropertiesStore<>(
+        definition,
+        new OwnedFile(configurationFile(location), JSON.maximumBytes()),
+        JSON,
+        DraftLimits.CONFIGURATION);
   }
 
   /** Advanced owned-format binding; it supplies no parser, source defaults or path inference. */
@@ -171,6 +210,15 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       TextStore<T> store,
       ApplicationEffects applicationEffects) {
+    return register(modBus, container, store, applicationEffects, Optional.empty());
+  }
+
+  private static <T> ClientFileSettings<T> register(
+      IEventBus modBus,
+      ModContainer container,
+      TextStore<T> store,
+      ApplicationEffects applicationEffects,
+      Optional<Startup<T>> startup) {
     Objects.requireNonNull(modBus);
     Objects.requireNonNull(container);
     Objects.requireNonNull(store);
@@ -180,7 +228,7 @@ public final class ClientFileSettings<T> {
     if (!container.getModId().equals(definition.id().namespace()))
       throw new IllegalArgumentException(
           "Client files must belong to their declaring mod namespace");
-    var registration = new ClientFileSettings<>(container, store, applicationEffects);
+    var registration = new ClientFileSettings<>(container, store, applicationEffects, startup);
     ClientSettingsRuntime.registerFile(
         definition.id(), registration, store.binding(), registration::close);
     try {
@@ -281,11 +329,22 @@ public final class ClientFileSettings<T> {
             new SettingsScreen<>(
                 parent,
                 title,
-                text("client_context", "Client preferences · applies to this installation"),
+                startup.isPresent()
+                    ? text(
+                        "startup_context",
+                        "Startup choices · saved changes require restarting the game")
+                    : text("client_context", "Client preferences · applies to this installation"),
                 definition,
                 actions,
                 sources,
-                presentation));
+                presentation,
+                FieldEditors.builder(definition).build(),
+                startup.isPresent()
+                    ? new SettingsScreen.SubmissionLabels(
+                        text("save_startup", "Save for restart"),
+                        text("review_startup", "Save reviewed choices"),
+                        text("close_startup", "Save for restart and close"))
+                    : SettingsScreen.SubmissionLabels.standard(actions.commitKind())));
   }
 
   /** Explicit source registration on this ready owner; caller supplies capture/reload policy. */
@@ -400,21 +459,23 @@ public final class ClientFileSettings<T> {
         () -> {
           requireClientThread();
           if (state.get().lifecycle() != Lifecycle.REGISTERED) return;
-          var minecraft = Minecraft.getInstance();
           OwnerContext context = null;
           try {
             context =
                 new OwnerContext(
-                    minecraft::execute,
+                    Minecraft.getInstance()::execute,
                     ClientSettingsRuntime.workers(),
                     ClientFileSettings::requireClientThread,
                     OwnerContext.Limits.STANDARD);
-            var owner = new FileOwner<>(context, store, 16, applicationEffects);
-            var access = context.access(() -> true, () -> true);
             initialize(
                 new State<>(
-                    Lifecycle.REGISTERED, owner, context, access, ValidationReport.VALID, null));
-          } catch (RuntimeException failure) {
+                    Lifecycle.REGISTERED,
+                    null,
+                    context,
+                    context.access(() -> true, () -> true),
+                    ValidationReport.VALID,
+                    null));
+          } catch (RuntimeException failed) {
             if (context != null) context.close();
             state.set(
                 new State<>(
@@ -431,76 +492,174 @@ public final class ClientFileSettings<T> {
   }
 
   private CompletionStage<Status<T>> initialize(State<T> before) {
-    var active =
-        new State<>(
-            Lifecycle.INITIALIZING,
-            before.owner(),
-            before.context(),
-            before.access(),
-            ValidationReport.VALID,
-            null);
-    state.set(active);
+    var context = before.context();
+    var access = before.access();
     var result = new CompletableFuture<Status<T>>();
-    activeInitialization = result;
-    var session = active.owner().open(active.access());
+    activeInitialization.set(result);
+    state.set(
+        new State<>(
+            Lifecycle.INITIALIZING, before.owner(), context, access, ValidationReport.VALID, null));
+    CompletionStage<FileOwner<T>> construction;
+    try {
+      construction =
+          before.owner() != null
+              ? CompletableFuture.completedStage(before.owner())
+              : startup.isPresent()
+                  ? FileOwner.startup(context, store, 16, startup.orElseThrow().selected())
+                  : CompletableFuture.completedStage(
+                      new FileOwner<>(context, store, 16, applicationEffects));
+    } catch (RuntimeException failed) {
+      construction = CompletableFuture.failedStage(failed);
+    }
+    construction.whenComplete(
+        (owner, failed) ->
+            context
+                .onOwner(
+                    () -> {
+                      if (!currentAttempt(context, result)) {
+                        result.complete(status());
+                        return null;
+                      }
+                      if (failed != null) {
+                        finishAttempt(
+                            context,
+                            result,
+                            owner,
+                            null,
+                            problem(
+                                failed,
+                                "client.owner",
+                                "The client settings owner could not be constructed"),
+                            false);
+                        return null;
+                      }
+                      var admitted = Objects.requireNonNull(owner);
+                      state.set(
+                          new State<>(
+                              Lifecycle.INITIALIZING,
+                              admitted,
+                              context,
+                              access,
+                              ValidationReport.VALID,
+                              null));
+                      try {
+                        initializeSource(context, result, admitted, access);
+                      } catch (RuntimeException refused) {
+                        finishAttempt(
+                            context,
+                            result,
+                            admitted,
+                            null,
+                            problem(
+                                refused,
+                                "client.initialization",
+                                "Client settings initialization could not start"),
+                            false);
+                      }
+                      return null;
+                    })
+                .whenComplete(
+                    (ignored, dispatchFailure) -> {
+                      if (dispatchFailure != null)
+                        finishAttempt(
+                            context,
+                            result,
+                            owner,
+                            null,
+                            failure(
+                                "client.observation",
+                                "Client settings construction could not be observed"),
+                            false);
+                    }));
+    return result.minimalCompletionStage();
+  }
+
+  private boolean currentAttempt(OwnerContext context, CompletableFuture<Status<T>> result) {
+    var current = state.get();
+    return activeInitialization.get() == result
+        && current.context() == context
+        && current.lifecycle() == Lifecycle.INITIALIZING;
+  }
+
+  private void initializeSource(
+      OwnerContext context,
+      CompletableFuture<Status<T>> result,
+      FileOwner<T> owner,
+      OwnerContext.Access access) {
+    var session = owner.open(access);
     session
         .initialize()
         .whenComplete(
             (receipt, failed) -> {
               session.close();
-              active
-                  .context()
+              context
                   .onOwner(
                       () -> {
-                        if (state.get() != active) {
-                          return status();
-                        }
                         var report =
                             failed == null
                                 ? receipt.persistenceReport().and(receipt.applicationReport())
-                                : failure(
+                                : problem(
+                                    failed,
                                     "client.initialization",
                                     "Client settings initialization did not complete");
-                        boolean available =
+                        boolean ready =
                             failed == null
-                                && receipt.application() == CommitReceipt.Application.APPLIED;
-                        state.set(
-                            new State<>(
-                                available ? Lifecycle.READY : Lifecycle.UNAVAILABLE,
-                                active.owner(),
-                                active.context(),
-                                active.access(),
-                                report,
-                                receipt));
-                        var observed = status();
-                        // A completion observer may immediately start another attempt.
-                        activeInitialization = null;
-                        initialization.complete(observed);
-                        return observed;
+                                && report.valid()
+                                && receipt.application()
+                                    == (startup.isPresent()
+                                        ? CommitReceipt.Application.STAGED
+                                        : CommitReceipt.Application.APPLIED);
+                        finishAttempt(context, result, owner, receipt, report, ready);
+                        return null;
                       })
                   .whenComplete(
-                      (observed, dispatchFailure) -> {
-                        if (dispatchFailure == null) result.complete(observed);
-                        else if (active.context().isOpen()) {
-                          state.compareAndSet(
-                              active,
-                              new State<>(
-                                  Lifecycle.UNAVAILABLE,
-                                  active.owner(),
-                                  active.context(),
-                                  active.access(),
-                                  failure(
-                                      "client.observation",
-                                      "Client settings result could not be observed"),
-                                  receipt));
-                          var unavailable = status();
-                          initialization.complete(unavailable);
-                          result.complete(unavailable);
-                        } else if (state.get().lifecycle() == Lifecycle.CLOSED)
-                          result.complete(status());
+                      (ignored, dispatchFailure) -> {
+                        if (dispatchFailure != null)
+                          finishAttempt(
+                              context,
+                              result,
+                              owner,
+                              receipt,
+                              failure(
+                                  "client.observation",
+                                  "Client settings result could not be observed"),
+                              false);
                       });
             });
-    return result.minimalCompletionStage();
+  }
+
+  private void finishAttempt(
+      OwnerContext context,
+      CompletableFuture<Status<T>> result,
+      FileOwner<T> owner,
+      FileOwner.Receipt<T> receipt,
+      ValidationReport report,
+      boolean ready) {
+    var current = state.get();
+    if (activeInitialization.get() == result
+        && current.context() == context
+        && current.lifecycle() == Lifecycle.INITIALIZING) {
+      state.compareAndSet(
+          current,
+          new State<>(
+              ready ? Lifecycle.READY : Lifecycle.UNAVAILABLE,
+              owner,
+              context,
+              current.access(),
+              report,
+              receipt));
+    }
+    // Release this attempt before either completion observer can start an explicit retry.
+    activeInitialization.compareAndSet(result, null);
+    var observed = status();
+    initialization.complete(observed);
+    result.complete(observed);
+  }
+
+  private static ValidationReport problem(Throwable failed, String code, String fallback) {
+    while (failed instanceof java.util.concurrent.CompletionException && failed.getCause() != null)
+      failed = failed.getCause();
+    return failed instanceof PolicyRefusal refused ? refused.report() : failure(code, fallback);
   }
 
   private void close() {
@@ -519,11 +678,9 @@ public final class ClientFileSettings<T> {
               null,
               failure("client.closed", "This client settings context is closed"),
               current.receipt()));
+      var pending = activeInitialization.getAndSet(null);
       initialization.complete(status());
-      if (activeInitialization != null) {
-        activeInitialization.complete(status());
-        activeInitialization = null;
-      }
+      if (pending != null) pending.complete(status());
       var listener = commandRegistration;
       commandRegistration = null;
       if (listener != null) NeoForge.EVENT_BUS.unregister(listener);

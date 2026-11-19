@@ -2,6 +2,20 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Native immutable startup settings
+
+The startup-factory snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 25 tooling cases, public-artifact execution and independent native addon/probe compilation. Combined artifact `efaf51544867f68c854cf592248ba22b34b8282d29a9e9714d63a4b4e30e3e16`, sources `bf43d61ba671ef58b3bc26057fdd32f8ee6f5561747323406b66b34761103ab6` and unchanged core `87926813834dd2133f6342a612bde16b6afdc4f9150f533ca1487e768942308d` identify this cut. All 138 owned Java source entries match their files.
+
+`native_form_probe.py --startup-only` passes two disposable clients in 13.084/11.139 seconds, with sixteen/two startup assertions. The ordinary addon bootstraps actual saved values before registration. The fixture then changes the saved source before native initialization: the editor retains the separately selected active value, stages new choices without applying them, and offers no application-only shortcut. An unavailable actual selection stays unknown through save and reopen; malformed saved choices preserve a separately known active selection through explicit repair and Retry. The next JVM actually bootstraps the newly saved values. Completed native review frames were inspected and name saving for restart separately from active publication.
+
+The first startup client holds real asynchronous owner construction until native game shutdown. Closing the factory settles its initialization outcome as CLOSED before a handle exists; releasing the worker does not create its source. This qualifies that factory/context lifecycle, not arbitrary foreign bootstrap cancellation or universal process draining.
+
+The same packaged artifact passes one reentrant-initialization client in 10.817 seconds, two live-file clients in 12.267/10.863 seconds, and six existing JSON/close/recipe clients in 12.872/10.852/11.150/12.438/11.044/12.649 seconds. Explicit recovery started by a completion observer retains its own attempt identity. Live properties/custom formats, malformed retention, confirmed close, application-only recovery and actual creation-context admission remain intact. Each report's 47 input digests matches its tested files.
+
+Two registered-owner dedicated boots pass in 8.264/8.059 seconds on this artifact, retaining native serializer/callback and common-side controls. Their eight input identities match. All eleven selected client processes and both server processes terminate and their marked fixtures are removed. These are packaged-library ModDev clients/servers with example/probe source containers, not a full 41-client suite, physical-input, integrated/full-pack or cost qualification.
+
+[Client files](client-files.md#immutable-startup-selection) owns selection, readiness and attempt semantics; [presentation](presentation.md) owns labels without granting application authority. Other server/world/native owner conveniences, composed forms, domain jobs and remaining Phase 1 qualification stay open. No consumer migration, release or personal-instance change is claimed.
+
 ## Shared native client file registration
 
 The client-file snapshot passes `spotlessApply check build --warning-mode all`: 504 core cases, eight native adapter cases, 24 tooling cases, public-artifact execution and independent native addon/probe compilation. Combined artifact `c16d7e593cbe34ebb9c81ae3c476ea5c11aabf378ff123b17f14ca35f44b2a67`, sources `385954fa18a02db00caf3a00298ba68cf1a76e3d173c9968ffc60ecf60b4043d` and core `87926813834dd2133f6342a612bde16b6afdc4f9150f533ca1487e768942308d` identify this cut. The 138 owned source entries match their files; the combined artifact contains the new file factory and no retired JSON-factory classes.

@@ -89,6 +89,9 @@ def successful_run(result, mode, digest):
                                                     and native.get("outcome", {}).get("workerTerminated") is True))
             and (not mode.startswith("files") or (native.get("files", {}).get("status") == "PASS"
                                                 and native.get("files", {}).get("factoriesClosed") is True))
+            and (not mode.startswith("startup") or (native.get("startup", {}).get("status") == "PASS"
+                                                  and native.get("startup", {}).get("factoriesClosed") is True
+                                                  and native.get("startup", {}).get("heldConstructionClosed") is True))
             and (mode != "recipe" or native.get("recipe", {}).get("managedShutdownClosed") is True))
 
 
@@ -103,13 +106,15 @@ def successful_report(report, modes, digest):
                          for frame in ("", "-entry")})
     if "files" in modes:
         captures.update({"form-files-properties.png", "form-files-properties-entry.png"})
+    if "startup" in modes:
+        captures.update({"form-startup-review.png", "form-startup-review-entry.png"})
     return (len(report["runs"]) == len(modes)
             and all(successful_run(result, mode, digest)
                     for result, mode in zip(report["runs"], modes))
             and captures.issubset(report["screenshots"]))
 
 
-def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False, review_only=False, catalog_review_only=False, close_only=False, submission_only=False, files_only=False):
+def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False, review_only=False, catalog_review_only=False, close_only=False, submission_only=False, files_only=False, startup_only=False):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
@@ -135,7 +140,9 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                           Path(__file__).resolve(), ROOT / "tools/native_config_probe.py"]):
         report["inputs"][str(source.relative_to(ROOT))] = hashlib.sha256(source.read_bytes()).hexdigest()
     log = ROOT / "build/native-form-client.log"
-    if files_only:
+    if startup_only:
+        modes = ("startup", "startup-reopen")
+    elif files_only:
         modes = ("files", "files-reopen")
     elif submission_only:
         modes = ("outcomes", "outcomes-reopen", "review", "review-reopen", "recipe", "close", "close-reopen")
@@ -183,9 +190,15 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                  "dependencies", "dependencies-reopen", "collections", "collections-reopen",
                  "imports", "imports-reopen", "command-imports", "command-imports-reopen", "conflicts", "conflicts-reopen",
                  "command-conflicts", "command-conflicts-reopen", "keys-owner", "keys-owner-reopen",
-                 "keys-controls", "keys-controls-reopen", "keys-factory", "keys-factory-reopen", "catalog", "catalog-reopen", "review", "review-reopen", "close", "close-reopen", "outcomes", "outcomes-reopen", "files", "files-reopen")
+                 "keys-controls", "keys-controls-reopen", "keys-factory", "keys-factory-reopen", "catalog", "catalog-reopen", "review", "review-reopen", "close", "close-reopen", "outcomes", "outcomes-reopen", "files", "files-reopen", "startup", "startup-reopen")
     try:
         for mode in modes:
+            if mode == "startup":
+                sources = fixture / "config/startup-tools"
+                sources.mkdir(parents=True, exist_ok=True)
+                (sources / "known.properties").write_text("level=2\n")
+                (sources / "broken.properties").write_text("level=3\n")
+                (sources / "unknown.properties").write_text("level=7\n")
             if mode == "files":
                 sources = fixture / "config/legacy-tools"
                 sources.mkdir(parents=True, exist_ok=True)
@@ -267,7 +280,8 @@ if __name__ == "__main__":
     modes.add_argument("--close-only", action="store_true", help="Run ordinary form save/discard/reopen, saved/unapplied/late-edit controls and native recipe close")
     modes.add_argument("--submission-only", action="store_true", help="Run identified submission, actual outcome/recovery/drain and inspection/recipe/close regressions")
     modes.add_argument("--files-only", action="store_true", help="Run explicit properties/bare/custom files, malformed recovery and unchanged native reopen")
+    modes.add_argument("--startup-only", action="store_true", help="Run actual selected/saved startup choices, unknown active input and held construction shutdown")
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only, args.review_only, args.catalog_review_only, args.close_only, args.submission_only, args.files_only))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only, args.review_only, args.catalog_review_only, args.close_only, args.submission_only, args.files_only, args.startup_only))

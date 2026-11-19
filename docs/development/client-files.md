@@ -14,7 +14,17 @@ Constructing a definition validates and freezes its declared defaults. File regi
 
 The store's immutable value-projection and draft limits also govern the generated editing and import services. Value JSON is the editing/import/export representation, not a conversion of the owned file format. The default local import catalog still accepts explicit document-value/envelope JSON; it is not an automatic properties/custom-format importer.
 
-These helpers publish live owned client values. Immutable startup selection still uses the separately qualified core startup owner; its native registration convenience remains required. A properties filename alone never makes a live owner into a startup-only owner. Installation defaults, native registered configs, world policy and server authority remain separate bindings.
+Ordinary file helpers publish live owned client values. A properties filename alone never makes a live owner into a startup-only owner. Installation defaults, native registered configs, world policy and server authority remain separate bindings.
+
+## Immutable startup selection
+
+`startupProperties(modBus, container, definition, selected, location...)` and `startupFile(modBus, container, store, selected)` edit next-start choices without changing the current startup selection. `selected` is the consumer's actual immutable bootstrap `Candidate<T>` for that exact definition. An absent selection stays unknown; neither saved values nor definition defaults fill that gap. A consumer may explicitly capture its bootstrap input before registration, using its own actual parser/admission. The convenience registration itself reads no source.
+
+Owner construction can prepare that selected snapshot asynchronously. The document remains INITIALIZING while construction and source initialization run. READY describes an admitted editable saved source; its effective handle can still have no qualified value when the actual selection is unavailable. A malformed saved file can instead leave the document UNAVAILABLE while a separately qualified active value remains readable. Repairing the source and choosing Retry does not change the selected startup input.
+
+The shared core startup owner reports saved choices as STAGED, with explicit game-restart requirements and no application-only service. The generated form names its actions **Save for restart**, **Save reviewed choices** and **Save for restart and close**. Inspection separates source, draft and actually selected values. Saving and confirmed close never imply that loaded features changed. The consumer still owns the real next-start activation procedure; re:form does not reload mixins or rebuild its feature selection.
+
+Each construction/initialization attempt has its own completion identity. It releases its active slot before notifying observers, so an observer can start a retry without the earlier attempt clearing it. Shutdown closes the actual context and settles the retained attempt even before an owner exists. A late callback cannot install an owner or initialize a file in the closed context. The first initialization result remains historical; status and explicit retry results retain their own outcomes.
 
 ## Lifecycle and published state
 
@@ -22,7 +32,7 @@ These helpers publish live owned client values. Immutable startup selection stil
 | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | REGISTERED   | Metadata exists; no native owner/handle has been created and no saved data has been inferred                             |
 | INITIALIZING | Admitted FML client setup is reading/initializing the actual source through the asynchronous owner                       |
-| READY        | Initialization observed actual effective publication                                                                     |
+| READY        | The saved source is admitted for editing; a startup owner's actual active selection can remain unknown                   |
 | UNAVAILABLE  | Initialization or observation failed; retain the source and inspect the actual report, receipt and optional runtime view |
 | CLOSED       | The native client lifetime ended; the actual runtime handle is closed and new effects are refused                        |
 

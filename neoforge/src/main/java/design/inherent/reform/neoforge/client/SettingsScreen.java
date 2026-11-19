@@ -56,6 +56,43 @@ import org.lwjgl.glfw.GLFW;
 
 /** Generated recursive native form over the same admitted owner/operation services. */
 public final class SettingsScreen<T> extends FormScreen {
+  /** Owner-supplied presentation only; labels grant no persistence or application capability. */
+  public record SubmissionLabels(Component primary, Component reviewed, Component closing) {
+    public SubmissionLabels {
+      primary = Objects.requireNonNull(primary).copy();
+      reviewed = Objects.requireNonNull(reviewed).copy();
+      closing = Objects.requireNonNull(closing).copy();
+    }
+
+    @Override
+    public Component primary() {
+      return primary.copy();
+    }
+
+    @Override
+    public Component reviewed() {
+      return reviewed.copy();
+    }
+
+    @Override
+    public Component closing() {
+      return closing.copy();
+    }
+
+    public static SubmissionLabels standard(DocumentSession.CommitKind kind) {
+      Objects.requireNonNull(kind);
+      return kind == DocumentSession.CommitKind.CONTEXT
+          ? new SubmissionLabels(
+              text("admit_recipe", "Apply recipe"),
+              text("apply_reviewed", "Apply reviewed recipe"),
+              text("apply_close", "Apply recipe and close"))
+          : new SubmissionLabels(
+              text("save_apply", "Save and apply"),
+              text("save_reviewed", "Save reviewed changes"),
+              text("save_close", "Save and close"));
+    }
+  }
+
   private record Control(
       AbstractWidget widget,
       Consumer<String> display,
@@ -117,6 +154,7 @@ public final class SettingsScreen<T> extends FormScreen {
   private final Map<DocumentId, ReferenceActions<String, ?>> sources;
   private final FormPresentation presentation;
   private final FieldEditors<T> fieldEditors;
+  private final SubmissionLabels submissionLabels;
   private final CatalogPane catalog;
 
   private record InputPosition(int cursor, int selection, Optional<String> unit) {}
@@ -215,6 +253,28 @@ public final class SettingsScreen<T> extends FormScreen {
       Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
       FormPresentation presentation,
       FieldEditors<T> fieldEditors) {
+    this(
+        parent,
+        title,
+        contextLabel,
+        definition,
+        actions,
+        sources,
+        presentation,
+        fieldEditors,
+        SubmissionLabels.standard(actions.commitKind()));
+  }
+
+  public SettingsScreen(
+      Screen parent,
+      Component title,
+      Component contextLabel,
+      DocumentDefinition<T> definition,
+      DocumentActions<T> actions,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+      FormPresentation presentation,
+      FieldEditors<T> fieldEditors,
+      SubmissionLabels submissionLabels) {
     super(title);
     this.parent = parent;
     this.contextLabel = Objects.requireNonNull(contextLabel);
@@ -231,6 +291,7 @@ public final class SettingsScreen<T> extends FormScreen {
     this.sources = Map.copyOf(admitted);
     this.presentation = Objects.requireNonNull(presentation);
     this.fieldEditors = Objects.requireNonNull(fieldEditors);
+    this.submissionLabels = Objects.requireNonNull(submissionLabels);
     fieldEditors.requireCompatible(definition);
     dependencies = presentation.bind(definition.type());
     if (definition != actions.definition())
@@ -281,9 +342,7 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private Component commitLabel() {
-    return contextRecipe()
-        ? text("admit_recipe", "Apply recipe")
-        : text("save_apply", "Save and apply");
+    return submissionLabels.primary();
   }
 
   private <O> CompletionStage<O> action(Supplier<OperationHandle<O>> operation) {
@@ -1144,9 +1203,7 @@ public final class SettingsScreen<T> extends FormScreen {
             submitting
                 ? Optional.of(
                     new ReviewScreen.Submission(
-                        contextRecipe()
-                            ? text("apply_reviewed", "Apply reviewed recipe")
-                            : text("save_reviewed", "Save reviewed changes"),
+                        submissionLabels.reviewed(),
                         target -> {
                           synchronize(Map.copyOf(versions));
                           minecraft.setScreen(this);
@@ -2252,9 +2309,7 @@ public final class SettingsScreen<T> extends FormScreen {
                     : text(
                         "discard_help",
                         "Save these changes, discard the draft, or keep editing. Discarding does not undo any save that has already taken place."),
-                contextRecipe()
-                    ? text("apply_close", "Apply recipe and close")
-                    : text("save_close", "Save and close"),
+                submissionLabels.closing(),
                 this::closeSaveBlocked,
                 choice -> {
                   if (choice == UnsavedChangesScreen.Choice.DISCARD) finish();
