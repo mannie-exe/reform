@@ -19,6 +19,7 @@ public final class ClientExample {
     ImportExample.register(bus, container);
     ConflictExample.register(bus, container);
     KeyExample.register(bus, container);
+    CatalogExample.register(bus, container);
     preferences = ClientJsonSettings.clientJson(bus, container, NativeExample.DEFINITION);
     preferences.registerMenu(Component.literal("Native example settings"));
     preferences.registerCommands("reformprefs");

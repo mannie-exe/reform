@@ -116,3 +116,32 @@ class NativeFormFixtureGuards(unittest.TestCase):
         self.assertTrue(PROBE.successful_run(result, "keys-factory", "exact-jar"))
         self.assertFalse(PROBE.successful_run(result, "keys-factory-reopen", "exact-jar"))
         self.assertFalse(PROBE.successful_run(result, "keys-factory", "different-jar"))
+
+    def test_catalog_success_requires_editor_and_owner_shutdown(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "catalog",
+            "librarySha256": "exact-jar", "catalog": {"status": "PASS",
+                "editorClosed": False, "factoryClosed": False}}}
+        self.assertFalse(PROBE.successful_run(result, "catalog", "exact-jar"))
+        result["native"]["catalog"]["editorClosed"] = True
+        self.assertFalse(PROBE.successful_run(result, "catalog", "exact-jar"))
+        result["native"]["catalog"]["factoryClosed"] = True
+        self.assertTrue(PROBE.successful_run(result, "catalog", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "catalog-reopen", "exact-jar"))
+        self.assertFalse(PROBE.successful_run(result, "catalog", "different-jar"))
+
+    def test_catalog_report_requires_captured_completed_frames(self):
+        result = {"exitCode": 0, "termination": None, "native": {
+            "status": "PASS", "nativeShutdownClosed": True, "mode": "catalog",
+            "librarySha256": "exact-jar", "catalog": {"status": "PASS",
+                "editorClosed": True, "factoryClosed": True}}}
+        report = {"runs": [result], "screenshots": {}}
+        self.assertTrue(PROBE.successful_run(result, "catalog", "exact-jar"))
+        self.assertFalse(PROBE.successful_report(report, ("catalog",), "exact-jar"))
+        report["screenshots"] = {name: "a" * 64 for name in (
+            "form-catalog-wide.png", "form-catalog-wide-entry.png",
+            "form-catalog-narrow.png", "form-catalog-narrow-entry.png",
+            "form-catalog-localized.png", "form-catalog-localized-entry.png")}
+        self.assertTrue(PROBE.successful_report(report, ("catalog",), "exact-jar"))
+        del report["screenshots"]["form-catalog-narrow.png"]
+        self.assertFalse(PROBE.successful_report(report, ("catalog",), "exact-jar"))

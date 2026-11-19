@@ -2,6 +2,7 @@ package design.inherent.reform.presentation;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /** Measured form geometry without widget, renderer, or file ownership. */
 public final class FormGeometry {
@@ -12,6 +13,18 @@ public final class FormGeometry {
   }
 
   public record Placement(int x, int y, int width, int height) {}
+
+  public record Columns(int firstWidth, int secondX, int secondWidth) {}
+
+  /** Split only when both measured minima fit; compact views choose their own list/detail mode. */
+  public static Optional<Columns> columns(
+      int width, int firstMinimum, int secondMinimum, int preferredFirst, int gap) {
+    if (width < 1 || firstMinimum < 1 || secondMinimum < 1 || preferredFirst < 1 || gap < 0)
+      throw new IllegalArgumentException("Invalid column bounds");
+    if ((long) firstMinimum + secondMinimum + gap > width) return Optional.empty();
+    int first = Math.clamp(preferredFirst, firstMinimum, width - gap - secondMinimum);
+    return Optional.of(new Columns(first, first + gap, width - first - gap));
+  }
 
   public record Controls(List<Placement> placements, int height) {
     public Controls {

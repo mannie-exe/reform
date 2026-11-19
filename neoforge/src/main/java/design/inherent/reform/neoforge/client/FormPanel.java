@@ -43,6 +43,7 @@ final class FormPanel extends ScrollPanel {
     private final boolean category;
     private boolean selected;
     private int indent;
+    private Component context = Component.empty();
 
     NavigationButton(
         Component label, int width, boolean category, boolean selected, Runnable action) {
@@ -60,6 +61,10 @@ final class FormPanel extends ScrollPanel {
       selected = value;
     }
 
+    void context(Component value) {
+      context = value.copy();
+    }
+
     @Override
     protected void renderWidget(GuiGraphics graphics, int mx, int my, float tick) {
       if (selected) {
@@ -71,6 +76,13 @@ final class FormPanel extends ScrollPanel {
           graphics,
           Minecraft.getInstance().font,
           selected ? ACTIVE_TEXT : category ? DESCRIPTION_TEXT : TITLE_TEXT);
+      if (isFocused()) {
+        int edge = 0xffffffff;
+        graphics.fill(getX(), getY(), getX() + width, getY() + 2, edge);
+        graphics.fill(getX(), getY() + height - 2, getX() + width, getY() + height, edge);
+        graphics.fill(getX(), getY(), getX() + 2, getY() + height, edge);
+        graphics.fill(getX() + width - 2, getY(), getX() + width, getY() + height, edge);
+      }
     }
 
     @Override
@@ -86,6 +98,7 @@ final class FormPanel extends ScrollPanel {
     @Override
     public void updateWidgetNarration(NarrationElementOutput output) {
       super.updateWidgetNarration(output);
+      if (!context.getString().isEmpty()) output.add(NarratedElementType.HINT, context);
       if (selected)
         output.add(
             NarratedElementType.POSITION,

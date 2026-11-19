@@ -78,6 +78,7 @@ public final class NativeFormProbe {
   private java.util.concurrent.CompletableFuture<JsonObject> keyOwnerResult;
   private NativeKeyControls keyControls;
   private NativeKeyFactoryControls keyFactory;
+  private NativeCatalogControls catalog;
   private ClientKeyBindings invalidKeys;
   private final java.util.concurrent.atomic.AtomicInteger invalidKeySelections =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -129,7 +130,9 @@ public final class NativeFormProbe {
               "keys-controls",
               "keys-controls-reopen",
               "keys-factory",
-              "keys-factory-reopen")
+              "keys-factory-reopen",
+              "catalog",
+              "catalog-reopen")
           .contains(mode)) throw new IllegalStateException("Unknown form fixture mode");
     } catch (java.io.IOException unavailable) {
       throw new IllegalStateException("Missing disposable fixture mode", unavailable);
@@ -326,6 +329,27 @@ public final class NativeFormProbe {
         var action = afterCapture;
         afterCapture = null;
         action.run();
+        return;
+      }
+      if (mode.startsWith("catalog")) {
+        if (catalog == null) {
+          if (!(mc.screen instanceof TitleScreen)
+              || example.reform.CatalogExample.settings().status().lifecycle()
+                  != ClientJsonSettings.Lifecycle.READY) return;
+          recordArtifact();
+          catalog =
+              new NativeCatalogControls(
+                  mode.equals("catalog-reopen"),
+                  this::next,
+                  (name, action) -> {
+                    capture = name;
+                    afterCapture = action;
+                  });
+        }
+        if (catalog.tick()) {
+          report.add("catalog", catalog.report());
+          finish(null);
+        }
         return;
       }
       if (mode.startsWith("keys-factory")) {
@@ -1037,6 +1061,7 @@ public final class NativeFormProbe {
     if (keyOwner != null) report.add("keyOwner", keyOwner.report());
     if (keyControls != null) report.add("keyControls", keyControls.report());
     if (keyFactory != null) report.add("keyFactory", keyFactory.report());
+    if (catalog != null) report.add("catalog", catalog.report());
     if (mode.startsWith("dependencies")) {
       var status = example.reform.DependencyExample.settings().status();
       report.addProperty("dependencyLifecycle", status.lifecycle().name());
@@ -1122,6 +1147,21 @@ public final class NativeFormProbe {
           example.reform.ConflictExample.settings().status().lifecycle()
               == ClientJsonSettings.Lifecycle.CLOSED,
           "Conflict settings context survived shutdown");
+      var catalogClosed =
+          example.reform.CatalogExample.settings().status().lifecycle()
+                  == ClientJsonSettings.Lifecycle.CLOSED
+              && example.reform.CatalogExample.settings()
+                      .runtime()
+                      .orElseThrow()
+                      .view()
+                      .availability()
+                  == design.inherent.reform.owner.SettingsHandle.Availability.CLOSED;
+      check(catalogClosed, "Catalog settings context survived shutdown");
+      if (catalog != null) {
+        var state = catalog.report();
+        state.addProperty("factoryClosed", catalogClosed);
+        report.add("catalog", state);
+      }
       var settings = ClientExample.settings();
       check(
           settings.status().lifecycle() == ClientJsonSettings.Lifecycle.CLOSED,

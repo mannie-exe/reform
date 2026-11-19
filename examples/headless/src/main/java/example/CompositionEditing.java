@@ -15,6 +15,8 @@ import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.JsonOwner;
 import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.presentation.FormCatalog;
+import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.reference.CollectionSelection;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.reference.ReferenceBrowser;
@@ -216,12 +218,45 @@ final class CompositionEditing {
               .field("roles")
               .row(roles.rows().getFirst().id())
               .append(FieldPath.Part.VALUE);
+      var roleRow = FieldPath.ROOT.field("roles").row(roles.rows().getFirst().id());
+      var catalog =
+          new FormCatalog(
+              List.of(
+                  new FormCatalog.Section(
+                      FieldPath.ROOT.field("roles"),
+                      "example.roles",
+                      "Roles",
+                      "Authored roles and donor choices"),
+                  new FormCatalog.Section(
+                      FieldPath.ROOT.field("bounds"),
+                      "example.bounds",
+                      "Bounds",
+                      "Complete profile limits")));
+      var navigation =
+          new FormCatalog.Navigation(
+              catalog.snapshot(
+                  new FormModel(PROFILE, h.actions.view().snapshot().orElseThrow().draft())));
+      navigation.select(roleRow);
+      require(
+          navigation.selected().label().equals("anchor")
+              && navigation.selected().path().equals(roleRow),
+          "Public catalog lost its actual map-row identity or key caption");
       var donor = role.field("donor");
       var key = donor.variant("asset").field("key");
       h.edit(key, new DraftEdit.SetRaw("missing:required"));
       require(
           !h.run(() -> h.actions.validate(EntryPoint.COMMAND)).report().valid(),
           "Required donor validator did not run");
+      navigation.update(
+          catalog.snapshot(
+              new FormModel(PROFILE, h.actions.view().snapshot().orElseThrow().draft())));
+      require(
+          navigation.selected().path().equals(roleRow)
+              && ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(key))
+                  .raw()
+                  .equals("missing:required")
+              && Files.readString(h.file).equals(original),
+          "Catalog inspection repaired, persisted or navigated away from an invalid role");
       h.edit(donor, new DraftEdit.SelectVariant("inline"));
       require(
           h.run(() -> h.actions.validate(EntryPoint.COMMAND)).report().valid(),
@@ -285,6 +320,22 @@ final class CompositionEditing {
               .row(roles.rows().getFirst().id())
               .append(FieldPath.Part.KEY),
           new DraftEdit.SetRaw("renamed"));
+      var renamedCatalog =
+          catalog.snapshot(
+              new FormModel(PROFILE, h.actions.view().snapshot().orElseThrow().draft()));
+      navigation.update(renamedCatalog);
+      require(
+          navigation.selected().path().equals(roleRow)
+              && navigation.selected().label().equals("renamed")
+              && renamedCatalog.search("renamed").stream()
+                  .map(FormCatalog.Entry::path)
+                  .toList()
+                  .equals(List.of(roleRow))
+              && renamedCatalog.breadcrumbs(roleRow).stream()
+                  .map(FormCatalog.Entry::path)
+                  .toList()
+                  .equals(List.of(FieldPath.ROOT, FieldPath.ROOT.field("roles"), roleRow)),
+          "Renaming a public catalog row lost selection, search or breadcrumbs");
       var comparison = h.run(() -> h.actions.compare(EntryPoint.COMMAND));
       var inspection = h.run(() -> h.actions.explain(EntryPoint.GUI));
       var exported = h.run(() -> h.actions.export(EntryPoint.COMMAND));

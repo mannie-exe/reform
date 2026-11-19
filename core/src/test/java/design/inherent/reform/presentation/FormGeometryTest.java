@@ -7,6 +7,20 @@ import org.junit.jupiter.api.Test;
 
 class FormGeometryTest {
   @Test
+  void catalogColumnsRespectBothMinimaAndCompactBoundaryWithoutOverflow() {
+    assertTrue(FormGeometry.columns(299, 112, 180, 150, 8).isEmpty());
+    assertEquals(
+        new FormGeometry.Columns(112, 120, 180),
+        FormGeometry.columns(300, 112, 180, 150, 8).orElseThrow());
+    assertEquals(
+        new FormGeometry.Columns(200, 208, 392),
+        FormGeometry.columns(600, 112, 180, 200, 8).orElseThrow());
+    assertEquals(112, FormGeometry.columns(600, 112, 180, 50, 8).orElseThrow().firstWidth());
+    assertTrue(FormGeometry.columns(600, Integer.MAX_VALUE, Integer.MAX_VALUE, 200, 8).isEmpty());
+    assertThrows(IllegalArgumentException.class, () -> FormGeometry.columns(0, 1, 1, 1, 0));
+  }
+
+  @Test
   void columnsRequireAnExplicitRelationshipAndBothMinimumWidths() {
     assertFalse(FormGeometry.pair(null, 170, null, 170, 1000, 12));
     assertFalse(FormGeometry.pair("limits", 170, "appearance", 170, 1000, 12));

@@ -4,7 +4,7 @@ import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-/** Keep captured child focus when native dispatch reselects its current containing panel. */
+/** Keep child focus on reselection and refuse containers retired by native click callbacks. */
 abstract class FormScreen extends Screen {
   FormScreen(Component title) {
     super(title);
@@ -12,6 +12,8 @@ abstract class FormScreen extends Screen {
 
   @Override
   public void setFocused(GuiEventListener listener) {
+    // Native dispatch focuses a clicked child after its callback may have rebuilt this screen.
+    if (listener != null && !children().contains(listener)) return;
     if (getFocused() != listener) super.setFocused(listener);
   }
 }

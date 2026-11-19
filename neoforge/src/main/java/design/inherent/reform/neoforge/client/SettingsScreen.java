@@ -47,8 +47,10 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import org.lwjgl.glfw.GLFW;
@@ -116,6 +118,11 @@ public final class SettingsScreen<T> extends FormScreen {
   private final Map<DocumentId, ReferenceActions<String, ?>> sources;
   private final FormPresentation presentation;
   private final FieldEditors<T> fieldEditors;
+  private final CatalogPane catalog;
+
+  private record InputPosition(int cursor, int selection, Optional<String> unit) {}
+
+  private final Map<FieldPath, InputPosition> inputPositions = new LinkedHashMap<>();
   private final java.util.Set<FieldPath> expandedEditors = new java.util.HashSet<>();
   private final Map<FieldPath, Button> editorButtons = new LinkedHashMap<>();
   private final Map<FieldPath, Button> disclosureButtons = new LinkedHashMap<>();
@@ -143,6 +150,11 @@ public final class SettingsScreen<T> extends FormScreen {
   private long version;
   private boolean requested, updating, saving, loading, handoff, closed, formUnavailable;
   private Component notice;
+  private DraftTree modelDraft;
+  private FormModel cachedModel;
+  private IllegalArgumentException modelFailure;
+  private Language displayedLanguage;
+  private boolean bodyVisible = true;
 
   /** No implicit initialization, actor lookup or settings ownership is inferred by the screen. */
   public SettingsScreen(
@@ -212,6 +224,41 @@ public final class SettingsScreen<T> extends FormScreen {
     dependencies = presentation.bind(definition.type());
     if (definition != actions.definition())
       throw new IllegalArgumentException("A form requires its actual owner definition");
+    catalog =
+        presentation.catalog().enabled()
+            ? new CatalogPane(
+                presentation.catalog(),
+                definition.id(),
+                new CatalogPane.Host() {
+                  public boolean active() {
+                    return !closed && minecraft != null && minecraft.screen == SettingsScreen.this;
+                  }
+
+                  public boolean change(Runnable navigation) {
+                    return changeCatalog(navigation);
+                  }
+
+                  public void add(FormPanel panel) {
+                    SettingsScreen.this.addRenderableWidget(panel);
+                  }
+
+                  public void add(AbstractWidget widget) {
+                    SettingsScreen.this.addRenderableWidget(widget);
+                  }
+
+                  public void remove(GuiEventListener widget) {
+                    SettingsScreen.this.removeWidget(widget);
+                  }
+
+                  public GuiEventListener focused() {
+                    return SettingsScreen.this.getFocused();
+                  }
+
+                  public void focus(GuiEventListener widget) {
+                    SettingsScreen.this.setFocused(widget);
+                  }
+                })
+            : null;
   }
 
   private static Component text(String key, String fallback) {
@@ -250,11 +297,52 @@ public final class SettingsScreen<T> extends FormScreen {
         : Optional.ofNullable(editorButtons.get(path));
   }
 
+  /** Cached catalog selection; this performs no owner operation or draft mutation. */
+  public Optional<FieldPath> selectedSection() {
+    return catalog == null ? Optional.empty() : catalog.selectedPath();
+  }
+
+  /** Explicit composed-view navigation through the current native form's existing draft. */
+  public boolean selectSection(FieldPath path) {
+    return catalog != null && catalog.contains(path) && changeCatalog(() -> catalog.select(path));
+  }
+
+  private boolean changeCatalog(Runnable navigation) {
+    if (closed || minecraft == null || minecraft.screen != this) return false;
+    if (saving || loading || pendingEdits > 0 || unsent()) {
+      notice = text("catalog_wait", "Finish pending input before changing sections.");
+      return false;
+    }
+    navigation.run();
+    rebuildWidgets();
+    return true;
+  }
+
   /** Focus and reveal a currently rendered field, including related diagnostic destinations. */
   public boolean focusField(FieldPath path) {
+    if (fieldControl(path).isEmpty() && catalog != null) {
+      var section = catalog.nearest(path);
+      if (section.isEmpty() || !selectSection(section.orElseThrow().path())) return false;
+    }
     var control = controls.get(path);
     var widget = control == null ? editorButtons.get(path) : control.widget();
-    if (widget == null || panel == null) return false;
+    if (widget == null || !widget.active) {
+      widget = availabilityButtons.get(path);
+      if (widget == null)
+        widget =
+            structurePaths.entrySet().stream()
+                .filter(entry -> entry.getValue().equals(path))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+    }
+    if (panel == null || !bodyVisible) return false;
+    if (widget == null) {
+      if (catalog == null || !catalog.selectedPath().filter(path::equals).isPresent()) return false;
+      setFocused(panel);
+      panel.focusVisibleControl();
+      return panel.getFocused() != null;
+    }
     String focus =
         panel.fieldFocus(FormModel.key(path) + (control == null ? ":editor" : ""), widget);
     if (focus == null) return false;
@@ -265,6 +353,26 @@ public final class SettingsScreen<T> extends FormScreen {
 
   @Override
   protected void init() {
+    if (catalog != null) catalog.remember(panel);
+    if (catalog != null) {
+      controls.forEach(
+          (path, control) -> {
+            if (control.widget() instanceof FormEditBox input) {
+              inputPositions.remove(path);
+              inputPositions.put(
+                  path,
+                  new InputPosition(
+                      input.getCursorPosition(),
+                      input.selection(),
+                      Optional.ofNullable(control.quantity()).map(value -> value.input.unit())));
+            }
+          });
+      int maximum =
+          actions.view().snapshot().map(value -> value.draft().limits().maximumNodes()).orElse(1);
+      while (inputPositions.size() > maximum)
+        inputPositions.remove(inputPositions.keySet().iterator().next());
+    }
+    displayedLanguage = Language.getInstance();
     widgetGeneration = new Object();
     float scroll = panel == null ? 0 : panel.scroll();
     String focus = panel == null ? null : panel.focusKey();
@@ -314,45 +422,74 @@ public final class SettingsScreen<T> extends FormScreen {
       widget.setWidth(position.width());
       addRenderableWidget(widget);
     }
-    panel =
-        new FormPanel(
-            minecraft,
-            12,
-            bodyTop,
-            Math.max(1, width - 24),
-            Math.max(1, statusTop - bodyTop - 8),
-            false);
     visibleFields.clear();
     formLayout = List.of();
+    FormModel model = null;
+    Component modelError = null;
     if (current.snapshot().isPresent()) {
       var snapshot = current.snapshot().orElseThrow();
+      if (catalog != null
+          && (!snapshot.session().equals(formSession) || snapshot.generation() != formGeneration))
+        inputPositions.clear();
       formSession = snapshot.session();
       formGeneration = snapshot.generation();
-      FormModel model = null;
       try {
-        model = new FormModel(definition.type(), snapshot.draft());
+        model = model(snapshot.draft());
         formLayout = model.layout();
         formUnavailable = false;
       } catch (IllegalArgumentException unavailable) {
         formUnavailable = true;
         notice = failure(unavailable);
-        panel.row(text("form_unavailable", "Form unavailable"), notice);
+        modelError = notice;
       }
-      if (model != null) {
-        expandedEditors.retainAll(
-            formLayout.stream()
-                .map(FormModel.Layout::path)
-                .collect(java.util.stream.Collectors.toSet()));
-        fields(model.root(), title);
+    }
+    var layout =
+        new CatalogPane.Layout(
+            12,
+            bodyTop,
+            Math.max(1, width - 24),
+            Math.max(1, statusTop - bodyTop - 8),
+            false,
+            true);
+    if (catalog != null) {
+      catalog.project(
+          model, current.snapshot().map(value -> value.session()).orElse(null), formGeneration);
+      layout = catalog.init(minecraft, 12, bodyTop, Math.max(1, width - 24), statusTop - 8);
+    }
+    bodyVisible = !layout.listOnly();
+    panel =
+        new FormPanel(minecraft, layout.x(), layout.y(), layout.width(), layout.height(), false);
+    if (modelError != null) panel.row(text("form_unavailable", "Form unavailable"), modelError);
+    if (model != null && bodyVisible) {
+      expandedEditors.retainAll(
+          formLayout.stream()
+              .map(FormModel.Layout::path)
+              .collect(java.util.stream.Collectors.toSet()));
+      if (catalog == null || layout.allFields()) fields(model.root(), title);
+      else {
+        catalog.help().ifPresent(help -> panel.row(Component.empty(), help));
+        var selected = catalog.selected();
+        if (selected.isPresent() && selected.orElseThrow().node().isPresent()) {
+          var node = selected.orElseThrow().node().orElseThrow();
+          var label = catalog.caption(node.path());
+          if (node.role() == FormModel.Role.ROW || node.role() == FormModel.Role.MAP_ROW) {
+            var parent = catalog.parent().orElseThrow();
+            int index = parent.children().indexOf(node);
+            rowActions(parent, node, index, label);
+          }
+          fields(node, label);
+        } else panel.row(text("catalog_section", "Section unavailable"), catalog.unavailable());
       }
     }
     controls.keySet().retainAll(visibleFields);
     local.keySet().retainAll(visibleFields);
     versions.keySet().retainAll(visibleFields);
-    addRenderableWidget(panel);
-    panel.finish(scroll);
-    panel.restoreFocus(focus);
-    if (focus != null) setFocused(panel);
+    if (bodyVisible) addRenderableWidget(panel);
+    panel.finish(catalog == null ? scroll : 0);
+    if (catalog == null) {
+      panel.restoreFocus(focus);
+      if (focus != null) setFocused(panel);
+    } else if (bodyVisible) catalog.restore(panel);
     displayed = current;
     feedback();
     if (!requested) {
@@ -361,24 +498,55 @@ public final class SettingsScreen<T> extends FormScreen {
     }
   }
 
+  private FormModel model(DraftTree draft) {
+    if (draft != modelDraft) {
+      modelDraft = draft;
+      cachedModel = null;
+      modelFailure = null;
+      try {
+        cachedModel = new FormModel(definition.type(), draft);
+      } catch (IllegalArgumentException failed) {
+        modelFailure = failed;
+      }
+    }
+    if (modelFailure != null) throw modelFailure;
+    return cachedModel;
+  }
+
   @Override
   protected void rebuildWidgets() {
+    var page = catalog == null ? null : catalog.displayedDetail();
+    var catalogFocus = catalog == null ? null : catalog.focus();
+    boolean bodyFocused = getFocused() == panel;
     var bookmark = panel == null ? null : panel.bookmark();
     String focusedField = panel == null ? null : panel.focusKey();
     int focusedFooter = footer.indexOf(getFocused());
     super.rebuildWidgets();
-    if (bookmark != null) panel.restore(bookmark);
-    if (focusedField != null) {
+    boolean samePage = catalog == null || Objects.equals(page, catalog.displayedDetail());
+    if (bodyVisible && samePage && bookmark != null) panel.restore(bookmark);
+    if (bodyVisible && samePage && focusedField != null && (catalog == null || bodyFocused)) {
       // Native rebuild clears the old focus tree before init. Restore the parent first.
       setFocused(panel);
       panel.restoreFocus(focusedField);
-    } else if (focusedFooter >= 0 && focusedFooter < footer.size())
+    } else if (bodyVisible && catalog != null) catalog.restore(panel);
+    if (catalogFocus != null && catalogFocus.area() != CatalogPane.Area.OTHER)
+      catalog.restore(catalogFocus);
+    else if (focusedFooter >= 0 && focusedFooter < footer.size())
       setFocused(footer.get(focusedFooter));
   }
 
   @Override
+  public void resize(net.minecraft.client.Minecraft client, int width, int height) {
+    if (catalog != null) catalog.preserveMode(getFocused() == panel);
+    super.resize(client, width, height);
+  }
+
+  @Override
   protected void setInitialFocus() {
-    if (panel != null && (!controls.isEmpty() || !editorButtons.isEmpty())) {
+    if (!bodyVisible && catalog != null && catalog.focusSearch()) return;
+    if (panel != null
+        && bodyVisible
+        && (catalog != null || !controls.isEmpty() || !editorButtons.isEmpty())) {
       setFocused(panel);
       panel.focusVisibleControl();
       if (panel.getFocused() != null) return;
@@ -402,6 +570,10 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private void fields(FormModel.Node field, Component label) {
+    if (catalog != null && catalog.boundary(field.path())) {
+      catalogLink(field);
+      return;
+    }
     var path = field.path();
     var node = field.input();
     var shape = field.type().orElseThrow().shape();
@@ -483,10 +655,13 @@ public final class SettingsScreen<T> extends FormScreen {
             && (sequence.element().shape() instanceof ValueShape.Reference<?>
                 || scalar.kind() == ValueShape.ScalarKind.BOOLEAN
                 || scalar.kind() == ValueShape.ScalarKind.CHOICE)) {
+          var generation = widgetGeneration;
           var choose =
               Button.builder(
                       text("choose_values", "Choose values…"),
-                      ignored -> openCollection(path, label))
+                      ignored -> {
+                        if (widgetGeneration == generation) openCollection(path, label);
+                      })
                   .bounds(0, 0, 120, 20)
                   .createNarration(original -> label.copy().append(": ").append(original.get()))
                   .build();
@@ -503,55 +678,13 @@ public final class SettingsScreen<T> extends FormScreen {
           collectionControls.toArray(AbstractWidget[]::new));
       for (int i = 0; i < size; i++) {
         var child = field.children().get(i);
-        var row = ((FieldPath.Row) child.path().segments().getLast()).id();
         var rowLabel =
             Component.translatableWithFallback("reform.settings.entry", "Entry %s", i + 1);
-        var rowContext = label.copy().append(": ").append(rowLabel);
-        var up =
-            structuralButton(
-                path,
-                text("move_up", "Up"),
-                rowContext,
-                new DraftEdit.MoveRow(
-                    row,
-                    i > 0
-                        ? Optional.of(
-                            ((FieldPath.Row)
-                                    field.children().get(i - 1).path().segments().getLast())
-                                .id())
-                        : Optional.of(row)));
-        var down =
-            structuralButton(
-                path,
-                text("move_down", "Down"),
-                rowContext,
-                new DraftEdit.MoveRow(
-                    row,
-                    i + 2 < size
-                        ? Optional.of(
-                            ((FieldPath.Row)
-                                    field.children().get(i + 2).path().segments().getLast())
-                                .id())
-                        : Optional.empty()));
-        var duplicate =
-            structuralButton(
-                path,
-                text("duplicate", "Copy"),
-                rowContext,
-                new DraftEdit.DuplicateRow(row, Optional.empty()));
-        structureButtons.put(up, i > 0);
-        structureButtons.put(down, i + 1 < size);
-        structureButtons.put(duplicate, size < maximum);
-        panel.row(
-            child.key() + ":row",
-            rowLabel,
-            Component.empty(),
-            up,
-            down,
-            duplicate,
-            structuralButton(
-                path, text("remove", "Remove"), rowContext, new DraftEdit.RemoveRow(row)));
-        fields(child, rowLabel);
+        if (catalog != null && catalog.boundary(child.path())) catalogLink(child);
+        else {
+          rowActions(field, child, i, label);
+          fields(child, rowLabel);
+        }
       }
       return;
     }
@@ -606,6 +739,7 @@ public final class SettingsScreen<T> extends FormScreen {
       var choices =
           new ArrayList<>(alternatives.variants().stream().map(ValueShape.Variant::id).toList());
       if (!choices.contains(value.selected())) choices.addFirst(value.selected());
+      var generation = widgetGeneration;
       var choice =
           CycleButton.<String>builder(
                   id ->
@@ -621,7 +755,10 @@ public final class SettingsScreen<T> extends FormScreen {
                   160,
                   20,
                   label,
-                  (widget, id) -> structural(path, new DraftEdit.SelectVariant(id)));
+                  (widget, id) -> {
+                    if (widgetGeneration == generation)
+                      structural(path, new DraftEdit.SelectVariant(id));
+                  });
       structureButtons.put(choice, true);
       structurePaths.put(choice, path);
       panel.row(FormModel.key(path) + ":variant", label, Component.empty(), choice);
@@ -681,12 +818,15 @@ public final class SettingsScreen<T> extends FormScreen {
     }
     if (shape instanceof ValueShape.Reference<?> reference) {
       var source = sources.get(reference.source());
+      var generation = widgetGeneration;
       var browse =
           Button.builder(
                   source == null
                       ? text("source_unavailable", "Source unavailable")
                       : text("browse", "Browse…"),
-                  ignored -> openReference(path, label, source))
+                  ignored -> {
+                    if (widgetGeneration == generation) openReference(path, label, source);
+                  })
               .bounds(0, 0, 120, 20)
               .createNarration(original -> label.copy().append(": ").append(original.get()))
               .build();
@@ -710,6 +850,78 @@ public final class SettingsScreen<T> extends FormScreen {
     } else fieldRow(path, label, control.widget());
   }
 
+  private void rowActions(FormModel.Node field, FormModel.Node child, int i, Component label) {
+    int size = field.children().size();
+    var shape = field.type().orElseThrow().shape();
+    int maximum =
+        shape instanceof ValueShape.Sequence sequence
+            ? sequence.maximumSize()
+            : ((ValueShape.Mapping) shape).maximumSize();
+    var path = field.path();
+    var row = ((FieldPath.Row) child.path().segments().getLast()).id();
+    var rowLabel =
+        catalog == null
+            ? Component.translatableWithFallback("reform.settings.entry", "Entry %s", i + 1)
+            : catalog.caption(child.path());
+    var rowContext = label.copy().append(": ").append(rowLabel);
+    var up =
+        structuralButton(
+            path,
+            text("move_up", "Up"),
+            rowContext,
+            new DraftEdit.MoveRow(
+                row,
+                i > 0
+                    ? Optional.of(
+                        ((FieldPath.Row) field.children().get(i - 1).path().segments().getLast())
+                            .id())
+                    : Optional.of(row)));
+    var down =
+        structuralButton(
+            path,
+            text("move_down", "Down"),
+            rowContext,
+            new DraftEdit.MoveRow(
+                row,
+                i + 2 < size
+                    ? Optional.of(
+                        ((FieldPath.Row) field.children().get(i + 2).path().segments().getLast())
+                            .id())
+                    : Optional.empty()));
+    var duplicate =
+        structuralButton(
+            path,
+            text("duplicate", "Copy"),
+            rowContext,
+            new DraftEdit.DuplicateRow(row, Optional.empty()));
+    structureButtons.put(up, i > 0);
+    structureButtons.put(down, i + 1 < size);
+    structureButtons.put(duplicate, size < maximum);
+    panel.row(
+        child.key() + ":row",
+        rowLabel,
+        Component.empty(),
+        up,
+        down,
+        duplicate,
+        structuralButton(path, text("remove", "Remove"), rowContext, new DraftEdit.RemoveRow(row)));
+  }
+
+  private void catalogLink(FormModel.Node field) {
+    var label = catalog.caption(field.path());
+    var generation = widgetGeneration;
+    var open =
+        Button.builder(
+                text("catalog_open", "Open…"),
+                ignored -> {
+                  if (widgetGeneration == generation) selectSection(field.path());
+                })
+            .bounds(0, 0, 80, 20)
+            .createNarration(original -> label.copy().append(": ").append(original.get()))
+            .build();
+    panel.row(FormModel.key(field.path()) + ":catalog", label, Component.empty(), open);
+  }
+
   private void fieldRow(FieldPath path, Component label, AbstractWidget... widgets) {
     var row = new ArrayList<>(List.of(widgets));
     if (dependencies.affects(path)) row.add(availabilityButton(path, label));
@@ -722,11 +934,13 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private Button availabilityButton(FieldPath path, Component label) {
+    var generation = widgetGeneration;
     var button =
         Button.builder(
                 text("availability", "Availability"),
                 ignored -> {
-                  if (!closed && minecraft.screen == this) notice = dependencyText(path);
+                  if (!closed && minecraft.screen == this && widgetGeneration == generation)
+                    notice = dependencyText(path);
                 })
             .bounds(0, 0, Math.max(80, font.width(text("availability", "Availability")) + 16), 20)
             .createNarration(original -> label.copy().append(": ").append(dependencyText(path)))
@@ -1053,8 +1267,13 @@ public final class SettingsScreen<T> extends FormScreen {
 
   private Button structuralButton(
       FieldPath path, Component label, Component context, DraftEdit.Action edit) {
+    var generation = widgetGeneration;
     var button =
-        Button.builder(label, ignored -> structural(path, edit))
+        Button.builder(
+                label,
+                ignored -> {
+                  if (widgetGeneration == generation) structural(path, edit);
+                })
             .bounds(0, 0, Math.max(40, font.width(label) + 16), 20)
             .createNarration(original -> context.copy().append(": ").append(original.get()))
             .build();
@@ -1152,9 +1371,14 @@ public final class SettingsScreen<T> extends FormScreen {
           quantity == null
               ? scalar.maximumLength() > 0 ? scalar.maximumLength() : 128
               : quantity.input.display().limits().maximumCharacters();
-      var input = new EditBox(font, 0, 0, 160, 20, label);
+      var input = new FormEditBox(font, 0, 0, 160, 20, label);
       input.setMaxLength(Math.max(raw.length(), inputLimit));
       input.setValue(raw);
+      var position = inputPositions.get(path);
+      if (position != null) {
+        input.setCursorPosition(Math.min(position.cursor(), raw.length()));
+        input.setHighlightPos(Math.min(position.selection(), raw.length()));
+      }
       input.setResponder(value -> edit(path, token, value));
       return new Control(
           input,
@@ -1170,7 +1394,7 @@ public final class SettingsScreen<T> extends FormScreen {
           token,
           quantity);
     }
-    var unavailable = new EditBox(font, 0, 0, 160, 20, label);
+    var unavailable = new FormEditBox(font, 0, 0, 160, 20, label);
     unavailable.setMaxLength(Math.max(128, raw.length()));
     unavailable.setValue(
         raw.isEmpty() ? text("unsupported", "Editor unavailable").getString() : raw);
@@ -1189,6 +1413,14 @@ public final class SettingsScreen<T> extends FormScreen {
       Object token) {
     var quantity = new Quantity(NumericInput.open(shape, node));
     var mapping = quantity.input.display();
+    var rememberedPosition = inputPositions.get(path);
+    if (rememberedPosition != null
+        && rememberedPosition.unit().isPresent()
+        && mapping.units().stream()
+            .anyMatch(unit -> unit.id().equals(rememberedPosition.unit().orElseThrow()))) {
+      var selection = quantity.input.select(rememberedPosition.unit().orElseThrow());
+      if (selection.accepted()) quantity.input = selection.input();
+    }
     var ids = new ArrayList<>(mapping.units().stream().map(unit -> unit.id()).toList());
     if (!ids.contains(quantity.input.unit())) ids.add(quantity.input.unit());
     quantity.units =
@@ -1638,10 +1870,34 @@ public final class SettingsScreen<T> extends FormScreen {
 
   @Override
   public void tick() {
+    if (displayedLanguage != Language.getInstance()) {
+      if (catalog != null) catalog.preserveMode(getFocused() == panel);
+      rebuildWidgets();
+      return;
+    }
     if (displayed != actions.view()) {
       displayed = actions.view();
-      if (layoutChanged(displayed)) rebuildWidgets();
-      else feedback();
+      boolean changed = layoutChanged(displayed);
+      if (catalog != null) {
+        FormModel currentModel = null;
+        if (displayed.snapshot().isPresent()) {
+          try {
+            currentModel = model(displayed.snapshot().orElseThrow().draft());
+          } catch (IllegalArgumentException unavailable) {
+            /* The form reports this state during rebuild. */
+          }
+        }
+        changed |=
+            catalog.project(
+                currentModel,
+                displayed.snapshot().map(value -> value.session()).orElse(null),
+                displayed.snapshot().map(value -> value.generation()).orElse(0L));
+      }
+      if (changed) rebuildWidgets();
+      else {
+        if (catalog != null) catalog.refresh();
+        feedback();
+      }
     }
   }
 
@@ -1701,15 +1957,18 @@ public final class SettingsScreen<T> extends FormScreen {
 
   @Override
   public Component getNarrationMessage() {
-    return title.copy().append(". ").append(contextLabel).append(". ").append(status());
+    var message = title.copy().append(". ").append(contextLabel).append(". ").append(status());
+    return catalog == null ? message : message.append(". ").append(catalog.narration());
   }
 
   @Override
   public boolean keyPressed(int key, int scan, int modifiers) {
     if (closed || minecraft.screen != this) return false;
+    if (catalog != null && key == GLFW.GLFW_KEY_ESCAPE && catalog.clearFocusedFilter()) return true;
     if (super.keyPressed(key, scan, modifiers)) return true;
     if (loading) return false;
     if (hasControlDown()) {
+      if (catalog != null && key == GLFW.GLFW_KEY_F) return catalog.openSearch();
       if (key == GLFW.GLFW_KEY_S || key == GLFW.GLFW_KEY_ENTER) {
         requestSave();
         return true;
@@ -1774,7 +2033,16 @@ public final class SettingsScreen<T> extends FormScreen {
   private void finish() {
     closed = true;
     actions.close();
+    disposePresentation();
     minecraft.setScreen(parent);
+  }
+
+  private void disposePresentation() {
+    if (catalog != null) catalog.close();
+    inputPositions.clear();
+    cachedModel = null;
+    modelDraft = null;
+    modelFailure = null;
   }
 
   @Override
@@ -1782,7 +2050,10 @@ public final class SettingsScreen<T> extends FormScreen {
     dependencyView = null;
     dependencyEvaluation = null;
     dependencyVersion = -1;
-    if (!handoff && !closed) actions.close();
+    if (!handoff) {
+      if (!closed) actions.close();
+      disposePresentation();
+    }
   }
 
   private static String raw(DraftNode node) {
@@ -1806,7 +2077,7 @@ public final class SettingsScreen<T> extends FormScreen {
     if (!snapshot.session().equals(formSession) || snapshot.generation() != formGeneration)
       return true;
     try {
-      return !formLayout.equals(new FormModel(definition.type(), snapshot.draft()).layout());
+      return !formLayout.equals(model(snapshot.draft()).layout());
     } catch (IllegalArgumentException unavailable) {
       return !formUnavailable;
     }
