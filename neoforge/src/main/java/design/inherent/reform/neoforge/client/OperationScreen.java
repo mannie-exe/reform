@@ -222,9 +222,9 @@ public final class OperationScreen<O> extends FormScreen {
           text("unavailable", "This operation is unavailable to the current context."),
           Component.empty());
     } else {
-      panel.row(
-          text("identity", "Operation"),
-          Component.literal(observed.operation() + "\n" + observed.id()));
+      var summary = outcome == null ? Component.empty() : outcome.summary();
+      boolean hasSummary = !summary.getString().isEmpty();
+      if (hasSummary) panel.row(text("result", "Result"), summary);
       panel.row(
           text("state", "Actual state"),
           text(
@@ -233,33 +233,42 @@ public final class OperationScreen<O> extends FormScreen {
               observed.state().name(),
               observed.revision()));
       var progress = observed.progress();
-      panel.row(
-          text("progress", "Reported progress"),
-          text(
-              "progress_detail",
-              "%s: %s %s · total %s",
-              progress.phase(),
-              progress.completed(),
-              progress.unit(),
-              progress.total().isPresent()
-                  ? Long.toString(progress.total().getAsLong())
-                  : text("unknown_total", "unknown").getString()));
-      panel.row(
-          text("effects", "Effects"),
-          observed.cancellationRequested() && !observed.terminal()
-              ? text(
-                  "draining",
-                  "Cancellation requested; waiting for actual work to stop or drain. It is not rollback.")
-              : observed.terminal()
-                  ? text(
-                      "terminal",
-                      "The operation ended. Its state alone does not certify successful persistence or application.")
-                  : text(
-                      "running",
-                      "Work is pending. Returning to the editor leaves it running; no completion percentage is inferred."));
+      if (!observed.terminal()
+          || progress.completed() > 0
+          || progress.total().isPresent()
+          || !progress.unit().isEmpty())
+        panel.row(
+            text("progress", "Reported progress"),
+            text(
+                "progress_detail",
+                "%s: %s %s · total %s",
+                progress.phase(),
+                progress.completed(),
+                progress.unit(),
+                progress.total().isPresent()
+                    ? Long.toString(progress.total().getAsLong())
+                    : text("unknown_total", "unknown").getString()));
+      if (!hasSummary) {
+        panel.row(
+            text("effects", "Effects"),
+            observed.cancellationRequested() && !observed.terminal()
+                ? text(
+                    "draining",
+                    "Cancellation requested; waiting for actual work to stop or drain. It is not rollback.")
+                : observed.terminal()
+                    ? text(
+                        "terminal",
+                        "The operation ended. Its state alone does not certify successful persistence or application.")
+                    : text(
+                        "running",
+                        "Work is pending. Returning to the editor leaves it running; no completion percentage is inferred."));
+      }
       report("operation", text("diagnostics", "Operation diagnostics"), observed.report());
       if (outcome != null) details();
       if (presentationFailure != null) panel.row(Component.empty(), presentationFailure);
+      panel.row(
+          text("identity", "Operation"),
+          Component.literal(observed.operation() + "\n" + observed.id()));
     }
     for (var action : actions)
       blocked.get(action.id()).ifPresent(reason -> panel.row(action.label(), reason));

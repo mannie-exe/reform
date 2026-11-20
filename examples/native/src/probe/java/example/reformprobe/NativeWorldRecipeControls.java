@@ -42,6 +42,7 @@ final class NativeWorldRecipeControls {
   private WorldRecipe<CreationExample.Recipe, Integer> recipe;
   private DocumentActions<CreationExample.Recipe> actions, retained;
   private Screen form;
+  private NativeRecipePreviewControls preview;
   private EditBox soil;
   private CompletableFuture<?> pending;
   private int callbackCalls;
@@ -118,10 +119,18 @@ final class NativeWorldRecipeControls {
             .updateDimensions((registries, dimensions) -> flat.value().createWorldDimensions());
         original = parent.getUiState().getSettings();
         check("native flat preset baseline", depth(original) == 2);
-        open(CreationExample.editor(parent, original));
+        preview = new NativeRecipePreviewControls(parent, original, progress, capture);
         step("ordinary public factory opens native recipe editor");
       }
       case 1 -> {
+        if (preview != null) {
+          if (!preview.tick()) return false;
+          report.add("preview", preview.report());
+          preview = null;
+          open(CreationExample.editor(parent, original));
+          progress.accept("completed preview controls; opened a plain recipe editor");
+          return false;
+        }
         if (!ready()) return false;
         soil = input(form, "Soil depth");
         check(

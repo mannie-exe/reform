@@ -73,7 +73,7 @@ public final class ReviewScreen<T> extends FormScreen {
   private Language language;
   private Object widgets;
   private int statusTop, issuePage, changePage;
-  private boolean requested, validating, closed, returning, wasCurrent, wasAvailable;
+  private boolean requested, validating, closed, returning, showingExport, wasCurrent, wasAvailable;
 
   public ReviewScreen(
       Component title,
@@ -188,6 +188,8 @@ public final class ReviewScreen<T> extends FormScreen {
     refresh.active = ready() && operation == null;
     var validate = button(text("validate", "Validate"), () -> request(true));
     validate.active = ready() && operation == null;
+    var export = button(text("export", "Export value…"), this::exportValue);
+    export.active = canExport();
     submission.ifPresent(
         action -> {
           var commit = button(action.label(), this::submit);
@@ -681,6 +683,83 @@ public final class ReviewScreen<T> extends FormScreen {
                     }));
   }
 
+  private boolean canExport() {
+    return current() && operation == null && actions.view().validation().valid();
+  }
+
+  private void exportValue() {
+    if (!canExport()) return;
+    try {
+      var target = review.target();
+      var handle = actions.export(EntryPoint.GUI, target);
+      var id = handle.snapshot().id();
+      var output =
+          new OperationScreen<>(
+              text("export_title", "Export value"),
+              text(
+                  "export_context",
+                  "Document %s · draft %s · in-memory JSON",
+                  target.document().toString(),
+                  target.version()),
+              handle,
+              () ->
+                  !closed
+                      && available.getAsBoolean()
+                      && actions.view().availability() == EditorActor.Availability.READY
+                      && actions.operation(id).filter(retained -> retained == handle).isPresent(),
+              artifact ->
+                  new OperationScreen.Outcome(
+                      text(
+                          "export_result",
+                          "%s bytes ready to copy. The saved file and effective values are unchanged.",
+                          artifact.size()),
+                      List.of(
+                          new OperationScreen.Detail(
+                              text("export_schema", "Schema version"),
+                              Component.literal(Integer.toString(artifact.schemaVersion()))),
+                          new OperationScreen.Detail(
+                              text("export_source", "Source revision"),
+                              Component.literal(artifact.draft().sourceRevision())),
+                          new OperationScreen.Detail(
+                              text("export_checksum", "SHA-256"),
+                              Component.literal(artifact.sha256())))),
+              List.of(
+                  new OperationScreen.Action(
+                      "copy_json",
+                      text("copy_json", "Copy JSON"),
+                      () ->
+                          handle.snapshot().result().isPresent()
+                              ? Optional.empty()
+                              : Optional.of(
+                                  text("no_export", "Wait for an admitted export result.")),
+                      () -> {
+                        try {
+                          minecraft.keyboardHandler.setClipboard(
+                              handle.snapshot().result().orElseThrow().text());
+                          notice = text("copied_json", "Copied the exported JSON.");
+                        } catch (RuntimeException failed) {
+                          notice = failure(failed);
+                        } finally {
+                          minecraft.setScreen(this);
+                        }
+                      })),
+              () -> minecraft.setScreen(this),
+              () -> {
+                release();
+                abandoned.run();
+              });
+      showingExport = true;
+      try {
+        minecraft.setScreen(output);
+      } finally {
+        showingExport = false;
+      }
+    } catch (PolicyRefusal refused) {
+      notice = failure(refused);
+      rebuildWidgets();
+    }
+  }
+
   @Override
   public void tick() {
     if (!requested && ready()) request(false);
@@ -814,7 +893,7 @@ public final class ReviewScreen<T> extends FormScreen {
 
   @Override
   public void removed() {
-    if (!returning && !closed) {
+    if (!returning && !showingExport && !closed) {
       release();
       abandoned.run();
     }

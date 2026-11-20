@@ -833,6 +833,9 @@ class DocumentActionsTest {
           explanation.applicationEffects().forField(FieldPath.ROOT).orElseThrow().timings());
       assertEquals(1, explanation.effective().orElseThrow().value().orElseThrow().count());
       var artifact = h.run(() -> h.actions.export(EntryPoint.COMMAND));
+      var guiArtifact = h.run(() -> h.actions.export(EntryPoint.GUI, artifact.draft()));
+      assertEquals(artifact.draft(), guiArtifact.draft());
+      assertArrayEquals(artifact.bytes(), guiArtifact.bytes());
       assertEquals("document-value", artifact.representation());
       assertTrue(artifact.text().contains("\"count\":2"));
       assertFalse(artifact.text().contains("schemaVersion"));
@@ -846,6 +849,10 @@ class DocumentActionsTest {
       assertEquals(time, Files.getLastModifiedTime(h.path));
       assertEquals(1, h.writes.get());
       h.edit("count", "-", EntryPoint.COMMAND);
+      var stale = h.nativeCall(() -> h.actions.export(EntryPoint.GUI, artifact.draft()));
+      var staleResult = await(stale.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, staleResult.state());
+      assertEquals("editor.review_changed", staleResult.report().issues().getFirst().code());
       assertFalse(h.run(() -> h.actions.validate(EntryPoint.GUI)).report().valid());
       assertFalse(h.run(() -> h.actions.compare(EntryPoint.COMMAND)).report().valid());
       var refused = h.nativeCall(() -> h.actions.export(EntryPoint.COMMAND));

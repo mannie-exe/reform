@@ -289,7 +289,8 @@ class NativeFormFixtureGuards(unittest.TestCase):
         self.assertFalse(PROBE.successful_report(report, ("review",), "exact-jar"))
         report["screenshots"] = {name: "a" * 64 for name in (
             "form-review-diagnostics.png", "form-review-diagnostics-entry.png",
-            "form-review-narrow.png", "form-review-narrow-entry.png")}
+            "form-review-narrow.png", "form-review-narrow-entry.png",
+            "form-review-export.png")}
         self.assertTrue(PROBE.successful_report(report, ("review",), "exact-jar"))
         self.assertFalse(PROBE.successful_report(report, ("review",), "different-jar"))
         report["runs"].insert(0, {"exitCode": 0, "termination": None, "native": {

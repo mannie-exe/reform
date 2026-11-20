@@ -58,6 +58,12 @@ import org.lwjgl.glfw.GLFW;
 
 /** Generated recursive native form over the same admitted owner/operation services. */
 public final class SettingsScreen<T> extends FormScreen {
+  interface PreviewEntry {
+    boolean retained();
+
+    Screen open(Runnable returned, Runnable abandoned);
+  }
+
   /** Owner-supplied presentation only; labels grant no persistence or application capability. */
   public record SubmissionLabels(Component primary, Component reviewed, Component closing) {
     public SubmissionLabels {
@@ -195,7 +201,9 @@ public final class SettingsScreen<T> extends FormScreen {
       done,
       inspection,
       reviewSubmission,
-      outcomeButton;
+      outcomeButton,
+      previewButton;
+  private PreviewEntry preview;
   private OperationHandle<EditorActor.Commit<T>> lastCommit;
   private Object widgetGeneration;
   private int bodyTop, statusTop, statusWidth, pendingEdits;
@@ -219,6 +227,12 @@ public final class SettingsScreen<T> extends FormScreen {
       throw new IllegalArgumentException("Import choices require this form's actual definition");
     declaredImports = imports;
     return this;
+  }
+
+  void withPreview(PreviewEntry entry) {
+    if (minecraft != null || requested || closed || preview != null)
+      throw new IllegalStateException("Preview must be declared before form activation");
+    preview = Objects.requireNonNull(entry);
   }
 
   /** Borrow the actual session before activation; the caller closes it after the workflow ends. */
@@ -520,6 +534,8 @@ public final class SettingsScreen<T> extends FormScreen {
     reviewSubmission =
         button(text("review_changes", "Review changes…"), () -> openInspection(true));
     outcomeButton = button(text("operation", "Operation…"), this::openOutcome);
+    previewButton =
+        preview == null ? null : button(text("preview_recipe", "Preview…"), this::openPreview);
     undo = button(text("undo", "Undo"), () -> requestHistory(false));
     redo = button(text("redo", "Redo"), () -> requestHistory(true));
     revert =
@@ -1324,6 +1340,34 @@ public final class SettingsScreen<T> extends FormScreen {
     }
   }
 
+  private void openPreview() {
+    if (closed
+        || minecraft.screen != this
+        || preview == null
+        || saving
+        || loading
+        || pendingEdits > 0
+        || unsent()) return;
+    try {
+      var screen =
+          preview.open(
+              () -> {
+                synchronize(Map.copyOf(versions));
+                minecraft.setScreen(this);
+              },
+              this::abandonEditing);
+      handoff = true;
+      try {
+        minecraft.setScreen(screen);
+      } finally {
+        handoff = false;
+      }
+    } catch (PolicyRefusal refused) {
+      notice = failure(refused);
+      feedback();
+    }
+  }
+
   private Optional<Component> applicationBlocked(OperationHandle<EditorActor.Commit<T>> selected) {
     if (closed
         || selected != lastCommit
@@ -2102,6 +2146,13 @@ public final class SettingsScreen<T> extends FormScreen {
     inspection.active = historyReady && current.snapshot().isPresent();
     reviewSubmission.active = inspection.active;
     outcomeButton.active = lastCommit != null;
+    if (previewButton != null)
+      previewButton.active =
+          historyReady
+              && (preview.retained()
+                  || (current.validation().valid()
+                      && current.pending().isEmpty()
+                      && current.review().isEmpty()));
     if (conflict != null)
       conflict.active = historyReady && current.review().isPresent() && current.pending().isEmpty();
     editorButtons.forEach(

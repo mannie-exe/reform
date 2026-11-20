@@ -117,7 +117,8 @@ def successful_run(result, mode, digest):
                 and all(native.get("defaults", {}).get(key) is True for key in ("editorClosed", "factoryClosed", "eagerClosed"))))
             and (not mode.startswith("integrated") or (native.get("integrated", {}).get("status") == "PASS"
                 and native.get("integrated", {}).get("contextsClosed") is True))
-            and (mode != "recipe" or native.get("recipe", {}).get("managedShutdownClosed") is True))
+            and (mode != "recipe" or (native.get("recipe", {}).get("managedShutdownClosed") is True
+                                      and native.get("recipe", {}).get("preview", {}).get("status") == "PASS")))
 
 
 def successful_report(report, modes, digest):
@@ -144,6 +145,10 @@ def successful_report(report, modes, digest):
                         for name in ("file", "toml") for frame in ("", "-entry"))
     if "registered" in modes:
         captures.update({f"form-native-{name}{frame}.png" for name in ("review", "defaults") for frame in ("", "-entry")})
+    if "recipe" in modes:
+        captures.add("form-recipe-preview.png")
+    if "review" in modes:
+        captures.add("form-review-export.png")
     return (len(report["runs"]) == len(modes)
             and all(successful_run(result, mode, digest)
                     for result, mode in zip(report["runs"], modes))

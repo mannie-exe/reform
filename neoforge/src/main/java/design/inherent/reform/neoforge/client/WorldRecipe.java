@@ -2,6 +2,7 @@ package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.importing.JsonImportFormat;
@@ -17,6 +18,8 @@ import design.inherent.reform.value.SnapshotPolicy;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
@@ -55,11 +58,35 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
     default void admitted(WorldCreationContext actual) {}
   }
 
+  /** One explicit analysis over this recipe's frozen runtime inputs. */
+  public record Preview<P, O>(
+      Component title,
+      BiFunction<P, OperationScope.Execution, O> analyze,
+      SnapshotPolicy<O> snapshots,
+      Function<PreviewResult<O>, OperationScreen.Outcome> describe) {
+    public Preview {
+      title = Objects.requireNonNull(title).copy();
+      Objects.requireNonNull(analyze);
+      Objects.requireNonNull(snapshots);
+      Objects.requireNonNull(describe);
+    }
+
+    @Override
+    public Component title() {
+      return title.copy();
+    }
+  }
+
+  public record PreviewResult<O>(DraftRevision draft, O value) {}
+
   private final OwnerContext context;
+  private final OwnerContext.Access access;
+  private final ContextRecipeOwner<T, WorldCreationContext, P>.Session source;
   private final DocumentActions<T> actions;
   private final DocumentDefinition<T> definition;
   private CreateWorldScreen parent;
   private boolean screenCreated;
+  private SettingsScreen.PreviewEntry preview;
 
   private WorldRecipe(
       CreateWorldScreen parent,
@@ -126,10 +153,10 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
               limits,
               DraftLimits.CONFIGURATION,
               16);
-      var access = context.access(() -> true, () -> true);
+      access = context.access(() -> true, () -> true);
+      source = owner.open(access);
       var actor =
-          new EditorActor<>(
-              context, owner.open(access), definition, limits, DraftLimits.CONFIGURATION, 64);
+          new EditorActor<>(context, source, definition, limits, DraftLimits.CONFIGURATION, 64);
       actions =
           DocumentActions.owningContext(
               context,
@@ -137,7 +164,11 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
               actor,
               new OperationScope.Limits(32, 64, 128, OperationScope.Limits.STANDARD.input()),
               limits.maximumBytes());
-      context.onClose(() -> this.parent = null);
+      context.onClose(
+          () -> {
+            this.parent = null;
+            preview = null;
+          });
     } catch (RuntimeException failed) {
       context.close();
       throw failed;
@@ -156,6 +187,16 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
   public DocumentActions<T> actions() {
     context.requireOwner();
     return actions;
+  }
+
+  /** Add an opt-in preview before constructing the generated form. */
+  public <O> WorldRecipe<T, P> withPreview(Preview<P, O> declaration) {
+    context.requireOwner();
+    if (screenCreated || preview != null)
+      throw new IllegalStateException("Declare one preview before opening the recipe form");
+    preview =
+        new RecipePreview<>(context, access, actions, source, Objects.requireNonNull(declaration));
+    return this;
   }
 
   /** Explicit sources become draft-only imports under this recipe's own definition and bounds. */
@@ -199,6 +240,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
               definition,
               actions);
       imports.ifPresent(form::withImports);
+      if (preview != null) form.withPreview(preview);
       return form;
     } catch (RuntimeException failed) {
       close();

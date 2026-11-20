@@ -18,7 +18,7 @@ The owner declares `DocumentSession.CommitKind.CONTEXT`. `DocumentActions.admit`
 
 Successful context admission reports `persistence=NOT_ATTEMPTED`, no saved-file revision and `application=APPLIED`, with a `NEW_WORLD` requirement. APPLIED means that the unsaved creation recipe changed, not that chunks were generated. The owner explicitly acknowledges its new baseline; later edits remain separate. Editor snapshots/submissions call that binding `sourceRevision`, independent of persistence.
 
-An entered but unconfirmed admission reports its actual application uncertainty and keeps unknown-outcome pending state. It cannot be blindly retried. Confirmed admission followed by permission/context loss retains the known admission fact without leaking a new observation. Readonly validation can compile a complete recipe without admitting it or granting WRITE authority.
+An entered but unconfirmed admission reports its actual application uncertainty and keeps unknown-outcome pending state. It cannot be blindly retried. Confirmed admission followed by permission/context loss retains the known admission fact without leaking a new observation.
 
 Factory defaults, imported profiles, validation, profile saving, in-memory export, resource publication and creation admission remain distinct operations. Loading defaults stages a draft; definition defaults never silently replace the selected generator. Saving a reusable profile requires its separately declared persistence owner. Neither an editor nor its Apply control rewrites an existing world's generation identity.
 
@@ -38,10 +38,18 @@ The shared Import view lists registered source metadata without reading it. Expl
 
 `SettingsScreen.withImports(catalog)` supplies the same declaration to an advanced generated form before activation. It does not create another owner or replace defaults, constraints, operation state or native source authority. [Local import](imports.md) owns review/staging semantics.
 
+## Explicit recipe previews
+
+Before creating the form, opt in with `recipe.withPreview(new WorldRecipe.Preview<>(title, analyze, snapshots, describe))`. The form offers **Preview…** once the current draft is accepted and valid. The operation captures its exact source revision and draft, rechecks complete validation and compiles the same immutable inputs used for admission. The analyzer receives those inputs and an `OperationScope.Execution` on the worker. It declares its own workload bound and uses the supplied progress and cancellation checkpoints. The client admits one heavy preview at a time, leaving another worker available for ordinary settings work.
+
+The owner freezes the result through the supplied snapshot policy and rechecks the actual creation context before returning it. The presentation callback projects the bounded result on the client thread. **Back** returns to the editable draft while the preview runs. Reopening the result retains its original identity and labels older draft results. Starting a new preview is explicit. Cancellation leaves the operation active until the provider settles. Changing the native creation context ends disclosure of the old preview.
+
+An analyzer should work only with its immutable compiled inputs, bounded local data and cooperative checkpoints. It has no native live-world or recipe-application authority. Opening the form, typing and inspecting an existing result do not start a terrain analysis. **Apply recipe** independently validates, compiles and admits the current draft through the native owner.
+
 ## Native lifetime and update checks
 
 Each helper permits one native screen and owns its shorter-lived context. `DocumentActions.owningContext` transfers that context's disposal to the editor; ordinary document actions keep their context borrowed. Closing/discarding the editor closes its session and context, while borrowed executors remain owned by the physical client lifecycle. The native helper clears its parent reference at closure.
 
 World recipes borrow the same bounded two-worker/256-task physical-client pool as client preferences. Their active contexts have a separate 128-entry admission bound. Native shutdown closes both preference documents and recipe contexts before stopping the pool, continuing cleanup after individual failures. No configuration document is registered merely to borrow the pool. Core JSON/draft bounds, a 16-operation owner lane and the helper's operation limits remain independent of world-generation budgets.
 
-Recheck `WorldCreationContext`, `DimensionsUpdater`, native UI notification ordering, preset-editor entry, immutable registry access, domain compilation guards and context disposal when updating Minecraft/NeoForge. Qualify actual replacement, unchanged dimensions, stale/same-value foreign contexts, callback failure, later typing, cancellation/close and actual client shutdown. Compilation and headless fake contexts do not qualify those native behaviors.
+Recheck `WorldCreationContext`, `DimensionsUpdater`, native UI notification ordering, preset-editor entry, immutable registry access, domain compilation guards and context disposal when updating Minecraft/NeoForge. Qualify actual replacement, unchanged dimensions, stale/same-value foreign contexts, callback failure, later typing, preview cancellation/drain and actual client shutdown. Use `native_form_probe.py --recipe-only` for the pinned native control.

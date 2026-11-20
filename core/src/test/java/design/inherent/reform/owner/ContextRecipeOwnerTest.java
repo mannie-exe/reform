@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -210,6 +211,45 @@ class ContextRecipeOwnerTest {
           throw new AssertionError(failed);
         }
       }
+    }
+  }
+
+  @Test
+  void previewWillNotReturnAcrossNativeContextReplacementAfterAnalysisStarts() throws Exception {
+    try (var h = new Harness()) {
+      var original = h.current.get();
+      var observed = await(h.nativeCall(h.session::read));
+      var reached = new CountDownLatch(1);
+      var release = new CountDownLatch(1);
+      var pending =
+          h.nativeCall(
+              () ->
+                  h.session.preview(
+                      observed.document().revision(),
+                      h.draft(6),
+                      () -> {},
+                      inputs -> {
+                        reached.countDown();
+                        waitFor(release);
+                        assertEquals(List.of(12), inputs.values());
+                        return inputs;
+                      }));
+      try {
+        waitFor(reached);
+        h.nativeCall(
+            () -> {
+              h.current.set(new Creation(original.recipe(), original.untouchedDimensions()));
+              return null;
+            });
+      } finally {
+        release.countDown();
+      }
+      var failure = assertThrows(ExecutionException.class, () -> await(pending));
+      var refusal = assertInstanceOf(PolicyRefusal.class, failure.getCause());
+      assertEquals("owner.revision", refusal.report().issues().getFirst().code());
+      assertEquals(original, h.current.get());
+      assertNotSame(original, h.current.get());
+      assertEquals(0, h.admissions.get());
     }
   }
 

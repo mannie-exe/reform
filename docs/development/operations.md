@@ -34,7 +34,7 @@ Validation identifies draft generation/version and saved revision. It performs c
 
 Comparison separates typed semantic changes from raw authored changes. Valid spellings such as `1` and `1.0` may differ as authored text but represent the same typed value. Invalid drafts retain diagnostics instead of reporting an empty successful comparison.
 
-Export produces bounded in-memory **document-value JSON**, with document/schema/context/draft/source identity, byte count and SHA-256. It is not the owner's file format, a write or resource publication. Returned bytes are defensive copies. A frontend may explicitly offer copying a small value; it cannot choose an arbitrary output path or implicitly publish it.
+Export captures bounded in-memory **document-value JSON** with document, schema, context, draft and source identity, byte count and SHA-256. Returned bytes are defensive copies. **Export value…** captures the exact reviewed draft. Its operation shows the schema version, source revision, size and checksum. **Copy JSON** is the explicit clipboard action. Commands use the same exporter with their current admitted draft. Export leaves saved and effective values unchanged.
 
 ## Identified source and value review
 

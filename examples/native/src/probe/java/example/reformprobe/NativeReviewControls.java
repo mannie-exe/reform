@@ -216,6 +216,7 @@ final class NativeReviewControls {
             captured.source().kind().equals("json")
                 && captured.source().location().orElseThrow().endsWith("catalog.json"));
         check("inspection does not persist", Files.readString(path()).equals(original));
+        check("invalid reviewed draft cannot be exported", !button(view, "Export value…").active);
         check(
             "application declaration is captured separately from a completed save",
             count
@@ -343,6 +344,42 @@ final class NativeReviewControls {
       case 11 -> {
         if (!button(view, "Refresh view").active) return false;
         check("actual validation does not save profile", Files.readString(path()).equals(original));
+        press(button(view, "Export value…"));
+        next("native value export requested from reviewed draft");
+      }
+      case 12 -> {
+        if (!(client.screen
+            instanceof design.inherent.reform.neoforge.client.OperationScreen<?> output))
+          throw new AssertionError("Export did not open actual operation feedback");
+        var observed = output.observedOperation().orElse(null);
+        if (observed == null || !observed.terminal()) return false;
+        var artifact =
+            (design.inherent.reform.operation.DocumentActions.ExportArtifact)
+                observed.result().orElseThrow();
+        var expected =
+            form.editorView().snapshot().orElseThrow().inspect().candidate().orElseThrow();
+        check(
+            "native export retains reviewed draft and the exact authored JSON",
+            artifact.draft().equals(captured.target())
+                && artifact.text().equals(expected.authoredJson())
+                && artifact.size() == artifact.bytes().length);
+        check(
+            "native export offers explicit copy and leaves disk and effective value alone",
+            button(output, "Copy JSON").active
+                && Files.readString(path()).equals(original)
+                && form.editorView().lastReceipt().isEmpty());
+        geometry(output);
+        capture.accept(
+            "form-review-export.png",
+            () -> {
+              press(button(output, "Back"));
+              next("native export result captured and returned to original review");
+            });
+      }
+      case 13 -> {
+        check(
+            "closing export retains the original review",
+            client.screen == view && view.reviewedInput().orElseThrow() == captured);
         var dispatcher = new CommandDispatcher<CommandSourceStack>();
         NeoForge.EVENT_BUS.post(
             new RegisterClientCommandsEvent(
@@ -366,7 +403,7 @@ final class NativeReviewControls {
             dispatcher.execute("reviewprobe review", source) == 1);
         next("native command review queued");
       }
-      case 12 -> {
+      case 14 -> {
         var reply =
             replies.stream()
                 .filter(value -> value.kind() == SettingsCommands.Kind.COMPLETED)
@@ -391,7 +428,7 @@ final class NativeReviewControls {
         press(button(form, "Revert"));
         next("explicit draft revert requested");
       }
-      case 13 -> {
+      case 15 -> {
         if (!ready() || form.editorView().dirty()) return false;
         check(
             "revert retains source and effective values",

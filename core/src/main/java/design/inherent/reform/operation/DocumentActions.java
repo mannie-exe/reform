@@ -152,7 +152,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationDescriptor<Empty, EditorActor.Inspection<T>> explain;
   private final OperationDescriptor<Empty, Comparison> compare;
   private final OperationDescriptor<Empty, Description> describe;
-  private final OperationDescriptor<Empty, ExportArtifact> export;
+  private final OperationDescriptor<Optional<DraftRevision>, ExportArtifact> export;
   private final OperationDescriptor<Empty, DocumentReview> review;
   private final OperationDescriptor<Empty, EditorActor.Preflight<T>> preflight;
 
@@ -281,11 +281,39 @@ public final class DocumentActions<T> implements AutoCloseable {
             OperationDescriptor.Effect.INSPECT,
             execution -> context.onWorker(this::description));
     export =
-        query(
+        descriptor(
             "export",
-            OperationDescriptor.Effect.EXPORT,
-            execution ->
-                actor.inspect().thenCompose(observed -> context.onWorker(() -> export(observed))));
+            ValueTypes.optional(DraftRevision.type(), ValueShape.OptionalEncoding.SINGLETON_LIST),
+            OwnerContext.Right.READ,
+            Set.of(OperationDescriptor.Effect.EXPORT));
+    scope.register(
+        export,
+        (execution, expected) ->
+            actor
+                .inspect()
+                .thenCompose(
+                    observed ->
+                        context.onWorker(
+                            () -> {
+                              execution.checkpoint();
+                              if (expected.isPresent()
+                                  && !expected.orElseThrow().matches(observed.snapshot()))
+                                throw new PolicyRefusal(
+                                    "editor.review_changed",
+                                    "Refresh the reviewed draft before exporting");
+                              return export(observed);
+                            }))
+                .thenCompose(
+                    artifact ->
+                        context.onOwner(
+                            () -> {
+                              access.require(OwnerContext.Right.READ);
+                              execution.checkpoint();
+                              var current = actor.view();
+                              if (current.availability() != EditorActor.Availability.READY)
+                                throw unavailable(current);
+                              return artifact;
+                            })));
     review =
         query(
             "review",
@@ -684,7 +712,13 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   public OperationHandle<ExportArtifact> export(OperationDescriptor.EntryPoint entry) {
-    return scope.submit(export, entry, Empty.VALUE, readiness(entry));
+    return scope.submit(export, entry, Optional.empty(), readiness(entry));
+  }
+
+  /** Export only the exact draft admitted by this review. Later edits retain their own meaning. */
+  public OperationHandle<ExportArtifact> export(
+      OperationDescriptor.EntryPoint entry, DraftRevision expected) {
+    return scope.submit(export, entry, Optional.of(expected), readiness(entry));
   }
 
   public static <O> CompletionStage<O> result(OperationHandle<O> handle) {

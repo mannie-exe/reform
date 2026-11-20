@@ -2,6 +2,7 @@ package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.owner.SerialLane;
 import design.inherent.reform.storage.StorageBinding;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -11,11 +12,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -30,6 +33,7 @@ final class ClientSettingsRuntime {
   private static final Object GATE = new Object();
   private static final Map<DocumentId, Document> documents = new LinkedHashMap<>();
   private static final Map<UUID, LocalContext> contexts = new LinkedHashMap<>();
+  private static final SerialLane recipePreviews = new SerialLane(1);
   private static ThreadPoolExecutor workers;
   private static boolean closing;
 
@@ -178,6 +182,11 @@ final class ClientSettingsRuntime {
     }
   }
 
+  /** One explicit analysis can occupy a worker while ordinary settings work remains admitted. */
+  static <T> CompletionStage<T> preview(Supplier<CompletionStage<T>> analysis) {
+    return recipePreviews.submit(analysis);
+  }
+
   static void requireClientThread() {
     if (!Minecraft.getInstance().isSameThread())
       throw new IllegalStateException("Client settings require the native client thread");
@@ -217,6 +226,7 @@ final class ClientSettingsRuntime {
       if (failure instanceof RuntimeException failed) throw failed;
       if (failure instanceof Error failed) throw failed;
     } finally {
+      recipePreviews.close();
       if (executor != null) executor.shutdown();
     }
   }

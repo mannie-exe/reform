@@ -21,6 +21,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * An unsaved creation recipe, bound to its actual immutable native context. No file or existing
@@ -308,7 +309,7 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
                 var draft = DraftTree.from(definition.type(), capture.values(), draftLimits);
                 var inspected = draft.inspect(definition, jsonLimits);
                 return new Read<T>(
-                    identityId + "/" + capture.version(),
+                    sourceRevision(capture.version()),
                     Optional.of(draft),
                     inspected.candidate(),
                     inspected.report());
@@ -330,6 +331,11 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
 
     @Override
     public CompletionStage<Prepared<T, C, P>> prepare(OwnerObservation<T> input, DraftTree draft) {
+      return prepare(input, draft, () -> {});
+    }
+
+    private CompletionStage<Prepared<T, C, P>> prepare(
+        OwnerObservation<T> input, DraftTree draft, Runnable checkpoint) {
       final Observation<T, C> baseline;
       try {
         baseline = own(Objects.requireNonNull(input));
@@ -340,6 +346,7 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
       return context
           .onOwner(
               () -> {
+                checkpoint.run();
                 nativeCurrent(baseline.nativeContext, baseline.version);
                 if (!baseline.document.report().valid())
                   throw new PolicyRefusal(baseline.document.report());
@@ -350,11 +357,13 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
                   context.onWorker(
                       () -> {
                         current();
+                        checkpoint.run();
                         var inspected = draft.inspect(definition, jsonLimits);
                         var candidate =
                             inspected
                                 .candidate()
                                 .orElseThrow(() -> new PolicyRefusal(inspected.report()));
+                        checkpoint.run();
                         P compiled =
                             Objects.requireNonNull(
                                 binding.compile(baseline.nativeContext, candidate.value()));
@@ -368,9 +377,57 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
               proposal ->
                   context.onOwner(
                       () -> {
+                        checkpoint.run();
                         nativeCurrent(baseline.nativeContext, baseline.version);
                         return new Prepared<>(identity, context.id(), id, document(), proposal);
                       }));
+    }
+
+    /** Check the actual native source before disclosing an already captured preview. */
+    public void requireSource(String revision) {
+      nativeCurrent(nativeContext, version);
+      if (!sourceRevision(version).equals(Objects.requireNonNull(revision)))
+        throw refusal("owner.revision", "The recipe source changed; start a new preview");
+    }
+
+    /** Compile and inspect owned immutable inputs without admitting a creation context. */
+    public <O> CompletionStage<O> preview(
+        String revision, DraftTree draft, Runnable checkpoint, Function<P, O> inspect) {
+      Objects.requireNonNull(revision);
+      Objects.requireNonNull(draft);
+      Objects.requireNonNull(checkpoint);
+      Objects.requireNonNull(inspect);
+      checkpoint.run();
+      return read()
+          .thenCompose(
+              observed -> {
+                if (!observed.document().revision().equals(revision))
+                  throw refusal("owner.revision", "The recipe source changed; start a new preview");
+                return prepare(observed, draft, checkpoint);
+              })
+          .thenCompose(
+              prepared -> {
+                var proposal = prepared.take(identity, id);
+                return context
+                    .onWorker(
+                        () -> {
+                          current();
+                          checkpoint.run();
+                          var result = Objects.requireNonNull(inspect.apply(proposal.compiled()));
+                          checkpoint.run();
+                          return result;
+                        })
+                    .thenCompose(
+                        result ->
+                            context.onOwner(
+                                () -> {
+                                  checkpoint.run();
+                                  nativeCurrent(
+                                      proposal.baseline().nativeContext,
+                                      proposal.baseline().version);
+                                  return result;
+                                }));
+              });
     }
 
     @Override
@@ -537,6 +594,10 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
 
   private static PolicyRefusal refusal(String code, String message) {
     return new PolicyRefusal(code, message);
+  }
+
+  private String sourceRevision(long selected) {
+    return identityId + "/" + selected;
   }
 
   private static ValidationReport report(Throwable failed) {
