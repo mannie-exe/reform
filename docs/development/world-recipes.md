@@ -54,6 +54,14 @@ The owner freezes the result through the supplied snapshot policy and rechecks t
 
 An analyzer should work only with its immutable compiled inputs, bounded local data and cooperative checkpoints. It has no native live-world or recipe-application authority. Opening the form, typing and inspecting an existing result do not start a terrain analysis. **Apply recipe** independently validates, compiles and admits the current draft through the native owner.
 
+## Complete recipe persistence and export
+
+Declare a `WorldRecipe.ReviewedAction<P, O>` with `withReviewedAction` before constructing the form. Supply an owned operation ID, action label, `PERSIST` or `EXPORT` effect, native availability check, effect callback and receipt presentation. The action appears in the existing Review view next to the ordinary projection export. Entering the editor or opening Review performs no owner effect.
+
+The operation recompiles the exact reviewed draft and its retained full source, validates it through the recipe owner and checks the actual native context and draft on the client before calling the effect. The callback receives `ReviewedInput<P>` with the draft identity and complete immutable compiled value. Its availability check runs on the client and must be cheap and free of effects. A callback that defers before submitting an effect can call `input.requireCurrent()` on the client while the operation is unsettled. The provider owns its destination authority, exact serialization, write/revision checks and verified receipt. Dispatch expensive serialization and storage work away from the client thread and report the actual outcome if a write has already started.
+
+Up to four actions share a single active slot and eight retained operation receipts per recipe. Returning to Review can reopen a retained result for the same capture. Repeating an effect is explicit. Cancellation is cooperative. The generated form neither modifies the native creation context nor acknowledges its draft when these actions finish. The separate **Apply recipe** control still admits to the current unsaved context. The owner's full serializer has its own bounds, which can exceed the editable JSON projection's limits.
+
 ## Native lifetime and update checks
 
 Each helper permits one native screen and owns its shorter-lived context. `DocumentActions.owningContext` transfers that context's disposal to the editor; ordinary document actions keep their context borrowed. Closing/discarding the editor closes its session and context, while borrowed executors remain owned by the physical client lifecycle. The native helper clears its parent reference at closure.

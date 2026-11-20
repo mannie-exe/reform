@@ -12,6 +12,7 @@ import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.CreationExample;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
@@ -43,6 +44,7 @@ final class NativeWorldRecipeControls {
   private DocumentActions<CreationExample.Recipe> actions, retained;
   private Screen form;
   private NativeRecipePreviewControls preview;
+  private NativeReviewedRecipeControls reviewed;
   private EditBox soil;
   private CompletableFuture<?> pending;
   private int callbackCalls;
@@ -102,7 +104,7 @@ final class NativeWorldRecipeControls {
         actions.view().availability() == EditorActor.Availability.CLOSED);
   }
 
-  boolean tick() {
+  boolean tick() throws IOException {
     switch (stage) {
       case 0 -> {
         if (!(client.screen instanceof CreateWorldScreen created)) return false;
@@ -127,8 +129,15 @@ final class NativeWorldRecipeControls {
           if (!preview.tick()) return false;
           report.add("preview", preview.report());
           preview = null;
+          reviewed = new NativeReviewedRecipeControls(parent, original, progress);
+          return false;
+        }
+        if (reviewed != null) {
+          if (!reviewed.tick()) return false;
+          report.add("reviewedEffects", reviewed.report());
+          reviewed = null;
           open(CreationExample.editor(parent, original));
-          progress.accept("completed preview controls; opened a plain recipe editor");
+          progress.accept("completed preview and separate effects; opened a plain recipe editor");
           return false;
         }
         if (!ready()) return false;

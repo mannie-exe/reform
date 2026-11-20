@@ -204,6 +204,7 @@ public final class SettingsScreen<T> extends FormScreen {
       outcomeButton,
       previewButton;
   private PreviewEntry preview;
+  private List<ReviewScreen.Action> reviewActions = List.of();
   private boolean returnAfterApply;
   private Component scopedSaveLabel;
   private Runnable scopedSave;
@@ -237,6 +238,12 @@ public final class SettingsScreen<T> extends FormScreen {
     if (minecraft != null || requested || closed || preview != null)
       throw new IllegalStateException("Preview must be declared before form activation");
     preview = Objects.requireNonNull(entry);
+  }
+
+  void withReviewActions(List<ReviewScreen.Action> entries) {
+    if (minecraft != null || requested || closed || !reviewActions.isEmpty())
+      throw new IllegalStateException("Review actions must be declared before form activation");
+    reviewActions = List.copyOf(entries);
   }
 
   void returnAfterApply() {
@@ -1332,6 +1339,7 @@ public final class SettingsScreen<T> extends FormScreen {
                           requestSave(false, Optional.of(target), true);
                         }))
                 : Optional.empty());
+    screen.withActions(reviewActions);
     handoff = true;
     try {
       minecraft.setScreen(screen);

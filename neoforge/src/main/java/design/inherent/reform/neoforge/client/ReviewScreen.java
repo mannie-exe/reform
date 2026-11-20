@@ -27,11 +27,20 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 
 /** Identified source/value inspection, with an optional explicit conditional-submit handoff. */
 public final class ReviewScreen<T> extends FormScreen {
+  interface Action {
+    Component label();
+
+    Optional<Component> blocked(DraftRevision target);
+
+    Screen open(DraftRevision target, Runnable returned, Runnable abandoned);
+  }
+
   /** A borrowed frontend action; its recipient must submit the supplied exact revision. */
   public record Submission(Component label, Consumer<DraftRevision> submit) {
     public Submission {
@@ -59,6 +68,8 @@ public final class ReviewScreen<T> extends FormScreen {
   private final Runnable abandoned;
   private final Optional<Submission> submission;
   private final List<AbstractWidget> footer = new ArrayList<>();
+  private List<Action> reviewActions = List.of();
+  private List<Optional<Component>> actionReasons = List.of();
   private final Map<FieldPath, String> searchIndex = new LinkedHashMap<>();
   private final EnumSet<Value> expanded = EnumSet.noneOf(Value.class);
   private DocumentReview review;
@@ -73,7 +84,13 @@ public final class ReviewScreen<T> extends FormScreen {
   private Language language;
   private Object widgets;
   private int statusTop, issuePage, changePage;
-  private boolean requested, validating, closed, returning, showingExport, wasCurrent, wasAvailable;
+  private boolean requested,
+      validating,
+      closed,
+      returning,
+      showingOperation,
+      wasCurrent,
+      wasAvailable;
 
   public ReviewScreen(
       Component title,
@@ -134,6 +151,12 @@ public final class ReviewScreen<T> extends FormScreen {
     this.submission = Objects.requireNonNull(submission);
   }
 
+  void withActions(List<Action> entries) {
+    if (minecraft != null)
+      throw new IllegalStateException("Declare review actions before opening the screen");
+    reviewActions = List.copyOf(entries);
+  }
+
   private static Component text(String key, String fallback, Object... arguments) {
     return Component.translatableWithFallback("reform.review." + key, fallback, arguments);
   }
@@ -190,6 +213,14 @@ public final class ReviewScreen<T> extends FormScreen {
     validate.active = ready() && operation == null;
     var export = button(text("export", "Export value…"), this::exportValue);
     export.active = canExport();
+    actionReasons = reviewActions.stream().map(this::actionBlocked).toList();
+    for (int i = 0; i < reviewActions.size(); i++) {
+      var action = reviewActions.get(i);
+      var blocked = actionReasons.get(i);
+      var run = button(action.label(), () -> openAction(action));
+      run.active = blocked.isEmpty();
+      blocked.ifPresent(reason -> run.setTooltip(Tooltip.create(reason)));
+    }
     submission.ifPresent(
         action -> {
           var commit = button(action.label(), this::submit);
@@ -703,6 +734,37 @@ public final class ReviewScreen<T> extends FormScreen {
     return current() && operation == null && actions.view().validation().valid();
   }
 
+  private Optional<Component> actionBlocked(Action action) {
+    if (!canExport())
+      return Optional.of(
+          text("action_review", "Review the current valid draft before continuing."));
+    return action.blocked(review.target());
+  }
+
+  private void openAction(Action action) {
+    if (actionBlocked(action).isPresent()) return;
+    try {
+      showOperation(action.open(review.target(), () -> minecraft.setScreen(this), this::abandon));
+    } catch (PolicyRefusal refused) {
+      notice = failure(refused);
+      rebuildWidgets();
+    }
+  }
+
+  private void showOperation(Screen output) {
+    showingOperation = true;
+    try {
+      minecraft.setScreen(output);
+    } finally {
+      showingOperation = false;
+    }
+  }
+
+  private void abandon() {
+    release();
+    abandoned.run();
+  }
+
   private void exportValue() {
     if (!canExport()) return;
     try {
@@ -760,16 +822,8 @@ public final class ReviewScreen<T> extends FormScreen {
                         }
                       })),
               () -> minecraft.setScreen(this),
-              () -> {
-                release();
-                abandoned.run();
-              });
-      showingExport = true;
-      try {
-        minecraft.setScreen(output);
-      } finally {
-        showingExport = false;
-      }
+              this::abandon);
+      showOperation(output);
     } catch (PolicyRefusal refused) {
       notice = failure(refused);
       rebuildWidgets();
@@ -824,7 +878,10 @@ public final class ReviewScreen<T> extends FormScreen {
       }
       rebuildWidgets();
     } else if (wasCurrent != current()
-        || submission.isPresent() && !submissionReason.equals(submitBlocked())) rebuildWidgets();
+        || submission.isPresent() && !submissionReason.equals(submitBlocked())
+        || !reviewActions.isEmpty()
+            && !actionReasons.equals(reviewActions.stream().map(this::actionBlocked).toList()))
+      rebuildWidgets();
   }
 
   private Button button(Component caption, Runnable callback) {
@@ -909,10 +966,7 @@ public final class ReviewScreen<T> extends FormScreen {
 
   @Override
   public void removed() {
-    if (!returning && !showingExport && !closed) {
-      release();
-      abandoned.run();
-    }
+    if (!returning && !showingOperation && !closed) abandon();
   }
 
   private void release() {

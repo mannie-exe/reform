@@ -9,6 +9,7 @@ import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.importing.JsonImportFormat;
 import design.inherent.reform.neoforge.command.ImportCatalog;
 import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.OperationDescriptor.Effect;
 import design.inherent.reform.operation.OperationScope;
 import design.inherent.reform.owner.ContextRecipeOwner;
 import design.inherent.reform.owner.EditorActor;
@@ -24,8 +25,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletionStage;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
@@ -85,6 +88,58 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
 
   public record PreviewResult<O>(DraftRevision draft, O value) {}
 
+  /** An opt-in owner operation over a reviewed, complete recipe, as distinct from native Apply. */
+  public record ReviewedAction<P, O>(
+      DocumentId id,
+      Component title,
+      Effect effect,
+      Supplier<Optional<Component>> unavailable,
+      BiFunction<ReviewedInput<P>, OperationScope.Execution, CompletionStage<O>> run,
+      SnapshotPolicy<O> snapshots,
+      Function<O, OperationScreen.Outcome> describe) {
+    public ReviewedAction {
+      Objects.requireNonNull(id);
+      title = Objects.requireNonNull(title).copy();
+      if (effect != Effect.PERSIST && effect != Effect.EXPORT)
+        throw new IllegalArgumentException("Recipe review supports only persistence and export");
+      Objects.requireNonNull(unavailable);
+      Objects.requireNonNull(run);
+      Objects.requireNonNull(snapshots);
+      Objects.requireNonNull(describe);
+    }
+
+    @Override
+    public Component title() {
+      return title.copy();
+    }
+  }
+
+  /** Captured identity and immutable compiled value for an admitted owner callback. */
+  public static final class ReviewedInput<P> {
+    private final DraftRevision draft;
+    private final P compiled;
+    private final Runnable authority;
+
+    ReviewedInput(DraftRevision draft, P compiled, Runnable authority) {
+      this.draft = draft;
+      this.compiled = compiled;
+      this.authority = authority;
+    }
+
+    public DraftRevision draft() {
+      return draft;
+    }
+
+    public P compiled() {
+      return compiled;
+    }
+
+    /** Recheck the original native source, draft and policy on the client before a later effect. */
+    public void requireCurrent() {
+      authority.run();
+    }
+  }
+
   private final OwnerContext context;
   private final OwnerContext.Access access;
   private final OwnerContext.Access referenceAccess;
@@ -95,6 +150,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
   private boolean screenCreated;
   private boolean returnAfterApply;
   private SettingsScreen.PreviewEntry preview;
+  private RecipeReviewActions<T, P> reviewActions;
 
   private WorldRecipe(
       CreateWorldScreen parent,
@@ -188,6 +244,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
           () -> {
             this.parent = null;
             preview = null;
+            reviewActions = null;
           });
     } catch (RuntimeException failed) {
       context.close();
@@ -254,6 +311,17 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
     return this;
   }
 
+  /** Declare a bounded owner operation on the generated Review screen before opening the form. */
+  public <O> WorldRecipe<T, P> withReviewedAction(ReviewedAction<P, O> declaration) {
+    context.requireOwner();
+    if (screenCreated)
+      throw new IllegalStateException("Declare reviewed actions before opening the recipe form");
+    if (reviewActions == null)
+      reviewActions = new RecipeReviewActions<>(context, access, actions, source);
+    reviewActions.register(Objects.requireNonNull(declaration));
+    return this;
+  }
+
   /** Explicit sources become draft-only imports under this recipe's own definition and bounds. */
   public ImportCatalog<T> importCatalog(List<? extends ImportSource> sources) {
     context.requireOwner();
@@ -316,6 +384,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
               actions,
               SettingsScreen.SubmissionLabels.standard(actions.commitKind()));
       if (preview != null) form.withPreview(preview);
+      if (reviewActions != null) form.withReviewActions(reviewActions.freeze());
       if (returnAfterApply) form.returnAfterApply();
       return form;
     } catch (RuntimeException failed) {
