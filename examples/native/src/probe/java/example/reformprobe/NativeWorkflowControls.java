@@ -694,9 +694,15 @@ final class NativeWorkflowControls {
         check(
             "overview retains its earlier query when returning from a field",
             input(root, "Search documents").getValue().equals("horizon threshold"));
-        replace(root, input(root, "Search documents"), "");
-        for (int i = 0; i < 3; i++) {
+        input(root, "Search documents").setValue("");
+        check(
+            "changing the query clears the exact active native input",
+            input(root, "Search documents").getValue().isEmpty());
+        for (String expected : List.of("MODIFIED", "INVALID", "RESTART")) {
           workflowView().onPress();
+          check(
+              "expected " + expected + " but observed " + workflowView().getValue(),
+              workflowView().getValue().toString().equals(expected));
           check(
               "modified, invalid and restart filters each show only the relevant cached placement",
               widgets(root).stream()
@@ -706,14 +712,20 @@ final class NativeWorkflowControls {
                   == 1);
         }
         workflowView().onPress();
-        check(
-            "clearing filters returns to the selected category and keeps the original draft",
+        var resumed =
             widgets(root).stream()
-                        .filter(
-                            w -> w instanceof Button && w.getMessage().getString().equals("Resume"))
-                        .count()
-                    == 131
-                && hierarchy.documents().getFirst().dirty());
+                .filter(w -> w instanceof Button && w.getMessage().getString().equals("Resume"))
+                .count();
+        var retained = hierarchy.documents().getFirst().dirty();
+        check(
+            "clearing filters returns to the selected category and keeps the original draft ("
+                + workflowView().getValue()
+                + ", resumed="
+                + resumed
+                + ", dirty="
+                + retained
+                + ")",
+            workflowView().getValue().toString().equals("ALL") && resumed == 131 && retained);
         hierarchy.close();
         client.setScreen(parent);
         hierarchyStage++;
