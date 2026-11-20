@@ -244,6 +244,11 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
                  "keys-controls", "keys-controls-reopen", "keys-factory", "keys-factory-reopen", "catalog", "catalog-reopen", "review", "review-reopen", "close", "close-reopen", "outcomes", "outcomes-reopen", "files", "files-reopen", "startup", "startup-reopen", "registered", "registered-reopen", "workflow", "workflow-reopen", "batch", "batch-reopen", "defaults", "defaults-reopen", "defaults-invalid", "integrated", "integrated-reopen")
     try:
         for mode in modes:
+            if mode == "integrated":
+                sources = fixture / "config"
+                sources.mkdir(parents=True, exist_ok=True)
+                (sources / "reform-server-native.toml").write_text(
+                    "# Native server policy; no replacement JSON serializer.\nlevel = 4\n")
             if mode in ("workflow", "batch"):
                 sources = fixture / "config"
                 sources.mkdir(parents=True, exist_ok=True)

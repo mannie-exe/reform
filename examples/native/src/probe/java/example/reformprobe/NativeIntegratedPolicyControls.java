@@ -6,9 +6,11 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
 import design.inherent.reform.neoforge.client.ClientForm;
 import design.inherent.reform.neoforge.client.ClientFormOptions;
+import design.inherent.reform.neoforge.client.ConflictScreen;
 import design.inherent.reform.neoforge.client.IntegratedSettings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.neoforge.command.SearchCommands;
@@ -89,6 +91,10 @@ final class NativeIntegratedPolicyControls {
   private ClientPacketListener previousConnection;
   private CompletableFuture<?> pending;
   private Path nativePath;
+  private int beforeSaveStage;
+  private int beforeSaveWatches;
+  private String beforeSaveBytes;
+  private CommitReceipt<?> staleNativeReceipt;
   private String savedNativeBytes;
   private int watchStage;
   private int step;
@@ -516,9 +522,8 @@ final class NativeIntegratedPolicyControls {
         next("native TOML presentation uses the same generated settings form");
       }
       case 15 -> {
-        if (!form.editorView().dirty() || !button(form, "Save and apply").active) return false;
-        click(form, button(form, "Save and apply"));
-        next("submit through native registered owner");
+        if (!refreshWatchedDraft()) return false;
+        next("submit through native registered owner with its re-observed source");
       }
       case 16 -> {
         if (reopen) {
@@ -527,6 +532,7 @@ final class NativeIntegratedPolicyControls {
         } else {
           if (form.editorView().lastReceipt().isEmpty()) return false;
           var receipt = form.editorView().lastReceipt().orElseThrow();
+          if (receipt == staleNativeReceipt) return false;
           check(
               "registered policy really persists through FML (persistence="
                   + receipt.persistence()
@@ -536,6 +542,8 @@ final class NativeIntegratedPolicyControls {
                   + receipt.persistenceReport().issues()
                   + ", application issues="
                   + receipt.applicationReport().issues()
+                  + ", actual reloads="
+                  + example.reloads()
                   + ")",
               receipt.persistence() == CommitReceipt.Persistence.SAVED);
           var path = nativePath(receipt.observation().orElseThrow().provenance());
@@ -782,6 +790,96 @@ final class NativeIntegratedPolicyControls {
         List.of("[retained native search result]"));
     if (!bridge.notifyMatches(job, 1))
       throw new AssertionError("Current host did not receive search notice");
+  }
+
+  private boolean refreshWatchedDraft() throws java.io.IOException {
+    switch (beforeSaveStage) {
+      case 0 -> {
+        if (!form.editorView().dirty() || !button(form, "Save and apply").active) return false;
+        nativePath = example.nativeConfig().getFullPath().toAbsolutePath().normalize();
+        beforeSaveBytes = Files.readString(nativePath);
+        beforeSaveWatches = example.reloads().watches();
+        replaceNativeSource(beforeSaveBytes);
+        beforeSaveStage++;
+        progress.accept("waiting for the real native watcher to replace an observed source");
+      }
+      case 1 -> {
+        var events = example.reloads();
+        if (events.watches() <= beforeSaveWatches || events.watchedLevel() != 4) return false;
+        click(form, button(form, "Save and apply"));
+        beforeSaveStage++;
+      }
+      case 2 -> {
+        if (form.editorView().lastReceipt().isEmpty()) return false;
+        staleNativeReceipt = form.editorView().lastReceipt().orElseThrow();
+        check(
+            "real FML reload refuses the old wrapper before any write and retains the draft",
+            staleNativeReceipt.persistence() == CommitReceipt.Persistence.REFUSED
+                && staleNativeReceipt.application() == CommitReceipt.Application.NOT_ATTEMPTED
+                && staleNativeReceipt.persistenceReport().issues().stream()
+                    .anyMatch(issue -> issue.code().equals("native.context_changed"))
+                && example.reloads().saves() == 0
+                && Files.readString(nativePath).equals(beforeSaveBytes)
+                && form.editorView().dirty()
+                && input(form, "Level").getValue().equals("11"));
+        click(form, button(form, "Reload saved"));
+        beforeSaveStage++;
+      }
+      case 3 -> {
+        if (form.editorView().review().isEmpty()) return false;
+        click(form, button(form, "Review conflict…"));
+        beforeSaveStage++;
+      }
+      case 4 -> {
+        if (!(client.screen instanceof ConflictScreen<?> conflict)
+            || conflict.reviewedInput().isEmpty()) return false;
+        var entries = conflict.reviewedInput().orElseThrow().entries();
+        var level = FieldPath.ROOT.field("level");
+        check(
+            "review shows the retained edit and equivalent native baseline",
+            entries.size() == 1
+                && entries.getFirst().path().equals(level)
+                && entries.getFirst().baseline().equals(entries.getFirst().observed())
+                && !entries.getFirst().draft().equals(entries.getFirst().observed()));
+        for (int option = 0; option < 4; option++) {
+          var choice = conflict.choiceControl(level).orElseThrow();
+          if (choice.getMessage().getString().equals("Your draft")) break;
+          check(
+              "the conflict choice receives a native click",
+              conflict.mouseClicked(
+                  choice.getX() + choice.getWidth() / 2.0,
+                  choice.getY() + choice.getHeight() / 2.0,
+                  0));
+          conflict.mouseReleased(choice.getX() + 1, choice.getY() + 1, 0);
+        }
+        var resolve = button(conflict, "Resolve draft");
+        check(
+            "the current draft is chosen explicitly before resolution",
+            conflict
+                    .choiceControl(level)
+                    .orElseThrow()
+                    .getMessage()
+                    .getString()
+                    .equals("Your draft")
+                && resolve.active);
+        click(conflict, resolve);
+        beforeSaveStage++;
+      }
+      case 5 -> {
+        if (client.screen != form
+            || form.editorView().review().isPresent()
+            || !button(form, "Save and apply").active) return false;
+        check(
+            "explicit re-observation and review retain the typed change against the fresh source",
+            form.editorView().dirty()
+                && input(form, "Level").getValue().equals("11")
+                && example.reloads().saves() == 0);
+        click(form, button(form, "Save and apply"));
+        return true;
+      }
+      default -> throw new IllegalStateException("Unexpected pre-save Watcher stage");
+    }
+    return false;
   }
 
   private boolean watchNativeSource() throws java.io.IOException {

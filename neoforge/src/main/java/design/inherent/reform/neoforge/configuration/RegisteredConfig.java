@@ -597,11 +597,12 @@ public final class RegisteredConfig implements AutoCloseable {
 
   private void verify(Capture baseline) {
     var now = capture();
-    if (now.loaded() != baseline.loaded()
-        || !now.path().equals(baseline.path())
-        || !definition().type().equivalent(now.raw(), baseline.raw()))
-      throw refusal(
-          "native.context_changed", "Native loaded context or values changed; reload and review");
+    if (!now.path().equals(baseline.path()))
+      throw refusal("native.context_changed", "Native source path changed; reload and review");
+    if (now.loaded() != baseline.loaded())
+      throw refusal("native.context_changed", "Native source was reloaded; reload and review");
+    if (!definition().type().equivalent(now.raw(), baseline.raw()))
+      throw refusal("native.context_changed", "Loaded native values changed; reload and review");
   }
 
   private CompletionStage<Observation> observe(Session session) {
