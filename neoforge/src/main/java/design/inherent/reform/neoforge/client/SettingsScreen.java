@@ -205,6 +205,9 @@ public final class SettingsScreen<T> extends FormScreen {
       previewButton;
   private PreviewEntry preview;
   private boolean returnAfterApply;
+  private Component scopedSaveLabel;
+  private Runnable scopedSave;
+  private FieldPath requestedFocus;
   private OperationHandle<EditorActor.Commit<T>> lastCommit;
   private Object widgetGeneration;
   private int bodyTop, statusTop, statusWidth, pendingEdits;
@@ -240,6 +243,15 @@ public final class SettingsScreen<T> extends FormScreen {
     if (!contextRecipe())
       throw new IllegalStateException("Automatic return requires a world recipe");
     returnAfterApply = true;
+  }
+
+  void withScopedSave(Component title, Runnable review) {
+    if (minecraft != null || requested || closed || scopedSave != null)
+      throw new IllegalStateException("Bind scoped saving before form activation");
+    scopedSaveLabel =
+        Component.translatableWithFallback(
+            "reform.settings.review_scope", "Review %s…", title.copy());
+    scopedSave = Objects.requireNonNull(review);
   }
 
   /** Borrow the actual session before activation; the caller closes it after the workflow ends. */
@@ -421,6 +433,7 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private Component commitLabel() {
+    if (scopedSaveLabel != null) return scopedSaveLabel.copy();
     return submissionLabels.primary();
   }
 
@@ -498,6 +511,22 @@ public final class SettingsScreen<T> extends FormScreen {
     setFocused(panel);
     panel.restoreFocus(focus);
     return true;
+  }
+
+  void focusAfterLoad(FieldPath path) {
+    requestedFocus = Objects.requireNonNull(path);
+    revealRequestedFocus();
+  }
+
+  private void revealRequestedFocus() {
+    if (requestedFocus == null
+        || minecraft.screen != this
+        || loading
+        || actions.view().snapshot().isEmpty()) return;
+    var path = requestedFocus;
+    requestedFocus = null;
+    if (!focusField(path))
+      notice = text("inspect_field_unavailable", "That field is unavailable in the current draft.");
   }
 
   @Override
@@ -1296,7 +1325,7 @@ public final class SettingsScreen<T> extends FormScreen {
             submitting
                 ? Optional.of(
                     new ReviewScreen.Submission(
-                        submissionLabels.reviewed(),
+                        scopedSaveLabel == null ? submissionLabels.reviewed() : scopedSaveLabel,
                         target -> {
                           synchronize(Map.copyOf(versions));
                           minecraft.setScreen(this);
@@ -2003,6 +2032,18 @@ public final class SettingsScreen<T> extends FormScreen {
     if (!actions.view().validation().valid()
         || actions.view().pending().isPresent()
         || actions.view().review().isPresent()) return;
+    if (scopedSave != null) {
+      handoff = true;
+      try {
+        scopedSave.run();
+      } catch (PolicyRefusal refused) {
+        notice = failure(refused);
+        feedback();
+      } finally {
+        handoff = false;
+      }
+      return;
+    }
     beginCommit(
         () ->
             reviewed
@@ -2328,6 +2369,7 @@ public final class SettingsScreen<T> extends FormScreen {
         feedback();
       }
     }
+    revealRequestedFocus();
   }
 
   private Component status() {
@@ -2515,6 +2557,9 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private void disposePresentation() {
+    requestedFocus = null;
+    scopedSave = null;
+    scopedSaveLabel = null;
     if (catalog != null) catalog.close();
     inputPositions.clear();
     cachedModel = null;

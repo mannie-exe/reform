@@ -25,6 +25,7 @@ public final class ClientForm {
   }
 
   private final DocumentId document;
+  private final DocumentId route;
   private final Component title;
   private final Supplier<Availability> availability;
   private final Function<Screen, ? extends Screen> opener;
@@ -32,11 +33,13 @@ public final class ClientForm {
 
   private ClientForm(
       DocumentId document,
+      DocumentId route,
       Component title,
       Supplier<Availability> availability,
       Function<Screen, ? extends Screen> opener,
       Optional<Runnable> recovery) {
     this.document = Objects.requireNonNull(document);
+    this.route = Objects.requireNonNull(route);
     this.title = Objects.requireNonNull(title).copy();
     this.availability = Objects.requireNonNull(availability);
     this.opener = Objects.requireNonNull(opener);
@@ -50,7 +53,7 @@ public final class ClientForm {
       Supplier<Availability> availability,
       Function<Screen, ? extends Screen> opener,
       Optional<Runnable> recovery) {
-    return new ClientForm(document, title, availability, opener, recovery);
+    return new ClientForm(document, document, title, availability, opener, recovery);
   }
 
   static ClientForm bound(
@@ -72,6 +75,15 @@ public final class ClientForm {
 
   public DocumentId document() {
     return document;
+  }
+
+  public DocumentId route() {
+    return route;
+  }
+
+  /** A navigation alias leaves the checked owner identity and actual source unchanged. */
+  public ClientForm atRoute(DocumentId route) {
+    return new ClientForm(document, route, title, availability, opener, recovery);
   }
 
   public Component title() {

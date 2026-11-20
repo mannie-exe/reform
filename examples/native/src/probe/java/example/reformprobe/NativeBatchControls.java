@@ -4,10 +4,13 @@ import static example.reformprobe.NativeFormProbe.*;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.neoforge.client.BatchReviewScreen;
 import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
 import design.inherent.reform.neoforge.client.ClientEditor;
+import design.inherent.reform.neoforge.client.ClientForm;
+import design.inherent.reform.neoforge.client.ClientWorkflowLayout;
 import design.inherent.reform.neoforge.client.OperationScreen;
 import design.inherent.reform.neoforge.client.ReviewScreen;
 import design.inherent.reform.neoforge.client.SettingsScreen;
@@ -27,6 +30,8 @@ import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
@@ -39,6 +44,16 @@ import org.lwjgl.glfw.GLFW;
 
 /** Actual complete-vector preflight, generated review, native callbacks and ordered owner saves. */
 final class NativeBatchControls {
+  private static final DocumentId PREFERENCES_ROUTE =
+      DocumentId.parse("reform_native_example:preferences_route");
+  private static final DocumentId ROUTE_FIRST =
+      DocumentId.parse("reform_native_example:basic_preferences");
+  private static final DocumentId ROUTE_SECOND =
+      DocumentId.parse("reform_native_example:display_preferences");
+  private static final DocumentId REVIEW =
+      DocumentId.parse("reform_native_example:coupled_settings");
+  private static final DocumentId UNAVAILABLE =
+      DocumentId.parse("reform_native_example:absent_owner");
   private final Minecraft client = Minecraft.getInstance();
   private final Screen parent = client.screen;
   private final boolean reopen;
@@ -91,7 +106,8 @@ final class NativeBatchControls {
   }
 
   private void show(ClientEditor<?> selected) {
-    workflow.show(selected.document());
+    if (selected == json) workflow.showPlacement(ROUTE_FIRST);
+    else workflow.show(selected.document());
     form = selected.screen();
   }
 
@@ -152,11 +168,45 @@ final class NativeBatchControls {
             || RegisteredExample.client().definition().isEmpty()
             || RegisteredExample.common().definition().isEmpty()) return false;
         var defaultDefinition = RegisteredExample.common().definition().orElseThrow();
-        workflow =
-            ClientEditingWorkflow.open(
-                parent,
-                Component.literal("Complete settings review"),
-                WorkflowExample.forms(),
+        var forms = new java.util.ArrayList<>(WorkflowExample.forms());
+        forms.set(0, forms.getFirst().atRoute(PREFERENCES_ROUTE));
+        forms.add(
+            ClientForm.of(
+                UNAVAILABLE,
+                Component.literal("Optional settings"),
+                () ->
+                    new ClientForm.Availability(
+                        false, false, Component.literal("Optional owner absent")),
+                ignored -> {
+                  throw new AssertionError("An unrelated absent owner must never be opened");
+                },
+                Optional.empty()));
+        var general =
+            forms.stream()
+                .skip(1)
+                .map(
+                    form ->
+                        new ClientWorkflowLayout.Placement(
+                            form.route(), form.route(), form.title(), Optional.empty()))
+                .toList();
+        var first = new java.util.ArrayList<>(general);
+        var field = Optional.of(FieldPath.ROOT.field("distance"));
+        first.addFirst(
+            new ClientWorkflowLayout.Placement(
+                ROUTE_FIRST, PREFERENCES_ROUTE, Component.literal("Basic preferences"), field));
+        var second =
+            new ClientWorkflowLayout.Placement(
+                ROUTE_SECOND, PREFERENCES_ROUTE, Component.literal("Display preferences"), field);
+        var scope =
+            new ClientWorkflowLayout.ReviewScope(
+                REVIEW,
+                Component.literal("coupled settings"),
+                Set.of(
+                    PREFERENCES_ROUTE,
+                    RegisteredExample.client().document(),
+                    RegisteredExample.common().document()),
+                Set.of(KeyExample.DOCUMENT),
+                true,
                 values -> {
                   crossChecks.incrementAndGet();
                   if (client.isSameThread()) nativeChecks.incrementAndGet();
@@ -176,8 +226,18 @@ final class NativeBatchControls {
                                   true)),
                           true);
                 });
+        var layout =
+            new ClientWorkflowLayout(
+                List.of(
+                    new ClientWorkflowLayout.Group(Component.literal("General"), first, List.of()),
+                    new ClientWorkflowLayout.Group(
+                        Component.literal("Presentation"), List.of(second), List.of())),
+                List.of(scope));
+        workflow =
+            ClientEditingWorkflow.open(
+                parent, Component.literal("Scoped settings review"), forms, layout);
         client.setScreen(workflow.screen());
-        json = workflow.editor(NativeExample.DEFINITION.id());
+        json = workflow.editor(PREFERENCES_ROUTE);
         nativeClient = workflow.editor(RegisteredExample.client().document());
         defaults = workflow.editor(RegisteredExample.common().document());
         show(json);
@@ -220,14 +280,31 @@ final class NativeBatchControls {
       case 2 -> {
         if (!ready() || !raw(json, "distance", "320")) return false;
         press(form, "Back to overview");
-        press(workflow.screen(), "Review all documents");
+        workflow.showPlacement(ROUTE_SECOND);
+        check(
+            "two placement routes share the same native editor and draft",
+            client.screen == form
+                && raw(json, "distance", "320")
+                && workflow.editor(PREFERENCES_ROUTE) == json);
+        check(
+            "alternate route keeps the actual owner identity",
+            workflow.documents().stream()
+                .anyMatch(
+                    state ->
+                        state.document().equals(PREFERENCES_ROUTE)
+                            && state.ownerDocument().equals(json.document())));
+        press(form, "Review coupled settings…");
         batch = (BatchReviewScreen) client.screen;
         next("complete preflight includes unopened native Controls");
       }
       case 3 -> {
         if (batch.reviewedInput().isEmpty()) return false;
         invalid = batch.reviewedInput().orElseThrow();
-        check("all four owners are represented", invalid.entries().size() == 4);
+        check(
+            "scope includes four owners and excludes the absent unrelated owner",
+            invalid.entries().size() == 4
+                && invalid.entries().stream()
+                    .noneMatch(entry -> entry.document().equals(UNAVAILABLE)));
         check(
             "real cross-document rule rejects the vector",
             !invalid.valid()
@@ -284,7 +361,7 @@ final class NativeBatchControls {
       case 8 -> {
         if (!ready() || !raw(defaults, "level", "8")) return false;
         press(form, "Back to overview");
-        press(workflow.screen(), "Review all documents");
+        press(workflow.screen(), "Review changes");
         batch = (BatchReviewScreen) client.screen;
         next("fresh combined review over three edited and one clean owner");
       }
@@ -397,7 +474,7 @@ final class NativeBatchControls {
       case 14 -> {
         check(
             "same editor survives combined saving",
-            workflow.editor(json.document()) == json && json.isOpen() && nativeClient.isOpen());
+            workflow.editor(PREFERENCES_ROUTE) == json && json.isOpen() && nativeClient.isOpen());
         press(workflow.screen(), "Last batch review/result");
         check(
             "batch review and result are retained after overview navigation",
@@ -455,7 +532,7 @@ final class NativeBatchControls {
             workflow.documents().stream()
                 .filter(value -> value.document().equals(json.document()))
                 .allMatch(ClientEditingWorkflow.DocumentState::dirty));
-        press(workflow.screen(), "Review all documents");
+        press(workflow.screen(), "Review changes");
         check(
             "combined review refuses to omit unaccepted local text",
             client.screen == workflow.screen());
