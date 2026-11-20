@@ -528,7 +528,15 @@ final class NativeIntegratedPolicyControls {
           if (form.editorView().lastReceipt().isEmpty()) return false;
           var receipt = form.editorView().lastReceipt().orElseThrow();
           check(
-              "registered policy really persists through FML",
+              "registered policy really persists through FML (persistence="
+                  + receipt.persistence()
+                  + ", application="
+                  + receipt.application()
+                  + ", persistence issues="
+                  + receipt.persistenceReport().issues()
+                  + ", application issues="
+                  + receipt.applicationReport().issues()
+                  + ")",
               receipt.persistence() == CommitReceipt.Persistence.SAVED);
           var path = nativePath(receipt.observation().orElseThrow().provenance());
           verifyNativePath(path);
