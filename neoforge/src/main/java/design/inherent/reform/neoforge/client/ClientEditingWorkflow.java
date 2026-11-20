@@ -258,8 +258,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                         entry.opening = null;
                         entry.waiting = null;
                       }
-                      if (failed != null) result.completeExceptionally(failed);
-                      else {
+                      if (failed != null) {
+                        try {
+                          request.cancel().run();
+                        } catch (RuntimeException | Error cleanup) {
+                          if (cleanup != failed) failed.addSuppressed(cleanup);
+                        }
+                        result.completeExceptionally(failed);
+                      } else {
                         try {
                           result.complete(retain(entry, opened));
                         } catch (RuntimeException | Error rejected) {
