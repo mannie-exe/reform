@@ -115,7 +115,7 @@ public final class FileOwner<T> {
     }
   }
 
-  private record Proposal<T>(Observation<T> baseline, Candidate<T> candidate) {}
+  private record Proposal<T>(Observation<T> baseline, TextStore.PreparedWrite<T> output) {}
 
   private record InitializationRead<T>(TextStore<T> storage, SettingsHandle.Revision expected) {}
 
@@ -308,13 +308,10 @@ public final class FileOwner<T> {
                   context.onWorker(
                       () -> {
                         current();
-                        var inspected = source.inspectDraft(draft);
-                        if (inspected.candidate().isEmpty())
-                          throw new PolicyRefusal(inspected.report());
-                        return inspected.candidate().orElseThrow();
+                        return source.prepareWrite(observed.saved, draft);
                       }))
           .thenCompose(
-              candidate ->
+              output ->
                   context.onOwner(
                       () -> {
                         baseline(observed);
@@ -324,7 +321,7 @@ public final class FileOwner<T> {
                             id,
                             context.id(),
                             document(),
-                            new Proposal<>(observed, candidate));
+                            new Proposal<>(observed, output));
                       }));
     }
 
@@ -349,11 +346,7 @@ public final class FileOwner<T> {
                           failure != null
                               ? CompletableFuture.completedStage(unattempted(failure))
                               : write(
-                                  () ->
-                                      source.write(
-                                          proposal.baseline().saved,
-                                          proposal.candidate(),
-                                          this::current),
+                                  () -> source.write(proposal.output(), this::current),
                                   proposal.baseline().effective.revision()))
                   .thenCompose(stage -> stage));
     }

@@ -1,5 +1,7 @@
 # Owned storage
 
+File-owner preparation checks the exact serializer output against the owned file's UTF-8 byte limit. This includes source text retained by the format, such as properties comments. A no-op reuses the exact observed bytes. `TextStore.PreparedWrite` is bound to the same source and file and carries the checked output until the conditional write. Preparation performs no filesystem effects and does not grant write authority.
+
 The experimental storage core connects real files to definitions and [edit sessions](editing.md). `TextStore<T>` shares observed-file identity, complete candidate admission, explicit initialization, no-op preservation and guarded replacement between format implementations. It is a synchronous worker-side backend, not the asynchronous owner service. It supplies no actor authorization, context lifetime, native callback, effective-value publication or GUI. An owner must admit those boundaries and keep this work off render/tick threads; a widget must not receive the storage backend as its save authority. [Coverage](coverage.md) retains those remaining requirements.
 
 ## Bind a declared location

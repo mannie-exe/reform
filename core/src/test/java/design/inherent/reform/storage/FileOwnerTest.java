@@ -289,6 +289,37 @@ class FileOwnerTest {
   }
 
   @Test
+  void preparationChecksTheSerializedPropertiesByteLimitIncludingRetainedComments()
+      throws Exception {
+    int limit = 131072;
+    String original = "#" + "a".repeat(limit - 10) + "\ncount=1\n";
+    var file = new OwnedFile(StorageBinding.relative(root, "at-limit.properties"), limit);
+    Files.writeString(file.binding().path(), original);
+    var store =
+        new PropertiesStore<>(
+            DEFINITION,
+            file,
+            new JsonLimits(8192, 16, 512, 128, 64, 1024),
+            DraftLimits.CONFIGURATION);
+    try (var context =
+            new OwnerContext(Runnable::run, Runnable::run, () -> {}, OwnerContext.Limits.STANDARD);
+        var access = context.access(() -> true, () -> true);
+        var source = new FileOwner<>(context, store, 8).open(access)) {
+      var observed = await(source.read());
+      assertEquals(limit, Files.size(file.binding().path()));
+      var changed = changed(observed, "10");
+      assertTrue(store.inspectDraft(changed).report().valid());
+      var failure =
+          assertThrows(ExecutionException.class, () -> await(source.prepare(observed, changed)));
+      assertInstanceOf(PolicyRefusal.class, failure.getCause());
+      var unchanged = await(source.prepare(observed, observed.saved().draft().orElseThrow()));
+      assertEquals(
+          CommitReceipt.Persistence.UNCHANGED, await(source.commit(unchanged)).persistence());
+      assertEquals(original, Files.readString(file.binding().path()));
+    }
+  }
+
+  @Test
   void aSavedButRefusedApplicationRetriesWithoutWritingTheFileAgain() throws Exception {
     try (var h = new Harness()) {
       h.initialize();

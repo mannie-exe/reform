@@ -6,6 +6,7 @@ import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.DocumentRead;
+import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SourceInfo;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.validation.Issue;
@@ -105,6 +106,19 @@ public abstract class TextStore<T> {
   }
 
   public record Write<T>(OwnedFile.Result persistence, Optional<Read<T>> observation) {}
+
+  /**
+   * Exact output for a particular source and store. Persistence and actor authority stay separate.
+   */
+  public static final class PreparedWrite<T> {
+    private final Read<T> baseline;
+    private final OwnedFile.Output output;
+
+    private PreparedWrite(Read<T> baseline, OwnedFile.Output output) {
+      this.baseline = baseline;
+      this.output = output;
+    }
+  }
 
   private final Object identity = new Object();
   protected final DocumentDefinition<T> definition;
@@ -212,27 +226,44 @@ public abstract class TextStore<T> {
 
   public Write<T> write(Read<T> baseline, Candidate<T> candidate, Runnable currentLifetime) {
     Objects.requireNonNull(currentLifetime);
-    if (baseline.store != identity)
-      throw new IllegalArgumentException("Observation belongs to another store");
     if (candidate.definition() != definition)
       throw new IllegalArgumentException("Candidate belongs to another document definition");
-    var checked = inspectDraft(candidate.draft());
-    if (checked.candidate().isEmpty())
-      return refused("Complete candidate validation did not finish successfully");
-    if (baseline.state() == State.READY
-        && baseline.draft().orElseThrow().sameValue(candidate.draft())) {
-      var result =
-          file.write(baseline.source(), baseline.source().text().orElseThrow(), currentLifetime);
-      return new Write<>(result, result.observed().map(this::inspect));
-    }
-    final String serialized;
     try {
-      serialized = encode(baseline, checked.candidate().orElseThrow());
-      validateEncoded(serialized);
-    } catch (IOException | RuntimeException invalid) {
-      return refused("Serialized candidate exceeds storage admission");
+      return write(prepareWrite(baseline, candidate.draft()), currentLifetime);
+    } catch (PolicyRefusal refused) {
+      return new Write<>(
+          new OwnedFile.Result(
+              OwnedFile.Persistence.REFUSED,
+              Optional.empty(),
+              Optional.of(new IOException("Candidate does not meet storage admission", refused))),
+          Optional.empty());
     }
-    var result = file.write(baseline.source(), serialized, currentLifetime);
+  }
+
+  /** Complete worker-side preparation includes retained source text and the actual UTF-8 bound. */
+  public PreparedWrite<T> prepareWrite(Read<T> baseline, DraftTree draft) {
+    if (baseline.store != identity)
+      throw new IllegalArgumentException("Observation belongs to another store");
+    var checked = inspectDraft(draft);
+    var candidate = checked.candidate().orElseThrow(() -> new PolicyRefusal(checked.report()));
+    try {
+      if (baseline.state() == State.READY
+          && baseline.draft().orElseThrow().sameValue(candidate.draft()))
+        return new PreparedWrite<>(
+            baseline, file.prepareOutput(baseline.source().text().orElseThrow()));
+      var serialized = encode(baseline, candidate);
+      var output = file.prepareOutput(serialized);
+      validateEncoded(serialized);
+      return new PreparedWrite<>(baseline, output);
+    } catch (IOException | RuntimeException invalid) {
+      throw new PolicyRefusal("storage.output", "Serialized candidate exceeds storage admission");
+    }
+  }
+
+  public Write<T> write(PreparedWrite<T> prepared, Runnable currentLifetime) {
+    if (prepared.baseline.store != identity)
+      throw new IllegalArgumentException("Prepared output belongs to another store");
+    var result = file.write(prepared.baseline.source(), prepared.output, currentLifetime);
     return new Write<>(result, result.observed().map(this::inspect));
   }
 
@@ -247,13 +278,6 @@ public abstract class TextStore<T> {
   protected abstract String encode(Read<T> baseline, Candidate<T> candidate);
 
   protected abstract void validateEncoded(String text) throws IOException;
-
-  private Write<T> refused(String message) {
-    return new Write<>(
-        new OwnedFile.Result(
-            OwnedFile.Persistence.REFUSED, Optional.empty(), Optional.of(new IOException(message))),
-        Optional.empty());
-  }
 
   private Read<T> inspect(OwnedFile.Snapshot source) {
     if (!source.present())

@@ -68,6 +68,8 @@ public final class OwnedFile {
     }
   }
 
+  record Output(Object binding, String text, ByteBuffer bytes) {}
+
   @FunctionalInterface
   interface WriteProbe {
     default void before() throws IOException {}
@@ -155,16 +157,30 @@ public final class OwnedFile {
     Objects.requireNonNull(currentLifetime);
     if (expected.binding != identity)
       throw new IllegalArgumentException("Snapshot belongs to another file binding");
-    final ByteBuffer encoded;
     try {
-      if (candidate.length() > maximumBytes)
-        throw new IOException("Candidate exceeds its byte limit");
-      encoded = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(candidate));
-      if (encoded.remaining() > maximumBytes)
-        throw new IOException("Candidate exceeds its byte limit");
+      return write(expected, prepareOutput(candidate), currentLifetime);
     } catch (IOException refused) {
       return result(Persistence.REFUSED, null, refused);
     }
+  }
+
+  /** Pure strict encoding of the exact text to be written, without observing or creating a file. */
+  Output prepareOutput(String candidate) throws IOException {
+    if (candidate.length() > maximumBytes)
+      throw new IOException("Candidate exceeds its byte limit");
+    var encoded = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(candidate));
+    if (encoded.remaining() > maximumBytes)
+      throw new IOException("Candidate exceeds its byte limit");
+    return new Output(identity, candidate, encoded.asReadOnlyBuffer());
+  }
+
+  Result write(Snapshot expected, Output prepared, Runnable currentLifetime) {
+    Objects.requireNonNull(currentLifetime);
+    if (expected.binding != identity || prepared.binding() != identity)
+      throw new IllegalArgumentException(
+          "The source and prepared output must belong to this file binding");
+    String candidate = prepared.text();
+    var encoded = prepared.bytes().asReadOnlyBuffer();
     try {
       return LOCKS.withLock(
           binding.lockKey(),
