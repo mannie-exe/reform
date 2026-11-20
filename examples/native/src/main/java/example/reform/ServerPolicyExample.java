@@ -9,6 +9,7 @@ import design.inherent.reform.neoforge.configuration.ServerSettings;
 import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.value.ValueTypes;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.commands.Commands;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -28,6 +29,15 @@ import net.neoforged.neoforge.event.server.ServerStartingEvent;
 public final class ServerPolicyExample {
   public record Policy(int level) {}
 
+  public record Reloads(
+      int saves, int watches, int other, Thread saveThread, Thread watchThread, int watchedLevel) {}
+
+  private enum ReloadOrigin {
+    SAVE,
+    WATCH,
+    OTHER
+  }
+
   public static final DocumentDefinition<Policy> DEFINITION =
       new DocumentDefinition<>(
           DocumentId.parse(NativeExample.ID + ":server_policy"),
@@ -41,9 +51,9 @@ public final class ServerPolicyExample {
   public static final String NATIVE_FILE = "reform-server-native.toml";
   private final ModContainer container;
   private final ModConfigSpec spec;
-  private ModConfig config;
-  private int reloads;
-  private Thread reloadThread;
+  private volatile ModConfig config;
+  private final AtomicReference<Reloads> reloads =
+      new AtomicReference<>(new Reloads(0, 0, 0, null, null, 0));
 
   public ServerPolicyExample(IEventBus bus, ModContainer container) {
     this.container = container;
@@ -76,8 +86,53 @@ public final class ServerPolicyExample {
 
   private void reloading(ModConfigEvent.Reloading event) {
     if (event.getConfig() == config) {
-      reloads++;
-      reloadThread = Thread.currentThread();
+      var thread = Thread.currentThread();
+      var origin =
+          StackWalker.getInstance()
+              .walk(
+                  frames ->
+                      frames
+                          .map(
+                              frame ->
+                                  switch (frame.getClassName() + "." + frame.getMethodName()) {
+                                    case "net.neoforged.fml.config.LoadedConfig.save" ->
+                                        ReloadOrigin.SAVE;
+                                    case "net.neoforged.fml.config.ConfigWatcher.run" ->
+                                        ReloadOrigin.WATCH;
+                                    default -> ReloadOrigin.OTHER;
+                                  })
+                          .filter(value -> value != ReloadOrigin.OTHER)
+                          .findFirst()
+                          .orElse(ReloadOrigin.OTHER));
+      int level = event.getConfig().getLoadedConfig().config().getInt("level");
+      reloads.updateAndGet(
+          before ->
+              switch (origin) {
+                case SAVE ->
+                    new Reloads(
+                        before.saves() + 1,
+                        before.watches(),
+                        before.other(),
+                        thread,
+                        before.watchThread(),
+                        before.watchedLevel());
+                case WATCH ->
+                    new Reloads(
+                        before.saves(),
+                        before.watches() + 1,
+                        before.other(),
+                        before.saveThread(),
+                        thread,
+                        level);
+                case OTHER ->
+                    new Reloads(
+                        before.saves(),
+                        before.watches(),
+                        before.other() + 1,
+                        before.saveThread(),
+                        before.watchThread(),
+                        before.watchedLevel());
+              });
     }
   }
 
@@ -112,11 +167,7 @@ public final class ServerPolicyExample {
     return container;
   }
 
-  public int reloads() {
-    return reloads;
-  }
-
-  public Thread reloadThread() {
-    return reloadThread;
+  public Reloads reloads() {
+    return reloads.get();
   }
 }

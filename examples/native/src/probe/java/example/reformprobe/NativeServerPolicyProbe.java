@@ -186,7 +186,7 @@ final class NativeServerPolicyProbe {
                             competing = file.editor(source);
                             limited = file.editor(source.withPermission(2), 2, 4);
                             nativeEditor = nativeDocument.editor(source);
-                            reloads = NativeExample.serverPolicies().reloads();
+                            reloads = NativeExample.serverPolicies().reloads().saves();
                             return null;
                           }));
       work =
@@ -374,9 +374,10 @@ final class NativeServerPolicyProbe {
                                 var nativeSave = new JsonObject();
                                 nativeSave.addProperty("persistence", receipt.persistence().name());
                                 nativeSave.addProperty("application", receipt.application().name());
-                                nativeSave.addProperty("reloadsBefore", reloads);
+                                nativeSave.addProperty("saveCallbacksBefore", reloads);
                                 nativeSave.addProperty(
-                                    "reloadsAfter", NativeExample.serverPolicies().reloads());
+                                    "saveCallbacksAfter",
+                                    NativeExample.serverPolicies().reloads().saves());
                                 report.add("nativeSave", nativeSave);
                                 check(
                                     "native policy retains actual serializer and staged callback receipt",
@@ -388,7 +389,7 @@ final class NativeServerPolicyProbe {
                                             == (reopen
                                                 ? CommitReceipt.Application.NOT_ATTEMPTED
                                                 : CommitReceipt.Application.STAGED)
-                                        && NativeExample.serverPolicies().reloads()
+                                        && NativeExample.serverPolicies().reloads().saves()
                                             == reloads + (reopen ? 0 : 1));
                                 check(
                                     "native save retains TOML without an injected schema envelope",

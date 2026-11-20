@@ -4,7 +4,7 @@ Shared native configuration editing and command services for Minecraft mods.
 
 The Phase 1 candidate targets Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. It supplies typed recursive forms, shared settings commands, local profile authoring, owner-aware review and native creation-recipe editing. It is available as a local build. Stable distribution and consumer adoption have separate release procedures. [Coverage](docs/development/coverage.md) lists the supported workflows. [Verification](docs/development/verification.md) records the exercised artifacts and limits.
 
-Start with the public [native addon](examples/native/README.md) for ordinary client and server settings or the [headless example](examples/headless/README.md) for neutral definitions, editing and storage. The combined mod and Maven artifact use the identity `design.inherent:reform`. Game-independent consumers use the same core API.
+Start with the public [native addon](examples/native/README.md) for ordinary client and server settings or the [headless example](examples/headless/README.md) for neutral definitions, editing and storage. The mod ID is `reform`. The Maven coordinate is `design.inherent:reform:<version>`. Game-independent consumers use the same core API.
 
 ## Development
 

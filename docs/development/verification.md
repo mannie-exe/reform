@@ -2,6 +2,46 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Phase 1 standalone candidate
+
+The local `0.1.0-SNAPSHOT` candidate targets Minecraft 1.21.1 and NeoForge 21.1.265. This qualification ran on Apple Silicon with Temurin 21.0.13+9. The combined JAR is `2a44c742d872549077ab86e0098246ce63c9243512ea6e6b8d19764b65f6bff6`, the source JAR is `e7069964c7302c029fc3add39f5956646b9d8f9f05eee1671891b6fd3cf01768`, and the neutral core is `39cc5c562ede2d62b0a85740a99d2ac0d958b484abba7f6783c5b1c467751d40`. The three archives match byte for byte after their Gradle archive tasks rerun. All 152 Java entries in the source archive match the owned source files. The build and public packaging checks cover 533 core, eight NeoForge adapter and 31 tooling cases. The headless example executes without game classes, and the independent native addon compiles against the local Maven artifact.
+
+### Installed server compatibility
+
+Seven installed NeoForge server boots reach the console, accept the native `list` command and shut down with saved dimensions. The cases are re:form alone over two boots, Compat 0.39.0 alone with re:form, Skyweave's development JAR alone with re:form, both Skyweave mods with re:form, and Create: Skyweave over a first boot and a saved reopen. The separate Skyweave cases exercise its own island preset. The full pack uses its authored Compat island preset. Compat SHA-256 is `533ce5b79069e1b8a604dea14556752f27a978cc18bcce0af1146f4e3c4122a8`. Skyweave SHA-256 is `d0e0197672002b253c0301132e3b535b71dd1381ceb91e6355dcf5c40d51d960`. Those mods retain their original owners and code.
+
+The pack case verifies all 515 destination files from the local Create: Skyweave 0.20.0 server export, archive SHA-256 `7728872fd09765689cb00deb30e832e6c715310e401d4e3ca15b8c0fe42ff127`. The disposable server uses loopback, seed 42, two-chunk view and simulation distances and a 6 GiB heap. The fixture disables the BlueMap web listener. The first boot reaches the console in 44.100 seconds at a peak sampled RSS of 4.71 GiB. Reopen reaches the console in 20.825 seconds. These are startup and save/reopen observations for this export.
+
+`native_addon_server_probe.py --policies` adds two dedicated boots in 10.669 and 9.738 seconds. Each exercises the independent addon, 12 actual command observations and 15 search controls, including real ticket retention and settlement after cancellation. The changed native save on the first boot produces one synchronous callback. The second boot's no-op produces zero.
+
+### Native client and editor
+
+The minimum client with Minecraft, NeoForge and re:form reaches the actual title screen in 10.542 seconds. The full Create: Skyweave client reaches it in 57.652 seconds and shows 289 loaded mods. Both exit normally. The client case checks all 538 destination files from the 0.20.0 Prism reference export, archive SHA-256 `778b4c45a09b23dfe6fdf2429429a03f77a0e2dfc95cc55b3978a2ab1962f886`. It adds the candidate JAR and launches the selected files through pinned ModDev with packaged content and Connector's clean Minecraft input. The pack checks cover the title screen and a separate installed dedicated save/reopen. They do not qualify the Prism installer lifecycle or full-pack gameplay.
+
+`native_form_probe.py --submission-only` passes seven isolated boots. The real Create World form allows an edit while a deliberately held preview runs, confirms that cancellation is pending until the worker checks it, and retains the completed value under its original draft. The displayed summary identifies an earlier draft after another edit. A captured before frame showed that this summary had only reached narration. The guide records the corrected visible result and the separate native admission boundary. [Unsaved world recipes](world-recipes.md#explicit-recipe-previews).
+
+The native narrow review control refuses invalid exports and presents the exact reviewed JSON, byte count, source and checksum through the shared export operation. Closing the export returns to the same review with saved and effective values intact. The test exercises the actual result view and enables the native copy control. It leaves the host clipboard alone. Core and command checks include a superseded revision refusal and byte identity between the same GUI and command draft.
+
+`native_form_probe.py --integrated-only` passes 34 and 11 assertions in 19.783 and 13.154 seconds. The integrated host exercises JSON and TOML saves, permission retirement, native search after a same-connection respawn and fresh-JVM reopen. The fixture distinguishes the synchronous FML save dispatch from its independent file watcher. The first boot observes one direct save on the server thread and three watcher reloads. Two controlled atomic file writes make the watcher observe a different value and then the restored value while the direct-save count stays one. The earlier aggregate counter could fail when both FML paths ran.
+
+A separate loopback TCP client has only the pinned game/runtime and an observation addon. The dedicated server exposes ordinary settings and search commands through the packaged library. Actual vanilla chat confirms that a search status is refused in The End and available again on returning to the original level in the same login. A new login refuses both the former settings operation and former search. The fresh settings draft reads the saved value 9 instead of the previous unsaved value 13. Native server `deop` removes both permitted command branches and the server refuses their ordinary invocations. The test confirms server-observed logout before reconnect and server-observed revocation before its negative controls. Matching-definition remote forms remain Phase 2.
+
+### Bounded editing costs
+
+The packaged public workload builds real nested profile records with role maps and related-value validation, edits and validates complete drafts, reloads actual JSON files and reviews 32 independent owner documents. The Java process has a 384 MiB heap and JFR profile recording. Measurements cover warmed operations on a host also running native fixtures.
+
+| Workload                                        | 62 catalog entries | 482 catalog entries |
+| ----------------------------------------------- | -----------------: | ------------------: |
+| Complete catalog projection, p95                |           0.338 ms |            0.990 ms |
+| Search cached labels, p95                       |           0.007 ms |            0.018 ms |
+| Validate an edited draft, p95                   |           1.033 ms |            3.792 ms |
+| Reload and decode JSON from disk, p95           |           3.576 ms |            5.285 ms |
+| Allocation per validation on the calling thread |           0.53 MiB |            3.69 MiB |
+
+The 32-document review covers 12 profiles per owner. Fifteen sampled complete reviews have a 74.170 ms median and a 195.107 ms maximum. Sixty exports have a 0.738 ms p95. Each owner reaches its closed editor state in the fixture. These are service timings and synchronous allocation counts. Native render frame timing, cold disk latency, long-session heap retention and other hosts remain outside the sample.
+
+Phase 1 is complete for the selected standalone library scope. Distribution is a local build candidate. Source adoption in Skyweave and Compat and the Phase 2 implementation remain separate.
+
 ## Native search reporting
 
 The combined artifact is `e1b6ec109abad4e0c1e1575ed49356d998c93c4535a028974330779c75fe03a1`, sources `5073074fb250a07d5755680b0152b21e579ef627d6252daa7c888a8eec982c75` and core `be7cc28baeee4f62b1cc5e56aeb46b575e81261c12118cd0255bfce3989bd1b5`. `spotlessApply check build` and `mise run check` pass with 532 core cases, eight adapter cases, 31 tooling cases and both independent packaged consumers. Nine new core checks cover precise cursors, snapshot eviction, notification cadence, coverage bounds, cancellation, late settlement and isolated ticket cleanup on normal and failed paths.

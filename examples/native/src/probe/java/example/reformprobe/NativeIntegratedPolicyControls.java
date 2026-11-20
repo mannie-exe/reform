@@ -26,6 +26,7 @@ import example.reform.NativeExample;
 import example.reform.ServerPolicyExample;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -80,6 +81,9 @@ final class NativeIntegratedPolicyControls {
   private LocalPlayer previousPlayer;
   private ClientPacketListener previousConnection;
   private CompletableFuture<?> pending;
+  private Path nativePath;
+  private String savedNativeBytes;
+  private int watchStage;
   private int step;
   private boolean complete;
 
@@ -520,11 +524,13 @@ final class NativeIntegratedPolicyControls {
               receipt.persistence() == CommitReceipt.Persistence.SAVED);
           var path = nativePath(receipt.observation().orElseThrow().provenance());
           verifyNativePath(path);
+          nativePath = path;
           pending =
               server.submit(
                   () -> {
-                    if (example.reloads() != 1
-                        || example.reloadThread() != Thread.currentThread()
+                    var callbacks = example.reloads();
+                    if (callbacks.saves() != 1
+                        || callbacks.saveThread() != Thread.currentThread()
                         || !server.isSameThread()
                         || !example
                             .nativeConfig()
@@ -533,7 +539,8 @@ final class NativeIntegratedPolicyControls {
                             .normalize()
                             .equals(path))
                       throw new AssertionError(
-                          "Native registered reload did not run exactly once on the integrated server thread");
+                          "Expected one explicit native save reload on its server thread: "
+                              + callbacks);
                   });
         }
         next("confirmed native source, checking callback and disconnect lifecycle");
@@ -544,7 +551,8 @@ final class NativeIntegratedPolicyControls {
           step = 26;
           return false;
         }
-        check("FML callback is owned by actual integrated server thread", true);
+        if (!watchNativeSource()) return false;
+        check("explicit FML save reload is owned by actual integrated server thread", true);
         command("set level 19");
         next("actual host sends a vanilla command over the memory connection");
       }
@@ -686,11 +694,64 @@ final class NativeIntegratedPolicyControls {
       throw new AssertionError("Current host did not receive search notice");
   }
 
+  private boolean watchNativeSource() throws java.io.IOException {
+    var observed = example.reloads();
+    switch (watchStage) {
+      case 0 -> {
+        savedNativeBytes = Files.readString(nativePath);
+        var changed = savedNativeBytes.replace("level = 11", "level = 12");
+        if (changed.equals(savedNativeBytes))
+          throw new AssertionError("Missing native saved value");
+        replaceNativeSource(changed);
+        watchStage = 1;
+        progress.accept("waiting for the native Watcher to observe an external change");
+      }
+      case 1 -> {
+        if (observed.watches() == 0 || observed.watchedLevel() != 12) return false;
+        check(
+            "native Watcher observes the actual external edit independently of the direct save",
+            observed.saves() == 1
+                && observed.watchThread() != null
+                && observed.watchThread() != observed.saveThread());
+        replaceNativeSource(savedNativeBytes);
+        watchStage = 2;
+      }
+      case 2 -> {
+        if (observed.watchedLevel() != 11) return false;
+        check("restoring disk makes the Watcher reload without a new save", observed.saves() == 1);
+        return true;
+      }
+      default -> throw new AssertionError("Unexpected native Watcher stage");
+    }
+    return false;
+  }
+
+  private void replaceNativeSource(String bytes) throws java.io.IOException {
+    var pendingWrite =
+        Files.createTempFile(nativePath.getParent(), "reform-native-fixture-", ".toml");
+    try {
+      Files.writeString(pendingWrite, bytes);
+      Files.move(
+          pendingWrite,
+          nativePath,
+          StandardCopyOption.ATOMIC_MOVE,
+          StandardCopyOption.REPLACE_EXISTING);
+    } finally {
+      Files.deleteIfExists(pendingWrite);
+    }
+  }
+
   JsonObject report() {
     var report = new JsonObject();
     report.addProperty("status", complete ? "PASS" : "RUNNING");
     report.addProperty("stage", step);
     report.add("checks", checks);
+    var events = example.reloads();
+    var reloads = new JsonObject();
+    reloads.addProperty("directSaves", events.saves());
+    reloads.addProperty("fileWatcherReloads", events.watches());
+    reloads.addProperty("otherReloads", events.other());
+    report.add("nativeReloads", reloads);
     report.addProperty(
         "contextsClosed",
         complete
