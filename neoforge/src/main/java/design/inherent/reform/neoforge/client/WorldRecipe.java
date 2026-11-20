@@ -93,6 +93,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
   private final DocumentDefinition<T> definition;
   private CreateWorldScreen parent;
   private boolean screenCreated;
+  private boolean returnAfterApply;
   private SettingsScreen.PreviewEntry preview;
 
   private WorldRecipe(
@@ -100,7 +101,9 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
       WorldCreationContext original,
       DocumentDefinition<T> definition,
       Domain<T, P> domain,
-      SnapshotPolicy<P> snapshots) {
+      SnapshotPolicy<P> snapshots,
+      Function<WorldCreationContext, ContextRecipeOwner.Defaults<T, WorldCreationContext, P>>
+          defaultsSource) {
     requireClient();
     this.parent = Objects.requireNonNull(parent);
     this.definition = Objects.requireNonNull(definition);
@@ -159,7 +162,8 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
               snapshots,
               limits,
               DraftLimits.CONFIGURATION,
-              16);
+              16,
+              defaultsSource);
       access = context.access(() -> true, () -> true);
       referenceAccess =
           context.access(
@@ -197,12 +201,39 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
       DocumentDefinition<T> definition,
       Domain<T, P> domain,
       SnapshotPolicy<P> compiledSnapshots) {
-    return new WorldRecipe<>(parent, original, definition, domain, compiledSnapshots);
+    return new WorldRecipe<>(parent, original, definition, domain, compiledSnapshots, null);
+  }
+
+  /** Supply an explicit saved defaults loader and their complete domain compilation basis. */
+  public static <T, P> WorldRecipe<T, P> worldRecipe(
+      CreateWorldScreen parent,
+      WorldCreationContext original,
+      DocumentDefinition<T> definition,
+      Domain<T, P> domain,
+      SnapshotPolicy<P> compiledSnapshots,
+      Function<WorldCreationContext, ContextRecipeOwner.Defaults<T, WorldCreationContext, P>>
+          defaultsSource) {
+    return new WorldRecipe<>(
+        parent,
+        original,
+        definition,
+        domain,
+        compiledSnapshots,
+        Objects.requireNonNull(defaultsSource));
   }
 
   public DocumentActions<T> actions() {
     context.requireOwner();
     return actions;
+  }
+
+  /** Return to Create World after a confirmed, current recipe admission. */
+  public WorldRecipe<T, P> returnAfterApply() {
+    context.requireOwner();
+    if (screenCreated)
+      throw new IllegalStateException("Set recipe return behavior before opening the screen");
+    returnAfterApply = true;
+    return this;
   }
 
   /** Borrow this recipe's lifetime and original native context for explicit reference lookups. */
@@ -281,6 +312,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
               fieldEditors);
       imports.ifPresent(form::withImports);
       if (preview != null) form.withPreview(preview);
+      if (returnAfterApply) form.returnAfterApply();
       return form;
     } catch (RuntimeException failed) {
       close();

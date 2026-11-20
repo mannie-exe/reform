@@ -4,6 +4,7 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.Candidate;
+import design.inherent.reform.edit.DraftBasis;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.serialization.JsonLimits;
@@ -11,7 +12,9 @@ import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.SnapshotContext;
 import design.inherent.reform.value.SnapshotPolicy;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -21,6 +24,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -28,6 +32,8 @@ import java.util.function.Function;
  * world is opened. Domain compilation and admission remain the consumer's implementations.
  */
 public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
+  private static final int MAXIMUM_BASES = 8;
+
   public interface Domain<T, C, P> {
     /** Native executor: actual current creation context, never a seed/name/UUID surrogate. */
     C current();
@@ -44,6 +50,20 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
      * unknown outcome.
      */
     C admit(C expected, P prepared);
+  }
+
+  /**
+   * An explicitly read full default source. Its bounded immutable inputs stay behind the compiler.
+   * The source revision identifies the complete source, including values outside the projection.
+   */
+  public record Defaults<T, C, P>(
+      String revision, SourceInfo source, T projection, BiFunction<C, T, P> compile) {
+    public Defaults {
+      Objects.requireNonNull(revision);
+      Objects.requireNonNull(source);
+      Objects.requireNonNull(projection);
+      Objects.requireNonNull(compile);
+    }
   }
 
   private record Read<T>(
@@ -202,6 +222,11 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
 
   private record Capture<T, C>(C nativeContext, long version, T values) {}
 
+  private record DefaultDraft<T, C, P>(
+      DraftBasis basis, DraftTree draft, BiFunction<C, T, P> compile) {}
+
+  private record BasisBinding<T, C, P>(UUID session, BiFunction<C, T, P> compile) {}
+
   private record Attempt<T, C>(
       CommitReceipt.Application application,
       Optional<Capture<T, C>> capture,
@@ -245,7 +270,9 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
 
     @Override
     public Set<Operation> operations() {
-      return Set.of(Operation.READ, Operation.COMMIT);
+      return defaultsSource == null
+          ? Set.of(Operation.READ, Operation.COMMIT)
+          : Set.of(Operation.READ, Operation.COMMIT, Operation.LOAD_DEFAULTS);
     }
 
     @Override
@@ -301,6 +328,48 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
                   .thenCompose(capture -> observation(capture)));
     }
 
+    @Override
+    public CompletionStage<DraftTree> loadDefaults(String revision, Runnable checkpoint) {
+      Objects.requireNonNull(checkpoint);
+      return lane.submit(
+          () ->
+              context
+                  .onOwner(
+                      () -> {
+                        requireSource(revision);
+                        checkpoint.run();
+                        var loader = defaultsSource;
+                        if (loader == null)
+                          throw refusal("owner.unsupported", "This recipe has no defaults source");
+                        var original = nativeContext;
+                        return context.onWorker(
+                            () -> {
+                              current();
+                              checkpoint.run();
+                              var loaded = Objects.requireNonNull(loader.apply(original));
+                              var draft =
+                                  DraftTree.from(
+                                      definition.type(), loaded.projection(), draftLimits);
+                              var inspected = draft.inspect(definition, jsonLimits);
+                              if (!inspected.report().valid())
+                                throw new PolicyRefusal(inspected.report());
+                              return new DefaultDraft<>(
+                                  new DraftBasis(loaded.revision(), loaded.source()),
+                                  draft,
+                                  loaded.compile());
+                            });
+                      })
+                  .thenCompose(stage -> stage)
+                  .thenCompose(
+                      loaded ->
+                          context.onOwner(
+                              () -> {
+                                requireSource(revision);
+                                checkpoint.run();
+                                return loaded.draft().withBasis(retainBasis(this, loaded));
+                              })));
+    }
+
     private CompletionStage<Observation<T, C>> observation(Capture<T, C> capture) {
       return context
           .onWorker(
@@ -350,7 +419,8 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
                 nativeCurrent(baseline.nativeContext, baseline.version);
                 if (!baseline.document.report().valid())
                   throw new PolicyRefusal(baseline.document.report());
-                return domain;
+                BiFunction<C, T, P> compile = domain::compile;
+                return draft.basis().map(basis -> requireBasis(id, basis)).orElse(compile);
               })
           .thenCompose(
               binding ->
@@ -366,7 +436,7 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
                         checkpoint.run();
                         P compiled =
                             Objects.requireNonNull(
-                                binding.compile(baseline.nativeContext, candidate.value()));
+                                binding.apply(baseline.nativeContext, candidate.value()));
                         var snapshots = new SnapshotContext(SnapshotContext.Limits.CONFIGURATION);
                         P frozen =
                             snapshots.copy(
@@ -501,6 +571,7 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
       if (!closed) {
         nativeContext = admitted;
         version++;
+        clearBases();
       }
       try {
         require(OwnerContext.Right.READ);
@@ -543,6 +614,9 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
     @Override
     public void close() {
       open.set(false);
+      synchronized (bases) {
+        bases.values().removeIf(binding -> binding.session().equals(id));
+      }
     }
   }
 
@@ -555,8 +629,10 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
   private final DraftLimits draftLimits;
   private final SerialLane lane;
   private final OwnerContext.CloseHook cleanup;
+  private final Map<DraftBasis, BasisBinding<T, C, P>> bases = new LinkedHashMap<>();
   private C nativeContext;
   private Domain<T, C, P> domain;
+  private volatile Function<C, Defaults<T, C, P>> defaultsSource;
   private long version;
   private volatile boolean closed, broken;
 
@@ -569,6 +645,31 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
       JsonLimits jsonLimits,
       DraftLimits draftLimits,
       int maximumOperations) {
+    this(
+        context,
+        definition,
+        original,
+        domain,
+        compiledSnapshots,
+        jsonLimits,
+        draftLimits,
+        maximumOperations,
+        null);
+  }
+
+  /**
+   * The optional loader runs on the worker, using immutable data from the actual creation context.
+   */
+  public ContextRecipeOwner(
+      OwnerContext context,
+      DocumentDefinition<T> definition,
+      C original,
+      Domain<T, C, P> domain,
+      SnapshotPolicy<P> compiledSnapshots,
+      JsonLimits jsonLimits,
+      DraftLimits draftLimits,
+      int maximumOperations,
+      Function<C, Defaults<T, C, P>> defaultsSource) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.definition = Objects.requireNonNull(definition);
@@ -577,10 +678,42 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
     this.compiledSnapshots = Objects.requireNonNull(compiledSnapshots);
     this.jsonLimits = Objects.requireNonNull(jsonLimits);
     this.draftLimits = Objects.requireNonNull(draftLimits);
+    this.defaultsSource = defaultsSource;
     if (domain.current() != original)
       throw refusal("owner.revision", "Use the actual original world-creation context");
     lane = new SerialLane(maximumOperations);
     cleanup = context.onClose(this::close);
+  }
+
+  private DraftBasis retainBasis(Session session, DefaultDraft<T, C, P> loaded) {
+    synchronized (bases) {
+      if (!session.isOpen()) throw refusal("owner.closed", "This recipe session closed");
+      for (var known : bases.entrySet())
+        if (known.getValue().session().equals(session.id())
+            && known.getKey().revision().equals(loaded.basis().revision())
+            && known.getKey().source().equals(loaded.basis().source())) return known.getKey();
+      if (bases.size() >= MAXIMUM_BASES)
+        throw refusal(
+            "owner.defaults_budget", "Reopen this recipe before loading another defaults revision");
+      bases.put(loaded.basis(), new BasisBinding<>(session.id(), loaded.compile()));
+      return loaded.basis();
+    }
+  }
+
+  private BiFunction<C, T, P> requireBasis(UUID session, DraftBasis selected) {
+    synchronized (bases) {
+      var binding = bases.get(selected);
+      if (binding == null || !binding.session().equals(session))
+        throw refusal(
+            "owner.defaults_revision", "Load defaults again for this actual recipe source");
+      return binding.compile();
+    }
+  }
+
+  private void clearBases() {
+    synchronized (bases) {
+      bases.clear();
+    }
   }
 
   public Session open(OwnerContext.Access access) {
@@ -621,6 +754,8 @@ public final class ContextRecipeOwner<T, C, P> implements AutoCloseable {
     closed = true;
     nativeContext = null;
     domain = null;
+    defaultsSource = null;
+    clearBases();
     lane.close();
     cleanup.close();
   }

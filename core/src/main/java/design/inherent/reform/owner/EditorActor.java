@@ -730,7 +730,30 @@ public final class EditorActor<T> implements AutoCloseable {
   }
 
   public CompletionStage<View<T>> reset() {
-    return change(selected -> selected.editor.reset());
+    return reset(() -> {});
+  }
+
+  public CompletionStage<View<T>> reset(Runnable checkpoint) {
+    Objects.requireNonNull(checkpoint);
+    if (!supportedOperations.contains(DocumentSession.Operation.LOAD_DEFAULTS))
+      return change(selected -> selected.editor.reset());
+    return act(() -> {
+          checkpoint.run();
+          var editor = ready().editor;
+          if (editor.pendingState().isPresent() || editor.review().isPresent())
+            throw new PolicyRefusal(
+                "owner.defaults_pending", "Complete the pending submission or review first");
+          return editor.snapshot();
+        })
+        .thenCompose(
+            snapshot ->
+                source
+                    .loadDefaults(snapshot.sourceRevision(), checkpoint)
+                    .thenCompose(
+                        loaded -> {
+                          checkpoint.run();
+                          return stage(snapshot.target(FieldPath.ROOT), loaded, "Load defaults");
+                        }));
   }
 
   public CompletionStage<View<T>> resolve(

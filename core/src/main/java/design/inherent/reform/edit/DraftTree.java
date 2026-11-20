@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
@@ -50,10 +51,16 @@ public final class DraftTree {
 
   private final DraftNode root;
   private final DraftLimits limits;
+  private final DraftBasis basis;
 
   public DraftTree(DraftNode root, DraftLimits limits) {
+    this(root, limits, null);
+  }
+
+  private DraftTree(DraftNode root, DraftLimits limits, DraftBasis basis) {
     this.root = Objects.requireNonNull(root);
     this.limits = Objects.requireNonNull(limits);
+    this.basis = basis;
     limits.check(root);
   }
 
@@ -63,6 +70,33 @@ public final class DraftTree {
 
   public DraftLimits limits() {
     return limits;
+  }
+
+  /**
+   * Captured provenance only. Any supplied basis still requires admission from its actual owner.
+   */
+  public Optional<DraftBasis> basis() {
+    return Optional.ofNullable(basis);
+  }
+
+  public DraftTree withBasis(DraftBasis selected) {
+    return new DraftTree(root, limits, Objects.requireNonNull(selected));
+  }
+
+  DraftTree within(DraftLimits selected) {
+    return new DraftTree(root, selected, basis);
+  }
+
+  DraftTree inheritBasis(DraftTree current) {
+    return basis == null && current.basis != null ? withBasis(current.basis) : this;
+  }
+
+  boolean sameBasis(DraftTree other) {
+    return basis == other.basis;
+  }
+
+  boolean sameInput(DraftTree other) {
+    return sameBasis(other) && root.equals(other.root);
   }
 
   public static <T> DraftTree from(ValueType<T> type, T value, DraftLimits limits) {
@@ -355,7 +389,7 @@ public final class DraftTree {
   }
 
   public DraftTree change(FieldPath path, UnaryOperator<DraftNode> operation) {
-    return new DraftTree(change(root, path.segments(), 0, operation), limits);
+    return new DraftTree(change(root, path.segments(), 0, operation), limits, basis);
   }
 
   /** Apply independent review choices with one final budget check. */
@@ -363,7 +397,7 @@ public final class DraftTree {
     var changed = root;
     for (var entry : values.entrySet())
       changed = change(changed, entry.getKey().segments(), 0, ignored -> entry.getValue());
-    return new DraftTree(changed, limits);
+    return new DraftTree(changed, limits, basis);
   }
 
   private static DraftNode change(
@@ -419,17 +453,17 @@ public final class DraftTree {
   }
 
   public boolean sameValue(DraftTree other) {
-    return DraftNode.sameValue(root, other.root);
+    return sameBasis(other) && DraftNode.sameValue(root, other.root);
   }
 
   /** Preserve identities only within branches whose authored values are unchanged. */
   DraftTree reuseUnchangedFrom(DraftTree previous) {
-    return new DraftTree(reuseUnchanged(root, previous.root, DraftNode::sameValue), limits);
+    return new DraftTree(reuseUnchanged(root, previous.root, DraftNode::sameValue), limits, basis);
   }
 
   /** A full draft replacement cannot discard explicitly supplied inactive or mapped input. */
   DraftTree reuseIdenticalInputFrom(DraftTree previous) {
-    return new DraftTree(reuseUnchanged(root, previous.root, DraftNode::sameInput), limits);
+    return new DraftTree(reuseUnchanged(root, previous.root, DraftNode::sameInput), limits, basis);
   }
 
   private static DraftNode reuseUnchanged(
@@ -451,7 +485,7 @@ public final class DraftTree {
 
   /** Only for an already qualified equal-value saved observation, never an identity heuristic. */
   DraftTree alignRows(DraftTree submitted, ValueType<?> type, JsonLimits jsonLimits) {
-    return new DraftTree(align(root, submitted.root, type, jsonLimits), limits);
+    return new DraftTree(align(root, submitted.root, type, jsonLimits), limits, basis);
   }
 
   private static DraftNode align(
@@ -594,7 +628,7 @@ public final class DraftTree {
 
   /** Rebase known edits in this session; changed collections stay whole. */
   DraftTree retainLaterEdits(DraftTree submitted, DraftTree actual) {
-    return new DraftTree(retain(submitted.root, root, actual.root), limits);
+    return new DraftTree(retain(submitted.root, root, actual.root), limits, actual.basis);
   }
 
   private static DraftNode retain(DraftNode submitted, DraftNode current, DraftNode actual) {

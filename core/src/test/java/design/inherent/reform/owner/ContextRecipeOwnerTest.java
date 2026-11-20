@@ -19,6 +19,7 @@ import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.value.ValueTypes;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
@@ -28,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
@@ -85,6 +87,11 @@ class ContextRecipeOwnerTest {
     volatile Inputs runtime;
 
     Harness() throws Exception {
+      this(null);
+    }
+
+    Harness(Function<Creation, ContextRecipeOwner.Defaults<Recipe, Creation, Inputs>> defaultSource)
+        throws Exception {
       nativeThread = nativeCall(() -> Thread.currentThread().threadId());
       context =
           new OwnerContext(
@@ -148,7 +155,8 @@ class ContextRecipeOwnerTest {
                       (inputs, budget) -> new Inputs(List.copyOf(inputs.values())),
                       JSON,
                       DraftLimits.CONFIGURATION,
-                      16));
+                      16,
+                      defaultSource));
       access =
           nativeCall(
               () ->
@@ -211,6 +219,130 @@ class ContextRecipeOwnerTest {
           throw new AssertionError(failed);
         }
       }
+    }
+  }
+
+  @Test
+  void fullDefaultBasisIsStagedEvenWithIdenticalVisibleValuesAndDrivesAdmission() throws Exception {
+    var hidden = "terrain".repeat(330_000);
+    assertTrue(hidden.length() > 2 * 1024 * 1024);
+    var source = new SourceInfo("saved-defaults", "Saved terrain profile", Optional.empty());
+    var loads = new AtomicInteger();
+    var nativeThread = new java.util.concurrent.atomic.AtomicLong();
+    try (var h =
+        new Harness(
+            original -> {
+              assertNotEquals(nativeThread.get(), Thread.currentThread().threadId());
+              loads.incrementAndGet();
+              return new ContextRecipeOwner.Defaults<>(
+                  "test-full-basis",
+                  source,
+                  original.recipe(),
+                  (current, edited) -> {
+                    assertSame(original, current);
+                    assertNotEquals(nativeThread.get(), Thread.currentThread().threadId());
+                    return new Inputs(List.of(edited.amount() * 2, hidden.length()));
+                  });
+            })) {
+      nativeThread.set(h.nativeThread);
+      h.load();
+      var initial = h.current.get();
+      var staged = h.run(() -> h.actions.defaults(EntryPoint.GUI));
+      var draft = staged.snapshot().orElseThrow().draft();
+      var basis = draft.basis().orElseThrow();
+      assertEquals(source, basis.source());
+      assertTrue(staged.dirty());
+      assertSame(initial, h.current.get());
+      assertEquals(0, h.admissions.get());
+      var undone = h.run(() -> h.actions.undo(EntryPoint.GUI));
+      assertFalse(undone.dirty());
+      assertTrue(undone.snapshot().orElseThrow().draft().basis().isEmpty());
+      assertSame(
+          basis,
+          h.run(() -> h.actions.redo(EntryPoint.GUI))
+              .snapshot()
+              .orElseThrow()
+              .draft()
+              .basis()
+              .orElseThrow());
+      assertSame(
+          basis,
+          h.run(() -> h.actions.defaults(EntryPoint.GUI))
+              .snapshot()
+              .orElseThrow()
+              .draft()
+              .basis()
+              .orElseThrow());
+      assertEquals(2, loads.get());
+
+      try (var foreign = h.nativeCall(() -> h.owner.open(h.access))) {
+        var observed = await(foreign.read());
+        var refused =
+            assertThrows(ExecutionException.class, () -> await(foreign.prepare(observed, draft)));
+        assertEquals(
+            "owner.defaults_revision",
+            ((PolicyRefusal) refused.getCause()).report().issues().getFirst().code());
+      }
+
+      h.edit("7");
+      var snapshot = h.actor.view().snapshot().orElseThrow();
+      assertSame(basis, snapshot.draft().basis().orElseThrow());
+      assertSame(basis, h.run(() -> h.actions.review(EntryPoint.GUI)).draftBasis().orElseThrow());
+      assertTrue(snapshot.inspect().candidate().orElseThrow().authoredJson().length() < 100);
+      var preview =
+          await(
+              h.session.preview(
+                  snapshot.sourceRevision(), snapshot.draft(), () -> {}, prepared -> prepared));
+      assertEquals(List.of(14, hidden.length()), preview.values());
+      assertSame(initial, h.current.get());
+      var committed = h.run(() -> h.actions.admit(EntryPoint.GUI));
+      assertEquals(
+          CommitReceipt.Application.APPLIED, committed.receipt().orElseThrow().application());
+      assertSame(initial.untouchedDimensions(), h.current.get().untouchedDimensions());
+      assertEquals(new Recipe(7), h.current.get().recipe());
+      assertEquals(List.of(14, hidden.length()), h.runtime.values());
+      assertFalse(h.actor.view().dirty());
+      assertTrue(h.actor.view().snapshot().orElseThrow().draft().basis().isEmpty());
+      assertFalse(h.actor.view().canUndo());
+      var stale =
+          assertThrows(
+              ExecutionException.class,
+              () -> await(h.session.loadDefaults(snapshot.sourceRevision(), () -> {})));
+      assertEquals(
+          "owner.revision", ((PolicyRefusal) stale.getCause()).report().issues().getFirst().code());
+    }
+  }
+
+  @Test
+  void defaultsReadCannotOverwriteEditsMadeWhileTheSourceWasLoading() throws Exception {
+    var reading = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    try (var h =
+        new Harness(
+            original -> {
+              reading.countDown();
+              waitFor(release);
+              return new ContextRecipeOwner.Defaults<>(
+                  "late-defaults",
+                  SourceInfo.UNKNOWN,
+                  new Recipe(6),
+                  (current, edited) -> new Inputs(List.of(edited.amount() * 2)));
+            })) {
+      h.load();
+      var loading = h.nativeCall(() -> h.actions.defaults(EntryPoint.GUI));
+      try {
+        waitFor(reading);
+        h.edit("9");
+      } finally {
+        release.countDown();
+      }
+      var stopped = await(loading.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, stopped.state());
+      assertEquals("import.stale_target", stopped.report().issues().getFirst().code());
+      var current = h.actor.view().snapshot().orElseThrow();
+      assertEquals(new Recipe(9), current.inspect().candidate().orElseThrow().value());
+      assertTrue(current.draft().basis().isEmpty());
+      assertEquals(0, h.admissions.get());
     }
   }
 

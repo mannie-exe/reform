@@ -195,7 +195,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     undo = query("undo", OperationDescriptor.Effect.EDIT_DRAFT, execution -> actor.undo());
     redo = query("redo", OperationDescriptor.Effect.EDIT_DRAFT, execution -> actor.redo());
     revert = query("revert", OperationDescriptor.Effect.EDIT_DRAFT, execution -> actor.revert());
-    defaults = query("defaults", OperationDescriptor.Effect.EDIT_DRAFT, execution -> actor.reset());
+    defaults =
+        query(
+            "defaults",
+            OperationDescriptor.Effect.EDIT_DRAFT,
+            execution -> actor.reset(execution::checkpoint));
     edit =
         descriptor(
             "edit", FIELD, OwnerContext.Right.READ, Set.of(OperationDescriptor.Effect.EDIT_DRAFT));
@@ -520,6 +524,10 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   public DocumentSession.CommitKind commitKind() {
     return actor.commitKind();
+  }
+
+  public boolean loadsOwnerDefaults() {
+    return actor.supportedOperations().contains(DocumentSession.Operation.LOAD_DEFAULTS);
   }
 
   /** Cached owner declaration; every actual operation still checks its authority and context. */

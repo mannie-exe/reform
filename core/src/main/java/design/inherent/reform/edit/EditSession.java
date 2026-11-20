@@ -156,12 +156,7 @@ public final class EditSession<T> implements AutoCloseable {
       JsonLimits jsonLimits,
       DraftLimits limits) {
     return new EditSession<>(
-        definition,
-        context,
-        sourceRevision,
-        new DraftTree(saved.root(), limits),
-        jsonLimits,
-        limits);
+        definition, context, sourceRevision, saved.within(limits), jsonLimits, limits);
   }
 
   /** Advanced serialized-worker adapter; ordinary direct sessions retain their creating thread. */
@@ -174,13 +169,7 @@ public final class EditSession<T> implements AutoCloseable {
       DraftLimits limits,
       Runnable ownerThread) {
     return new EditSession<>(
-        definition,
-        context,
-        sourceRevision,
-        new DraftTree(saved.root(), limits),
-        jsonLimits,
-        limits,
-        ownerThread);
+        definition, context, sourceRevision, saved.within(limits), jsonLimits, limits, ownerThread);
   }
 
   private EditSession(
@@ -343,7 +332,7 @@ public final class EditSession<T> implements AutoCloseable {
 
   public void stage(DraftTree imported, String label) {
     active();
-    apply(new DraftTree(imported.root(), limits), label, null);
+    apply(imported.within(limits).inheritBasis(current), label, null);
   }
 
   /** Reviewed whole-draft replacement; pending writes and unresolved conflicts remain separate. */
@@ -368,7 +357,7 @@ public final class EditSession<T> implements AutoCloseable {
     Objects.requireNonNull(imported);
     long before = version;
     try {
-      var next = new DraftTree(imported.root(), limits).reuseIdenticalInputFrom(current);
+      var next = imported.within(limits).inheritBasis(current).reuseIdenticalInputFrom(current);
       apply(next, label, null);
     } catch (IllegalArgumentException refusal) {
       throw new DraftEditRefusal("import.invalid_draft", FieldPath.ROOT, refusal.getMessage());
@@ -387,6 +376,7 @@ public final class EditSession<T> implements AutoCloseable {
     active();
     apply(
         DraftTree.from(definition.type(), definition.defaults(), limits)
+            .inheritBasis(current)
             .reuseUnchangedFrom(current),
         "Reset to defaults",
         null);
@@ -395,13 +385,14 @@ public final class EditSession<T> implements AutoCloseable {
   private void apply(DraftTree next, String label, EditGroup group) {
     if (Objects.requireNonNull(label).isBlank() || label.length() > 256)
       throw new IllegalArgumentException("Invalid history label");
-    if (next.root().equals(current.root())) return;
+    requireBasisChange(next);
+    if (next.sameInput(current)) return;
     var before = current;
     var previous = undo.peekLast();
     if (group != null
         && group.equals(lastGroup)
         && previous != null
-        && previous.after().root().equals(before.root())) {
+        && previous.after().sameInput(before)) {
       undo.removeLast();
       undo.addLast(new History(previous.before(), next, label, group));
     } else undo.addLast(new History(before, next, label, group));
@@ -424,6 +415,7 @@ public final class EditSession<T> implements AutoCloseable {
   public boolean undo() {
     active();
     if (undo.isEmpty()) return false;
+    requireBasisChange(undo.peekLast().before());
     var change = undo.removeLast();
     current = change.before();
     redo.addLast(change);
@@ -435,12 +427,21 @@ public final class EditSession<T> implements AutoCloseable {
   public boolean redo() {
     active();
     if (redo.isEmpty()) return false;
+    requireBasisChange(redo.peekLast().after());
     var change = redo.removeLast();
     current = change.after();
     undo.addLast(change);
     version++;
     lastGroup = null;
     return true;
+  }
+
+  private void requireBasisChange(DraftTree next) {
+    if (pending != null && !current.sameBasis(next))
+      throw new DraftEditRefusal(
+          "edit.basis_pending",
+          FieldPath.ROOT,
+          "Complete the current submission before changing its basis");
   }
 
   public Preparation<T> prepareSubmission() {
@@ -526,19 +527,30 @@ public final class EditSession<T> implements AutoCloseable {
       if (observation.candidate().isEmpty()) return unavailableObservation();
       T actual = observation.candidate().orElseThrow().value();
       boolean equal = definition.type().equivalent(actual, submission.candidate().value());
-      var normalized = new DraftTree(observed.root(), limits);
+      var normalized = observed.within(limits);
       var submitted = submission.candidate().draft();
       actualTree =
           equal ? normalized.alignRows(submitted, definition.type(), jsonLimits) : normalized;
-      needsReview = !equal && !current.root().equals(submitted.root());
+      needsReview = !equal && !current.sameInput(submitted);
       next =
           equal
               ? current.retainLaterEdits(submitted, actualTree)
               : needsReview ? current : actualTree;
       // Compute both journals and the review before advancing any local state. In particular, a
       // normalized observation can fit alone but exceed the budget when combined with a late edit.
-      nextUndo = needsReview ? List.copyOf(undo) : rebaseHistory(undo, submitted, actualTree);
-      nextRedo = needsReview ? List.copyOf(redo) : rebaseHistory(redo, submitted, actualTree);
+      boolean retiredBasis =
+          !newRevision.equals(sourceRevision)
+              && (submitted.basis().isPresent()
+                  || undo.stream().anyMatch(EditSession::hasBasis)
+                  || redo.stream().anyMatch(EditSession::hasBasis));
+      nextUndo =
+          retiredBasis
+              ? List.of()
+              : needsReview ? List.copyOf(undo) : rebaseHistory(undo, submitted, actualTree);
+      nextRedo =
+          retiredBasis
+              ? List.of()
+              : needsReview ? List.copyOf(redo) : rebaseHistory(redo, submitted, actualTree);
       nextReview =
           needsReview
               ? new ConflictReview(
@@ -572,6 +584,10 @@ public final class EditSession<T> implements AutoCloseable {
     redo.addAll(nextRedo);
     trimHistory();
     return needsReview ? Acknowledgement.REVIEW_REQUIRED : Acknowledgement.ACCEPTED;
+  }
+
+  private static boolean hasBasis(History history) {
+    return history.before().basis().isPresent() || history.after().basis().isPresent();
   }
 
   public Acknowledgement acknowledge(Submission<T> submission, T actual, String newRevision) {

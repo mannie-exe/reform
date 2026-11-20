@@ -1,6 +1,7 @@
 package design.inherent.reform.operation;
 
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.edit.DraftBasis;
 import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.owner.ApplicationEffects;
@@ -67,6 +68,7 @@ public final class DocumentReview {
 
   private final DraftRevision target;
   private final SourceInfo source;
+  private final Optional<DraftBasis> draftBasis;
   private final ValidationReport sourceReport;
   private final DocumentActions.Comparison comparison;
   private final List<Entry> entries;
@@ -77,6 +79,7 @@ public final class DocumentReview {
   private DocumentReview(
       DraftRevision target,
       SourceInfo source,
+      Optional<DraftBasis> draftBasis,
       ValidationReport sourceReport,
       DocumentActions.Comparison comparison,
       List<Entry> entries,
@@ -84,6 +87,7 @@ public final class DocumentReview {
       ApplicationEffects applicationEffects) {
     this.target = Objects.requireNonNull(target);
     this.source = Objects.requireNonNull(source);
+    this.draftBasis = Objects.requireNonNull(draftBasis);
     this.sourceReport = Objects.requireNonNull(sourceReport);
     this.comparison = Objects.requireNonNull(comparison);
     this.entries = List.copyOf(entries);
@@ -104,6 +108,10 @@ public final class DocumentReview {
 
   public SourceInfo source() {
     return source;
+  }
+
+  public Optional<DraftBasis> draftBasis() {
+    return draftBasis;
   }
 
   public ValidationReport sourceReport() {
@@ -173,6 +181,14 @@ public final class DocumentReview {
     text.account(observed.provenance().description());
     observed.provenance().location().ifPresent(text::account);
     text.account(target.sourceRevision());
+    var basis = observed.snapshot().draft().basis();
+    basis.ifPresent(
+        selected -> {
+          text.account(selected.revision());
+          text.account(selected.source().kind());
+          text.account(selected.source().description());
+          selected.source().location().ifPresent(text::account);
+        });
     for (var rule : observed.applicationEffects().rules()) account(text, rule);
     DraftTree values = null;
     Optional<Effective> effective = Optional.empty();
@@ -235,6 +251,7 @@ public final class DocumentReview {
     return new DocumentReview(
         target,
         observed.provenance(),
+        basis,
         observed.observationReport(),
         comparison,
         entries,

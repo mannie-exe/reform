@@ -24,6 +24,12 @@ Factory defaults, imported profiles, validation, profile saving, in-memory expor
 
 ## Explicit defaults and profile staging
 
+When the view is only a projection, supply an owned defaults loader as the last `worldRecipe` argument. Its worker callback receives the immutable native creation context and returns `ContextRecipeOwner.Defaults` with an exact full-source revision, provenance, editable projection and bounded compiler over the retained full source. The domain supplies the bytes and input limits. It must freeze the admitted source and preserve any unedited dimensions and registry identity during compilation.
+
+**Load defaults** uses the same document operation as the other editor actions. It changes only the draft. Undo, redo, ordinary edits and value-only imports preserve its selected basis. Apply, explicit Validate and Preview compile the projection over that basis using the actual context. A changed context or late draft edit refuses stale loading. Basis-only changes count as draft changes even when the visible values match. Inspection reports the selected source, and editable JSON exports the projection. A full-source export remains a domain operation.
+
+Each recipe owner retains up to eight distinct default revisions and reuses an admitted revision within its session. It refuses further new revisions and releases the retained inputs on successful admission or closure. The raw draft carries a small identity and source description. Session and native-context checks bind that identity to its real owner. A successful admission ends the old basis history and keeps subsequent field edits under the newly admitted recipe. The bounds are an identity count and a domain input contract, with heap and latency depending on the supplied compiler inputs.
+
 `WorldRecipe.importCatalog(sources)` supplies this actual recipe definition's standard bounded value/envelope import formats. `screen(title, catalog)` declares those admitted sources on the same generated form; it checks the exact definition before constructing a view. For example:
 
 ```java
@@ -51,6 +57,8 @@ An analyzer should work only with its immutable compiled inputs, bounded local d
 ## Native lifetime and update checks
 
 Each helper permits one native screen and owns its shorter-lived context. `DocumentActions.owningContext` transfers that context's disposal to the editor; ordinary document actions keep their context borrowed. Closing/discarding the editor closes its session and context, while borrowed executors remain owned by the physical client lifecycle. The native helper clears its parent reference at closure.
+
+Before opening the form, `returnAfterApply()` preserves a preset editor's direct return to Create World. It returns once native admission is confirmed and the current form has no unpublished edits. Failures and later draft edits stay in the form with their actual outcome.
 
 World recipes borrow the same bounded two-worker/256-task physical-client pool as client preferences. Their active contexts have a separate 128-entry admission bound. Native shutdown closes both preference documents and recipe contexts before stopping the pool, continuing cleanup after individual failures. No configuration document is registered merely to borrow the pool. Core JSON/draft bounds, a 16-operation owner lane and the helper's operation limits remain independent of world-generation budgets.
 

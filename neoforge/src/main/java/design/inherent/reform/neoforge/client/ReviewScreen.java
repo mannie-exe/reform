@@ -257,6 +257,22 @@ public final class ReviewScreen<T> extends FormScreen {
             review.target().version(),
             review.target().sourceRevision()));
     narration = narration.copy().append(". ").append(source);
+    review
+        .draftBasis()
+        .ifPresent(
+            basis -> {
+              var selected =
+                  Component.literal(basis.source().description())
+                      .append("\n")
+                      .append(basis.revision());
+              basis
+                  .source()
+                  .location()
+                  .ifPresent(location -> selected.append("\n").append(location));
+              var label = text("recipe_basis", "Draft recipe basis");
+              panel.row("recipe-basis", label, selected);
+              narration = narration.copy().append(". ").append(label).append(". ").append(selected);
+            });
     if (submission.isPresent()) changes();
     if (!current())
       panel.row(

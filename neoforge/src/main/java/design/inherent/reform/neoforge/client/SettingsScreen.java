@@ -204,6 +204,7 @@ public final class SettingsScreen<T> extends FormScreen {
       outcomeButton,
       previewButton;
   private PreviewEntry preview;
+  private boolean returnAfterApply;
   private OperationHandle<EditorActor.Commit<T>> lastCommit;
   private Object widgetGeneration;
   private int bodyTop, statusTop, statusWidth, pendingEdits;
@@ -233,6 +234,12 @@ public final class SettingsScreen<T> extends FormScreen {
     if (minecraft != null || requested || closed || preview != null)
       throw new IllegalStateException("Preview must be declared before form activation");
     preview = Objects.requireNonNull(entry);
+  }
+
+  void returnAfterApply() {
+    if (!contextRecipe())
+      throw new IllegalStateException("Automatic return requires a world recipe");
+    returnAfterApply = true;
   }
 
   /** Borrow the actual session before activation; the caller closes it after the workflow ends. */
@@ -544,7 +551,9 @@ public final class SettingsScreen<T> extends FormScreen {
             () -> perform(action(() -> actions.revert(EntryPoint.GUI)), true));
     defaults =
         button(
-            text("defaults", "Defaults"),
+            actions.loadsOwnerDefaults()
+                ? text("load_defaults", "Load defaults")
+                : text("defaults", "Defaults"),
             () -> perform(action(() -> actions.defaults(EntryPoint.GUI)), true));
     reload =
         button(
@@ -1999,8 +2008,8 @@ public final class SettingsScreen<T> extends FormScreen {
             reviewed
                 .map(target -> actions.commit(EntryPoint.GUI, target))
                 .orElseGet(() -> actions.commit(EntryPoint.GUI)),
-        closeAfterSave,
-        showOutcome);
+        closeAfterSave || returnAfterApply,
+        showOutcome && !returnAfterApply);
   }
 
   private void beginCommit(
@@ -2354,6 +2363,12 @@ public final class SettingsScreen<T> extends FormScreen {
               "The previous save needs an observed result. Reload to review it.");
     if (unsent())
       return text("retry_required", "Some edits were not accepted. Retry them before applying.");
+    var basis = current.snapshot().flatMap(snapshot -> snapshot.draft().basis());
+    if (basis.isPresent())
+      return Component.translatableWithFallback(
+          "reform.settings.draft_basis",
+          "Unapplied recipe based on %s",
+          basis.orElseThrow().source().description());
     return current.dirty()
         ? contextRecipe()
             ? text("unapplied", "Unapplied changes")

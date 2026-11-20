@@ -20,7 +20,8 @@ public interface DocumentSession<T> extends AutoCloseable {
   enum Operation {
     READ,
     COMMIT,
-    APPLY_SAVED
+    APPLY_SAVED,
+    LOAD_DEFAULTS
   }
 
   DocumentId document();
@@ -44,6 +45,13 @@ public interface DocumentSession<T> extends AutoCloseable {
   }
 
   CompletionStage<? extends OwnerObservation<T>> read();
+
+  /** Read explicit owner defaults for the observed source, to replace a draft only. */
+  default CompletionStage<DraftTree> loadDefaults(String sourceRevision, Runnable checkpoint) {
+    return CompletableFuture.<DraftTree>failedFuture(
+            new PolicyRefusal("owner.unsupported", "This owner has no defaults source"))
+        .minimalCompletionStage();
+  }
 
   /** Read-authorized complete validation/preparation; the token never grants WRITE authority. */
   CompletionStage<? extends PreparedEdit<T>> prepare(OwnerObservation<T> observed, DraftTree draft);
