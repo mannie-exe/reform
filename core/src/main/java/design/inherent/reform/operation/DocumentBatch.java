@@ -103,6 +103,14 @@ public final class DocumentBatch implements AutoCloseable {
       return slots.keySet().stream().map(Member::document).toList();
     }
 
+    /** The selected participation, even when a COMMIT will save identical bytes. */
+    public Intent intent(DocumentId document) {
+      Objects.requireNonNull(document);
+      for (var member : slots.keySet())
+        if (member.document().equals(document)) return member.intent();
+      throw new IllegalArgumentException("This document is not in this batch capture");
+    }
+
     /** An exact registered definition is an alternative typed key for composed frontends. */
     public <T> Optional<T> candidate(DocumentDefinition<T> definition) {
       return preflight(definition).candidate().map(Candidate::value);

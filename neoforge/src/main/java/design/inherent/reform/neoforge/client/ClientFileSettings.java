@@ -15,6 +15,7 @@ import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.FileOwner;
+import design.inherent.reform.owner.LiveApplication;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
@@ -88,6 +89,7 @@ public final class ClientFileSettings<T> {
   private final DocumentDefinition<T> definition;
   private final TextStore<T> store;
   private final ApplicationEffects applicationEffects;
+  private final Optional<LiveApplication<T>> liveApplication;
   private final Optional<Startup<T>> startup;
   private final Optional<FileOwner.Initialization> worldDefaults;
   private final AtomicReference<State<T>> state =
@@ -103,12 +105,14 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       TextStore<T> store,
       ApplicationEffects applicationEffects,
+      Optional<LiveApplication<T>> liveApplication,
       Optional<Startup<T>> startup,
       Optional<FileOwner.Initialization> worldDefaults) {
     this.container = container;
     this.definition = store.definition();
     this.store = store;
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
+    this.liveApplication = Objects.requireNonNull(liveApplication);
     this.startup = Objects.requireNonNull(startup);
     this.worldDefaults = Objects.requireNonNull(worldDefaults);
     if (startup.isPresent() && worldDefaults.isPresent())
@@ -160,6 +164,7 @@ public final class ClientFileSettings<T> {
         container,
         store,
         ApplicationEffects.UNDECLARED,
+        Optional.empty(),
         Optional.empty(),
         Optional.of(Objects.requireNonNull(initialization)));
   }
@@ -216,6 +221,7 @@ public final class ClientFileSettings<T> {
         container,
         store,
         ApplicationEffects.UNDECLARED,
+        Optional.empty(),
         Optional.of(new Startup<>(selected)),
         Optional.empty());
   }
@@ -241,7 +247,30 @@ public final class ClientFileSettings<T> {
       TextStore<T> store,
       ApplicationEffects applicationEffects) {
     return register(
-        modBus, container, store, applicationEffects, Optional.empty(), Optional.empty());
+        modBus,
+        container,
+        store,
+        applicationEffects,
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty());
+  }
+
+  /** Bind an existing-format source and the actual physical client's live effect and readback. */
+  public static <T> ClientFileSettings<T> clientFile(
+      IEventBus modBus,
+      ModContainer container,
+      TextStore<T> store,
+      ApplicationEffects applicationEffects,
+      LiveApplication<T> liveApplication) {
+    return register(
+        modBus,
+        container,
+        store,
+        applicationEffects,
+        Optional.of(liveApplication),
+        Optional.empty(),
+        Optional.empty());
   }
 
   private static <T> ClientFileSettings<T> register(
@@ -249,6 +278,7 @@ public final class ClientFileSettings<T> {
       ModContainer container,
       TextStore<T> store,
       ApplicationEffects applicationEffects,
+      Optional<LiveApplication<T>> liveApplication,
       Optional<Startup<T>> startup,
       Optional<FileOwner.Initialization> worldDefaults) {
     Objects.requireNonNull(modBus);
@@ -261,7 +291,8 @@ public final class ClientFileSettings<T> {
       throw new IllegalArgumentException(
           "Client files must belong to their declaring mod namespace");
     var registration =
-        new ClientFileSettings<>(container, store, applicationEffects, startup, worldDefaults);
+        new ClientFileSettings<>(
+            container, store, applicationEffects, liveApplication, startup, worldDefaults);
     ClientSettingsRuntime.registerFile(
         definition.id(), registration, store.binding(), registration::close);
     try {
@@ -630,7 +661,13 @@ public final class ClientFileSettings<T> {
                           FileOwner.newWorldDefaults(
                               context, store, 16, worldDefaults.orElseThrow()))
                       : CompletableFuture.completedStage(
-                          new FileOwner<>(context, store, 16, applicationEffects));
+                          liveApplication
+                              .map(
+                                  effect ->
+                                      new FileOwner<>(
+                                          context, store, 16, applicationEffects, effect))
+                              .orElseGet(
+                                  () -> new FileOwner<>(context, store, 16, applicationEffects)));
     } catch (RuntimeException failed) {
       construction = CompletableFuture.failedStage(failed);
     }

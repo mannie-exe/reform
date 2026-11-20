@@ -10,8 +10,10 @@ import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.FileOwner;
+import design.inherent.reform.owner.LiveApplication;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
@@ -33,6 +35,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -90,6 +94,13 @@ class FileOwnerTest {
     }
 
     Harness(DocumentDefinition<Profile> definition) throws Exception {
+      this(definition, null);
+    }
+
+    Harness(
+        DocumentDefinition<Profile> definition,
+        Function<OwnerContext, LiveApplication<Profile>> liveApplication)
+        throws Exception {
       long nativeThread = nativeCall(() -> Thread.currentThread().threadId());
       var source =
           new JsonStore<>(
@@ -129,7 +140,17 @@ class FileOwnerTest {
                 assertEquals(nativeThread, Thread.currentThread().threadId());
               },
               OwnerContext.Limits.STANDARD);
-      owner = nativeCall(() -> new FileOwner<>(context, source, 8));
+      owner =
+          nativeCall(
+              () ->
+                  liveApplication == null
+                      ? new FileOwner<>(context, source, 8)
+                      : new FileOwner<>(
+                          context,
+                          source,
+                          8,
+                          ApplicationEffects.OWNER_PUBLICATION,
+                          liveApplication.apply(context)));
       session =
           nativeCall(
               () ->
@@ -290,6 +311,65 @@ class FileOwnerTest {
       assertEquals(new Profile(4), h.owner.handle().view().value().orElseThrow());
       assertEquals(text, Files.readString(h.path));
       assertEquals(modified, Files.getLastModifiedTime(h.path));
+      assertEquals(2, h.writes.get());
+    }
+  }
+
+  @Test
+  void externalLiveEffectRequiresNativeReadbackAndRetriesOnlyFromSavedBytes() throws Exception {
+    var actual = new AtomicReference<>(new Profile(1));
+    var effectCount = new AtomicInteger();
+    var effectiveReads = new AtomicInteger();
+    var allowEffect = new AtomicBoolean();
+    try (var h =
+        new Harness(
+            DEFINITION,
+            context ->
+                new LiveApplication<>(
+                    proposed -> {
+                      context.requireOwner();
+                      effectiveReads.incrementAndGet();
+                      return actual.get().equals(proposed);
+                    },
+                    proposed -> {
+                      context.requireOwner();
+                      effectCount.incrementAndGet();
+                      if (allowEffect.get()) actual.set(proposed);
+                    }))) {
+      h.initialize();
+      assertEquals(1, effectiveReads.get());
+      var observed = await(h.session.read());
+      assertEquals(1, effectiveReads.get());
+      assertEquals(0, effectCount.get());
+      var prepared = await(h.session.prepare(observed, changed(observed, "7")));
+      var saved = await(h.session.commit(prepared));
+      assertEquals(CommitReceipt.Persistence.SAVED, saved.persistence());
+      assertEquals(CommitReceipt.Application.UNAVAILABLE, saved.application());
+      assertEquals(
+          "owner.effect_unconfirmed", saved.applicationReport().issues().getFirst().code());
+      assertEquals(new Profile(1), actual.get());
+      assertEquals(1, effectCount.get());
+      assertEquals(3, effectiveReads.get());
+      var readback = saved.observation().orElseThrow();
+      assertEquals(new Profile(7), readback.saved().candidate().orElseThrow().value());
+      assertEquals(SettingsHandle.Availability.UNAVAILABLE, readback.effective().availability());
+      assertTrue(readback.effective().value().isEmpty());
+      var savedFile = Files.readString(h.path);
+
+      allowEffect.set(true);
+      var applied = await(h.session.applySaved(readback));
+      assertEquals(CommitReceipt.Persistence.NOT_ATTEMPTED, applied.persistence());
+      assertEquals(CommitReceipt.Application.APPLIED, applied.application());
+      assertEquals(new Profile(7), actual.get());
+      assertEquals(new Profile(7), h.owner.handle().view().value().orElseThrow());
+      assertEquals(2, effectCount.get());
+      assertEquals(5, effectiveReads.get());
+      assertEquals(
+          CommitReceipt.Application.APPLIED,
+          await(h.session.applySaved(applied.observation().orElseThrow())).application());
+      assertEquals(2, effectCount.get());
+      assertEquals(6, effectiveReads.get());
+      assertEquals(savedFile, Files.readString(h.path));
       assertEquals(2, h.writes.get());
     }
   }

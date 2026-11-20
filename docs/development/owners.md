@@ -76,6 +76,12 @@ The JSON owner declares publication of its own runtime value, explicitly leaving
 
 The review service retains these declarations even for invalid drafts and includes their text in its independent projection budget. Native inspection shows them separately from observed effective values. Actual saving still requires complete validation, authority and source/context checks; a declaration is not an application success receipt or a safe-worldgen-rebuild claim.
 
+## Verified live application
+
+Pass a `LiveApplication<T>` at construction when a separately owned runtime must consume a file. Its read-only predicate checks the proposed values and any required derived state against the real owner. Its effect changes that owner on the same native executor. Both callbacks must be synchronous and bounded. The shared lane keeps persistence, verification and publication together. Definition validation and independent copies for the effect and readback remain on the worker.
+
+Save and initialization use the verified source. If the proposal already matches the owner, skip the effect. Otherwise require current authority, enter the effect and verify the owner afterward before publishing. An entered effect without confirmed readback leaves `Application.UNAVAILABLE` and an unavailable effective view. Persistence retains its independently observed result. Application-only retry reads the exact saved revision again and does not write. Ordinary browsing reads the source and the last published effective view without invoking domain callbacks. Route external owner changes through the domain's explicit reload or other lifecycle if they need to be reflected in that view.
+
 ## Boundaries and updates
 
 Owned JSON IO, raw preparation and pure publication validation/copy/equality use the worker. The native executor captures authority/context/immutable inputs and performs final current checks plus the prepared-state swap. A newer runtime observation invalidates older worker preparation even when its effective revision is unchanged. A completed application remains an application fact if context loss later prevents returning an authorized readback. Actual callback costs and GUI/pack responsiveness still require measured qualification. Domain compilation, application requirements, native TOML serialization and new-world admission are not generic JSON publication.

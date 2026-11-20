@@ -133,6 +133,7 @@ final class NativeFileFormatsControls {
                           .orElseThrow()
                           .count()
                       == 11
+                  && FileFormatsExample.effectiveCounter().count() == 11
                   && FileFormatsExample.broken().status().lifecycle()
                       == ClientFileSettings.Lifecycle.READY
                   && FileFormatsExample.broken()
@@ -287,7 +288,7 @@ final class NativeFileFormatsControls {
       case 11 -> {
         if (!ready() || form.editorView().dirty()) return false;
         check(
-            "custom source owns actual representation and publication",
+            "custom source owns actual representation and verified client effect",
             file("counter.txt").text().equals("count=11\n")
                 && FileFormatsExample.custom()
                         .runtime()
@@ -296,7 +297,8 @@ final class NativeFileFormatsControls {
                         .value()
                         .orElseThrow()
                         .count()
-                    == 11);
+                    == 11
+                && FileFormatsExample.effectiveCounter().count() == 11);
         click(form, button(form, "Done"));
         client.setScreen(
             FileFormatsExample.broken().screen(parent, Component.literal("Malformed properties")));

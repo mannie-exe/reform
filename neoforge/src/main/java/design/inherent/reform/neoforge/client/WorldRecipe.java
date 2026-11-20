@@ -1,6 +1,7 @@
 package design.inherent.reform.neoforge.client;
 
 import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.importing.ImportFormat;
@@ -13,9 +14,14 @@ import design.inherent.reform.owner.ContextRecipeOwner;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.FormPresentation;
+import design.inherent.reform.reference.ReferenceActions;
+import design.inherent.reform.reference.ReferenceLimits;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.value.SnapshotPolicy;
+import design.inherent.reform.value.ValueType;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiFunction;
@@ -81,6 +87,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
 
   private final OwnerContext context;
   private final OwnerContext.Access access;
+  private final OwnerContext.Access referenceAccess;
   private final ContextRecipeOwner<T, WorldCreationContext, P>.Session source;
   private final DocumentActions<T> actions;
   private final DocumentDefinition<T> definition;
@@ -154,6 +161,15 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
               DraftLimits.CONFIGURATION,
               16);
       access = context.access(() -> true, () -> true);
+      referenceAccess =
+          context.access(
+              () -> {
+                if (this.parent.getUiState().getSettings() != original)
+                  throw new PolicyRefusal(
+                      "reference.context", "The reference creation context changed");
+                return true;
+              },
+              () -> false);
       source = owner.open(access);
       var actor =
           new EditorActor<>(context, source, definition, limits, DraftLimits.CONFIGURATION, 64);
@@ -189,6 +205,14 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
     return actions;
   }
 
+  /** Borrow this recipe's lifetime and original native context for explicit reference lookups. */
+  public <K, V> ReferenceActions<K, V> references(
+      DocumentId source, ValueType<K> keys, SnapshotPolicy<V> values, ReferenceLimits limits) {
+    context.requireOwner();
+    referenceAccess.require(OwnerContext.Right.READ);
+    return new ReferenceActions<>(context, referenceAccess, source, keys, values, limits);
+  }
+
   /** Add an opt-in preview before constructing the generated form. */
   public <O> WorldRecipe<T, P> withPreview(Preview<P, O> declaration) {
     context.requireOwner();
@@ -218,14 +242,27 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
 
   /** Explicit saved-source comparison/staging; import never admits or changes native dimensions. */
   public Screen screen(Component title, ImportCatalog<T> imports) {
-    if (Objects.requireNonNull(imports).definition() != definition)
-      throw new IllegalArgumentException("Recipe imports require this exact recipe definition");
     return screen(title, Optional.of(imports));
   }
 
   private Screen screen(Component title, Optional<ImportCatalog<T>> imports) {
+    return screen(
+        title, Map.of(), FormPresentation.EMPTY, FieldEditors.builder(definition).build(), imports);
+  }
+
+  /**
+   * Compose the generated form while keeping this recipe's actual actions, preview and lifetime.
+   */
+  public Screen screen(
+      Component title,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+      FormPresentation presentation,
+      FieldEditors<T> fieldEditors,
+      Optional<ImportCatalog<T>> imports) {
     context.requireOwner();
     Objects.requireNonNull(title);
+    if (imports.filter(catalog -> catalog.definition() != definition).isPresent())
+      throw new IllegalArgumentException("Recipe imports require this exact recipe definition");
     if (screenCreated)
       throw new IllegalStateException("This recipe editor already has a native screen");
     screenCreated = true;
@@ -238,7 +275,10 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
                   "reform.settings.creation_context",
                   "New world recipe · affects only this unsaved creation context"),
               definition,
-              actions);
+              actions,
+              sources,
+              presentation,
+              fieldEditors);
       imports.ifPresent(form::withImports);
       if (preview != null) form.withPreview(preview);
       return form;

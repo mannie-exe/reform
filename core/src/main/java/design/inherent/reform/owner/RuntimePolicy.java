@@ -16,7 +16,10 @@ public final class RuntimePolicy<T> implements AutoCloseable {
   private record PublicationInput<T>(
       DocumentDefinition<T> definition, Candidate<T> candidate, SettingsHandle.View<T> before) {}
 
-  private record Ready<T>(SettingsHandle.View<T> before, SettingsHandle.View<T> view) {}
+  private record EffectInputs<T>(T expected, T submitted) {}
+
+  private record Ready<T>(
+      SettingsHandle.View<T> before, SettingsHandle.View<T> view, EffectInputs<T> effect) {}
 
   public final class Prepared {
     private final SettingsHandle.Revision expected;
@@ -41,8 +44,9 @@ public final class RuntimePolicy<T> implements AutoCloseable {
               () -> {
                 activeThread();
                 requireRevision(expected);
-              });
-      return publishReady(expected, ready, authorized);
+              },
+              false);
+      return publishReady(expected, ready, authorized, null);
     }
   }
 
@@ -81,11 +85,25 @@ public final class RuntimePolicy<T> implements AutoCloseable {
       SettingsHandle.Revision expected,
       Candidate<T> candidate,
       BooleanSupplier authorized) {
+    return publishAsync(execution, expected, candidate, authorized, null);
+  }
+
+  CompletionStage<SettingsHandle.View<T>> publishAsync(
+      OwnerContext execution,
+      SettingsHandle.Revision expected,
+      Candidate<T> candidate,
+      BooleanSupplier authorized,
+      LiveApplication<T> application) {
     Objects.requireNonNull(execution);
     return execution
         .onOwner(() -> capture(expected, candidate, authorized))
-        .thenCompose(input -> execution.onWorker(() -> compute(input, execution::requireCurrent)))
-        .thenCompose(ready -> execution.onOwner(() -> publishReady(expected, ready, authorized)))
+        .thenCompose(
+            input ->
+                execution.onWorker(
+                    () -> compute(input, execution::requireCurrent, application != null)))
+        .thenCompose(
+            ready ->
+                execution.onOwner(() -> publishReady(expected, ready, authorized, application)))
         .toCompletableFuture()
         .minimalCompletionStage();
   }
@@ -100,17 +118,69 @@ public final class RuntimePolicy<T> implements AutoCloseable {
   }
 
   private SettingsHandle.View<T> publishReady(
+      SettingsHandle.Revision expected,
+      Ready<T> ready,
+      BooleanSupplier authorized,
+      LiveApplication<T> application) {
+    requireReady(expected, ready, authorized);
+    if (application != null) applyLive(expected, ready, authorized, application);
+    handle.publish(ready.view());
+    return ready.view();
+  }
+
+  private void requireReady(
       SettingsHandle.Revision expected, Ready<T> ready, BooleanSupplier authorized) {
     require(authorized);
     requireRevision(expected);
     if (handle.view() != ready.before())
       throw new PolicyRefusal(
           "owner.observation_changed", "Runtime observation changed while preparing publication");
-    handle.publish(ready.view());
-    return ready.view();
   }
 
-  private static <T> Ready<T> compute(PublicationInput<T> input, Runnable current) {
+  private void applyLive(
+      SettingsHandle.Revision expected,
+      Ready<T> ready,
+      BooleanSupplier authorized,
+      LiveApplication<T> application) {
+    var inputs = ready.effect();
+    final boolean alreadyEffective;
+    try {
+      alreadyEffective = application.isEffective().test(inputs.expected());
+    } catch (RuntimeException unavailable) {
+      throw new PolicyRefusal(
+          "owner.effect_observation", "The owner could not observe live settings", false);
+    }
+    requireReady(expected, ready, authorized);
+    if (alreadyEffective) return;
+
+    try {
+      application.apply().accept(inputs.submitted());
+      requireReady(expected, ready, authorized);
+      if (application.isEffective().test(inputs.expected())) {
+        requireReady(expected, ready, authorized);
+        return;
+      }
+    } catch (RuntimeException unavailable) {
+      // An entered effect may have changed state even if the owner did not return a readback.
+    }
+    var refusal =
+        new PolicyRefusal(
+            "owner.effect_unconfirmed", "Live settings require verified readback", false);
+    if (!closed && handle.view() == ready.before()) {
+      handle.publish(
+          new SettingsHandle.View<>(
+              context,
+              new SettingsHandle.Revision(expected.sequence() + 1),
+              SettingsHandle.Availability.UNAVAILABLE,
+              null,
+              null,
+              refusal.report()));
+    }
+    throw refusal;
+  }
+
+  private static <T> Ready<T> compute(
+      PublicationInput<T> input, Runnable current, boolean liveApplication) {
     try {
       current.run();
       var descriptor = input.definition();
@@ -126,6 +196,10 @@ public final class RuntimePolicy<T> implements AutoCloseable {
       boolean equal =
           previous.isPresent() && descriptor.type().equivalent(previous.orElseThrow(), next);
       var frozen = descriptor.type().freeze(equal ? previous.orElseThrow() : next);
+      var effect =
+          liveApplication
+              ? new EffectInputs<>(descriptor.type().freeze(next), descriptor.type().freeze(next))
+              : null;
       current.run();
       return new Ready<>(
           before,
@@ -137,7 +211,8 @@ public final class RuntimePolicy<T> implements AutoCloseable {
               SettingsHandle.Availability.AVAILABLE,
               descriptor.type(),
               frozen,
-              ValidationReport.VALID));
+              ValidationReport.VALID),
+          effect);
     } catch (PolicyRefusal refused) {
       throw refused;
     } catch (RuntimeException unavailable) {

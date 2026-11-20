@@ -415,7 +415,13 @@ class DocumentBatchTest {
                     h.batchContext,
                     h.batchAccess,
                     DocumentId.parse("fixture:external_guard"),
-                    List.of(h.first, DocumentBatch.member(h.b, DocumentBatch.Intent.CHECK)));
+                    List.of(h.first, DocumentBatch.member(h.b, DocumentBatch.Intent.CHECK)),
+                    values -> {
+                      assertEquals(DocumentBatch.Intent.COMMIT, values.intent(FIRST));
+                      assertEquals(DocumentBatch.Intent.CHECK, values.intent(SECOND));
+                      return DocumentBatch.Check.VALID;
+                    },
+                    DocumentBatch.Limits.STANDARD);
             return null;
           });
       h.editFirst("4");
@@ -451,6 +457,7 @@ class DocumentBatchTest {
             var current = values.baseline(h.b.definition()).orElseThrow();
             var desired = values.candidate(h.first).orElseThrow();
             assertEquals(new Ceiling(10), current);
+            assertEquals(DocumentBatch.Intent.COMMIT, values.intent(SECOND));
             assertEquals(15, desired.count());
             assertEquals(new Ceiling(17), values.candidate(h.second).orElseThrow());
             return DocumentBatch.Check.VALID.withPlan(

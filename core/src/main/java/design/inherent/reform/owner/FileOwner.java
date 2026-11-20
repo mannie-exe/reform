@@ -568,7 +568,12 @@ public final class FileOwner<T> {
         return CompletableFuture.completedStage(
             new Applied(Application.STAGED, ValidationReport.VALID));
       return runtime
-          .publishAsync(context, expected, saved.candidate().orElseThrow(), this::authorizedWrite)
+          .publishAsync(
+              context,
+              expected,
+              saved.candidate().orElseThrow(),
+              this::authorizedWrite,
+              liveApplication)
           .handle(
               (view, failure) ->
                   failure == null
@@ -625,6 +630,7 @@ public final class FileOwner<T> {
   private final Mode mode;
   private final Initialization initialization;
   private volatile TextStore<T> storage;
+  private volatile LiveApplication<T> liveApplication;
 
   public FileOwner(OwnerContext context, TextStore<T> storage, int maximumOperations) {
     this(context, storage, maximumOperations, ApplicationEffects.OWNER_PUBLICATION);
@@ -635,6 +641,25 @@ public final class FileOwner<T> {
       TextStore<T> storage,
       int maximumOperations,
       ApplicationEffects applicationEffects) {
+    this(context, storage, maximumOperations, applicationEffects, Optional.empty());
+  }
+
+  /** Bind a real external live effect to this file's ordinary publication lane. */
+  public FileOwner(
+      OwnerContext context,
+      TextStore<T> storage,
+      int maximumOperations,
+      ApplicationEffects applicationEffects,
+      LiveApplication<T> liveApplication) {
+    this(context, storage, maximumOperations, applicationEffects, Optional.of(liveApplication));
+  }
+
+  private FileOwner(
+      OwnerContext context,
+      TextStore<T> storage,
+      int maximumOperations,
+      ApplicationEffects applicationEffects,
+      Optional<LiveApplication<T>> liveApplication) {
     this(
         context,
         storage,
@@ -642,7 +667,8 @@ public final class FileOwner<T> {
         applicationEffects,
         new RuntimePolicy<>(storage.definition(), context::checkOwnerThread),
         Mode.LIVE,
-        Initialization.CREATE_DEFAULTS);
+        Initialization.CREATE_DEFAULTS,
+        liveApplication.orElse(null));
   }
 
   private FileOwner(
@@ -652,13 +678,15 @@ public final class FileOwner<T> {
       ApplicationEffects applicationEffects,
       RuntimePolicy<T> runtime,
       Mode mode,
-      Initialization initialization) {
+      Initialization initialization,
+      LiveApplication<T> liveApplication) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.storage = Objects.requireNonNull(storage);
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
     this.mode = Objects.requireNonNull(mode);
     this.initialization = Objects.requireNonNull(initialization);
+    this.liveApplication = liveApplication;
     lane = new SerialLane(maximumOperations);
     this.runtime = runtime;
     context.onClose(
@@ -667,6 +695,7 @@ public final class FileOwner<T> {
             lane.close();
           } finally {
             this.storage = null;
+            this.liveApplication = null;
             runtime.close();
           }
         });
@@ -715,7 +744,8 @@ public final class FileOwner<T> {
                                 ApplicationEffects.Timing.GAME_RESTART, STARTUP_EXPLANATION),
                             runtime,
                             Mode.STARTUP,
-                            Initialization.CREATE_DEFAULTS)))
+                            Initialization.CREATE_DEFAULTS,
+                            null)))
         .toCompletableFuture()
         .minimalCompletionStage();
   }
@@ -733,7 +763,8 @@ public final class FileOwner<T> {
         ApplicationEffects.root(ApplicationEffects.Timing.NEW_WORLD, DEFAULTS_EXPLANATION),
         new RuntimePolicy<>(storage.definition(), context::checkOwnerThread),
         Mode.NEW_WORLD_DEFAULTS,
-        initialization);
+        initialization,
+        null);
   }
 
   private TextStore.Read<T> readForEditor(TextStore<T> source) throws java.io.IOException {

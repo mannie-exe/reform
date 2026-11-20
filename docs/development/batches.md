@@ -10,6 +10,8 @@ Construct a batch with its own actual `OwnerContext`, `Access`, logical `Documen
 
 `Values.baseline(member)` and `baseline(definition)` expose a complete typed saved baseline where available. For coupled documents, the validator can check the final candidate and each intermediate saved state, then return its check with `Check.withPlan(new DocumentBatch.Plan(writes, guardedSources))`. The write list must include all COMMIT members exactly once. Guard sources must be batch members. Every CHECK member is guarded. The owner defines the invariant and safe order. A missing or invalid baseline stays unavailable to that validator.
 
+`Values.intent(document)` reads the exact CHECK or COMMIT participation captured for a document. Use it when constructing a plan from composed frontend members. A COMMIT that saves identical bytes still belongs in the write order.
+
 `Check` attributes field/cross-reference reports to actual member document IDs and separately records completeness. Unknown diagnostic targets refuse the entire projection. `Review` retains every member's identified source/value capture, backend diagnostics, candidate availability, intent and cross-document reports. Failed or incomplete preflight cannot authorize a write. READ disclosure must still be checked against the actual current owners; possession of a retained review is no authorization.
 
 `submissionReadiness(review)` checks cached current target identities, pending/conflict state, actual authority and the retained unconsumed review. It performs no backend IO or domain validation and is only a frontend hint. `requireRead()` separately checks actual disclosure authority, permitting inspection of an unknown prior save rather than requiring another saveable state.

@@ -8,6 +8,8 @@ import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.owner.ApplicationEffects;
+import design.inherent.reform.owner.LiveApplication;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.JsonStore;
 import design.inherent.reform.storage.OwnedFile;
@@ -16,6 +18,7 @@ import design.inherent.reform.storage.TextStore;
 import design.inherent.reform.value.ValueTypes;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.minecraft.client.Minecraft;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.loading.FMLPaths;
@@ -56,6 +59,7 @@ public final class FileFormatsExample {
   public static final int VALIDATED_DEFAULTS = DEFAULT_CALLS.get();
   private static ClientFileSettings<Choices> properties, broken;
   private static ClientFileSettings<Counter> bare, custom;
+  private static volatile Counter effectiveCounter;
 
   private static DocumentDefinition<Counter> counter(String key) {
     return new DocumentDefinition<>(
@@ -79,7 +83,21 @@ public final class FileFormatsExample {
             bus, container, BARE, JsonStore.Format.EXISTING_BARE, "legacy-tools", "bare.json");
     broken =
         ClientFileSettings.properties(bus, container, BROKEN, "legacy-tools", "broken.properties");
-    custom = ClientFileSettings.clientFile(bus, container, new CounterStore());
+    custom =
+        ClientFileSettings.clientFile(
+            bus,
+            container,
+            new CounterStore(),
+            ApplicationEffects.OWNER_PUBLICATION,
+            new LiveApplication<>(
+                candidate -> {
+                  if (!Minecraft.getInstance().isSameThread()) throw new IllegalStateException();
+                  return candidate.equals(effectiveCounter);
+                },
+                candidate -> {
+                  if (!Minecraft.getInstance().isSameThread()) throw new IllegalStateException();
+                  effectiveCounter = candidate;
+                }));
     properties.registerCommands("reformproperties");
   }
 
@@ -97,6 +115,10 @@ public final class FileFormatsExample {
 
   public static ClientFileSettings<Counter> custom() {
     return Objects.requireNonNull(custom);
+  }
+
+  public static Counter effectiveCounter() {
+    return Objects.requireNonNull(effectiveCounter);
   }
 
   private static final class CounterStore extends TextStore<Counter> {

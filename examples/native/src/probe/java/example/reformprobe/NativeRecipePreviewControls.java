@@ -5,14 +5,18 @@ import static example.reformprobe.NativeFormProbe.*;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.DraftRevision;
+import design.inherent.reform.neoforge.client.FieldEditors;
 import design.inherent.reform.neoforge.client.OperationScreen;
 import design.inherent.reform.neoforge.client.WorldRecipe;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.value.SnapshotPolicy;
 import example.reform.CreationExample;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -83,7 +87,13 @@ final class NativeRecipePreviewControls {
                             Component.literal("Compiled soil depth " + result.value()),
                             List.of())));
     actions = recipe.actions();
-    form = recipe.screen(Component.literal("Previewable recipe settings"));
+    form =
+        recipe.screen(
+            Component.literal("Previewable recipe settings"),
+            Map.of(),
+            FormPresentation.EMPTY,
+            FieldEditors.builder(CreationExample.DEFINITION).build(),
+            Optional.empty());
     client.setScreen(form);
   }
 
