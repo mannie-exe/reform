@@ -13,13 +13,30 @@
     {
       "customType": "regex",
       "managerFilePatterns": ["/.github/workflows/.*\\.yml$/"],
-      "matchStrings": [
-        "version: (?<currentValue>v[0-9.]+) # renovate: depName=(?<depName>[^\\s]+)"
-      ],
+      "matchStrings": ["version: (?<currentValue>v[0-9.]+) # renovate: depName=(?<depName>[^\\s]+)"],
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^gradle/libs\\.versions\\.toml$/"],
+      "matchStrings": ["google-java-format\\s*=\\s*\"(?<currentValue>[0-9.]+)\""],
+      "datasourceTemplate": "maven",
+      "depNameTemplate": "com.google.googlejavaformat:google-java-format"
     }
   ],
   "packageRules": [
+    {
+      "description": "Keep Minecraft-owned DFU on the reviewed platform version",
+      "matchPackageNames": ["com.mojang:datafixerupper"],
+      "enabled": false
+    },
+    {
+      "description": "Keep CI runtime majors as explicit compatibility targets",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["java-version"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
     {
       "description": "Review JUnit and its platform as one test boundary",
       "matchPackageNames": ["/^org\\.junit[.:]/"],
