@@ -116,7 +116,7 @@ final class NativeServerPolicyProbe {
               .normalize()
               .equals(filePath.resolveSibling(ServerPolicyExample.NATIVE_FILE).normalize()));
       var context = file.context();
-      var work =
+      CompletionStage<Void> work =
           file.initialization()
               .orElseThrow()
               .thenCompose(
