@@ -35,7 +35,8 @@ public final class FileOwner<T> {
   private enum Mode {
     LIVE,
     STARTUP,
-    NEW_WORLD_DEFAULTS
+    NEW_WORLD_DEFAULTS,
+    STAGED_FILE
   }
 
   private static final String DEFAULTS_EXPLANATION =
@@ -60,6 +61,7 @@ public final class FileOwner<T> {
     private final SettingsHandle.View<T> effective;
     private final SourceInfo provenance;
     private final ApplicationEffects applicationEffects;
+    private final boolean hasEffectiveView;
 
     private Observation(
         Object owner,
@@ -68,7 +70,8 @@ public final class FileOwner<T> {
         TextStore.Read<T> saved,
         SettingsHandle.View<T> effective,
         SourceInfo provenance,
-        ApplicationEffects applicationEffects) {
+        ApplicationEffects applicationEffects,
+        boolean hasEffectiveView) {
       this.owner = owner;
       this.context = context;
       this.session = session;
@@ -76,6 +79,7 @@ public final class FileOwner<T> {
       this.effective = effective;
       this.provenance = provenance;
       this.applicationEffects = applicationEffects;
+      this.hasEffectiveView = hasEffectiveView;
     }
 
     public UUID context() {
@@ -111,7 +115,7 @@ public final class FileOwner<T> {
 
     @Override
     public Optional<SettingsHandle.View<T>> effectiveView() {
-      return Optional.of(effective);
+      return hasEffectiveView ? Optional.of(effective) : Optional.empty();
     }
   }
 
@@ -545,7 +549,7 @@ public final class FileOwner<T> {
             applicationFailure(
                 problem("owner.observation", "Saved values are unavailable", false)));
       if (saved.candidate().isEmpty()) {
-        if (mode == Mode.STARTUP)
+        if (mode == Mode.STARTUP || mode == Mode.STAGED_FILE)
           return CompletableFuture.completedStage(applicationFailure(saved.report()));
         return context
             .onOwner(
@@ -557,6 +561,7 @@ public final class FileOwner<T> {
             .exceptionally(failure -> applicationFailure(report(failure)));
       }
       if (mode == Mode.STARTUP
+          || mode == Mode.STAGED_FILE
           || !saved.source().present() && initialization == Initialization.DEFER_MISSING)
         return CompletableFuture.completedStage(
             new Applied(Application.STAGED, ValidationReport.VALID));
@@ -596,7 +601,8 @@ public final class FileOwner<T> {
                   "Declared defaults; no saved document exists",
                   storage.provenance().location())
               : storage.provenance(),
-          applicationEffects);
+          applicationEffects,
+          mode != Mode.STAGED_FILE);
     }
 
     private Receipt<T> unattempted(Throwable failure) {
@@ -620,6 +626,7 @@ public final class FileOwner<T> {
   private final RuntimePolicy<T> runtime;
   private final SerialLane lane;
   private final ApplicationEffects applicationEffects;
+  private final List<CommitReceipt.Requirement> stagedRequirements;
   private final Mode mode;
   private final Initialization initialization;
   private volatile TextStore<T> storage;
@@ -678,6 +685,16 @@ public final class FileOwner<T> {
     this.storage = Objects.requireNonNull(storage);
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
     this.mode = Objects.requireNonNull(mode);
+    stagedRequirements =
+        switch (mode) {
+          case STARTUP -> STARTUP_REQUIREMENTS;
+          case NEW_WORLD_DEFAULTS -> DEFAULTS_REQUIREMENTS;
+          case STAGED_FILE ->
+              applicationEffects.rules().stream()
+                  .flatMap(rule -> rule.requirements().stream())
+                  .toList();
+          case LIVE -> List.of();
+        };
     this.initialization = Objects.requireNonNull(initialization);
     this.liveApplication = liveApplication;
     lane = new SerialLane(maximumOperations);
@@ -760,6 +777,26 @@ public final class FileOwner<T> {
         null);
   }
 
+  /** Persist a future-use source whose effective values are owned and applied elsewhere. */
+  public static <T> FileOwner<T> stagedFile(
+      OwnerContext context,
+      TextStore<T> storage,
+      int maximumOperations,
+      Initialization initialization,
+      ApplicationEffects effects) {
+    if (Objects.requireNonNull(effects).rules().isEmpty())
+      throw new IllegalArgumentException("A staged source needs an owner application declaration");
+    return new FileOwner<>(
+        context,
+        storage,
+        maximumOperations,
+        effects,
+        new RuntimePolicy<>(storage.definition(), context::checkOwnerThread),
+        Mode.STAGED_FILE,
+        initialization,
+        null);
+  }
+
   private TextStore.Read<T> readForEditor(TextStore<T> source) throws java.io.IOException {
     var observed = source.read();
     return initialization == Initialization.DEFER_MISSING
@@ -771,6 +808,8 @@ public final class FileOwner<T> {
    * Trusted runtime reads only. Administrative reads use a bound session and current permission.
    */
   public SettingsHandle<T> handle() {
+    if (mode == Mode.STAGED_FILE)
+      throw new IllegalStateException("Staged files do not publish an effective handle");
     return runtime.handle();
   }
 
@@ -826,8 +865,6 @@ public final class FileOwner<T> {
         observation,
         persistenceReport,
         applicationReport,
-        application == Application.STAGED
-            ? mode == Mode.STARTUP ? STARTUP_REQUIREMENTS : DEFAULTS_REQUIREMENTS
-            : List.of());
+        application == Application.STAGED ? stagedRequirements : List.of());
   }
 }

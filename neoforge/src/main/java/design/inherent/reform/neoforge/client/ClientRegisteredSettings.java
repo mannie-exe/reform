@@ -343,6 +343,17 @@ public final class ClientRegisteredSettings {
         entry);
   }
 
+  /** Borrow a separate actor session on this native owner for an explicit local action. */
+  public DocumentActions<Map<String, Object>> openActions() {
+    ClientSettingsRuntime.requireClientThread();
+    var current = state.get();
+    if (current.lifecycle() == Lifecycle.READY && !sameBinding(current.path())) retire(current);
+    current = state.get();
+    if (current.lifecycle() != Lifecycle.READY)
+      throw new PolicyRefusal("client.document_unavailable", statusDisplay().message().getString());
+    return editing(current, java.util.function.Function.identity());
+  }
+
   public LiteralArgumentBuilder<CommandSourceStack> commandBranch(
       String literal, Consumer<SettingsCommands.Reply> output) {
     Objects.requireNonNull(output);

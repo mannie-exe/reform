@@ -548,13 +548,7 @@ public final class RegisteredConfig implements AutoCloseable {
       }
       var rule = new ApplicationEffects.Rule(field.address(), timings, explanation);
       effects.add(rule);
-      requirements.put(
-          field.address(),
-          timings.stream()
-              .map(RegisteredConfig::requirementKind)
-              .distinct()
-              .map(kind -> new CommitReceipt.Requirement(field.address(), kind, rule.explanation()))
-              .toList());
+      requirements.put(field.address(), rule.requirements());
     }
     applicationEffects =
         new ApplicationEffects(
@@ -571,16 +565,6 @@ public final class RegisteredConfig implements AutoCloseable {
 
   public DocumentDefinition<Map<String, Object>> definition() {
     return schema.definition;
-  }
-
-  private static CommitReceipt.RequirementKind requirementKind(ApplicationEffects.Timing timing) {
-    return switch (timing) {
-      case NEW_WORLD -> CommitReceipt.RequirementKind.NEW_WORLD;
-      case WORLD_RESTART -> CommitReceipt.RequirementKind.WORLD_RESTART;
-      case GAME_RESTART -> CommitReceipt.RequirementKind.GAME_RESTART;
-      case INCOMPATIBLE -> CommitReceipt.RequirementKind.INCOMPATIBLE;
-      default -> CommitReceipt.RequirementKind.OWNER_MANAGED;
-    };
   }
 
   public Session session(OwnerContext.Access access) {

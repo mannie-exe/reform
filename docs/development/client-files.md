@@ -18,6 +18,8 @@ The store's immutable value-projection and draft limits also govern the generate
 
 Ordinary file helpers publish live owned client values. A properties filename alone never makes a live owner into a startup-only owner. Installation defaults, native registered configs, world policy and server authority remain separate bindings.
 
+Use `stagedFile(modBus, container, store, initialization, effects)` when a separate service consumes the file on an explicit reload, the next server start or another declared boundary. `DEFER_MISSING` exposes editable unsaved defaults without creating directories or files. Explicit save uses the real parser, prepared serializer and revision guard and reports `STAGED` with the declared requirements. The adapter offers no effective handle or apply-only operation. The service that applies the file keeps its own authority and feedback.
+
 ## New-world defaults
 
 `newWorldDefaultsJson(modBus, container, definition)` registers a new owned JSON defaults source using the same portable path, envelope and create-once initialization as ordinary client JSON. It publishes saved defaults for explicit later use and returns STAGED with a NEW_WORLD requirement. It never applies them to an open recipe or running world. The generated actions say **Save defaults**, **Save reviewed defaults** and **Save defaults and close**. Application-only retry is unavailable because it cannot activate these choices in a current world.

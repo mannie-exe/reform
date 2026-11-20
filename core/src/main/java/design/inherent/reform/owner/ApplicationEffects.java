@@ -46,6 +46,23 @@ public final class ApplicationEffects {
       if (timings.isEmpty() || explanation.isBlank() || explanation.length() > 4096)
         throw new IllegalArgumentException("A declaration needs bounded timings and explanation");
     }
+
+    public List<CommitReceipt.Requirement> requirements() {
+      return timings.stream()
+          .sorted()
+          .map(
+              timing ->
+                  switch (timing) {
+                    case NEW_WORLD -> CommitReceipt.RequirementKind.NEW_WORLD;
+                    case WORLD_RESTART -> CommitReceipt.RequirementKind.WORLD_RESTART;
+                    case GAME_RESTART -> CommitReceipt.RequirementKind.GAME_RESTART;
+                    case INCOMPATIBLE -> CommitReceipt.RequirementKind.INCOMPATIBLE;
+                    default -> CommitReceipt.RequirementKind.OWNER_MANAGED;
+                  })
+          .distinct()
+          .map(kind -> new CommitReceipt.Requirement(path, kind, explanation))
+          .toList();
+    }
   }
 
   public static final ApplicationEffects UNDECLARED = new ApplicationEffects(List.of());

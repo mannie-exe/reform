@@ -83,6 +83,15 @@ public final class ClientFileSettings<T> {
 
   private record Startup<T>(Optional<Candidate<T>> selected) {}
 
+  private record Deferred(
+      FileOwner.Initialization initialization, Optional<ApplicationEffects> staged) {
+    private <T> FileOwner<T> owner(OwnerContext context, TextStore<T> store) {
+      return staged.isPresent()
+          ? FileOwner.stagedFile(context, store, 16, initialization, staged.orElseThrow())
+          : FileOwner.newWorldDefaults(context, store, 16, initialization);
+    }
+  }
+
   private static final JsonLimits JSON = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
 
   private final ModContainer container;
@@ -91,7 +100,7 @@ public final class ClientFileSettings<T> {
   private final ApplicationEffects applicationEffects;
   private final Optional<LiveApplication<T>> liveApplication;
   private final Optional<Startup<T>> startup;
-  private final Optional<FileOwner.Initialization> worldDefaults;
+  private final Optional<Deferred> deferred;
   private final AtomicReference<State<T>> state =
       new AtomicReference<>(
           new State<>(Lifecycle.REGISTERED, null, null, null, ValidationReport.VALID, null));
@@ -107,17 +116,17 @@ public final class ClientFileSettings<T> {
       ApplicationEffects applicationEffects,
       Optional<LiveApplication<T>> liveApplication,
       Optional<Startup<T>> startup,
-      Optional<FileOwner.Initialization> worldDefaults) {
+      Optional<Deferred> deferred) {
     this.container = container;
     this.definition = store.definition();
     this.store = store;
     this.applicationEffects = Objects.requireNonNull(applicationEffects);
     this.liveApplication = Objects.requireNonNull(liveApplication);
     this.startup = Objects.requireNonNull(startup);
-    this.worldDefaults = Objects.requireNonNull(worldDefaults);
-    if (startup.isPresent() && worldDefaults.isPresent())
+    this.deferred = Objects.requireNonNull(deferred);
+    if (startup.isPresent() && deferred.isPresent())
       throw new IllegalArgumentException(
-          "Startup choices and new-world defaults are different owners");
+          "Startup selection and deferred file application are different owners");
   }
 
   /** Call from the owning physical-client mod's constructor, before FML client setup. No IO. */
@@ -166,7 +175,26 @@ public final class ClientFileSettings<T> {
         ApplicationEffects.UNDECLARED,
         Optional.empty(),
         Optional.empty(),
-        Optional.of(Objects.requireNonNull(initialization)));
+        Optional.of(new Deferred(Objects.requireNonNull(initialization), Optional.empty())));
+  }
+
+  /** Persist an existing-format file for a separate owner to apply at the declared boundary. */
+  public static <T> ClientFileSettings<T> stagedFile(
+      IEventBus modBus,
+      ModContainer container,
+      TextStore<T> store,
+      FileOwner.Initialization initialization,
+      ApplicationEffects effects) {
+    if (Objects.requireNonNull(effects).rules().isEmpty())
+      throw new IllegalArgumentException("A staged source needs an owner application declaration");
+    return register(
+        modBus,
+        container,
+        store,
+        effects,
+        Optional.empty(),
+        Optional.empty(),
+        Optional.of(new Deferred(Objects.requireNonNull(initialization), Optional.of(effects))));
   }
 
   /** An existing owned JSON source retains its explicit filename and representation. No IO. */
@@ -280,7 +308,7 @@ public final class ClientFileSettings<T> {
       ApplicationEffects applicationEffects,
       Optional<LiveApplication<T>> liveApplication,
       Optional<Startup<T>> startup,
-      Optional<FileOwner.Initialization> worldDefaults) {
+      Optional<Deferred> deferred) {
     Objects.requireNonNull(modBus);
     Objects.requireNonNull(container);
     Objects.requireNonNull(store);
@@ -292,7 +320,7 @@ public final class ClientFileSettings<T> {
           "Client files must belong to their declaring mod namespace");
     var registration =
         new ClientFileSettings<>(
-            container, store, applicationEffects, liveApplication, startup, worldDefaults);
+            container, store, applicationEffects, liveApplication, startup, deferred);
     ClientSettingsRuntime.registerFile(
         definition.id(), registration, store.binding(), registration::close);
     try {
@@ -316,7 +344,7 @@ public final class ClientFileSettings<T> {
     var current = state.get();
     return new Status<>(
         current.lifecycle(),
-        current.owner() == null ? Optional.empty() : Optional.of(current.owner().handle().view()),
+        effective(current).map(SettingsHandle::view),
         current.report(),
         Optional.ofNullable(current.receipt()));
   }
@@ -333,7 +361,17 @@ public final class ClientFileSettings<T> {
    * Read the actual published handle only after the native owner exists. No IO or fallback value.
    */
   public Optional<SettingsHandle<T>> runtime() {
-    return Optional.ofNullable(state.get().owner()).map(FileOwner::handle);
+    return effective(state.get());
+  }
+
+  private Optional<SettingsHandle<T>> effective(State<T> current) {
+    return storageOnly()
+        ? Optional.empty()
+        : Optional.ofNullable(current.owner()).map(FileOwner::handle);
+  }
+
+  private boolean storageOnly() {
+    return deferred.flatMap(Deferred::staged).isPresent();
   }
 
   /** Explicit native menu registration; an existing owner factory is never replaced. */
@@ -428,12 +466,17 @@ public final class ClientFileSettings<T> {
                     ? text(
                         "startup_context",
                         "Startup choices · saved changes require restarting the game")
-                    : worldDefaults.isPresent()
+                    : storageOnly()
                         ? text(
-                            "world_defaults_context",
-                            "New-world defaults · saving does not change an open recipe or a running world")
-                        : text(
-                            "client_context", "Client preferences · applies to this installation"),
+                            "staged_context",
+                            "Saved settings · application belongs to the owning service")
+                        : deferred.isPresent()
+                            ? text(
+                                "world_defaults_context",
+                                "New-world defaults · saving does not change an open recipe or a running world")
+                            : text(
+                                "client_context",
+                                "Client preferences · applies to this installation"),
                 definition,
                 actions,
                 startup.isPresent()
@@ -441,12 +484,17 @@ public final class ClientFileSettings<T> {
                         text("save_startup", "Save for restart"),
                         text("review_startup", "Save reviewed choices"),
                         text("close_startup", "Save for restart and close"))
-                    : worldDefaults.isPresent()
+                    : storageOnly()
                         ? new SettingsScreen.SubmissionLabels(
-                            text("save_defaults", "Save defaults"),
-                            text("review_defaults", "Save reviewed defaults"),
-                            text("close_defaults", "Save defaults and close"))
-                        : SettingsScreen.SubmissionLabels.standard(actions.commitKind())));
+                            text("save_staged", "Save staged values"),
+                            text("review_staged", "Save reviewed staged values"),
+                            text("close_staged", "Save staged values and close"))
+                        : deferred.isPresent()
+                            ? new SettingsScreen.SubmissionLabels(
+                                text("save_defaults", "Save defaults"),
+                                text("review_defaults", "Save reviewed defaults"),
+                                text("close_defaults", "Save defaults and close"))
+                            : SettingsScreen.SubmissionLabels.standard(actions.commitKind())));
   }
 
   /** Explicit source registration on this ready owner; caller supplies capture/reload policy. */
@@ -660,10 +708,9 @@ public final class ClientFileSettings<T> {
               ? CompletableFuture.completedStage(before.owner())
               : startup.isPresent()
                   ? FileOwner.startup(context, store, 16, startup.orElseThrow().selected())
-                  : worldDefaults.isPresent()
+                  : deferred.isPresent()
                       ? CompletableFuture.completedStage(
-                          FileOwner.newWorldDefaults(
-                              context, store, 16, worldDefaults.orElseThrow()))
+                          deferred.orElseThrow().owner(context, store))
                       : CompletableFuture.completedStage(
                           liveApplication
                               .map(
@@ -770,7 +817,7 @@ public final class ClientFileSettings<T> {
                             failed == null
                                 && report.valid()
                                 && receipt.application()
-                                    == (startup.isPresent() || worldDefaults.isPresent()
+                                    == (startup.isPresent() || deferred.isPresent()
                                         ? CommitReceipt.Application.STAGED
                                         : CommitReceipt.Application.APPLIED);
                         finishAttempt(context, result, owner, receipt, report, ready);

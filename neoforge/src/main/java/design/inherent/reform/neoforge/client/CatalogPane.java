@@ -6,7 +6,11 @@ import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.presentation.SectionNavigation;
+import design.inherent.reform.value.ValueShape;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -25,6 +29,8 @@ final class CatalogPane {
     boolean active();
 
     boolean change(Runnable navigation);
+
+    void reveal(FieldPath field);
 
     void add(FormPanel panel);
 
@@ -50,11 +56,15 @@ final class CatalogPane {
 
   private record Position(SectionNavigation.Bookmark scroll, String focus) {}
 
+  private record FieldMatch(FieldPath path, String label, String help, String search) {}
+
   private final FormCatalog definition;
   private final DocumentId document;
   private final Host host;
   private final Map<FieldPath, Position> positions = new LinkedHashMap<>();
   private FormCatalog.Snapshot projection;
+  private List<FieldMatch> fields = List.of();
+  private boolean fieldsUnavailable;
   private FormCatalog.Navigation navigation;
   private FormModel model;
   private Language language;
@@ -99,10 +109,17 @@ final class CatalogPane {
     dirty = true;
     language = currentLanguage;
     projection = null;
+    fields = List.of();
+    fieldsUnavailable = false;
     failure = null;
     if (model != null) {
       try {
         projection = definition.snapshot(model).relabel(this::label);
+        try {
+          fields = indexFields(model);
+        } catch (IllegalArgumentException unadmitted) {
+          fieldsUnavailable = true;
+        }
         if (navigation == null) {
           navigation = new FormCatalog.Navigation(projection);
           definition.sections().stream()
@@ -404,14 +421,23 @@ final class CatalogPane {
     var token = listWidgets;
     list = new FormPanel(client, listX, listY, listWidth, listHeight, true);
     var matches = projection.search(query);
+    var wanted = query.strip().toLowerCase(Locale.ROOT);
+    var fieldMatches =
+        wanted.isEmpty()
+            ? List.<FieldMatch>of()
+            : fields.stream().filter(field -> field.search().contains(wanted)).toList();
     list.heading(
         Component.translatableWithFallback(
             "reform.settings.catalog_count",
             "%s of %s entries",
-            matches.size(),
-            projection.entries().size()));
-    if (matches.isEmpty())
+            matches.size() + fieldMatches.size(),
+            projection.entries().size() + (wanted.isEmpty() ? 0 : fields.size())));
+    if (matches.isEmpty() && fieldMatches.isEmpty())
       list.row(Component.empty(), text("catalog_no_matches", "No matching entries"));
+    if (!wanted.isEmpty() && fieldsUnavailable)
+      list.row(
+          Component.empty(),
+          text("catalog_field_limit", "Complete field search exceeds its limit."));
     for (var entry : matches) {
       var button =
           FormPanel.navigationButton(
@@ -422,13 +448,7 @@ final class CatalogPane {
               () -> {
                 if (host.active() && listWidgets == token) host.change(() -> select(entry.path()));
               });
-      var path = projection.breadcrumbs(entry.path());
-      String context =
-          path.stream()
-              .skip(Math.max(0, path.size() - 4))
-              .map(value -> visible(value.label(), 80))
-              .reduce((a, b) -> a + " / " + b)
-              .orElse("");
+      String context = breadcrumb(entry.path());
       button.context(Component.literal(context));
       var tooltip = Component.literal(context);
       entry
@@ -445,6 +465,23 @@ final class CatalogPane {
       button.setTooltip(Tooltip.create(tooltip));
       list.row(FormModel.key(entry.path()), Component.empty(), Component.empty(), button);
     }
+    for (var match : fieldMatches) {
+      var button =
+          FormPanel.navigationButton(
+              Component.literal(visible(match.label(), 160)),
+              Math.max(1, listWidth - 20),
+              false,
+              false,
+              () -> {
+                if (host.active() && listWidgets == token) host.reveal(match.path());
+              });
+      String context = breadcrumb(match.path());
+      button.context(Component.literal(context));
+      var tooltip = Component.literal(context);
+      if (!match.help().isBlank()) tooltip.append("\n").append(visible(match.help(), 512));
+      button.setTooltip(Tooltip.create(tooltip));
+      list.row(FormModel.key(match.path()), Component.empty(), Component.empty(), button);
+    }
     list.finish(scroll);
     host.add(list);
     if (focused) {
@@ -453,6 +490,44 @@ final class CatalogPane {
       if (list.getFocused() == null) list.focusVisibleControl();
     }
     clear.active = !query.isEmpty();
+  }
+
+  private List<FieldMatch> indexFields(FormModel model) {
+    var result = new ArrayList<FieldMatch>();
+    var stack = new java.util.ArrayDeque<FormModel.Node>();
+    stack.push(model.root());
+    long characters = 0;
+    var bounds = definition.limits();
+    while (!stack.isEmpty()) {
+      var node = stack.pop();
+      for (var child : node.children().reversed()) stack.push(child);
+      if (node.role() != FormModel.Role.FIELD || projection.entry(node.path()).isPresent())
+        continue;
+      var shape = node.type().orElseThrow().shape();
+      if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>))
+        continue;
+      String label =
+          FieldLabels.input(document, node.path(), Component.literal(node.name())).getString();
+      String helpKey = FieldLabels.key(document, node.path()) + ".help";
+      String help = language.has(helpKey) ? Component.translatable(helpKey).getString() : "";
+      String search = (label + " " + node.name() + " " + help).toLowerCase(Locale.ROOT);
+      characters += search.length();
+      if (result.size() >= bounds.maximumEntries()
+          || search.length() > bounds.maximumLabelCharacters()
+          || characters > bounds.maximumTotalLabelCharacters())
+        throw new IllegalArgumentException("Localized field search exceeds its admission");
+      result.add(new FieldMatch(node.path(), label, help, search));
+    }
+    return List.copyOf(result);
+  }
+
+  private String breadcrumb(FieldPath target) {
+    var path = projection.breadcrumbs(target);
+    return path.stream()
+        .skip(Math.max(0, path.size() - 4))
+        .map(value -> visible(value.label(), 80))
+        .reduce((a, b) -> a + " / " + b)
+        .orElse("");
   }
 
   private void buildCrumbs() {

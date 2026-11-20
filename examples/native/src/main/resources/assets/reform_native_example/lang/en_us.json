@@ -3,5 +3,7 @@
   "key.reform_native_example.primary": "Example primary action",
   "key.reform_native_example.secondary": "Example secondary action",
   "reform_native_example:settings/native_keys/fields/key.reform_native_example.primary": "Primary action",
-  "reform_native_example:settings/native_keys/fields/key.reform_native_example.secondary": "Secondary action"
+  "reform_native_example:settings/native_keys/fields/key.reform_native_example.secondary": "Secondary action",
+  "reform_native_example:settings/catalog/fields/global/minimum": "Lower global limit",
+  "reform_native_example:settings/catalog/fields/global/minimum.help": "Example minimum threshold for authored profiles"
 }

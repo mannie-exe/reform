@@ -207,6 +207,16 @@ final class NativeCatalogControls {
             form.keyPressed(GLFW.GLFW_KEY_ESCAPE, 0, 0)
                 && client.screen == form
                 && search().getValue().isEmpty());
+        replace(form, search(), "minimum threshold");
+        press(button(form, "Lower global limit"));
+        var minimum = CatalogExample.GLOBAL.field("minimum");
+        check(
+            "localized scalar help reveals its real control in the existing section",
+            form.selectedSection().filter(CatalogExample.GLOBAL::equals).isPresent()
+                && field(minimum).isFocused()
+                && version() == version
+                && raw(first.field("name")).equals("Alpha revised"));
+        replace(form, search(), "");
         select(second);
         retiredName.setValue("retired callback");
         check(

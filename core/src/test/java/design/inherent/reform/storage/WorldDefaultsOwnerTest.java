@@ -22,6 +22,7 @@ import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
@@ -62,6 +63,11 @@ class WorldDefaultsOwnerTest {
     final DocumentActions<Recipe> actions;
 
     Harness(FileOwner.Initialization initialization) throws Exception {
+      this(initialization, Optional.empty());
+    }
+
+    Harness(FileOwner.Initialization initialization, Optional<ApplicationEffects> staged)
+        throws Exception {
       long thread = nativeCall(() -> Thread.currentThread().threadId());
       context =
           new OwnerContext(
@@ -83,7 +89,13 @@ class WorldDefaultsOwnerTest {
               JsonStore.Format.EXISTING_BARE,
               JSON,
               DraftLimits.CONFIGURATION);
-      owner = nativeCall(() -> FileOwner.newWorldDefaults(context, store, 16, initialization));
+      owner =
+          nativeCall(
+              () ->
+                  staged.isPresent()
+                      ? FileOwner.stagedFile(
+                          context, store, 16, initialization, staged.orElseThrow())
+                      : FileOwner.newWorldDefaults(context, store, 16, initialization));
       var access = nativeCall(() -> context.access(() -> true, () -> true));
       source = nativeCall(() -> owner.open(access));
       var editor = nativeCall(() -> owner.open(access));
@@ -127,6 +139,39 @@ class WorldDefaultsOwnerTest {
           throw new AssertionError(failed);
         }
       }
+    }
+  }
+
+  @Test
+  void stagedFileRetainsSourceWithoutPublishingOrInventingAnEffectiveOwner() throws Exception {
+    var future =
+        Optional.of(
+            ApplicationEffects.root(
+                ApplicationEffects.Timing.EXPLICIT_RELOAD,
+                "The other service explicitly reloads this saved file"));
+    try (var h = new Harness(FileOwner.Initialization.DEFER_MISSING, future)) {
+      var initialized = await(h.source.initialize());
+      assertEquals(CommitReceipt.Application.STAGED, initialized.application());
+      assertTrue(initialized.observation().orElseThrow().effectiveView().isEmpty());
+      assertFalse(Files.exists(h.file));
+      assertFalse(h.source.operations().contains(DocumentSession.Operation.APPLY_SAVED));
+      assertThrows(IllegalStateException.class, h.owner::handle);
+      h.run(() -> h.actions.edit(EntryPoint.GUI, "height", "17"));
+      var actual = h.run(() -> h.actions.commit(EntryPoint.GUI)).receipt().orElseThrow();
+      assertEquals(CommitReceipt.Persistence.SAVED, actual.persistence());
+      assertEquals(CommitReceipt.Application.STAGED, actual.application());
+      assertEquals(future.orElseThrow().rules().getFirst().requirements(), actual.requirements());
+      assertTrue(actual.observation().orElseThrow().effectiveView().isEmpty());
+      assertEquals(new Recipe(17), h.store.read().candidate().orElseThrow().value());
+      assertEquals(1, h.writes.get());
+    }
+    try (var h = new Harness(FileOwner.Initialization.DEFER_MISSING, future)) {
+      var reopened = await(h.source.initialize());
+      assertEquals(CommitReceipt.Application.STAGED, reopened.application());
+      assertEquals(
+          new Recipe(17),
+          reopened.observation().orElseThrow().saved().candidate().orElseThrow().value());
+      assertEquals(0, h.writes.get());
     }
   }
 

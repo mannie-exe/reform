@@ -408,6 +408,14 @@ public final class SettingsScreen<T> extends FormScreen {
                     return changeCatalog(navigation);
                   }
 
+                  public void reveal(FieldPath field) {
+                    if (!focusField(field))
+                      notice =
+                          text(
+                              "inspect_field_unavailable",
+                              "That field is unavailable in the current draft.");
+                  }
+
                   public void add(FormPanel panel) {
                     SettingsScreen.this.addRenderableWidget(panel);
                   }
