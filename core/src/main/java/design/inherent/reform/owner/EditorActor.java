@@ -7,6 +7,7 @@ import design.inherent.reform.edit.ConflictReview;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftEditRefusal;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
@@ -52,9 +53,63 @@ public final class EditorActor<T> implements AutoCloseable {
       ValidationReport operationReport,
       Optional<CommitReceipt<T>> lastReceipt,
       Map<FieldPath, DraftTree.InputState> inputs,
-      boolean conflictObservationAvailable) {
+      boolean conflictObservationAvailable,
+      Optional<DraftTree> baseline) {
     public View {
       inputs = Map.copyOf(inputs);
+      Objects.requireNonNull(baseline);
+    }
+
+    /**
+     * Compare a cached field with the actual captured baseline without validating or reading it.
+     */
+    public boolean changedAt(FieldPath field) {
+      if (!dirty || snapshot.isEmpty() || baseline.isEmpty()) return false;
+      if (FieldPath.ROOT.equals(field)) return true;
+      var before = fieldAt(baseline.orElseThrow(), field);
+      var after = fieldAt(snapshot.orElseThrow().draft(), field);
+      return before.isEmpty() || after.isEmpty()
+          ? before.isPresent() != after.isPresent()
+          : !DraftNode.sameValue(before.orElseThrow(), after.orElseThrow());
+    }
+
+    private static Optional<DraftNode> fieldAt(DraftTree draft, FieldPath path) {
+      try {
+        return Optional.of(draft.at(path));
+      } catch (IllegalArgumentException absent) {
+        return Optional.empty();
+      }
+    }
+
+    public View(
+        Availability availability,
+        Optional<EditSession.Snapshot<T>> snapshot,
+        boolean dirty,
+        boolean canUndo,
+        boolean canRedo,
+        Optional<EditSession.PendingState> pending,
+        Optional<ConflictReview> review,
+        ValidationReport validation,
+        ValidationReport observationReport,
+        ValidationReport operationReport,
+        Optional<CommitReceipt<T>> lastReceipt,
+        Map<FieldPath, DraftTree.InputState> inputs,
+        boolean conflictObservationAvailable) {
+      this(
+          availability,
+          snapshot,
+          dirty,
+          canUndo,
+          canRedo,
+          pending,
+          review,
+          validation,
+          observationReport,
+          operationReport,
+          lastReceipt,
+          inputs,
+          conflictObservationAvailable,
+          Optional.empty());
     }
 
     /** Older observations do not qualify a current conflict source. */
@@ -537,7 +592,8 @@ public final class EditorActor<T> implements AutoCloseable {
             Optional.ofNullable(selected.lastReceipt),
             inspection.inputs(),
             selected.conflictSourceAvailable
-                && selected.editor.review().filter(review -> review.matches(snapshot)).isPresent());
+                && selected.editor.review().filter(review -> review.matches(snapshot)).isPresent(),
+            Optional.of(selected.editor.baseline()));
     synchronized (lifetime) {
       current();
       if (model != selected) throw new PolicyRefusal("editor.changed", "Editing context changed");

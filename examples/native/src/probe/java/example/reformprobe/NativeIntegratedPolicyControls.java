@@ -6,6 +6,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
+import design.inherent.reform.neoforge.client.ClientForm;
+import design.inherent.reform.neoforge.client.ClientFormOptions;
 import design.inherent.reform.neoforge.client.IntegratedSettings;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.neoforge.command.SearchCommands;
@@ -21,6 +24,7 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
 import design.inherent.reform.owner.SourceInfo;
+import design.inherent.reform.presentation.FormPresentation;
 import example.reform.ClientExample;
 import example.reform.NativeExample;
 import example.reform.ServerPolicyExample;
@@ -29,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
@@ -69,6 +74,8 @@ final class NativeIntegratedPolicyControls {
   private final CountDownLatch release = new CountDownLatch(1);
   private final CountDownLatch holding = new CountDownLatch(1);
   private IntegratedServer server;
+  private ClientEditingWorkflow workspace;
+  private int workspaceStage;
   private ServerSettings.Document<?> file, registered;
   private UUID player;
   private Screen gate;
@@ -293,6 +300,7 @@ final class NativeIntegratedPolicyControls {
       }
       case 3 -> {
         if (!done() || !client.player.hasPermissions(2)) return false;
+        if (!workspaceControls()) return false;
         pending =
             server.submit(
                 () -> {
@@ -656,6 +664,80 @@ final class NativeIntegratedPolicyControls {
         return true;
       }
       default -> throw new AssertionError("Unexpected integrated policy stage " + step);
+    }
+    return false;
+  }
+
+  private <T> ClientForm policyForm(ServerSettings.Document<T> document, String title) {
+    return IntegratedSettings.form(
+        Component.literal(title),
+        document.definition().id(),
+        2,
+        document.definition(),
+        new ClientFormOptions<>(FormPresentation.EMPTY, Map.of()));
+  }
+
+  private boolean workspaceControls() throws Exception {
+    var fileRoute = file.definition().id();
+    var registeredRoute = registered.definition().id();
+    switch (workspaceStage) {
+      case 0 -> {
+        workspace =
+            ClientEditingWorkflow.open(
+                null,
+                Component.literal("Running world settings"),
+                List.of(
+                    policyForm(file, "Running JSON policy"),
+                    policyForm(registered, "Running TOML policy")));
+        check(
+            "integrated workflow declares both owners without opening either source",
+            workspace.documents().size() == 2
+                && workspace.documents().stream()
+                    .noneMatch(ClientEditingWorkflow.DocumentState::opened));
+        client.setScreen(workspace.screen());
+        workspace.show(fileRoute);
+        workspaceStage++;
+      }
+      case 1 -> {
+        if (!ready()) return false;
+        check(
+            "integrated workflow reaches its actual shared file editor",
+            form == workspace.editor(fileRoute).screen()
+                && input(form, "Level").getValue().equals("6"));
+        replace(form, input(form, "Level"), "7");
+        workspaceStage++;
+      }
+      case 2 -> {
+        if (!form.editorView().dirty() || !button(form, "Back to overview").active) return false;
+        click(form, button(form, "Back to overview"));
+        workspace.show(registeredRoute);
+        workspaceStage++;
+      }
+      case 3 -> {
+        if (!ready()) return false;
+        check(
+            "the registered member uses its own real integrated editor",
+            form == workspace.editor(registeredRoute).screen() && !form.editorView().dirty());
+        click(form, button(form, "Back to overview"));
+        workspace.show(fileRoute);
+        workspaceStage++;
+      }
+      case 4 -> {
+        if (!ready()) return false;
+        check(
+            "returning to the integrated file retains its original draft and saved owner",
+            form == workspace.editor(fileRoute).screen()
+                && input(form, "Level").getValue().equals("7")
+                && savedLevel() == 6
+                && effectiveLevel() == 6);
+        var original = workspace.editor(fileRoute);
+        workspace.close();
+        client.setScreen(null);
+        check("closing the workspace retires the borrowed local presentation", !original.isOpen());
+        workspaceStage++;
+        return true;
+      }
+      default -> throw new IllegalStateException("Integrated workspace controls already completed");
     }
     return false;
   }

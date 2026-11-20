@@ -10,11 +10,13 @@ import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
 import design.inherent.reform.neoforge.client.ClientEditor;
+import design.inherent.reform.neoforge.client.ClientWorkflowLayout;
 import design.inherent.reform.neoforge.client.KeyBindingScreen;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -24,13 +26,17 @@ import example.reform.NativeExample;
 import example.reform.RegisteredExample;
 import example.reform.WorkflowExample;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -46,6 +52,9 @@ final class NativeWorkflowControls {
   private final JsonArray checks = new JsonArray();
   private final DocumentId preferences = NativeExample.DEFINITION.id();
   private ClientEditingWorkflow workflow, independent, shutdown;
+  private ClientEditingWorkflow hierarchy;
+  private int hierarchyStage;
+  private SettingsScreen<?> hierarchyForm;
   private ClientEditor<?> json, keys, nativeClient, defaults, competing;
   private SettingsScreen<?> form;
   private CompletableFuture<?> waiting;
@@ -136,6 +145,7 @@ final class NativeWorkflowControls {
             || KeyExample.settings().definition().isEmpty()
             || RegisteredExample.client().definition().isEmpty()
             || RegisteredExample.common().definition().isEmpty()) return false;
+        if (!reopen && !hierarchyControls()) return false;
         var forms = WorkflowExample.forms();
         for (var invalid :
             List.of(
@@ -593,6 +603,123 @@ final class NativeWorkflowControls {
         return true;
       }
       default -> throw new AssertionError("Unknown composed workflow stage " + stage);
+    }
+    return false;
+  }
+
+  private DocumentId hierarchyId(String path) {
+    return DocumentId.parse("reform_native_example:hierarchy/" + path);
+  }
+
+  private CycleButton<?> workflowView() {
+    return widgets(hierarchy.screen()).stream()
+        .filter(CycleButton.class::isInstance)
+        .map(widget -> (CycleButton<?>) widget)
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private boolean hierarchyControls() {
+    switch (hierarchyStage) {
+      case 0 -> {
+        var form = ClientExample.settings().form(Component.literal("Shared preferences"));
+        var path =
+            List.of(
+                new ClientWorkflowLayout.Category(
+                    hierarchyId("interface"), Component.literal("Interface"), Component.empty()),
+                new ClientWorkflowLayout.Category(
+                    hierarchyId("map"), Component.literal("Map module"), Component.empty()),
+                new ClientWorkflowLayout.Category(
+                    hierarchyId("planning"), Component.literal("Map planning"), Component.empty()));
+        var rows = new ArrayList<ClientWorkflowLayout.Placement>();
+        rows.add(
+            new ClientWorkflowLayout.Placement(
+                hierarchyId("distance"),
+                form.route(),
+                Component.literal("Map distance"),
+                Optional.of(FieldPath.ROOT.field("distance")),
+                Component.literal("The far horizon planning threshold"),
+                Set.of(ApplicationEffects.Timing.GAME_RESTART)));
+        for (int i = 0; i < 130; i++)
+          rows.add(
+              new ClientWorkflowLayout.Placement(
+                  hierarchyId("label/" + i),
+                  form.route(),
+                  Component.literal("Map label " + i),
+                  Optional.of(FieldPath.ROOT.field("label"))));
+        hierarchy =
+            ClientEditingWorkflow.open(
+                parent,
+                Component.literal("Hierarchical workflow"),
+                List.of(form),
+                new ClientWorkflowLayout(
+                    List.of(new ClientWorkflowLayout.Group(path, rows, List.of())), List.of()));
+        client.setScreen(hierarchy.screen());
+        for (int i = 0; i < 3; i++) press(hierarchy.screen(), "Open");
+        check(
+            "native three-level workflow reached a large shared-owner placement list",
+            widgets(hierarchy.screen()).stream()
+                        .filter(
+                            w -> w instanceof Button && w.getMessage().getString().equals("Open"))
+                        .count()
+                    == 131
+                && hierarchy.documents().stream()
+                    .noneMatch(ClientEditingWorkflow.DocumentState::opened));
+        replace(
+            hierarchy.screen(), input(hierarchy.screen(), "Search documents"), "horizon threshold");
+        check(
+            "description search across groups stays scoped to the actual matching placement",
+            widgets(hierarchy.screen()).stream()
+                    .filter(w -> w instanceof Button && w.getMessage().getString().equals("Open"))
+                    .count()
+                == 1);
+        press(hierarchy.screen(), "Open");
+        hierarchyForm = (SettingsScreen<?>) client.screen;
+        hierarchyStage++;
+      }
+      case 1 -> {
+        if (hierarchyForm.editorView().availability() != EditorActor.Availability.READY
+            || !button(hierarchyForm, "Back to overview").active) return false;
+        var control =
+            (EditBox) hierarchyForm.fieldControl(FieldPath.ROOT.field("distance")).orElseThrow();
+        check("selected catalog placement reveals its existing field", control.isFocused());
+        replace(hierarchyForm, control, "bad");
+        hierarchyStage++;
+      }
+      case 2 -> {
+        if (hierarchyForm.editorView().validation().valid()
+            || !button(hierarchyForm, "Back to overview").active) return false;
+        press(hierarchyForm, "Back to overview");
+        var root = hierarchy.screen();
+        check(
+            "overview retains its earlier query when returning from a field",
+            input(root, "Search documents").getValue().equals("horizon threshold"));
+        replace(root, input(root, "Search documents"), "");
+        for (int i = 0; i < 3; i++) {
+          workflowView().onPress();
+          check(
+              "modified, invalid and restart filters each show only the relevant cached placement",
+              widgets(root).stream()
+                      .filter(
+                          w -> w instanceof Button && w.getMessage().getString().equals("Resume"))
+                      .count()
+                  == 1);
+        }
+        workflowView().onPress();
+        check(
+            "clearing filters returns to the selected category and keeps the original draft",
+            widgets(root).stream()
+                        .filter(
+                            w -> w instanceof Button && w.getMessage().getString().equals("Resume"))
+                        .count()
+                    == 131
+                && hierarchy.documents().getFirst().dirty());
+        hierarchy.close();
+        client.setScreen(parent);
+        hierarchyStage++;
+        return true;
+      }
+      default -> throw new IllegalStateException("Hierarchy controls already completed");
     }
     return false;
   }

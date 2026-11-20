@@ -9,6 +9,7 @@ import design.inherent.reform.presentation.FormPresentation;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -60,6 +61,38 @@ public final class IntegratedSettings {
     var target = ServerSettings.admittedDocument(host.orElseThrow().server(), route, definition);
     if (target.isEmpty()) return unavailable(parent, title, policyMissing());
     return open(parent, title, host.orElseThrow(), target.orElseThrow(), level, options);
+  }
+
+  /** Compose a retained editor for one admission on the current integrated host. */
+  public static <T> ClientForm form(
+      Component title,
+      DocumentId route,
+      int level,
+      DocumentDefinition<T> definition,
+      ClientFormOptions<T> options) {
+    Objects.requireNonNull(route);
+    Objects.requireNonNull(definition);
+    Objects.requireNonNull(options);
+    var host = currentHost(level);
+    var target = host.flatMap(h -> ServerSettings.admittedDocument(h.server(), route, definition));
+    var label = Objects.requireNonNull(title).copy();
+    return ClientForm.asynchronous(
+            definition.id(),
+            label,
+            () -> {
+              if (host.isEmpty()) return new ClientForm.Availability(false, false, worldRequired());
+              if (target.isEmpty())
+                return new ClientForm.Availability(false, false, policyMissing());
+              boolean current =
+                  host.orElseThrow().current(level) && target.orElseThrow().context().isOpen();
+              return new ClientForm.Availability(
+                  current, false, current ? Component.empty() : ended());
+            },
+            parent ->
+                new Opening<>(
+                        host.orElseThrow(), target.orElseThrow(), level, options, parent, label)
+                    .pending())
+        .atRoute(route);
   }
 
   private static Optional<Host> currentHost(int level) {
@@ -117,6 +150,7 @@ public final class IntegratedSettings {
     private final AtomicBoolean live = new AtomicBoolean(true);
     private final AtomicReference<ServerSettings.LocalPresentation<T>> admitted =
         new AtomicReference<>();
+    private final CompletableFuture<Void> ready = new CompletableFuture<>();
     private volatile Component failure;
     private OwnerContext context;
     private boolean started, transferred;
@@ -144,6 +178,7 @@ public final class IntegratedSettings {
             text(
                 "integrated_permission",
                 "The local player needs current permission for this policy.");
+        ready.completeExceptionally(new PolicyRefusal("owner.permission", failure.getString()));
         return;
       }
       try {
@@ -158,6 +193,7 @@ public final class IntegratedSettings {
             () -> {
               live.set(false);
               closeAdmission();
+              ready.completeExceptionally(closed());
             });
         ClientSettingsRuntime.manageContext(context, this::current);
         var connection = host.listener().getConnection();
@@ -176,14 +212,20 @@ public final class IntegratedSettings {
                 })
             .whenComplete(
                 (binding, failed) -> {
-                  if (failed != null) failure = reason(failed);
-                  else {
+                  if (failed != null) {
+                    failure = reason(failed);
+                    ready.completeExceptionally(failed);
+                  } else {
                     admitted.set(binding);
-                    if (!live.get()) closeAdmission();
+                    if (!live.get()) {
+                      closeAdmission();
+                      ready.completeExceptionally(closed());
+                    } else ready.complete(null);
                   }
                 });
       } catch (RuntimeException failed) {
         failure = reason(failed);
+        ready.completeExceptionally(failed);
         if (context != null) context.close();
       }
     }
@@ -206,9 +248,22 @@ public final class IntegratedSettings {
     }
 
     private Screen open() {
+      try {
+        return present();
+      } catch (RuntimeException failed) {
+        return unavailable(parent, title, reason(failed));
+      }
+    }
+
+    private ClientForm.PendingScreen pending() {
+      begin();
+      return new ClientForm.PendingScreen(
+          ready.thenCompose(ignored -> context.onOwner(this::present)), this::retire);
+    }
+
+    private SettingsScreen<T> present() {
       var binding = admitted.get();
-      if (binding == null || !current() || !context.isOpen())
-        return unavailable(parent, title, ended());
+      if (binding == null || !current() || !context.isOpen()) throw closed();
       try {
         var access = context.access(this::current, this::current);
         var actions = binding.attach(context, access);
@@ -222,9 +277,9 @@ public final class IntegratedSettings {
                 SettingsScreen.SubmissionLabels.standard(actions.commitKind()));
         transferred = true;
         return screen;
-      } catch (RuntimeException failed) {
+      } catch (RuntimeException | Error failed) {
         context.close();
-        return unavailable(parent, title, reason(failed));
+        throw failed;
       }
     }
 

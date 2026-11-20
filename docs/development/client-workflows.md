@@ -6,6 +6,8 @@
 
 File, registered-native and keybinding factories expose `form(title)`. File/native forms also accept existing presentation declarations; file forms can borrow explicit reference-source bindings. These declarations open no editor, read no source and initialize no file. Availability suppliers must read cached local state. READY means the owner can be opened, not that its saved data has been validated or its domain effects are active.
 
+`IntegratedSettings.form(title, route, permission, definition, options)` declares a composed form bound to the current local integrated host. Its initial availability observes the host, world, connection and exact admitted definition. Selecting the form admits a real local presentation on the server thread and borrows it for a retained native editor. `openEditor(route)` lets a composed caller await that admission without blocking the client thread. Existing immediate forms still support `editor(route)`. Host replacement, lost permission, connection closure and workflow shutdown retire the borrowed view. Installation defaults and running-world policies belong to distinct workflows even when they use the same logical document IDs.
+
 Construct the workflow on the native client thread when entering the UI:
 
 ```java
@@ -25,6 +27,8 @@ Pass a `ClientWorkflowLayout` to group navigation entries and operations by purp
 `ClientFormOptions<T>` supplies the same catalog, reference bindings, auxiliary field editors and optional import declaration for owned files, registered native owners, typed integrated policies and creation recipes. Editor and import factories receive the actual definition when the form opens. The integrated entry checks the current host, route and exact definition before creating an editor. These options add presentation to the actual owner and leave its persistence and application rules with that owner.
 
 Each `ReviewScope` declares exactly which routes can write and which supply unchanged dependencies. A clean writable member is checked, and a dirty writable member enters the reviewed order. Mark a scope required to route its generated forms' save controls and keyboard shortcuts through that review. No other layout scope can submit those documents. A scoped workflow asks the user to choose a scope instead of opening all sources. Domain validation, additional guards and ordered writes use the same `DocumentBatch` service. Contributions can supply a native operation handle with actual authority and a bounded result projection for the shared operation view. Browsing contributes no effects, and Back retains the operation result.
+
+`Group(path, placements, actions)` declares a hierarchy of stable `Category` IDs, native captions and help. The overview follows the path through up to four levels, supplies breadcrumbs and searches localized captions and help across categories. An explicit layout admits up to 128 groups and 512 placements. Multiple placements still share the same actual editor. All, Modified, Invalid and Restart use cached edit/diagnostic/receipt state or caller-declared timing. Field placements use their captured field baseline and relevant diagnostics. Filtering and returning from editors retain the current browse location and query. Neither list construction nor filtering loads a source or opens an owner.
 
 ## Retained editors and navigation
 
