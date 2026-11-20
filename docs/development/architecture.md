@@ -2,14 +2,14 @@
 
 ## Current foundation
 
-The repository has two source modules and one installable NeoForge mod artifact. The bootstrap entry point registers only the mod identity; it creates no files, controls, menus, HUD or gameplay behavior. The [core definitions](api.md), [editing model](editing.md), [storage backend](storage.md), [effective publication](publication.md) and explicit [owner sessions](owners.md) are implemented. JSON and [registered native settings](native-settings.md) share the editor boundary while retaining their own execution/effect paths. The [presentation extraction](presentation.md) provides measured shared parts and experimental recursive/reference forms; other owner factories/backends, complete controls/operations/commands, additional value families and consumer migrations remain implementation work.
+The repository has two source modules and one installable NeoForge mod artifact. The mod entry point registers only the library identity; it creates no files, controls, menus, HUD or gameplay behavior. The [core definitions](api.md), [editing model](editing.md), [storage backend](storage.md), [effective publication](publication.md) and explicit [owner sessions](owners.md) are implemented. JSON and [registered native settings](native-settings.md) share the editor boundary while retaining their own execution/effect paths. Public [presentation](presentation.md), [client factories](client-files.md), [composed workflows](client-workflows.md), [server settings](server-settings.md) and [world recipe adapters](world-recipes.md) connect those services to native entry points. [Coverage](coverage.md) separates the delivered baseline from deferred capabilities; [verification](verification.md) owns the exact consumer and native evidence.
 
 | Module     | Responsibility                                                              | Distribution                                                           |
 | ---------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `core`     | Minecraft-independent types, definitions, editing, ownership and operations | Development/headless JAR; own classes also enter the combined mod once |
 | `neoforge` | Minecraft/NeoForge lifecycle, native backends, commands and client adapters | Combined installable JAR, sources and public Maven metadata            |
 
-The platform depends on core for compilation but does not declare a second owned core runtime artifact. DFU and Gson dependency metadata remains explicit. Minecraft-provided libraries are not bundled or replaced. Unit/property-test dependencies stay test-only. There is no runtime UI framework, expression engine or optional mod dependency in the bootstrap.
+The platform depends on core for compilation but does not declare a second owned core runtime artifact. DFU and Gson dependency metadata remains explicit. Minecraft-provided libraries are not bundled or replaced. Unit/property-test dependencies stay test-only. The UI uses native Minecraft and NeoForge controls. There is no external runtime UI framework, expression engine or optional mod dependency.
 
 ## Required implementation boundaries
 

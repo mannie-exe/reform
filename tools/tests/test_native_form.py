@@ -118,7 +118,7 @@ class NativeFormFixtureGuards(unittest.TestCase):
         PROBE.create_fixture(self.fixture, "own-token")
         crash = self.fixture / "crash-reports"
         crash.mkdir()
-        (crash / "crash-normal.txt").write_text("Actual root exception\n")
+        (crash / "crash-normal.txt").write_bytes(b"Actual root exception\n")
         (crash / "crash-oversize.txt").write_bytes(b"x" * 131073)
         external = self.fixture.parent / "private.txt"
         external.write_text("outside fixture")

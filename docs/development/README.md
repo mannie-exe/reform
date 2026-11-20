@@ -33,7 +33,7 @@ Build with `./gradlew --no-daemon check build`. Gradle checks Java formatting, d
 
 `verifyNativeConsumer` compiles the separate [native addon and opt-in client probe](../../examples/native/README.md) against the exact same packaged Maven artifact. It launches no game as part of ordinary `check`. The explicit disposable client runner separately exercises that library JAR in Minecraft; source-container loading of the example/probe remains distinct from the packaged dependency.
 
-No additional annotation processor is needed for the bootstrap. ModDevGradle supplies the native development pipeline. Add a processor only for a concrete contract and keep generated output reproducible and free of optional/client loading on the wrong side.
+No additional annotation processor is required. ModDevGradle supplies the native development pipeline. Add a processor only for a concrete contract and keep generated output reproducible and free of optional/client loading on the wrong side.
 
 ## Native runs
 

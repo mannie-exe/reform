@@ -26,7 +26,7 @@ Using the default omits the field and ignores the inactive override during candi
 
 Equal-value acknowledgements can adopt a serializer's omitted-default representation while retaining inactive input and later overrides. When a serializer instead materializes an omitted default, the actual saved value becomes active and distinct inactive input is retained separately. These immutable snapshots have stable UUIDs for explicit recovery/discard, count toward draft/history limits and never enter serialized data or authored equality. Collection identities transfer from inactive input only when that input independently decodes to the same value; an unrelated equal document value does not establish row identity. Recovery uses the retained UUID rather than a potentially stale row index.
 
-Omitted fields receive no invented encoded address. Manual conflict review treats a defaulted field's presence and content as one choice. The native recursive form supplies explicit default/override and retained-input recovery controls; richer provenance presentation remains required.
+Omitted fields receive no invented encoded address. Manual conflict review treats a defaulted field's presence and content as one choice. The native recursive form supplies explicit default/override and retained-input recovery controls. [Inspection](operations.md) reports source and effective state independently.
 
 ## Optional membership
 
@@ -42,7 +42,7 @@ Malformed encodings remain opaque repairable drafts; they never silently become 
 
 `select(id, seed)` creates a missing branch from an explicit seed and restores an existing branch unchanged. It does not infer a valid default, reinterpret unknown payloads or replace unfinished input with a supplied seed. Unknown tags retain opaque payloads; unknown fields remain errors until explicitly repaired. A malformed envelope/tag retains the complete opaque input for repair rather than selecting a fallback.
 
-Equal-value acknowledgement normalizes the actual saved branch while retaining private branches and their later edits. A later selection retains its own payload. Old diagnostics retain their branch target and become stale when that branch is inactive. Whole-alternative conflict choices cannot pair one selector with another branch's payload. The native recursive form supplies branch selection, inactive-branch discard and blank repair; richer recovery/review presentation remains required.
+Equal-value acknowledgement normalizes the actual saved branch while retaining private branches and their later edits. A later selection retains its own payload. Old diagnostics retain their branch target and become stale when that branch is inactive. Whole-alternative conflict choices cannot pair one selector with another branch's payload. The native recursive form supplies branch selection, inactive-branch discard and blank repair. [Manual conflict review](conflicts.md) retains its own source comparison and choices.
 
 ## Public structural edits
 
@@ -66,7 +66,7 @@ Exact-version targets are required for structural/destructive actions. `target.t
 
 `EditSession.stage(exactRootTarget, draft, label)` supplies the reviewed replacement boundary, separate from source parsing or permission admission. It requires the exact root/session/generation/version and refuses pending submissions or conflict review. It applies one bounded history entry, retains wholly unchanged input subtrees/row IDs, and retires old input streams only when the draft actually changes. Complete input equality includes inactive payloads, retained overrides, mapped input and row display order while ignoring generated row UUIDs; active authored-value equality remains separate. An imported inactive payload cannot disappear merely because its saved value is currently omitted. A no-op preserves generation, redo and input ownership. Budget/label/stale failures leave the prior state intact. The older low-level `stage(draft, label)` remains explicitly caller-managed.
 
-`EditorActor.stage` serializes that boundary on its existing lane and updates the typing floor for a real replacement. It does not persist, publish or admit a world. Existing save receipts cannot be invalidated by this operation: a pending save must finish/reconcile first. Format/source admission, preview/semantic comparison and GUI/command import orchestration remain separate required work.
+`EditorActor.stage` serializes that boundary on its existing lane and updates the typing floor for a real replacement. It does not persist, publish or admit a world. Existing save receipts cannot be invalidated by this operation: a pending save must finish/reconcile first. [Local import](imports.md) supplies source/format admission, preview, semantic comparison and GUI/command orchestration over that staging boundary.
 
 Field typing coalesces only within an explicit `EditGroup`. Compound imports use `stage` as one undoable draft operation. Undo/redo, reset to defaults, revert to the observed baseline and reload are distinct. No-op reset preserves redo and unchanged row identities. Moving identical-valued rows can still be an intentional identity change; authored equality alone does not erase that history.
 

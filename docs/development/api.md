@@ -1,12 +1,12 @@
 # Core definitions and decoding
 
-The current API is experimental. It supplies typed values, explicit record definitions, strict JSON admission, deep snapshots and pure complete-value validation. [Editing sessions](editing.md), [file owners](owners.md) and [presentation](presentation.md) build on these contracts. [Native registered owners](native-settings.md) and [shared local GUI/command operations](operations.md) use these contracts; full convenience factories and broader command/editor families remain required. [Coverage](coverage.md) separates the complete requirements from implemented behavior.
+The public API supplies typed values, explicit record definitions, strict JSON admission, deep snapshots and pure complete-value validation. [Editing sessions](editing.md), [file owners](owners.md), [native registered owners](native-settings.md), [client factories](client-files.md) and [shared local GUI/command operations](operations.md) build on these contracts. [Coverage](coverage.md) records the delivered baseline and deferred capabilities.
 
 ## Declare values once
 
 `ValueType<T>` combines a DFU `Codec<T>`, explicit `ValueShape` and `SnapshotPolicy<T>`. Codec implementation details are not inspected to infer an editor. `ValueTypes` currently supplies booleans, bounded bytes/shorts/integers/longs/floats/doubles, bounded text, exact complete UUIDs, enums, bounded recursive lists/sets and explicitly encoded maps. Float bounds use their declared float spelling rather than a widened double approximation.
 
-`FieldKey<T>` pairs a serialized field ID with its type. `RecordType.builder` binds those keys to typed getters and one constructor. The resulting type supplies ordered field metadata, a strict object codec and a recursive snapshot policy. Serialized field IDs can differ from Java component names and translated labels. Duplicate declared IDs are rejected. Record fields are required unless their type explicitly declares an omission policy. Unknown and invalid fields prevent construction. Broader profile inheritance remains required.
+`FieldKey<T>` pairs a serialized field ID with its type. `RecordType.builder` binds those keys to typed getters and one constructor. The resulting type supplies ordered field metadata, a strict object codec and a recursive snapshot policy. Serialized field IDs can differ from Java component names and translated labels. Duplicate declared IDs are rejected. Record fields are required unless their type explicitly declares an omission policy. Unknown and invalid fields prevent construction. Broader profile inheritance is deferred.
 
 `RecordTypes.record(MyRecord.class).build()` derives that same `RecordType` for explicitly selected accessible records. It binds the canonical constructor/getters using ordinary method-handle access and supplies common scalar, enum, nested record, typed `List`/`Set` and string-keyed `Map` codecs/snapshots. Derived string maps use object encoding, including any explicitly registered string type. Other map keys require a field override selecting their actual lossless encoding. It scans no classpath and opens no foreign module. Nonpublic owned records can receive the caller's actual `MethodHandles.Lookup`; the library does not use an access override.
 
@@ -26,7 +26,7 @@ See the independently built [headless consumer](../../examples/headless/src/main
 
 Ordinary owned object decoding distinguishes an absent field from explicit null. A null is passed to the declared value decoder and cannot silently select a non-null fallback. Native compressed empty slots retain their omission meaning. The tests separately retain DFU's ordinary JSON lookup behavior, where null can appear missing to a native optional-field codec. Existing native serializers and callbacks keep their owners.
 
-The [public field-default example](../../examples/headless/src/main/java/example/FieldDefaults.java) persists both presence transitions through a real bare JSON file. Defaulted entry-list map keys/values obey those record-field rules too. Omission has no standalone, array-slot or dynamic object-map-value representation. [Editing](editing.md) owns inactive override retention, payload paths and acknowledgement behavior. Native controls and profile inheritance remain required.
+The [public field-default example](../../examples/headless/src/main/java/example/FieldDefaults.java) persists both presence transitions through a real bare JSON file. Defaulted entry-list map keys/values obey those record-field rules too. Omission has no standalone, array-slot or dynamic object-map-value representation. [Editing](editing.md) owns inactive override retention, payload paths and acknowledgement behavior. The [generated form](presentation.md#generated-form) presents those presence and override states. Broader profile inheritance is deferred.
 
 ## Optional membership
 
@@ -46,7 +46,7 @@ The owned format is an explicit discriminator/payload envelope, such as `{"kind"
 
 Payload decoding and snapshots retain the selected child type and exact class. A tagged view does not introduce a second object-identity visit for the same value, and real child cycles remain subject to snapshot accounting. `RecordType.decode` delegates compressed layout to native DFU `MapDecoder` while retaining the caller's structured child paths. Shared comparison descends into a matching variant's fields; a changed variant remains a complete alternative change.
 
-The [packaged tagged example](../../examples/headless/src/main/java/example/TaggedEditing.java) persists the selected variant while retaining invalid inactive work only in its draft. [Editing](editing.md) owns branch identity, raw repair and history. Native branch selectors and real consumer adapters remain required.
+The [packaged tagged example](../../examples/headless/src/main/java/example/TaggedEditing.java) persists the selected variant while retaining invalid inactive work only in its draft. [Editing](editing.md) owns branch identity, raw repair and history. The [generated form](presentation.md#generated-form) uses the same branch and history services.
 
 ## Explicit map encodings
 
@@ -54,13 +54,13 @@ The [packaged tagged example](../../examples/headless/src/main/java/example/Tagg
 
 Keys use Java value equality and hash codes, which must survive both the declared codec roundtrip and owned copying. Object-key encoding must also be injective. Duplicate decoded keys, encoding collisions, partial child results and exceeded size bounds refuse a complete map. Values use their declared child snapshot/equality policy. Map equality ignores entry order; the retained iteration order is presentation/serialization order rather than a separate persisted setting. Ordered domain tables need an explicit list type instead.
 
-The [packaged map example](../../examples/headless/src/main/java/example/MapEditing.java) exercises role counts, delayed acknowledgements and explicit composite-key encoding. Raw duplicates and key edits are described in [editing](editing.md); generated native map controls remain required.
+The [packaged map example](../../examples/headless/src/main/java/example/MapEditing.java) exercises role counts, delayed acknowledgements and explicit composite-key encoding. Raw duplicates and key edits are described in [editing](editing.md); the [generated form](presentation.md#generated-form) edits the same stable map rows.
 
 ## Unordered membership
 
 `ValueTypes.set(element, maximumSize)` declares bounded set membership with JSON array encoding. Its members follow the same Java equality/hash and owned-copy/codec-roundtrip identity contract as map keys. Duplicate decoded members are refused, not silently removed. Iteration order is retained for display/serialization; it does not change set equality. Snapshot copies own composite members recursively.
 
-Uniqueness and ordering are separate metadata. `ValueShape.Sequence` defaults to `CollectionOrder.ORDERED`, including its three-argument constructor for a unique ordered list. Sets explicitly select `UNORDERED`; unordered nonunique bags are not supplied. The [packaged set example](../../examples/headless/src/main/java/example/SetEditing.java) demonstrates duplicate repair and reordered acknowledgement without a resource resolver or game dependency. Native selection controls remain required.
+Uniqueness and ordering are separate metadata. `ValueShape.Sequence` defaults to `CollectionOrder.ORDERED`, including its three-argument constructor for a unique ordered list. Sets explicitly select `UNORDERED`; unordered nonunique bags are not supplied. The [packaged set example](../../examples/headless/src/main/java/example/SetEditing.java) demonstrates duplicate repair and reordered acknowledgement without a resource resolver or game dependency. Native collection and reference selection use the shared [presentation](presentation.md) and [resolver](references.md) contracts.
 
 ## Exact input and complete validation
 

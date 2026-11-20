@@ -1,6 +1,6 @@
 # Effective publication
 
-`RuntimePolicy<T>` and its read-only `SettingsHandle<T>` extract the useful context/revision behavior from the existing runtime settings policy. They are low-level publication primitives, used by the experimental [asynchronous JSON owner](owners.md). They perform no file IO, command registration, actor lookup or native configuration mutation. [Coverage](coverage.md) owns the remaining native/operation requirements.
+`RuntimePolicy<T>` and its read-only `SettingsHandle<T>` extract the useful context/revision behavior from the existing runtime settings policy. They are low-level publication primitives, used by the [asynchronous JSON owner](owners.md). They perform no file IO, command registration, actor lookup or native configuration mutation. [Coverage](coverage.md) records the supported native and operation boundaries.
 
 ## Bind values to a context
 
@@ -26,4 +26,4 @@ Publishing cannot prove that a file was saved, and a saved file cannot prove tha
 
 The [independent public consumer](../../examples/headless/src/main/java/example/ReviewProfile.java) exercises actual separate owner/worker executors and a real JSON file: save a submitted value, retain a later edit, refuse a subsequent application-only request after changed authorization, then admit it without another write. The connected-owner filesystem controls additionally revoke authority after replacement but before publication. Both use controlled local callbacks, not real connected-player authorization.
 
-These primitives suit an owner-declared immutable runtime policy. Native registered configuration has different mutation/callback timing; its setters are not this publication operation. The explicit JSON service connects bounded admission, actor-bound sessions and disk/application receipts; native gateways/backends, complete operations, original new-world context and convenience factories remain required before real migration.
+These primitives suit an owner-declared immutable runtime policy. Native registered configuration has different mutation/callback timing; its setters are not this publication operation. The explicit JSON service connects bounded admission, actor-bound sessions and disk/application receipts. [Native registered settings](native-settings.md), [client factories](client-files.md), [server settings](server-settings.md) and [world recipes](world-recipes.md) supply their own actual execution, persistence and admission bindings.

@@ -23,6 +23,7 @@ class ReleaseStaging(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(RELEASE, "ROOT", self.root).start()
         self.command("init", "-q")
+        (self.root / ".gitattributes").write_bytes(b"* text=auto eol=lf\n")
         (self.root / ".gitignore").write_text("build/\n")
         (self.root / "gradle.properties").write_bytes(b"mod_version=1.2.3\n")
         self.command("add", ".")

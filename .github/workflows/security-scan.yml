@@ -2,6 +2,11 @@ name: Security Scan
 
 on:
   workflow_call:
+    inputs:
+      dependency-artifact:
+        description: Resolved inventory from this workflow's checked Linux build
+        type: string
+        default: ''
   schedule:
     - cron: '0 8 * * 3'
   workflow_dispatch:
@@ -18,14 +23,23 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        if: inputs.dependency-artifact == ''
         with:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@07d1f8453baaff67fb503883367f8b13e6158a54 # v6
+        if: inputs.dependency-artifact == ''
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Resolve library and test dependencies
+        if: inputs.dependency-artifact == ''
         run: ./gradlew --no-daemon -I tools/security.init.gradle :core:securityDependencies --write-locks
+      - name: Download checked dependency inventory
+        if: inputs.dependency-artifact != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ${{ inputs.dependency-artifact }}
+          path: build/security
       - name: Scan resolved dependencies
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

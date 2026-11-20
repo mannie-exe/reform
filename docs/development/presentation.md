@@ -1,8 +1,8 @@
 # Measured presentation
 
-The current presentation supplies native-free geometry, form and catalog models, internal client-only measured panels and an experimental public recursive `SettingsScreen<T>` over an admitted owner-backed actor. Native client qualification uses JSON, catalog/detail views and actual native keybindings; native registered settings separately exercise the shared actor headlessly. Additional composition and complete operation presentation remain required. [Coverage](coverage.md) owns the complete Phase 1 remainder.
+Presentation supplies native-free geometry, form and catalog models, client-only measured panels and the public recursive `SettingsScreen<T>` over an admitted owner-backed actor. Generated forms, [composed workflows](client-workflows.md), native keybindings and registered settings share editing, review and operation services while retaining their actual owners. [Coverage](coverage.md) records the supported baseline.
 
-The extracted measurement foundations derive from the owned MIT implementation in Skyweave: Compatibility Patches, as identified in `NOTICE`. New library workflows share those controls and the admitted owner services. Compat still uses its original implementation; that mod and the modpack are not library dependencies.
+The extracted measurement foundations derive from the owned MIT implementation in Skyweave: Compatibility Patches, as identified in `NOTICE`. Library workflows share those controls and the admitted owner services. Consumer adoption and exact native qualification are recorded in [verification](verification.md). Neither consumer nor the modpack is a library dependency.
 
 ## Keep one measurement model
 
@@ -98,4 +98,4 @@ The generated row keeps **Show fields** alongside the auxiliary entry, allowing 
 
 ## Qualification boundary
 
-Pure comparison checks cover extracted geometry/navigation, bounded active form structure and catalog identity/admission. Compilation covers pinned API linkage. The opt-in native example fixture separately exercises recursive/reference/catalog controls, actual JSON save/reopen and selected native language/font reload. [Verification](verification.md) records exact artifacts, observations and limitations. Broader composition, physical keyboard/clipboard/narrator output, remaining dedicated/integrated/server gateways and full-pack/cost qualification remain required. Consumer source migration is excluded by the selected execution; earlier consumer history does not qualify the extracted artifact.
+Pure comparison checks cover extracted geometry/navigation, bounded active form structure and catalog identity/admission. Compilation covers pinned API linkage. The opt-in native example fixture separately exercises recursive/reference/catalog controls, actual JSON save/reopen and selected native language/font reload. [Verification](verification.md) records exact artifacts, observations and limitations. Physical IME, host clipboard, spoken narration, native rendering on other operating systems and maximum document/heap cost retain explicit qualification limits. Shared composition, consumer migrations, dedicated/integrated owners and the installed pack have separate exact-artifact receipts in that record. Service measurements do not establish native frame timing or long-session retention.
