@@ -431,7 +431,7 @@ final class NativeServerPolicyProbe {
                                 .thenCompose(
                                     receipt ->
                                         bad.context()
-                                            .onOwner(
+                                            .<Void>onOwner(
                                                 () -> {
                                                   check(
                                                       "malformed server source is retained without effective defaults",
@@ -486,7 +486,7 @@ final class NativeServerPolicyProbe {
                                 .thenCompose(
                                     receipt ->
                                         file.context()
-                                            .onOwner(
+                                            .<Void>onOwner(
                                                 () -> {
                                                   check(
                                                       "replacement reads the actual saved source without reviving old handles",
