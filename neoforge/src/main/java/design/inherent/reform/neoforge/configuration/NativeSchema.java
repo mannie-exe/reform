@@ -11,6 +11,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
+import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueType;
 import design.inherent.reform.value.ValueTypes;
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
@@ -55,7 +57,8 @@ final class NativeSchema {
       ModConfigSpec spec,
       Map<FieldPath, ValueType<?>> overrides,
       int maximumFields,
-      Set<FieldPath> selected) {
+      Set<FieldPath> selected,
+      Function<Map<String, Object>, ValidationReport> validate) {
     this.maximumFields = maximumFields;
     this.overrides = new LinkedHashMap<>(overrides);
     this.selected = Set.copyOf(selected);
@@ -71,7 +74,7 @@ final class NativeSchema {
         projected()
             ? fields.stream().map(Field::path).collect(Collectors.toUnmodifiableSet())
             : Set.of();
-    definition = new DocumentDefinition<>(id, 1, type, () -> defaults);
+    definition = new DocumentDefinition<>(id, 1, type, () -> defaults, validate);
   }
 
   private ValueType<Map<String, Object>> object(

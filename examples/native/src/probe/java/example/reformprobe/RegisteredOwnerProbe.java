@@ -9,6 +9,7 @@ import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.neoforge.configuration.RegisteredConfig;
+import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
@@ -16,6 +17,8 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.PreparedEdit;
 import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.validation.Issue;
+import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueTypes;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -244,7 +247,9 @@ final class RegisteredOwnerProbe {
                       .getModInfo()
                       .getVersion()
                       .toString();
-              var selected = Set.of(FieldPath.ROOT.field("live"));
+              var livePath = FieldPath.ROOT.field("live");
+              var worldPath = FieldPath.ROOT.field("world");
+              var selected = Set.of(livePath, worldPath);
               var wrong =
                   new RegisteredConfig.Delegation(
                       config.getModId(),
@@ -274,7 +279,28 @@ final class RegisteredOwnerProbe {
                       new DocumentId(config.getModId(), "projected"),
                       gate,
                       Map.of(),
-                      RegisteredConfig.Limits.STANDARD);
+                      RegisteredConfig.Limits.STANDARD,
+                      new RegisteredConfig.Policy(
+                          map ->
+                              (Integer) map.get("live") >= (Integer) map.get("world")
+                                  ? ValidationReport.VALID
+                                  : new ValidationReport(
+                                      List.of(
+                                          Issue.error(
+                                              "fixture.native_bounds",
+                                              worldPath,
+                                              "World limit must not exceed the live limit")),
+                                      true),
+                          new ApplicationEffects(
+                              List.of(
+                                  new ApplicationEffects.Rule(
+                                      livePath,
+                                      Set.of(ApplicationEffects.Timing.NEXT_JOIN),
+                                      "Affects the next connection"),
+                                  new ApplicationEffects.Rule(
+                                      worldPath,
+                                      Set.of(ApplicationEffects.Timing.NEW_WORLD),
+                                      "Affects future worlds")))));
               var access = context.access(() -> true, () -> true);
               var source = delegated.session(access);
               return source
@@ -284,15 +310,48 @@ final class RegisteredOwnerProbe {
                         check(
                             "delegated native projection skips ambiguous unrelated list",
                             observed.document().report().valid()
-                                && observed.nativeValues().keySet().equals(Set.of("live"))
+                                && observed.nativeValues().keySet().equals(Set.of("live", "world"))
                                 && observed
                                     .document()
                                     .candidate()
                                     .orElseThrow()
                                     .value()
                                     .keySet()
-                                    .equals(Set.of("live")));
-                        return source.prepare(observed, observed.document().draft().orElseThrow());
+                                    .equals(Set.of("live", "world")));
+                        check(
+                            "native restart survives the field-specific owner policy",
+                            observed
+                                    .applicationEffects()
+                                    .forField(worldPath)
+                                    .orElseThrow()
+                                    .timings()
+                                    .equals(
+                                        Set.of(
+                                            ApplicationEffects.Timing.NEW_WORLD,
+                                            ApplicationEffects.Timing.WORLD_RESTART))
+                                && observed
+                                    .applicationEffects()
+                                    .forField(livePath)
+                                    .orElseThrow()
+                                    .timings()
+                                    .equals(Set.of(ApplicationEffects.Timing.NEXT_JOIN)));
+                        var draft = observed.document().draft().orElseThrow();
+                        var invalid =
+                            draft.change(worldPath, ignored -> new DraftNode.Scalar("45"));
+                        var savesBefore = saves.get();
+                        check(
+                            "native field spec alone admits the invalid whole-value pair",
+                            world.getSpec().test(45)
+                                && (Integer) observed.nativeValues().get("live") < 45);
+                        return refused(
+                                () -> source.prepare(observed, invalid), "fixture.native_bounds")
+                            .thenCompose(
+                                ignored -> {
+                                  check(
+                                      "pure complete policy refuses before native save",
+                                      saves.get() == savesBefore);
+                                  return source.prepare(observed, draft);
+                                });
                       })
                   .thenCompose(source::commit)
                   .thenCompose(

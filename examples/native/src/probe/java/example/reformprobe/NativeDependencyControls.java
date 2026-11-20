@@ -9,6 +9,7 @@ import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.neoforge.client.SettingsScreen;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormDependencies;
+import design.inherent.reform.presentation.FormPresentation;
 import example.reform.DependencyExample;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,31 +34,46 @@ final class NativeDependencyControls {
   private final Consumer<String> progress;
   private final BiConsumer<String, Runnable> capture;
   private final Screen parent;
-  private final SettingsScreen<DependencyExample.Profile> form;
+  private SettingsScreen<DependencyExample.Profile> form;
   private final FormDependencies.Bound dependencies =
       DependencyExample.PRESENTATION.bind(DependencyExample.DEFINITION.type());
   private int stage;
   private String original;
   private long version;
+  private boolean availabilityChecked;
 
-  @SuppressWarnings("unchecked") // The actual typed public registration supplies its own form.
   NativeDependencyControls(
       boolean reopen, Consumer<String> progress, BiConsumer<String, Runnable> capture) {
     this.reopen = reopen;
     this.progress = progress;
     this.capture = capture;
     parent = client.screen;
-    form =
-        (SettingsScreen<DependencyExample.Profile>)
-            DependencyExample.settings()
-                .screen(
-                    parent,
-                    net.minecraft.network.chat.Component.literal(
-                        "Dependent public settings example"),
-                    DependencyExample.PRESENTATION);
+    var presentation = DependencyExample.PRESENTATION;
+    availabilityChecked = reopen;
+    if (!reopen)
+      presentation =
+          presentation.withUnavailableFields(
+              List.of(
+                  new FormPresentation.UnavailableField(
+                      path("mode"), "fixture.missing_mode", "Requires the absent terrain provider"),
+                  new FormPresentation.UnavailableField(
+                      path("layers"),
+                      "fixture.layers_version",
+                      "The installed layer provider version is unsupported")));
+    form = screen(presentation);
     report.add("checks", checks);
     report.addProperty("status", "RUNNING");
     client.setScreen(form);
+  }
+
+  @SuppressWarnings("unchecked") // The actual typed public registration supplies its own form.
+  private SettingsScreen<DependencyExample.Profile> screen(FormPresentation presentation) {
+    return (SettingsScreen<DependencyExample.Profile>)
+        DependencyExample.settings()
+            .screen(
+                parent,
+                net.minecraft.network.chat.Component.literal("Dependent public settings example"),
+                presentation);
   }
 
   private void verify(String name, boolean condition) {
@@ -145,6 +161,39 @@ final class NativeDependencyControls {
         || form.editorView().availability() != EditorActor.Availability.READY
         || form.editorView().snapshot().isEmpty()
         || !button(form, "Done").active) return false;
+    if (!availabilityChecked) {
+      original = Files.readString(source());
+      verify(
+          "absent provider retains its visible choice with its own explanation",
+          raw("mode").equals("LAND")
+              && !control("mode").active
+              && NativeStructuredControls.narration(explanation("Mode"))
+                  .contains("absent terrain provider"));
+      verify(
+          "saved value from an unavailable controller cannot unlock a dependent field",
+          form.focusField(path("height"))
+              && !form.charTyped('9', 0)
+              && NativeStructuredControls.narration(explanation("Height"))
+                  .contains("required input is unavailable"));
+      verify(
+          "structural controls share their unavailable parent reason",
+          !action("Layers: Add entry").active
+              && !action("Layers: Entry 1: Remove").active
+              && NativeStructuredControls.narration(explanation("Layers"))
+                  .contains("version is unsupported"));
+      var reason = explanation("Mode");
+      verify(
+          "owner availability reason is keyboard reachable",
+          focus(form, reason) && form.keyPressed(GLFW.GLFW_KEY_SPACE, 0, 0));
+      form.onClose();
+      verify(
+          "unavailable inspection leaves saved data unchanged",
+          client.screen == parent && Files.readString(source()).equals(original));
+      form = screen(DependencyExample.PRESENTATION);
+      client.setScreen(form);
+      availabilityChecked = true;
+      return false;
+    }
     switch (stage) {
       case 0 -> {
         if (reopen) {

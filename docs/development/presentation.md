@@ -44,6 +44,8 @@ The internal native screen makes reselecting its current focused container idemp
 
 Declared [numeric presentation](numbers.md) uses the same measured row for exact text, canonical steps and a display-only unit selector. Its local immutable state distinguishes displayed text from the expected shared draft and retry action. Native rendering never performs owner validation or persistence; field/unit changes enter the existing typed services.
 
+`FormPresentation.withUnavailableFields` supplies immutable field and subtree observations for a form, such as a missing optional mod or unsupported provider version. Each `UnavailableField` names a declared path, translation key and reason. The field remains visible and explainable through the existing Availability control. Scalar, structural and auxiliary edits are disabled. Local rules that depend on an unavailable input see an unknown state even when its saved value remains in the draft. Reopen the form with a fresh declaration if its availability context changes. Availability metadata grants no permission, removes no values and performs no lookup during rendering. The owner still validates the full value for every entry point.
+
 ## Catalog and focused detail
 
 `FormPresentation.withCatalog` opts an existing generated form into `FormCatalog` navigation. Simple forms remain inline by default. Declare sections using actual type paths, translation keys, fallback captions and help. Structured descendants become entries under those sections; the library supplies no village/profile semantics. An optional pure `RowLabels` callback supplies consumer names. Otherwise map entries use their authored keys and list members have positional captions; stable row UUIDs remain their identity.

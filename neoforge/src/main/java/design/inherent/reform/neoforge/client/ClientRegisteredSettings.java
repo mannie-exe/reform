@@ -70,6 +70,7 @@ public final class ClientRegisteredSettings {
   private final Optional<RegisteredConfig.Delegation> delegation;
   private final Map<FieldPath, ValueType<?>> explicitTypes;
   private final RegisteredConfig.Limits limits;
+  private final RegisteredConfig.Policy policy;
   private final JsonLimits values;
   private final AtomicReference<State> state =
       new AtomicReference<>(
@@ -85,7 +86,8 @@ public final class ClientRegisteredSettings {
       DocumentId nativeDocument,
       Optional<RegisteredConfig.Delegation> delegation,
       Map<FieldPath, ValueType<?>> explicitTypes,
-      RegisteredConfig.Limits limits) {
+      RegisteredConfig.Limits limits,
+      RegisteredConfig.Policy policy) {
     this.container = container;
     this.config = config;
     this.document = document;
@@ -93,6 +95,7 @@ public final class ClientRegisteredSettings {
     this.delegation = delegation;
     this.explicitTypes = Map.copyOf(explicitTypes);
     this.limits = limits;
+    this.policy = Objects.requireNonNull(policy);
     values = new JsonLimits(limits.maximumBytes(), 64, 16384, 32768, 128, 4096);
   }
 
@@ -110,6 +113,24 @@ public final class ClientRegisteredSettings {
       ModConfig config,
       Map<FieldPath, ValueType<?>> explicitTypes,
       RegisteredConfig.Limits limits) {
+    return registeredNeoForge(
+        modBus,
+        container,
+        document,
+        config,
+        explicitTypes,
+        limits,
+        RegisteredConfig.Policy.STANDARD);
+  }
+
+  public static ClientRegisteredSettings registeredNeoForge(
+      IEventBus modBus,
+      ModContainer container,
+      DocumentId document,
+      ModConfig config,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      RegisteredConfig.Limits limits,
+      RegisteredConfig.Policy policy) {
     Objects.requireNonNull(config);
     if (!config.getModId().equals(container.getModId()))
       throw new IllegalArgumentException(
@@ -123,7 +144,8 @@ public final class ClientRegisteredSettings {
         document,
         Optional.empty(),
         explicitTypes,
-        limits);
+        limits,
+        policy);
   }
 
   public static ClientRegisteredSettings delegatedNeoForge(
@@ -135,6 +157,28 @@ public final class ClientRegisteredSettings {
       RegisteredConfig.Delegation gate,
       Map<FieldPath, ValueType<?>> explicitTypes,
       RegisteredConfig.Limits limits) {
+    return delegatedNeoForge(
+        modBus,
+        consumer,
+        route,
+        config,
+        nativeId,
+        gate,
+        explicitTypes,
+        limits,
+        RegisteredConfig.Policy.STANDARD);
+  }
+
+  public static ClientRegisteredSettings delegatedNeoForge(
+      IEventBus modBus,
+      ModContainer consumer,
+      DocumentId route,
+      ModConfig config,
+      DocumentId nativeId,
+      RegisteredConfig.Delegation gate,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      RegisteredConfig.Limits limits,
+      RegisteredConfig.Policy policy) {
     var target = Objects.requireNonNull(gate).requireTarget(config);
     var eventBus =
         Objects.requireNonNull(target.getEventBus(), "Native config owner has no event bus");
@@ -147,7 +191,8 @@ public final class ClientRegisteredSettings {
         nativeId,
         Optional.of(gate),
         explicitTypes,
-        limits);
+        limits,
+        policy);
   }
 
   private static ClientRegisteredSettings register(
@@ -159,7 +204,8 @@ public final class ClientRegisteredSettings {
       DocumentId nativeDocument,
       Optional<RegisteredConfig.Delegation> delegation,
       Map<FieldPath, ValueType<?>> explicitTypes,
-      RegisteredConfig.Limits limits) {
+      RegisteredConfig.Limits limits,
+      RegisteredConfig.Policy policy) {
     Objects.requireNonNull(modBus);
     Objects.requireNonNull(limits);
     if (FMLEnvironment.dist != Dist.CLIENT)
@@ -172,7 +218,7 @@ public final class ClientRegisteredSettings {
       throw new IllegalArgumentException("Use an admitted CLIENT or local COMMON registration");
     var registration =
         new ClientRegisteredSettings(
-            container, config, document, nativeDocument, delegation, explicitTypes, limits);
+            container, config, document, nativeDocument, delegation, explicitTypes, limits, policy);
     ClientSettingsRuntime.registerNative(
         document,
         registration,
@@ -375,8 +421,15 @@ public final class ClientRegisteredSettings {
       var owner =
           delegation.isPresent()
               ? RegisteredConfig.delegated(
-                  context, config, nativeDocument, delegation.orElseThrow(), explicitTypes, limits)
-              : new RegisteredConfig(context, config, nativeDocument, explicitTypes, limits);
+                  context,
+                  config,
+                  nativeDocument,
+                  delegation.orElseThrow(),
+                  explicitTypes,
+                  limits,
+                  policy)
+              : new RegisteredConfig(
+                  context, config, nativeDocument, explicitTypes, limits, policy);
       var access = context.access(() -> sameBinding(path), () -> sameBinding(path));
       if (loaded != config.getLoadedConfig())
         throw new PolicyRefusal(

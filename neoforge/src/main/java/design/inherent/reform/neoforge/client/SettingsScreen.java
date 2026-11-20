@@ -833,13 +833,20 @@ public final class SettingsScreen<T> extends FormScreen {
       panel.row(
           FormModel.key(path) + ":editor",
           label,
-          text("editor_help", "Edit this field, or show its raw controls to repair input."),
+          presentation
+              .unavailableAt(path)
+              .map(ignored -> dependencyText(path))
+              .orElseGet(
+                  () ->
+                      text(
+                          "editor_help",
+                          "Edit this field, or show its raw controls to repair input.")),
           change,
           raw);
       if (!expandedEditors.contains(path)) return;
     }
     if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>)
-        && dependencies.affects(path)) {
+        && hasAvailability(path)) {
       String key = FormModel.key(path) + ":availability";
       availabilityRows.put(path, key);
       panel.row(key, label, dependencyText(path), availabilityButton(path, label));
@@ -1144,7 +1151,7 @@ public final class SettingsScreen<T> extends FormScreen {
 
   private void fieldRow(FieldPath path, Component label, AbstractWidget... widgets) {
     var row = new ArrayList<>(List.of(widgets));
-    if (dependencies.affects(path)) row.add(availabilityButton(path, label));
+    if (hasAvailability(path)) row.add(availabilityButton(path, label));
     panel.relatedField(
         FormModel.key(path),
         presentation.range(path).map(range -> "range:" + range.id()).orElse(null),
@@ -1189,10 +1196,23 @@ public final class SettingsScreen<T> extends FormScreen {
   }
 
   private boolean locallyAvailable(FieldPath path) {
-    return dependency(path).state() == FormDependencies.State.AVAILABLE;
+    return presentation.unavailableAt(path).isEmpty()
+        && dependency(path).state() == FormDependencies.State.AVAILABLE;
+  }
+
+  private boolean hasAvailability(FieldPath path) {
+    return presentation.unavailableAt(path).isPresent() || dependencies.affects(path);
   }
 
   private Component dependencyText(FieldPath path) {
+    var unavailable = presentation.unavailableAt(path);
+    if (unavailable.isPresent()) {
+      var reason = unavailable.orElseThrow();
+      return text("field_unavailable", "Unavailable")
+          .copy()
+          .append("\n")
+          .append(Component.translatableWithFallback(reason.translationKey(), reason.fallback()));
+    }
     var decision = dependency(path);
     MutableComponent result =
         switch (decision.state()) {

@@ -471,6 +471,17 @@ public final class ServerSettings implements AutoCloseable {
       DocumentId id,
       Map<FieldPath, ValueType<?>> explicitTypes,
       RegisteredConfig.Limits limits) {
+    return registeredNeoForge(
+        container, config, id, explicitTypes, limits, RegisteredConfig.Policy.STANDARD);
+  }
+
+  public Document<Map<String, Object>> registeredNeoForge(
+      ModContainer container,
+      ModConfig config,
+      DocumentId id,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      RegisteredConfig.Limits limits,
+      RegisteredConfig.Policy policy) {
     requireCurrent();
     Objects.requireNonNull(config);
     Objects.requireNonNull(limits);
@@ -483,7 +494,7 @@ public final class ServerSettings implements AutoCloseable {
         config,
         id,
         limits,
-        context -> new RegisteredConfig(context, config, id, explicitTypes, limits));
+        context -> new RegisteredConfig(context, config, id, explicitTypes, limits, policy));
   }
 
   /**
@@ -498,6 +509,26 @@ public final class ServerSettings implements AutoCloseable {
       RegisteredConfig.Delegation delegation,
       Map<FieldPath, ValueType<?>> explicitTypes,
       RegisteredConfig.Limits limits) {
+    return delegatedNeoForge(
+        consumer,
+        route,
+        config,
+        nativeId,
+        delegation,
+        explicitTypes,
+        limits,
+        RegisteredConfig.Policy.STANDARD);
+  }
+
+  public Document<Map<String, Object>> delegatedNeoForge(
+      ModContainer consumer,
+      DocumentId route,
+      ModConfig config,
+      DocumentId nativeId,
+      RegisteredConfig.Delegation delegation,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      RegisteredConfig.Limits limits,
+      RegisteredConfig.Policy policy) {
     requireCurrent();
     Objects.requireNonNull(delegation).requireTarget(config);
     if (config.getType() == ModConfig.Type.CLIENT)
@@ -509,7 +540,7 @@ public final class ServerSettings implements AutoCloseable {
         limits,
         context ->
             RegisteredConfig.delegated(
-                context, config, nativeId, delegation, explicitTypes, limits));
+                context, config, nativeId, delegation, explicitTypes, limits, policy));
   }
 
   private Document<Map<String, Object>> admitRegistered(

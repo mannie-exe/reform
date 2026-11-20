@@ -125,11 +125,16 @@ public final class FormDependencies {
     private final List<Rule> rules;
     private final List<Integer> order;
     private final Set<FieldPath> inputs;
+    private final Set<FieldPath> unavailableInputs;
 
-    private Bound(List<Rule> rules, List<Integer> order) {
+    private Bound(List<Rule> rules, List<Integer> order, Set<FieldPath> unavailable) {
       this.rules = rules;
       this.order = List.copyOf(order);
       inputs = Set.copyOf(rules.stream().map(Rule::input).toList());
+      unavailableInputs =
+          inputs.stream()
+              .filter(input -> unavailable.stream().anyMatch(input::startsWith))
+              .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     public Set<FieldPath> inputs() {
@@ -157,7 +162,10 @@ public final class FormDependencies {
         var rule = rules.get(index);
         Decision upstream = combine(rules, results, rule.input());
         final Decision decision;
-        if (upstream.state() != State.AVAILABLE || !draft.activeAt(rule.input())) {
+        if (unavailableInputs.contains(rule.input())) {
+          decision =
+              unknown(rule, "input_unavailable", "The owner's required input is unavailable");
+        } else if (upstream.state() != State.AVAILABLE || !draft.activeAt(rule.input())) {
           decision = unknown(rule, "input_inactive", "The required input is inactive or absent");
         } else if (pendingInputs.contains(rule.input())) {
           decision = unknown(rule, "input_pending", "The required input is awaiting admission");
@@ -202,6 +210,10 @@ public final class FormDependencies {
 
   /** Diagnose unknown paths, incompatible inputs and prefix-aware cycles before opening a form. */
   public Bound bind(ValueType<?> root) {
+    return bind(root, Set.of());
+  }
+
+  Bound bind(ValueType<?> root, Set<FieldPath> unavailable) {
     Objects.requireNonNull(root);
     for (var rule : rules) {
       final ValueShape input;
@@ -230,7 +242,7 @@ public final class FormDependencies {
     var order = new ArrayList<Integer>();
     var visited = new byte[rules.size()];
     for (int i = 0; i < rules.size(); i++) visit(i, visited, order);
-    return new Bound(rules, order);
+    return new Bound(rules, order, unavailable);
   }
 
   private void visit(int index, byte[] visited, List<Integer> order) {
@@ -267,7 +279,7 @@ public final class FormDependencies {
             new Reason("dependency." + code, rule.input(), "reform.dependency." + code, fallback)));
   }
 
-  private static void path(FieldPath path) {
+  static void path(FieldPath path) {
     Objects.requireNonNull(path);
     if (path.segments().size() > 128)
       throw new IllegalArgumentException("Dependency field path is too deep");

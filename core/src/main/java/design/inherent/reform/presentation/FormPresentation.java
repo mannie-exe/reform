@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Explicit local form relationships; storage, validation and effects stay owner-declared. */
 public final class FormPresentation {
@@ -46,10 +48,25 @@ public final class FormPresentation {
     }
   }
 
+  /** Owner-observed context availability for a declared field and its descendants. */
+  public record UnavailableField(FieldPath field, String translationKey, String fallback) {
+    public UnavailableField {
+      FormDependencies.path(field);
+      if (field.equals(FieldPath.ROOT)
+          || Objects.requireNonNull(translationKey).isBlank()
+          || translationKey.length() > 256
+          || Objects.requireNonNull(fallback).isBlank()
+          || fallback.length() > 4096)
+        throw new IllegalArgumentException("Unavailable fields need a bounded path and reason");
+    }
+  }
+
   private final List<Range> ranges;
   private final Map<FieldPath, Range> endpoints;
   private final FormDependencies dependencies;
   private final FormCatalog catalog;
+  private final List<UnavailableField> unavailableFields;
+  private final Set<FieldPath> unavailablePaths;
 
   public FormPresentation(List<Range> ranges) {
     this(ranges, FormDependencies.NONE);
@@ -60,10 +77,27 @@ public final class FormPresentation {
   }
 
   public FormPresentation(List<Range> ranges, FormDependencies dependencies, FormCatalog catalog) {
+    this(ranges, dependencies, catalog, List.of());
+  }
+
+  private FormPresentation(
+      List<Range> ranges,
+      FormDependencies dependencies,
+      FormCatalog catalog,
+      List<UnavailableField> unavailableFields) {
     this.ranges = List.copyOf(ranges);
     this.dependencies = Objects.requireNonNull(dependencies);
     this.catalog = Objects.requireNonNull(catalog);
     if (ranges.size() > 128) throw new IllegalArgumentException("Too many form relationships");
+    if (unavailableFields.size() > 128)
+      throw new IllegalArgumentException("Too many unavailable fields");
+    this.unavailableFields = List.copyOf(unavailableFields);
+    unavailablePaths =
+        this.unavailableFields.stream()
+            .map(UnavailableField::field)
+            .collect(Collectors.toUnmodifiableSet());
+    if (unavailablePaths.size() != this.unavailableFields.size())
+      throw new IllegalArgumentException("Duplicate unavailable field declaration");
     var ids = new HashSet<String>();
     var fields = new LinkedHashMap<FieldPath, Range>();
     for (var range : this.ranges) {
@@ -92,7 +126,26 @@ public final class FormPresentation {
   }
 
   public FormPresentation withCatalog(FormCatalog catalog) {
-    return new FormPresentation(ranges, dependencies, catalog);
+    return new FormPresentation(ranges, dependencies, catalog, unavailableFields);
+  }
+
+  /**
+   * Compose a bounded immutable observation for this form. The actual owner still guards effects.
+   */
+  public FormPresentation withUnavailableFields(List<UnavailableField> unavailable) {
+    return new FormPresentation(ranges, dependencies, catalog, unavailable);
+  }
+
+  public Optional<UnavailableField> unavailableAt(FieldPath path) {
+    Objects.requireNonNull(path);
+    UnavailableField nearest = null;
+    for (var entry : unavailableFields) {
+      if (path.startsWith(entry.field())
+          && (nearest == null
+              || entry.field().segments().size() > nearest.field().segments().size()))
+        nearest = entry;
+    }
+    return Optional.ofNullable(nearest);
   }
 
   /**
@@ -109,7 +162,8 @@ public final class FormPresentation {
       requireNumeric(DraftTypes.declaredAt(root, range.minimum()));
       requireNumeric(DraftTypes.declaredAt(root, range.maximum()));
     }
-    return dependencies.bind(root);
+    for (var path : unavailablePaths) DraftTypes.declaredAt(root, path);
+    return dependencies.bind(root, unavailablePaths);
   }
 
   private static void requireNumeric(ValueType<?> type) {

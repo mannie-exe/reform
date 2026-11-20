@@ -26,6 +26,8 @@ import design.inherent.reform.value.ValueType;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +38,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.config.IConfigSpec;
@@ -107,6 +110,18 @@ public final class RegisteredConfig implements AutoCloseable {
           || maximumSessions < 1
           || maximumOperations < 1)
         throw new IllegalArgumentException("Invalid native owner admission limits");
+    }
+  }
+
+  /** Pure complete-value validation and domain timing for an actual native registration. */
+  public record Policy(
+      Function<Map<String, Object>, ValidationReport> validate, ApplicationEffects effects) {
+    public static final Policy STANDARD =
+        new Policy(value -> ValidationReport.VALID, ApplicationEffects.UNDECLARED);
+
+    public Policy {
+      Objects.requireNonNull(validate);
+      Objects.requireNonNull(effects);
     }
   }
 
@@ -337,8 +352,7 @@ public final class RegisteredConfig implements AutoCloseable {
                                 var inspected =
                                     Objects.requireNonNull(draft).inspect(definition(), jsonLimits);
                                 if (inspected.candidate().isEmpty())
-                                  throw refusal(
-                                      "native.validation", "Complete candidate validation failed");
+                                  throw new PolicyRefusal(inspected.report());
                                 return inspected.candidate().orElseThrow();
                               }))
                   .thenCompose(
@@ -416,6 +430,7 @@ public final class RegisteredConfig implements AutoCloseable {
   private final ModConfigSpec spec;
   private final NativeSchema schema;
   private final ApplicationEffects applicationEffects;
+  private final Map<FieldPath, List<CommitReceipt.Requirement>> requirementsByField;
   private final Limits limits;
   private final JsonLimits jsonLimits;
   private final SerialLane lane;
@@ -433,7 +448,17 @@ public final class RegisteredConfig implements AutoCloseable {
       DocumentId id,
       Map<FieldPath, ValueType<?>> explicitTypes,
       Limits limits) {
-    this(context, config, id, explicitTypes, limits, Set.of());
+    this(context, config, id, explicitTypes, limits, Policy.STANDARD);
+  }
+
+  public RegisteredConfig(
+      OwnerContext context,
+      ModConfig config,
+      DocumentId id,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      Limits limits,
+      Policy policy) {
+    this(context, config, id, explicitTypes, limits, Set.of(), policy);
   }
 
   /**
@@ -446,10 +471,21 @@ public final class RegisteredConfig implements AutoCloseable {
       Delegation delegation,
       Map<FieldPath, ValueType<?>> explicitTypes,
       Limits limits) {
+    return delegated(context, config, nativeId, delegation, explicitTypes, limits, Policy.STANDARD);
+  }
+
+  public static RegisteredConfig delegated(
+      OwnerContext context,
+      ModConfig config,
+      DocumentId nativeId,
+      Delegation delegation,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      Limits limits,
+      Policy policy) {
     Objects.requireNonNull(context).requireOwner();
     Objects.requireNonNull(delegation).requireTarget(config);
     return new RegisteredConfig(
-        context, config, nativeId, explicitTypes, limits, delegation.fields());
+        context, config, nativeId, explicitTypes, limits, delegation.fields(), policy);
   }
 
   private RegisteredConfig(
@@ -458,7 +494,8 @@ public final class RegisteredConfig implements AutoCloseable {
       DocumentId id,
       Map<FieldPath, ValueType<?>> explicitTypes,
       Limits limits,
-      Set<FieldPath> selected) {
+      Set<FieldPath> selected,
+      Policy policy) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.config = Objects.requireNonNull(config);
@@ -470,9 +507,21 @@ public final class RegisteredConfig implements AutoCloseable {
       throw new IllegalArgumentException(
           "Native document namespace must belong to its registered mod");
     spec = declared;
+    Objects.requireNonNull(policy);
     schema =
-        new NativeSchema(id, spec, Map.copyOf(explicitTypes), limits.maximumFields(), selected);
+        new NativeSchema(
+            id,
+            spec,
+            Map.copyOf(explicitTypes),
+            limits.maximumFields(),
+            selected,
+            policy.validate());
+    for (var rule : policy.effects().rules())
+      if (schema.fields.stream().noneMatch(field -> field.address().startsWith(rule.path())))
+        throw new IllegalArgumentException(
+            "Application timing needs an admitted native field scope");
     var effects = new ArrayList<ApplicationEffects.Rule>();
+    var requirements = new LinkedHashMap<FieldPath, List<CommitReceipt.Requirement>>();
     for (var field : schema.fields) {
       var timing =
           switch (field.nativeValue().getSpec().restartType()) {
@@ -480,13 +529,26 @@ public final class RegisteredConfig implements AutoCloseable {
             case WORLD -> ApplicationEffects.Timing.WORLD_RESTART;
             case GAME -> ApplicationEffects.Timing.GAME_RESTART;
           };
-      effects.add(
-          new ApplicationEffects.Rule(
-              field.address(),
-              Set.of(timing),
-              timing == ApplicationEffects.Timing.OWNER_MANAGED
-                  ? "Native raw values and reload callbacks do not certify domain-effective caches."
-                  : "The native owner retains this field's declared restart requirement."));
+      var declaredRule = policy.effects().forField(field.address());
+      var timings = EnumSet.of(timing);
+      String explanation =
+          timing == ApplicationEffects.Timing.OWNER_MANAGED
+              ? "Native raw values and reload callbacks do not certify domain-effective caches."
+              : "The native owner retains this field's declared restart requirement.";
+      if (declaredRule.isPresent()) {
+        if (timing == ApplicationEffects.Timing.OWNER_MANAGED) timings.clear();
+        timings.addAll(declaredRule.orElseThrow().timings());
+        explanation = declaredRule.orElseThrow().explanation();
+      }
+      var rule = new ApplicationEffects.Rule(field.address(), timings, explanation);
+      effects.add(rule);
+      requirements.put(
+          field.address(),
+          timings.stream()
+              .map(RegisteredConfig::requirementKind)
+              .distinct()
+              .map(kind -> new CommitReceipt.Requirement(field.address(), kind, rule.explanation()))
+              .toList());
     }
     applicationEffects =
         new ApplicationEffects(
@@ -495,6 +557,7 @@ public final class RegisteredConfig implements AutoCloseable {
                 limits.maximumFields(),
                 128,
                 limits.maximumBytes() * 32 + limits.maximumFields() * 4096));
+    requirementsByField = Map.copyOf(requirements);
     jsonLimits = new JsonLimits(limits.maximumBytes(), 64, 16384, 32768, 128, 4096);
     lane = new SerialLane(limits.maximumOperations());
     closeHook = context.onClose(this::close);
@@ -502,6 +565,16 @@ public final class RegisteredConfig implements AutoCloseable {
 
   public DocumentDefinition<Map<String, Object>> definition() {
     return schema.definition;
+  }
+
+  private static CommitReceipt.RequirementKind requirementKind(ApplicationEffects.Timing timing) {
+    return switch (timing) {
+      case NEW_WORLD -> CommitReceipt.RequirementKind.NEW_WORLD;
+      case WORLD_RESTART -> CommitReceipt.RequirementKind.WORLD_RESTART;
+      case GAME_RESTART -> CommitReceipt.RequirementKind.GAME_RESTART;
+      case INCOMPATIBLE -> CommitReceipt.RequirementKind.INCOMPATIBLE;
+      default -> CommitReceipt.RequirementKind.OWNER_MANAGED;
+    };
   }
 
   public Session session(OwnerContext.Access access) {
@@ -670,19 +743,7 @@ public final class RegisteredConfig implements AutoCloseable {
           .equivalent(field.value(proposal.baseline().nativeSource.raw()), field.value(intended)))
         continue;
       changed.add(field);
-      var kind =
-          switch (field.nativeValue().getSpec().restartType()) {
-            case NONE -> CommitReceipt.RequirementKind.OWNER_MANAGED;
-            case WORLD -> CommitReceipt.RequirementKind.WORLD_RESTART;
-            case GAME -> CommitReceipt.RequirementKind.GAME_RESTART;
-          };
-      requirements.add(
-          new CommitReceipt.Requirement(
-              field.address(),
-              kind,
-              kind == CommitReceipt.RequirementKind.OWNER_MANAGED
-                  ? "Native raw values and reload completion do not prove domain-effective state"
-                  : "The native owner retains its declared restart requirement"));
+      requirements.addAll(requirementsByField.get(field.address()));
     }
     if (changed.isEmpty()) return new Attempt(proposal, false, false, List.of(), false);
     boolean mutationStarted = false;
