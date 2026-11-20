@@ -11,6 +11,7 @@ import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.FileOwner;
+import design.inherent.reform.owner.LiveApplication;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
@@ -214,6 +215,41 @@ public final class ServerSettings implements AutoCloseable {
       return editor(source, 2, 2);
     }
 
+    /**
+     * Apply the actual current saved bytes with this actor's authority, without creating or writing
+     * the file.
+     */
+    public CompletionStage<? extends CommitReceipt<T>> reloadFromSaved(
+        CommandSourceStack source, int level) {
+      var access = actorAccess(source, level, level, () -> true);
+      final DocumentSession<T> session;
+      try {
+        access.require(OwnerContext.Right.READ);
+        access.require(OwnerContext.Right.WRITE);
+        session = session(access);
+      } catch (RuntimeException | Error failed) {
+        access.close();
+        throw failed;
+      }
+      try {
+        if (!session.operations().contains(DocumentSession.Operation.APPLY_SAVED))
+          throw new PolicyRefusal(
+              "owner.unsupported", "The native owner has no apply-only operation");
+        return session
+            .read()
+            .thenCompose(session::applySaved)
+            .whenComplete(
+                (receipt, failure) -> {
+                  session.close();
+                  access.close();
+                });
+      } catch (RuntimeException | Error failed) {
+        session.close();
+        access.close();
+        throw failed;
+      }
+    }
+
     boolean commandAvailable(CommandSourceStack source, int level) {
       if (!source.getServer().isSameThread()
           || scope.server != source.getServer()
@@ -375,6 +411,23 @@ public final class ServerSettings implements AutoCloseable {
 
   public <T> Document<T> serverPolicy(
       ModContainer container, TextStore<T> store, ApplicationEffects effects) {
+    return serverPolicy(container, store, effects, Optional.empty());
+  }
+
+  /** Reuse the existing server-thread domain effect and verify its actual readback. */
+  public <T> Document<T> serverPolicy(
+      ModContainer container,
+      TextStore<T> store,
+      ApplicationEffects effects,
+      LiveApplication<T> liveApplication) {
+    return serverPolicy(container, store, effects, Optional.of(liveApplication));
+  }
+
+  private <T> Document<T> serverPolicy(
+      ModContainer container,
+      TextStore<T> store,
+      ApplicationEffects effects,
+      Optional<LiveApplication<T>> liveApplication) {
     Objects.requireNonNull(store);
     Objects.requireNonNull(effects);
     var definition = store.definition();
@@ -382,7 +435,10 @@ public final class ServerSettings implements AutoCloseable {
     admit(container, definition.id(), file);
     var context = contextForDocument();
     try {
-      var owner = new FileOwner<>(context, store, 16, effects);
+      var owner =
+          liveApplication
+              .map(effect -> new FileOwner<>(context, store, 16, effects, effect))
+              .orElseGet(() -> new FileOwner<>(context, store, 16, effects));
       var document =
           new Document<>(
               this,
@@ -422,11 +478,51 @@ public final class ServerSettings implements AutoCloseable {
     if (config.getType() == ModConfig.Type.CLIENT
         || !config.getModId().equals(Objects.requireNonNull(container).getModId()))
       throw new IllegalArgumentException("Use this mod's actual server-admitted native config");
+    return admitRegistered(
+        container,
+        config,
+        id,
+        limits,
+        context -> new RegisteredConfig(context, config, id, explicitTypes, limits));
+  }
+
+  /**
+   * Consumer navigation has its own route. The definition and native reads/writes retain the actual
+   * owner.
+   */
+  public Document<Map<String, Object>> delegatedNeoForge(
+      ModContainer consumer,
+      DocumentId route,
+      ModConfig config,
+      DocumentId nativeId,
+      RegisteredConfig.Delegation delegation,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      RegisteredConfig.Limits limits) {
+    requireCurrent();
+    Objects.requireNonNull(delegation).requireTarget(config);
+    if (config.getType() == ModConfig.Type.CLIENT)
+      throw new IllegalArgumentException("A client registration cannot be delegated on the server");
+    return admitRegistered(
+        consumer,
+        config,
+        route,
+        limits,
+        context ->
+            RegisteredConfig.delegated(
+                context, config, nativeId, delegation, explicitTypes, limits));
+  }
+
+  private Document<Map<String, Object>> admitRegistered(
+      ModContainer container,
+      ModConfig config,
+      DocumentId route,
+      RegisteredConfig.Limits limits,
+      Function<OwnerContext, RegisteredConfig> bind) {
     var file = portable(config.getFullPath());
-    admit(container, id, file);
+    admit(container, route, file);
     var context = contextForDocument();
     try {
-      var owner = new RegisteredConfig(context, config, id, explicitTypes, limits);
+      var owner = bind.apply(context);
       var document =
           new Document<>(
               this,
@@ -437,7 +533,7 @@ public final class ServerSettings implements AutoCloseable {
               DraftLimits.CONFIGURATION,
               Optional.empty(),
               file);
-      documents.put(id, document);
+      documents.put(route, document);
       return document;
     } catch (RuntimeException failed) {
       context.close();

@@ -222,6 +222,7 @@ final class RegisteredOwnerProbe {
     }
     CompletionStage<Void> work =
         NativeReferenceChecks.verify(server, context, report)
+            .thenCompose(ignored -> delegatedProjection())
             .thenCompose(
                 ignored ->
                     context.onOwner(
@@ -230,6 +231,95 @@ final class RegisteredOwnerProbe {
             .thenCompose(stage -> stage)
             .thenCompose(ignored -> reopen ? reopened() : first());
     work.whenComplete((ignored, failure) -> server.execute(() -> finish(server, failure)));
+  }
+
+  private CompletionStage<Void> delegatedProjection() {
+    return context
+        .onOwner(
+            () -> {
+              var nativeVersion =
+                  ModList.get()
+                      .getModContainerById(config.getModId())
+                      .orElseThrow()
+                      .getModInfo()
+                      .getVersion()
+                      .toString();
+              var selected = Set.of(FieldPath.ROOT.field("live"));
+              var wrong =
+                  new RegisteredConfig.Delegation(
+                      config.getModId(),
+                      "unknown-fixture-version",
+                      config.getType(),
+                      config.getFileName(),
+                      selected);
+              try {
+                wrong.requireTarget(config);
+                throw new AssertionError("Unknown native version was admitted");
+              } catch (PolicyRefusal refused) {
+                check(
+                    "explicit delegated version refusal",
+                    refused.report().issues().getFirst().code().equals("native.delegate_version"));
+              }
+              var gate =
+                  new RegisteredConfig.Delegation(
+                      config.getModId(),
+                      nativeVersion,
+                      config.getType(),
+                      config.getFileName(),
+                      selected);
+              var delegated =
+                  RegisteredConfig.delegated(
+                      context,
+                      config,
+                      new DocumentId(config.getModId(), "projected"),
+                      gate,
+                      Map.of(),
+                      RegisteredConfig.Limits.STANDARD);
+              var access = context.access(() -> true, () -> true);
+              var source = delegated.session(access);
+              return source
+                  .read()
+                  .thenCompose(
+                      observed -> {
+                        check(
+                            "delegated native projection skips ambiguous unrelated list",
+                            observed.document().report().valid()
+                                && observed.nativeValues().keySet().equals(Set.of("live"))
+                                && observed
+                                    .document()
+                                    .candidate()
+                                    .orElseThrow()
+                                    .value()
+                                    .keySet()
+                                    .equals(Set.of("live")));
+                        return source.prepare(observed, observed.document().draft().orElseThrow());
+                      })
+                  .thenCompose(source::commit)
+                  .thenCompose(
+                      receipt ->
+                          context.onOwner(
+                              () -> {
+                                check(
+                                    "delegated native no-op retains the existing full source",
+                                    receipt.persistence() == CommitReceipt.Persistence.UNCHANGED
+                                        && receipt.applicationReport().valid()
+                                        && !receipt.mutationStarted());
+                                return null;
+                              }))
+                  .handle(
+                      (ignored, failure) ->
+                          context.<Void>onOwner(
+                              () -> {
+                                source.close();
+                                access.close();
+                                delegated.close();
+                                if (failure != null)
+                                  throw new java.util.concurrent.CompletionException(failure);
+                                return null;
+                              }))
+                  .thenCompose(stage -> stage);
+            })
+        .thenCompose(stage -> stage);
   }
 
   private CompletionStage<Void> reopened() {

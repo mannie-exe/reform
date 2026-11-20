@@ -17,6 +17,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /** Fixed declared native fields, never a scan of arbitrary mod classes or a default correction. */
@@ -41,6 +44,8 @@ final class NativeSchema {
   final DocumentDefinition<Map<String, Object>> definition;
   private final int maximumFields;
   private final Map<FieldPath, ValueType<?>> overrides;
+  private final Set<FieldPath> selected;
+  private final Set<List<String>> selectedPaths;
   private final Map<String, Object> defaults = new LinkedHashMap<>();
   private final List<List<String>> groups = new ArrayList<>();
   private int declaredEntries;
@@ -49,12 +54,23 @@ final class NativeSchema {
       DocumentId id,
       ModConfigSpec spec,
       Map<FieldPath, ValueType<?>> overrides,
-      int maximumFields) {
+      int maximumFields,
+      Set<FieldPath> selected) {
     this.maximumFields = maximumFields;
     this.overrides = new LinkedHashMap<>(overrides);
+    this.selected = Set.copyOf(selected);
+    if (selected.size() > maximumFields)
+      throw new IllegalArgumentException("Native selection exceeds its field bound");
     var type = object(spec.getValues(), List.of(), defaults);
     if (!this.overrides.isEmpty())
       throw new IllegalArgumentException("Explicit native type addresses an undeclared field");
+    if (projected()
+        && !fields.stream().map(Field::address).collect(Collectors.toSet()).equals(this.selected))
+      throw new IllegalArgumentException("Native selection must name exact declared leaf fields");
+    selectedPaths =
+        projected()
+            ? fields.stream().map(Field::path).collect(Collectors.toUnmodifiableSet())
+            : Set.of();
     definition = new DocumentDefinition<>(id, 1, type, () -> defaults);
   }
 
@@ -74,6 +90,8 @@ final class NativeSchema {
         throw new IllegalArgumentException("Native schema exceeds its declared entry bound");
       var path = new ArrayList<>(parent);
       path.add(entry.getKey());
+      var address = address(path);
+      if (projected() && selected.stream().noneMatch(field -> field.startsWith(address))) continue;
       final ValueType<?> type;
       final Object defaultValue;
       if (entry.getValue() instanceof UnmodifiableConfig group) {
@@ -86,7 +104,6 @@ final class NativeSchema {
           throw new IllegalArgumentException("Native schema exceeds its declared field bound");
         if (!path.equals(value.getPath()))
           throw new IllegalArgumentException("Native field path does not match its registration");
-        var address = address(path);
         defaultValue = value.getDefault(); // Native default supplier, on the actual owner thread.
         var explicit = overrides.remove(address);
         type = explicit == null ? infer(defaultValue) : explicit;
@@ -106,6 +123,79 @@ final class NativeSchema {
     for (var field : fields)
       put(result, field.path(), field.type().freeze(field.nativeValue().getRaw()));
     return definition.type().freeze(result);
+  }
+
+  boolean projected() {
+    return !selected.isEmpty();
+  }
+
+  JsonElement sourceJson(UnmodifiableConfig source) {
+    var remaining = new int[] {16384};
+    if (!projected()) return json(source, 0, remaining);
+    var result = new JsonObject();
+    for (var field : fields) {
+      var path = field.path();
+      if (!source.contains(path)) continue;
+      var parent = result;
+      for (String segment : path.subList(0, path.size() - 1)) {
+        if (!parent.has(segment)) parent.add(segment, new JsonObject());
+        parent = parent.getAsJsonObject(segment);
+      }
+      parent.add(path.getLast(), json(source.getRaw(path), path.size(), remaining));
+    }
+    return result;
+  }
+
+  /**
+   * The real native serializer writes the whole file, so a projection must verify all untouched
+   * values.
+   */
+  boolean sameNativeValues(
+      UnmodifiableConfig expected, UnmodifiableConfig actual, boolean skipSelected) {
+    return sameNativeValue(
+        expected,
+        actual,
+        skipSelected ? selectedPaths : Set.of(),
+        new ArrayList<>(),
+        0,
+        new int[] {16384});
+  }
+
+  private static boolean sameNativeValue(
+      Object expected,
+      Object actual,
+      Set<List<String>> skipped,
+      List<String> path,
+      int depth,
+      int[] remaining) {
+    if (depth > 64 || --remaining[0] < 0) return false;
+    if (expected instanceof UnmodifiableConfig left) {
+      if (!(actual instanceof UnmodifiableConfig right) || left.size() != right.size())
+        return false;
+      for (var entry : left.entrySet()) {
+        var key = entry.getKey();
+        var relative = List.of(key);
+        if (!right.contains(relative)) return false;
+        path.add(key);
+        boolean matches =
+            skipped.contains(path)
+                || sameNativeValue(
+                    entry.getValue(), right.getRaw(relative), skipped, path, depth + 1, remaining);
+        path.removeLast();
+        if (!matches) return false;
+      }
+      return true;
+    }
+    if (expected instanceof List<?> left) {
+      if (!(actual instanceof List<?> right) || left.size() != right.size()) return false;
+      // Native field selectors never address members inside an authored TOML list.
+      var other = right.iterator();
+      for (Object value : left)
+        if (!sameNativeValue(value, other.next(), Set.of(), path, depth + 1, remaining))
+          return false;
+      return true;
+    }
+    return Objects.equals(expected, actual);
   }
 
   private static void put(Map<String, Object> target, List<String> path, Object value) {

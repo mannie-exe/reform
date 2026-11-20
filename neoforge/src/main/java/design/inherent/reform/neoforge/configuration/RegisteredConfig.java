@@ -36,8 +36,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.config.IConfigSpec;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.config.ModConfigs;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
@@ -45,6 +48,53 @@ import net.neoforged.neoforge.common.ModConfigSpec;
  * privately serializes a native configuration. Construct and close it on the actual owner executor.
  */
 public final class RegisteredConfig implements AutoCloseable {
+  /** One exact, explicitly supported native source and its admitted leaf paths. */
+  public record Delegation(
+      String modId, String version, ModConfig.Type type, String fileName, Set<FieldPath> fields) {
+    public Delegation {
+      Objects.requireNonNull(modId);
+      Objects.requireNonNull(version);
+      Objects.requireNonNull(type);
+      Objects.requireNonNull(fileName);
+      fields = Set.copyOf(fields);
+      if (modId.isBlank()
+          || modId.length() > 64
+          || version.isBlank()
+          || version.length() > 128
+          || fileName.isBlank()
+          || fileName.length() > 1024
+          || fields.isEmpty()
+          || fields.size() > 16384
+          || fields.stream()
+              .anyMatch(
+                  path ->
+                      path.segments().isEmpty()
+                          || path.segments().size() > 32
+                          || path.segments().stream()
+                              .anyMatch(segment -> !(segment instanceof FieldPath.Field))))
+        throw new IllegalArgumentException(
+            "Specify an exact native source and bounded leaf selection");
+    }
+
+    /**
+     * Validate the registered native identity without parsing a file or selecting another source.
+     */
+    public ModContainer requireTarget(ModConfig config) {
+      Objects.requireNonNull(config);
+      if (!config.getModId().equals(modId)
+          || config.getType() != type
+          || !config.getFileName().equals(fileName)
+          || ModConfigs.getConfigSet(type).stream().noneMatch(registered -> registered == config))
+        throw refusal("native.delegate_target", "The selected native registration is unavailable");
+      return ModList.get()
+          .getModContainerById(modId)
+          .filter(container -> container.getModInfo().getVersion().toString().equals(version))
+          .orElseThrow(
+              () ->
+                  refusal("native.delegate_version", "The selected native version is unavailable"));
+    }
+  }
+
   public record Limits(
       int maximumBytes, int maximumFields, int maximumSessions, int maximumOperations) {
     public static final Limits STANDARD = new Limits(262144, 1024, 64, 16);
@@ -383,6 +433,32 @@ public final class RegisteredConfig implements AutoCloseable {
       DocumentId id,
       Map<FieldPath, ValueType<?>> explicitTypes,
       Limits limits) {
+    this(context, config, id, explicitTypes, limits, Set.of());
+  }
+
+  /**
+   * Keep the definition in the native owner's namespace. Consumers may give their route an alias.
+   */
+  public static RegisteredConfig delegated(
+      OwnerContext context,
+      ModConfig config,
+      DocumentId nativeId,
+      Delegation delegation,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      Limits limits) {
+    Objects.requireNonNull(context).requireOwner();
+    Objects.requireNonNull(delegation).requireTarget(config);
+    return new RegisteredConfig(
+        context, config, nativeId, explicitTypes, limits, delegation.fields());
+  }
+
+  private RegisteredConfig(
+      OwnerContext context,
+      ModConfig config,
+      DocumentId id,
+      Map<FieldPath, ValueType<?>> explicitTypes,
+      Limits limits,
+      Set<FieldPath> selected) {
     this.context = Objects.requireNonNull(context);
     context.requireOwner();
     this.config = Objects.requireNonNull(config);
@@ -394,7 +470,8 @@ public final class RegisteredConfig implements AutoCloseable {
       throw new IllegalArgumentException(
           "Native document namespace must belong to its registered mod");
     spec = declared;
-    schema = new NativeSchema(id, spec, Map.copyOf(explicitTypes), limits.maximumFields());
+    schema =
+        new NativeSchema(id, spec, Map.copyOf(explicitTypes), limits.maximumFields(), selected);
     var effects = new ArrayList<ApplicationEffects.Rule>();
     for (var field : schema.fields) {
       var timing =
@@ -489,7 +566,7 @@ public final class RegisteredConfig implements AutoCloseable {
     var source = NativeFile.read(path, limits.maximumBytes());
     try {
       var toml = new TomlParser().parse(source.text());
-      var json = NativeSchema.json(toml, 0, new int[] {16384});
+      var json = schema.sourceJson(toml);
       var parsed = JsonInput.read(json.toString(), jsonLimits);
       var draft = DraftTree.fromParsed(definition().type(), parsed, DraftLimits.CONFIGURATION);
       var inspected = draft.inspect(definition(), jsonLimits);
@@ -533,6 +610,12 @@ public final class RegisteredConfig implements AutoCloseable {
               error(
                   "native.source_mismatch",
                   "Saved and loaded native values differ; reload through their owner"));
+    if (schema.projected()
+        && saved.toml() != null
+        && !schema.sameNativeValues(saved.toml(), nativeSource.loaded().config(), false))
+      report =
+          report.and(
+              error("native.delegate_source", "The full saved and loaded native sources differ"));
     return new Observation(this, session.id, nativeSource, saved, report);
   }
 
@@ -573,6 +656,12 @@ public final class RegisteredConfig implements AutoCloseable {
       throw refusal("native.source_changed", "Native source changed; reload and review the draft");
     session.require(OwnerContext.Right.WRITE);
     verify(proposal.baseline().nativeSource);
+    if (schema.projected()
+        && !schema.sameNativeValues(
+            proposal.baseline().saved.toml(),
+            proposal.baseline().nativeSource.loaded().config(),
+            false))
+      throw refusal("native.delegate_source", "The full saved and loaded native sources differ");
     var changed = new ArrayList<NativeSchema.Field>();
     var requirements = new ArrayList<CommitReceipt.Requirement>();
     for (var field : schema.fields) {
@@ -635,8 +724,16 @@ public final class RegisteredConfig implements AutoCloseable {
                           || !now.path().equals(attempt.proposal().baseline().path()))
                         return withoutReadback(attempt);
                       var observed = observation(session, now, saved);
+                      boolean preserved =
+                          !schema.projected()
+                              || saved.toml() != null
+                                  && schema.sameNativeValues(
+                                      attempt.proposal().baseline().saved.toml(),
+                                      saved.toml(),
+                                      true);
                       boolean intendedSaved =
-                          saved.candidate().isPresent()
+                          preserved
+                              && saved.candidate().isPresent()
                               && definition()
                                   .type()
                                   .equivalent(
@@ -657,10 +754,11 @@ public final class RegisteredConfig implements AutoCloseable {
                               ? CommitReceipt.Application.NOT_ATTEMPTED
                               : !attempt.saveReturned()
                                   ? CommitReceipt.Application.UNAVAILABLE
-                                  : definition()
-                                          .type()
-                                          .equivalent(
-                                              now.raw(), attempt.proposal().candidate().value())
+                                  : preserved
+                                          && definition()
+                                              .type()
+                                              .equivalent(
+                                                  now.raw(), attempt.proposal().candidate().value())
                                       ? CommitReceipt.Application.STAGED
                                       : CommitReceipt.Application.PARTIAL;
                       var persistenceReport =
@@ -675,7 +773,11 @@ public final class RegisteredConfig implements AutoCloseable {
                               ? unavailable(
                                   "native.save_failed",
                                   "Native mutation/save or a listener failed; effects were not rolled back")
-                              : ValidationReport.VALID;
+                              : !preserved
+                                  ? unavailable(
+                                      "native.delegate_readback",
+                                      "Other native values could not be confirmed")
+                                  : ValidationReport.VALID;
                       return new Receipt(
                           persistence,
                           application,
