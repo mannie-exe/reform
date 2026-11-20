@@ -19,7 +19,7 @@ mise install
 mise run check
 ```
 
-Without mise, run `./gradlew --no-daemon check build`, dprint 0.51.1 for `dprint check`, and actionlint 1.7.12 for `actionlint .github/workflows/build.yml`. Format Java with `./gradlew spotlessApply` and Markdown with `dprint fmt`.
+Without mise, run `./gradlew --no-daemon check build`, dprint 0.51.1 for `dprint check`, and actionlint 1.7.12 for `actionlint`. Format Java with `./gradlew spotlessApply` and Markdown with `dprint fmt`.
 
 The installable mod JAR, source JAR and Maven POM are staged in `build/distributions/`. The core JAR is a development/headless artifact; do not install it beside the combined mod. Disposable game runs use `./gradlew :neoforge:runClient` or `./gradlew :neoforge:runServer`. A first dedicated-server run requires the operator to accept Minecraft's EULA in that fixture.
 

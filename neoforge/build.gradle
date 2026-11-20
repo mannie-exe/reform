@@ -93,6 +93,12 @@ tasks.named('sourcesJar', Jar) {
     duplicatesStrategy = DuplicatesStrategy.FAIL
 }
 
+tasks.withType(org.gradle.api.publish.maven.tasks.GenerateMavenPom).configureEach {
+    doLast {
+        destination.setText(destination.getText('UTF-8').replace('\r\n', '\n'), 'UTF-8')
+    }
+}
+
 publishing {
     publications {
         mavenJava(MavenPublication) {

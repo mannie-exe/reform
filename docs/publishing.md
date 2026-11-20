@@ -34,7 +34,7 @@ dependencies {
 }
 ```
 
-Compare the resolved JAR against the release checksum. Native mods can use a nontransitive dependency because Minecraft supplies DFU and Gson. Headless consumers need those ordinary Java dependencies, as the [headless example](../examples/headless/README.md) demonstrates.
+Compare the resolved JAR against the release checksum. Native mods can use a nontransitive dependency because Minecraft supplies DFU and Gson. The artifact-only repository does not read the supplied POM. Headless consumers must also declare `com.mojang:datafixerupper:8.0.16` and `com.google.code.gson:gson:2.10.1`, admitting `com.mojang` from `https://libraries.minecraft.net/` and other dependencies from Maven Central. The [headless example](../examples/headless/README.md) exercises the same dependencies through its staged Maven repository.
 
 For an unpublished trial, `./gradlew :neoforge:publishMavenJavaPublicationToStagingRepository` creates a local Maven repository under `build/repository/`. Use a unique development coordinate for each frozen candidate, retain its exact bytes and verify the consumer's resolved hash. Keep machine-local repositories out of release builds. Publish re:form before releasing a consumer that requires it.
 
@@ -42,7 +42,7 @@ For an unpublished trial, `./gradlew :neoforge:publishMavenJavaPublicationToStag
 
 The build workflow checks Linux, Windows and Intel macOS with Java 21, plus Markdown and workflow syntax. Its reusable Trivy workflow is a release dependency. Security scanning also runs weekly and on explicit dispatch. Every action is pinned to a commit. Pull requests use read-only Gradle caches, and only the release job receives write access to repository contents.
 
-The tag job downloads the three runners' distribution artifacts and compares all three files byte for byte. A mismatch, missing artifact, dirty source, incorrect version/tag, or existing staging directory stops preparation. `tools/release.py` adds the tagged source ZIP and SHA-256/SHA-512 manifests, then creates a draft GitHub release. Repeated creation cannot overwrite a published release.
+The POM producer uses UTF-8 and LF endings on every platform. The tag job downloads the three runners' distribution artifacts and compares all three files byte for byte. A mismatch, missing artifact, dirty source, incorrect version/tag, or existing staging directory stops preparation. `tools/release.py` adds the tagged source ZIP and SHA-256/SHA-512 manifests, then creates a draft GitHub release. Repeated creation cannot overwrite a published release.
 
 1. Finish relevant implementation and qualification, including native and consumer checks for affected boundaries.
 2. Update `mod_version`, [changelog](../CHANGELOG.md), [verification](development/verification.md) and supported-dependency guidance. Review licensing and packaged contents.

@@ -8,7 +8,7 @@ The supported release line is 0.1.x for Minecraft 1.21.1, NeoForge 21.1.265 and 
 
 `mise run check:security` runs Trivy against a disposable Gradle-generated inventory of the library's runtime and test dependencies, then scans source for secrets. The same checks run in CI for changes, release tags and a weekly schedule. HIGH and CRITICAL findings fail the check. These scans cover declared library dependencies and source, with native game and consumer integrations retaining their own security reviews.
 
-Renovate proposes dependency and SHA-pinned action updates for review. Merges are manual. Changes to DFU, Gson or the native toolchain require the consumer and native checks described in [publishing](docs/publishing.md).
+Renovate is configured to propose dependency and SHA-pinned action updates for review. Merges are manual. Changes to DFU, Gson or the native toolchain require the consumer and native checks described in [publishing](docs/publishing.md).
 
 ## Reviewed dependency exception
 
