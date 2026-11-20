@@ -6,7 +6,7 @@ Build an independently usable native Minecraft configuration and interaction lib
 
 The selected execution determines the active phase and consumer scope. Phase 1 is the complete initial library baseline; Phase 2 remains deferred until selected. Repository setup is not completion of either phase. Do not substitute an empty generic API or configuration wrapper for required native behavior.
 
-Consumer repository migrations require authorization in the selected execution scope. The current library-only execution excludes migrating Skyweave and Compat; preserve their requirements through public APIs and independent fixtures, and keep their repositories read-only.
+Consumer migrations follow the selected execution and its assigned worktrees. The library owner develops public APIs, independent fixtures and shared qualification. Each consumer owner implements its own production bindings.
 
 Keep `core/` independent of Minecraft, loaders, clients and optional mods. Put native/common/client adapters in their appropriate `neoforge/` packages. No dependent mod or modpack may become a required library dependency. Prefer explicit registration and typed extension points over scanning or foreign-class reflection.
 
