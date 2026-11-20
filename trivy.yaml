@@ -1,0 +1,11 @@
+ignorefile: .trivyignore.yaml
+scan:
+  skip-dirs:
+    - .git
+    - '**/.gradle'
+    - '**/build'
+    - '**/runs'
+    - '**/node_modules'
+    - .cache
+pkg:
+  include-dev-deps: true

@@ -1,10 +1,11 @@
 [tools]
 dprint = "0.51.1"
 actionlint = "1.7.12"
+"aqua:aquasecurity/trivy" = "0.76.2"
 
 [tasks.check]
 description = "Check formatting, docs, tests and packaged artifacts"
-run = ["dprint check", "actionlint .github/workflows/build.yml", "./gradlew --no-daemon check build"]
+run = ["dprint check", "actionlint", "./gradlew --no-daemon check build"]
 
 [tasks.format]
 description = "Format Java and Markdown"
@@ -24,4 +25,12 @@ run = ["dprint check", "python3 tools/check_docs.py"]
 
 [tasks."check:ci"]
 description = "Validate GitHub Actions syntax and expressions"
-run = "actionlint .github/workflows/build.yml"
+run = "actionlint"
+
+[tasks."check:security"]
+description = "Scan resolved library dependencies and source secrets"
+run = [
+  "./gradlew --no-daemon -I tools/security.init.gradle :core:securityDependencies --write-locks",
+  "trivy fs --config trivy.yaml --scanners vuln --severity HIGH,CRITICAL --exit-code 1 build/security",
+  "trivy fs --config trivy.yaml --scanners secret --severity HIGH,CRITICAL --exit-code 1 .",
+]

@@ -1,4 +1,6 @@
 .gradle/
+.cache/
+/settings-gradle.lockfile
 **/build/
 **/runs/
 .idea/

@@ -36,7 +36,7 @@ Optional membership does not make a record field optional. Combine a nullable op
 
 Compressed record slots cannot distinguish null from omission. A required nullable empty value, or an explicit empty value against a nonempty fallback, therefore refuses compressed encoding instead of silently changing its meaning. Singleton-list encoding preserves those distinctions. Nullable nesting also refuses a present child whose canonical encoding is null; choose singleton lists where the nested empty distinction matters. Custom serializers remain their owners' responsibility.
 
-The [packaged optional example](../../examples/headless/src/main/java/example/OptionalEditing.java) writes native-style fields through a real bare JSON file and retains invalid inactive input separately. [Editing](editing.md) owns raw presence, source locations and history. Built-in optional controls and actual consumer migration remain required.
+The [packaged optional example](../../examples/headless/src/main/java/example/OptionalEditing.java) writes native-style fields through a real bare JSON file and retains invalid inactive input separately. [Editing](editing.md) owns raw presence, source locations and history. [Native presentation](presentation.md) supplies the corresponding generated controls.
 
 ## Tagged alternatives
 

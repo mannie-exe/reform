@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "configMigration": true,
+  "schedule": ["before 9am on monday"],
+  "timezone": "America/Los_Angeles",
+  "automerge": false,
+  "prConcurrentLimit": 5,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/.github/workflows/.*\\.yml$/"],
+      "matchStrings": [
+        "version: (?<currentValue>v[0-9.]+) # renovate: depName=(?<depName>[^\\s]+)"
+      ],
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Review JUnit and its platform as one test boundary",
+      "matchPackageNames": ["/^org\\.junit[.:]/"],
+      "groupName": "JUnit"
+    },
+    {
+      "description": "Review Java 21 tooling updates together",
+      "matchPackageNames": [
+        "com.diffplug.spotless",
+        "com.diffplug.spotless:com.diffplug.spotless.gradle.plugin",
+        "com.google.googlejavaformat:google-java-format"
+      ],
+      "groupName": "Java formatting"
+    }
+  ]
+}

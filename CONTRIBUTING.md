@@ -1,6 +1,6 @@
 # Contributing
 
-Use [README](README.md) for prerequisites and [development](docs/development/README.md) for build and ownership details. There is no stable public API yet. Discuss a change that alters serialized meaning, authority, supported platforms or licensing before depending on it.
+Use [README](README.md) for prerequisites and [development](docs/development/README.md) for build and ownership details. Version 0.1.x is the initial public API line. Discuss a change that alters serialized meaning, authority, supported platforms or licensing before depending on it.
 
 Implement against the pinned artifacts. Keep common/core signatures free of client and optional-mod types. Introduce public extension contracts through independently compiled consumers; do not require private implementation access. Preserve existing consumer settings and native callbacks during extraction.
 

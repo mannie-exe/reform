@@ -1,0 +1,50 @@
+name: Security Scan
+
+on:
+  workflow_call:
+  schedule:
+    - cron: '0 8 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@07d1f8453baaff67fb503883367f8b13e6158a54 # v6
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Resolve library and test dependencies
+        run: ./gradlew --no-daemon -I tools/security.init.gradle :core:securityDependencies --write-locks
+      - name: Scan resolved dependencies
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.2 # renovate: depName=aquasecurity/trivy
+          scan-type: fs
+          scan-ref: build/security
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          format: table
+          trivy-config: trivy.yaml
+      - name: Scan source for secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          skip-setup-trivy: true
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          format: table
+          trivy-config: trivy.yaml

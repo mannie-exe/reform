@@ -2,9 +2,13 @@
 
 Shared native configuration editing and command services for Minecraft mods.
 
-The Phase 1 `0.1.0` candidate targets Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. It supplies typed recursive forms, shared settings commands, local profile authoring, owner-aware review and native creation-recipe editing. The same local build was qualified with the Skyweave and Skyweave: Compatibility Patches candidates. [Coverage](docs/development/coverage.md) lists the supported workflows. [Verification](docs/development/verification.md) records the exercised artifacts and limits.
+re:form 0.1.0 targets Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. It supplies typed recursive forms, shared settings commands, local profile authoring, owner-aware review and native creation-recipe editing. The same build was qualified with the Skyweave and Skyweave: Compatibility Patches candidates. [Coverage](docs/development/coverage.md) lists the supported workflows. [Verification](docs/development/verification.md) records the exercised artifacts and limits.
 
 Start with the public [native addon](examples/native/README.md) for ordinary client and server settings or the [headless example](examples/headless/README.md) for neutral definitions, editing and storage. The mod ID is `reform`. The Maven coordinate is `design.inherent:reform:<version>`. Game-independent consumers use the same core API.
+
+## Installation
+
+Download the combined `reform-0.1.0-mc1.21.1-neoforge.jar` from [the release](https://github.com/mannie-exe/reform/releases/tag/v0.1.0) and place it in `mods/` on both installed sides when a dependent mod requires it. The game supplies DFU and Gson. The [consumer resolution](docs/publishing.md#consumer-resolution) guide shows the artifact-only Gradle repository and required NeoForge dependency.
 
 ## Development
 

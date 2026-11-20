@@ -1,0 +1,17 @@
+// Generate a disposable native Gradle lock for Trivy without changing normal dependency resolution.
+gradle.beforeProject { project ->
+    if (project.path == ':core') {
+        project.plugins.withId('java') {
+            project.dependencyLocking.lockFile = project.rootProject.layout.buildDirectory.file('security/gradle.lockfile')
+            def scopes = ['runtimeClasspath', 'testRuntimeClasspath']
+            scopes.each { name ->
+                project.configurations.named(name) { resolutionStrategy.activateDependencyLocking() }
+            }
+            project.tasks.register('securityDependencies') {
+                group = 'verification'
+                description = 'Resolve library and test dependencies for vulnerability scanning.'
+                doLast { scopes.each { name -> project.configurations.getByName(name).resolve() } }
+            }
+        }
+    }
+}

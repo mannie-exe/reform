@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - Define and validate typed recursive settings, references, units and ranges. Preserve invalid drafts, stable collection rows, undo/redo and explicit conflict review.
 - Edit owned text files, native NeoForge configurations, keys and integrated-world policies through generated forms and the applicable Brigadier services.

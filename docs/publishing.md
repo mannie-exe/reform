@@ -2,31 +2,19 @@
 
 ## Identity and artifacts
 
-Display name is **re:form**. Repository, mod ID and artifact are `reform`; Java packages use `design.inherent.reform`. The selected Maven coordinate is `design.inherent:reform:<version>`. No public Maven repository or stable release exists yet.
+Display name is **re:form**. Repository, mod ID and Maven artifact are `reform`; Java packages use `design.inherent.reform`. `gradle.properties` owns the project version. `gradle/libs.versions.toml` owns the Minecraft, NeoForge and Java dependency pins.
 
-`gradle.properties` owns `mod_version`. Supported Minecraft, NeoForge and tool dependencies live in `gradle/libs.versions.toml`. Changes to build inputs require relevant qualification, not only a version bump.
+`./gradlew check build` checks the product and stages three files under `build/distributions/`.
 
-DFU/serialization updates must retain exact coercion/partial-result controls, dynamic-map/tagged-envelope compression, nested record field paths and field-default/optional ordinary-null/compressed-slot behavior. Preserve explicit encoding choices, exact variant identities and refusals for ambiguous nested emptiness; test nullable fields against their actual omission policies. Requalify field-default metadata against each affected native codec and rerun the native registered owner when shared record serialization changes. Current [verification](development/verification.md) keeps those artifact scopes separate from generated-control and consumer-migration readiness.
+- `reform-<version>-mc1.21.1-neoforge.jar` contains the library core and NeoForge adapter once.
+- `reform-<version>-sources.jar` contains their matching sources.
+- `reform-<version>.pom` declares the public DFU and Gson dependencies.
 
-Native registry/resource and executor updates also require the [reference-source controls](development/references.md): use the actual owner registry, preserve raw codec semantics and complete-source bounds, invalidate reload epochs and retain empty/missing/unknown distinctions. Do not infer full-pack source admission from the small native fixture or substitute resource enumeration into ordinary rendering/editing.
-
-Server lifecycle/authority updates must inspect native stopping and exceptional stopped-event ordering, `CommandSourceStack` permission snapshots, current player/connection identity and actual SERVER config world roots. Rerun [server bindings](development/server-settings.md) alongside native serializer/callback controls. Preserve refused-before-operation and refused-before-persistence outcomes without inventing receipts, and distinguish a no-op save from a revision-changing edit when constructing stale-source tests. Dedicated console tests do not qualify live-player revocation, integrated GUI or remote administration.
-
-Native control updates must review the pinned `AbstractContainerEventHandler` focus transitions, NeoForge `ScrollPanel` drag/release behavior and `AbstractSliderButton` input semantics. Requalify actual mouse-selected text focus, captured child dragging, scrollbar fallback, narrow related-field layout and initialization retry. Numeric display/slider metadata is separate from the owner's codec and file schema; retain exact text entry, explicit pointer quantization and the old constructor defaults when updating these APIs.
-
-Registered-client updates must preserve the actual FML loading order and native registration reference. Treat same-file loaded-wrapper replacement as a backend observation change; retire actual unload/path changes and recheck backing-path authority at effects. Requalify startup corrections/file-watcher events separately from direct native Save callbacks, and observe restart caches at the actual callback boundary. A later native reload can legitimately change those caches. Keep CLIENT preferences, local COMMON defaults and server-authorized policies distinct.
-
-Composed-view updates must retain the actual per-document actors, local drafts/history and backend receipts. Rerun the [native workflow](development/client-workflows.md) alongside affected standalone form/close/key suites. Distinguish background completion, pending exit refusal, explicit discard, hard source retirement and unexpected navigation. Rerun `--batch-only` for complete-vector preflight, typed cross-document checks, current authority, native source preparation, exact reviewed captures, clean-source checks and ordered receipts. A workflow-wide review is not cross-file atomicity, and an earlier save must not conceal a later owner refusal.
-
-Editor/operation updates must preserve actual session/generation/version identities, stable row anchors, inactive drafts and typed structural-input admission. Requalify the combined public profile workflow and native read-only COMMON service before consumer migration; a successfully compiled new command input does not qualify its native widgets or serializer effects.
-
-`./gradlew check build` stages the combined mod JAR, sources and POM under `build/distributions/`. `./gradlew :neoforge:publishMavenJavaPublicationToStagingRepository` creates a local Maven repository under `build/repository/` for public-consumer checks. Neither command uploads anything. Do not install the separate development core JAR alongside the combined mod.
-
-The combined JAR contains own core/platform classes once. POM metadata declares the Java dependencies without a second owned core artifact. Artifact timestamps/order are reproducible. The wrapper distribution is checksum-pinned; its scripts/JAR retain [Gradle's license](../LICENSE-GRADLE.txt).
+The separate development core JAR is for headless development. Minecraft supplies its runtime serialization libraries. The Gradle wrapper is checksum-pinned and retains [Gradle's license](../LICENSE-GRADLE.txt). Archive timestamps and entry order are reproducible.
 
 ## Consumer resolution
 
-For a published release, Gradle NeoForge consumers can resolve the exact release JAR through an artifact-only Ivy repository. The release assets already use this filename pattern. The game supplies DFU and Gson, so the dependency can be nontransitive. Keep the runtime dependency in the mod's NeoForge metadata and the same exact JAR in the pack.
+The release assets supply an artifact-only Ivy repository for Gradle. Use an exact qualified version and install the same combined JAR with the dependent mod. NeoForge metadata must declare `reform` as a required dependency on both applicable installed sides.
 
 ```groovy
 repositories {
@@ -46,23 +34,38 @@ dependencies {
 }
 ```
 
-Use the selected immutable version rather than a dynamic version. Compare the resolved JAR with the release checksum. A development trial can select an explicit staged Maven repository and a unique pre-release version. Keep that machine-local location out of the release build. Publish the library before releasing a consumer that requires it.
+Compare the resolved JAR against the release checksum. Native mods can use a nontransitive dependency because Minecraft supplies DFU and Gson. Headless consumers need those ordinary Java dependencies, as the [headless example](../examples/headless/README.md) demonstrates.
+
+For an unpublished trial, `./gradlew :neoforge:publishMavenJavaPublicationToStagingRepository` creates a local Maven repository under `build/repository/`. Use a unique development coordinate for each frozen candidate, retain its exact bytes and verify the consumer's resolved hash. Keep machine-local repositories out of release builds. Publish re:form before releasing a consumer that requires it.
 
 ## CI and release procedure
 
-CI checks/builds on Linux, Windows and Intel macOS, checks Markdown separately, and retains staged artifacts. Apple Silicon and native gameplay/UI qualification remain separately recorded. Successful matrix builds are a release gate, not a promise of cross-platform rendering behavior.
+The build workflow checks Linux, Windows and Intel macOS with Java 21, plus Markdown and workflow syntax. Its reusable Trivy workflow is a release dependency. Security scanning also runs weekly and on explicit dispatch. Every action is pinned to a commit. Pull requests use read-only Gradle caches, and only the release job receives write access to repository contents.
 
-An explicitly pushed `v<version>` tag can prepare a **draft** GitHub release after all jobs pass. The tag must equal the checked project version and name a non-snapshot semantic version. Release staging compares all runner artifacts byte for byte, adds a source archive and SHA-256/SHA-512 manifests, and refuses an existing release. No step publishes the draft or uploads to Modrinth, CurseForge or a public Maven repository.
+The tag job downloads the three runners' distribution artifacts and compares all three files byte for byte. A mismatch, missing artifact, dirty source, incorrect version/tag, or existing staging directory stops preparation. `tools/release.py` adds the tagged source ZIP and SHA-256/SHA-512 manifests, then creates a draft GitHub release. Repeated creation cannot overwrite a published release.
 
-Before an authorized release:
+1. Finish relevant implementation and qualification, including native and consumer checks for affected boundaries.
+2. Update `mod_version`, [changelog](../CHANGELOG.md), [verification](development/verification.md) and supported-dependency guidance. Review licensing and packaged contents.
+3. Commit the reviewed changes. Run `mise run check` and `mise run check:security`, then push the authorized source and inspect its hosted checks.
+4. Create and push `v<version>` on the qualified commit. The tag must match `gradle.properties`. Inspect the tag workflow and draft assets, verify their hashes and compare the downloaded JAR with the qualified candidate.
+5. Publish the inspected draft under the release authorization. Verify the public assets and a consumer resolution from the immutable release path.
 
-1. Complete the selected phase's implementation and qualification, including external packaged consumers and native checks.
-2. Update the version, changelog and owning verification. Resolve license/provenance and distribution eligibility.
-3. Commit the reviewed result, run the full checks, and push/tag only when authorized.
-4. Inspect CI, the draft assets/checksums and exact source tag. Publish only with applicable release authority.
+`python3 tools/release.py v<version> --stage-only` performs local staging from CI downloads under `build/ci/build-<runner>/`. It still requires a matching source tag and clean checkout. Keep downloaded runner artifacts and release staging in ignored build directories until verification is recorded. Repository publication and consumer/modpack rollout have separate scopes.
 
-`python3 tools/release.py v<version> --stage-only` validates downloaded `build/ci/build-<runner>/` artifacts and stages a release without contacting GitHub. It still requires the matching local tag and source commit. Ordinary development builds use `-SNAPSHOT`; changing a build property is not an in-game settings override.
+## Dependency and adapter maintenance
 
-Keep CI tokens in the runner's credential mechanism. Runtime configuration does not use environment-variable overrides. Consumer releases, modpack pin updates, personal instances and world operations remain separately authorized tasks.
+Renovate proposes version-catalog, Gradle wrapper, mise tool and GitHub Actions updates on a weekly schedule. Merges are manual. Its custom manager also tracks the explicit Trivy version in the workflow. The native version pin and consumer data formats remain deliberate release choices.
 
-Future-default owner changes require eager and deferred source checks for absent directories, explicit first creation, concurrent creators, invalid existing data, staged requirements and the saved-defaults handle. Rerun `--defaults-only` alongside affected live, startup and import suites. Recipe changes also require `--recipe-only` for original-context identity, preview drain, editing during analysis and explicit native admission. Rerun `--submission-only` for shared review, identified export, result disclosure and close behavior. Public source-catalog adapters must retain their actual parser, bounds, authority, captured identity and separate command and GUI declarations.
+| Changed boundary                     | Required review and affected checks                                                                                                                                                                                                       |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DFU, Gson and typed JSON             | Exact coercion, partial results, compressed records, null/omitted defaults, nested diagnostics and public headless/native consumers. [API](development/api.md), [editing](development/editing.md).                                        |
+| NeoForge/FML and registered owners   | Actual registration, backing path, native serializer and save/watcher callbacks, restart caches, unload and current side/context. [Native settings](development/native-settings.md), [server settings](development/server-settings.md).   |
+| Native controls and client lifecycle | Focus, text selection, drag/release, input modifiers, narrow reflow, initialization retry and retired callbacks. [Presentation](development/presentation.md), [native keys](development/native-keys.md).                                  |
+| Multi-document workflows             | Retained per-owner drafts, scoped dependencies, exact reviewed captures, conditional preflight and truthful ordered outcomes. [Workflows](development/client-workflows.md), [batches](development/batches.md).                            |
+| Registry/tag/resource providers      | Real owner registry, complete-source bounds, codec semantics and reload identity, without IO in ordinary rendering. [References](development/references.md).                                                                              |
+| Commands and search                  | Current permission/recipient, exact operation identity, stable pages and owned native ticket accounting across cancellation and disconnect. [Operations](development/operations.md), [search reporting](development/search-reporting.md). |
+| Storage, defaults and recipes        | Invalid existing files, concurrent creation, no-op bytes, saved/effective distinction, original recipe identity and explicit preview/admission. [Storage](development/storage.md), [world recipes](development/world-recipes.md).         |
+
+`tools/security.init.gradle` resolves the core's actual runtime and test classpaths into a disposable Gradle lock under `build/security/`. `--write-locks` also emits an empty settings-catalog lock, which is ignored as a scan artifact. The regular build keeps its declared dependency resolution. Trivy scans this inventory for vulnerabilities and the source tree for secrets, skipping generated runs and caches. [Security reporting](../SECURITY.md) owns the exact, expiring dependency exception.
+
+Keep credentials in the host or CI credential mechanism. In-game settings continue to use their declared files and native owners.

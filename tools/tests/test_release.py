@@ -24,7 +24,7 @@ class ReleaseStaging(unittest.TestCase):
         patch.object(RELEASE, "ROOT", self.root).start()
         self.command("init", "-q")
         (self.root / ".gitignore").write_text("build/\n")
-        (self.root / "gradle.properties").write_text("mod_version=1.2.3\n")
+        (self.root / "gradle.properties").write_bytes(b"mod_version=1.2.3\n")
         self.command("add", ".")
         self.command("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
                      "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
