@@ -352,7 +352,13 @@ public final class RegisteredConfig implements AutoCloseable {
                                 var inspected =
                                     Objects.requireNonNull(draft).inspect(definition(), jsonLimits);
                                 if (inspected.candidate().isEmpty())
-                                  throw new PolicyRefusal(inspected.report());
+                                  throw new PolicyRefusal(
+                                      inspected
+                                          .report()
+                                          .and(
+                                              error(
+                                                  "native.validation",
+                                                  "Complete candidate validation failed")));
                                 return inspected.candidate().orElseThrow();
                               }))
                   .thenCompose(
