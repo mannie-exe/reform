@@ -1177,6 +1177,8 @@ public final class NativeFormProbe {
     check(focus(form, input), "Input not in the native focus tree");
     input.moveCursorToEnd(false);
     input.setHighlightPos(0);
+    if (value.isEmpty() && !input.getValue().isEmpty())
+      check(form.keyPressed(GLFW.GLFW_KEY_BACKSPACE, 0, 0), "Native clear was not consumed");
     for (char next : value.toCharArray())
       check(form.charTyped(next, 0), "Native text event was not consumed");
   }
