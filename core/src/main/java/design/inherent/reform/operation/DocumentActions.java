@@ -695,6 +695,11 @@ public final class DocumentActions<T> implements AutoCloseable {
       throw unavailable(current);
   }
 
+  CompletionStage<Void> verifyBatchSource(String revision) {
+    requireBatchRead();
+    return actor.verifySourceRevision(revision);
+  }
+
   /** Pure bounded projection from the already captured preflight; caller uses a worker lane. */
   DocumentReview reviewPreflight(EditorActor.Preflight<T> prepared) {
     var observed = prepared.observation();

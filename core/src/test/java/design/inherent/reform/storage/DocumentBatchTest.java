@@ -24,12 +24,14 @@ import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueTypes;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.invoke.MethodHandles;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
@@ -403,6 +405,101 @@ class DocumentBatchTest {
   }
 
   @Test
+  void externalEditToAnUnwrittenDependencyInvalidatesTheSavedPrefix() throws Exception {
+    try (var h = new Harness()) {
+      h.nativeCall(
+          () -> {
+            h.batch.close();
+            h.batch =
+                new DocumentBatch(
+                    h.batchContext,
+                    h.batchAccess,
+                    DocumentId.parse("fixture:external_guard"),
+                    List.of(h.first, DocumentBatch.member(h.b, DocumentBatch.Intent.CHECK)));
+            return null;
+          });
+      h.editFirst("4");
+      var review = h.review();
+      h.afterA =
+          () -> {
+            try {
+              Files.writeString(h.pathB, "{\"schemaVersion\":1,\"values\":{\"limit\":2}}");
+            } catch (IOException failure) {
+              throw new UncheckedIOException(failure);
+            }
+          };
+      var result = h.commit(review);
+      assertFalse(result.completed());
+      var problem = result.report().issues().getFirst();
+      assertEquals("owner.revision", problem.code());
+      assertEquals(SECOND.toString(), problem.arguments().get("document"));
+      assertEquals(2, h.writesA.get());
+      assertEquals(1, h.writesB.get());
+      assertTrue(result.outcomes().getFirst().operation().isPresent());
+      assertTrue(result.outcomes().getLast().operation().isEmpty());
+      assertEquals(
+          "owner.revision", result.outcomes().getLast().report().issues().getFirst().code());
+      assertEquals(4, h.ownerA.handle().view().value().orElseThrow().count());
+    }
+  }
+
+  @Test
+  void ownerChoosesSafeWriteOrderFromVerifiedBaselines() throws Exception {
+    try (var h = new Harness()) {
+      h.replaceValidator(
+          values -> {
+            var current = values.baseline(h.b.definition()).orElseThrow();
+            var desired = values.candidate(h.first).orElseThrow();
+            assertEquals(new Ceiling(10), current);
+            assertEquals(15, desired.count());
+            assertEquals(new Ceiling(17), values.candidate(h.second).orElseThrow());
+            return DocumentBatch.Check.VALID.withPlan(
+                new DocumentBatch.Plan(List.of(SECOND, FIRST), Set.of(FIRST, SECOND)));
+          });
+      h.editFirst("15");
+      h.editSecond("17");
+      var review = h.review();
+      assertEquals(
+          List.of(SECOND, FIRST),
+          review.entries().stream().map(DocumentBatch.Entry::document).toList());
+      assertTrue(h.commit(review).completed());
+      assertEquals(List.of("B", "A"), h.order);
+      assertEquals(15, h.ownerA.handle().view().value().orElseThrow().count());
+      assertEquals(17, h.ownerB.handle().view().value().orElseThrow().limit());
+    }
+  }
+
+  @Test
+  void changedOrIncompleteWriteOrdersRequireFreshReviewWithoutSaving() throws Exception {
+    try (var h = new Harness()) {
+      var reverse = new AtomicBoolean();
+      h.replaceValidator(
+          values ->
+              DocumentBatch.Check.VALID.withPlan(
+                  new DocumentBatch.Plan(
+                      reverse.get() ? List.of(SECOND, FIRST) : List.of(FIRST, SECOND),
+                      Set.of(FIRST, SECOND))));
+      h.editFirst("4");
+      h.editSecond("8");
+      var review = h.review();
+      reverse.set(true);
+      var result = h.commit(review);
+      assertFalse(result.completed());
+      assertEquals("batch.plan_changed", result.report().issues().getFirst().code());
+      assertEquals(1, h.writesA.get());
+      assertEquals(1, h.writesB.get());
+
+      h.replaceValidator(
+          values ->
+              DocumentBatch.Check.VALID.withPlan(
+                  new DocumentBatch.Plan(List.of(FIRST, FIRST), Set.of(SECOND))));
+      var refused = await(h.nativeCall(() -> h.batch.review(EntryPoint.GUI)).completion());
+      assertEquals(OperationSnapshot.State.REFUSED, refused.state());
+      assertEquals("batch.plan", refused.report().issues().getFirst().code());
+    }
+  }
+
+  @Test
   void completeReviewBudgetsAndUnknownDiagnosticTargetsRefuseWithoutWrites() throws Exception {
     try (var h = new Harness()) {
       h.nativeCall(
@@ -617,6 +714,22 @@ class DocumentBatchTest {
 
     DocumentBatch.Review review() throws Exception {
       return run(() -> batch.review(EntryPoint.GUI));
+    }
+
+    void replaceValidator(DocumentBatch.Validator validator) throws Exception {
+      nativeCall(
+          () -> {
+            batch.close();
+            batch =
+                new DocumentBatch(
+                    batchContext,
+                    batchAccess,
+                    DocumentId.parse("fixture:batch"),
+                    List.of(first, second),
+                    validator,
+                    DocumentBatch.Limits.STANDARD);
+            return null;
+          });
     }
 
     DocumentBatch.Result commit(DocumentBatch.Review review) throws Exception {

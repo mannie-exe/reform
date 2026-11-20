@@ -366,20 +366,10 @@ public final class EditorActor<T> implements AutoCloseable {
                         plan.observation(),
                         plan.inspected().candidate(),
                         plan.inspected().report()));
-              return source
-                  .read()
+              return readAtRevision(plan.observation().snapshot().sourceRevision())
                   .thenCompose(
-                      current -> {
-                        requireObservation(current);
-                        if (!current
-                            .document()
-                            .revision()
-                            .equals(plan.observation().snapshot().sourceRevision()))
-                          throw new PolicyRefusal(
-                              "owner.revision",
-                              "Saved source changed; observe it again before preflight");
-                        return source.prepare(plan.source(), plan.observation().snapshot().draft());
-                      })
+                      current ->
+                          source.prepare(plan.source(), plan.observation().snapshot().draft()))
                   .handle(
                       (prepared, failed) ->
                           new Preflight<>(
@@ -388,6 +378,28 @@ public final class EditorActor<T> implements AutoCloseable {
                               failed == null
                                   ? plan.inspected().report()
                                   : plan.inspected().report().and(report(failed))));
+            });
+  }
+
+  /** Verify a source dependency through its actual owner without installing an editor baseline. */
+  public CompletionStage<Void> verifySourceRevision(String expected) {
+    Objects.requireNonNull(expected);
+    return act(this::ready)
+        .thenCompose(ignored -> readAtRevision(expected))
+        .thenAccept(ignored -> {});
+  }
+
+  private CompletionStage<? extends OwnerObservation<T>> readAtRevision(String expected) {
+    return source
+        .read()
+        .thenApply(
+            observed -> {
+              current();
+              requireObservation(observed);
+              if (!expected.equals(observed.document().revision()))
+                throw new PolicyRefusal(
+                    "owner.revision", "Saved source changed; observe it again before continuing");
+              return observed;
             });
   }
 

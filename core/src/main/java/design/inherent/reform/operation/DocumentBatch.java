@@ -91,13 +91,12 @@ public final class DocumentBatch implements AutoCloseable {
     }
 
     public <T> Optional<T> candidate(Member<T> member) {
-      var slot = slots.get(Objects.requireNonNull(member));
-      if (slot == null || slot.member() != member)
-        throw new IllegalArgumentException("This candidate key is not in this batch capture");
-      // Slot construction captures the same Member<T> and its own DocumentActions<T> result.
-      @SuppressWarnings("unchecked")
-      var typed = (EditorActor.Preflight<T>) slot.preflight();
-      return typed.candidate().map(Candidate::value);
+      return preflight(member).candidate().map(Candidate::value);
+    }
+
+    /** Complete authorized baseline, for domain validation of the intermediate saved states. */
+    public <T> Optional<T> baseline(Member<T> member) {
+      return baseline(preflight(member));
     }
 
     public List<DocumentId> documents() {
@@ -106,24 +105,66 @@ public final class DocumentBatch implements AutoCloseable {
 
     /** An exact registered definition is an alternative typed key for composed frontends. */
     public <T> Optional<T> candidate(DocumentDefinition<T> definition) {
+      return preflight(definition).candidate().map(Candidate::value);
+    }
+
+    public <T> Optional<T> baseline(DocumentDefinition<T> definition) {
+      return baseline(preflight(definition));
+    }
+
+    private static <T> Optional<T> baseline(EditorActor.Preflight<T> preflight) {
+      var observed = preflight.observation();
+      var snapshot = observed.snapshot();
+      return observed
+          .baseline()
+          .inspect(snapshot.definition(), snapshot.jsonLimits())
+          .candidate()
+          .map(Candidate::value);
+    }
+
+    private <T> EditorActor.Preflight<T> preflight(Member<T> member) {
+      var slot = slots.get(Objects.requireNonNull(member));
+      if (slot == null || slot.member() != member)
+        throw new IllegalArgumentException("This candidate key is not in this batch capture");
+      // Slot construction captures the same Member<T> and its own DocumentActions<T> result.
+      @SuppressWarnings("unchecked")
+      var typed = (EditorActor.Preflight<T>) slot.preflight();
+      return typed;
+    }
+
+    private <T> EditorActor.Preflight<T> preflight(DocumentDefinition<T> definition) {
       Objects.requireNonNull(definition);
       for (var slot : slots.values()) {
         if (slot.member().actions.definition() != definition) continue;
         // The actual definition instance carries this slot's T, not merely a matching name.
         @SuppressWarnings("unchecked")
         var typed = (EditorActor.Preflight<T>) slot.preflight();
-        return typed.candidate().map(Candidate::value);
+        return typed;
       }
       throw new IllegalArgumentException("This definition is not in this batch capture");
     }
   }
 
+  /** The consumer's validated write order and additional sources required by that order. */
+  public record Plan(List<DocumentId> writes, Set<DocumentId> guardedSources) {
+    public Plan {
+      writes = List.copyOf(writes);
+      guardedSources = Set.copyOf(guardedSources);
+    }
+  }
+
   /** Per-document field diagnostics; incomplete required checks never pass. */
-  public record Check(Map<DocumentId, ValidationReport> documents, boolean complete) {
+  public record Check(
+      Map<DocumentId, ValidationReport> documents, boolean complete, Optional<Plan> plan) {
     public static final Check VALID = new Check(Map.of(), true);
+
+    public Check(Map<DocumentId, ValidationReport> documents, boolean complete) {
+      this(documents, complete, Optional.empty());
+    }
 
     public Check {
       documents = Collections.unmodifiableMap(new LinkedHashMap<>(documents));
+      Objects.requireNonNull(plan);
       documents.forEach(
           (key, value) -> {
             Objects.requireNonNull(key);
@@ -133,6 +174,10 @@ public final class DocumentBatch implements AutoCloseable {
 
     public boolean valid() {
       return complete && documents.values().stream().allMatch(ValidationReport::valid);
+    }
+
+    public Check withPlan(Plan order) {
+      return new Check(documents, complete, Optional.of(order));
     }
   }
 
@@ -423,7 +468,7 @@ public final class DocumentBatch implements AutoCloseable {
                               ? Objects.requireNonNull(validator.validate(new Values(slots)))
                               : new Check(Map.of(), false);
                       budget.check(check);
-                      return new Review(this, slots, check, ready);
+                      return new Review(this, orderedSlots(slots, check.plan()), check, ready);
                     }))
         .thenCompose(
             captured ->
@@ -438,6 +483,28 @@ public final class DocumentBatch implements AutoCloseable {
                       reviews.put(captured.id(), captured);
                       return captured;
                     }));
+  }
+
+  private List<Slot<?>> orderedSlots(List<Slot<?>> slots, Optional<Plan> selected) {
+    if (selected.isEmpty()) return slots;
+    var plan = selected.orElseThrow();
+    var writes = new LinkedHashMap<DocumentId, Slot<?>>();
+    var known = new java.util.HashSet<DocumentId>();
+    for (var slot : slots) {
+      var id = slot.member().document();
+      known.add(id);
+      if (slot.member().intent() == Intent.COMMIT) writes.put(id, slot);
+    }
+    if (plan.writes().size() != writes.size()
+        || !writes.keySet().equals(new java.util.HashSet<>(plan.writes()))
+        || !known.containsAll(plan.guardedSources()))
+      throw new PolicyRefusal(
+          "batch.plan", "The plan must order every writing member and guard only batch members");
+    var order = plan.writes().iterator();
+    var result = new ArrayList<Slot<?>>(slots.size());
+    for (var slot : slots)
+      result.add(slot.member().intent() == Intent.CHECK ? slot : writes.get(order.next()));
+    return result;
   }
 
   private void requireTargets(Review plan, Set<DocumentId> completed, boolean writes) {
@@ -487,6 +554,9 @@ public final class DocumentBatch implements AutoCloseable {
                           if (!fresh.valid())
                             throw new PolicyRefusal(
                                 "batch.invalid", "Current complete batch preflight did not pass");
+                          if (!confirmed.check.plan().equals(fresh.check.plan()))
+                            throw new PolicyRefusal(
+                                "batch.plan_changed", "The write order changed; review it again");
                           for (int i = 0; i < confirmed.slots.size(); i++)
                             if (!confirmed
                                 .slots
@@ -515,85 +585,151 @@ public final class DocumentBatch implements AutoCloseable {
     final OperationScope.Execution execution;
     final List<Outcome> outcomes = new ArrayList<>();
     final Set<DocumentId> completed = new java.util.HashSet<>();
+    final Map<DocumentId, String> guarded = new LinkedHashMap<>();
     Review currentPreflight;
 
     Run(Review confirmed, OperationScope.Execution execution) {
       this.confirmed = confirmed;
       this.execution = execution;
+      var declared = confirmed.check.plan().map(Plan::guardedSources).orElseGet(Set::of);
+      for (var slot : confirmed.slots) {
+        var member = slot.member();
+        if (member.intent() == Intent.CHECK || declared.contains(member.document()))
+          guarded.put(member.document(), slot.preflight().target().sourceRevision());
+      }
     }
 
     CompletionStage<Result> next(int index) {
       if (index == confirmed.slots.size()) {
-        execution.progress(
-            new OperationSnapshot.Progress(
-                "saving",
-                completed.size(),
-                OptionalLong.of(
-                    members.stream().filter(member -> member.intent() == Intent.COMMIT).count()),
-                "documents"));
-        return CompletableFuture.completedStage(
-            new Result(
-                confirmed.id(),
-                outcomes,
-                true,
-                ValidationReport.VALID,
-                Optional.ofNullable(currentPreflight)));
+        return verifySources().thenApply(ignored -> finished());
       }
-      return context
-          .onOwner(
-              () -> {
-                requireOpen();
-                access.require(OwnerContext.Right.WRITE);
-                execution.checkpoint();
-                requireTargets(confirmed, completed, true);
-                var slot = confirmed.slots.get(index);
-                if (slot.member().intent() == Intent.CHECK) {
-                  outcomes.add(
-                      new Outcome(
-                          slot.member().document(),
-                          Intent.CHECK,
-                          Optional.empty(),
-                          ValidationReport.VALID));
-                  // Guard-only documents stay in future target checks until the ordered run
-                  // completes.
-                  return next(index + 1);
+      var slot = confirmed.slots.get(index);
+      if (slot.member().intent() == Intent.CHECK) return next(index + 1);
+      return verifySources()
+          .thenCompose(
+              ignored ->
+                  context.onOwner(
+                      () -> {
+                        requireOpen();
+                        access.require(OwnerContext.Right.WRITE);
+                        execution.checkpoint();
+                        requireTargets(confirmed, completed, true);
+                        progress();
+                        return slot.member()
+                            .actions
+                            .commit(
+                                OperationDescriptor.EntryPoint.INTERNAL, slot.preflight().target());
+                      }))
+          .thenCompose(OperationHandle::completion)
+          .thenCompose(
+              observed -> {
+                ValidationReport status;
+                try {
+                  status = outcomeReport(observed);
+                } catch (RuntimeException malformedReceipt) {
+                  status = report(malformedReceipt);
                 }
-                execution.progress(
-                    new OperationSnapshot.Progress(
-                        "saving",
-                        completed.size(),
-                        OptionalLong.of(
-                            members.stream()
-                                .filter(member -> member.intent() == Intent.COMMIT)
-                                .count()),
-                        "documents"));
-                var operation =
-                    slot.member()
-                        .actions
-                        .commit(OperationDescriptor.EntryPoint.INTERNAL, slot.preflight().target());
-                return operation
-                    .completion()
+                outcomes.add(
+                    new Outcome(
+                        slot.member().document(), Intent.COMMIT, Optional.of(observed), status));
+                if (!status.valid()) return CompletableFuture.completedStage(stopped(status));
+                return advanceGuard(slot, observed)
                     .thenCompose(
-                        observed -> {
-                          ValidationReport status;
-                          try {
-                            status = outcomeReport(observed);
-                          } catch (RuntimeException malformedReceipt) {
-                            status = report(malformedReceipt);
-                          }
-                          outcomes.add(
-                              new Outcome(
-                                  slot.member().document(),
-                                  Intent.COMMIT,
-                                  Optional.of(observed),
-                                  status));
-                          if (!status.valid())
-                            return CompletableFuture.completedStage(stopped(status));
+                        ignored -> {
                           completed.add(slot.member().document());
                           return next(index + 1);
                         });
-              })
-          .thenCompose(stage -> stage);
+              });
+    }
+
+    private Result finished() {
+      progress();
+      var written = outcomes.iterator();
+      var results =
+          confirmed.slots.stream()
+              .map(
+                  slot ->
+                      slot.member().intent() == Intent.CHECK
+                          ? new Outcome(
+                              slot.member().document(),
+                              Intent.CHECK,
+                              Optional.empty(),
+                              ValidationReport.VALID)
+                          : written.next())
+              .toList();
+      return new Result(
+          confirmed.id(),
+          results,
+          true,
+          ValidationReport.VALID,
+          Optional.ofNullable(currentPreflight));
+    }
+
+    private void progress() {
+      execution.progress(
+          new OperationSnapshot.Progress(
+              "saving",
+              completed.size(),
+              OptionalLong.of(
+                  members.stream().filter(member -> member.intent() == Intent.COMMIT).count()),
+              "documents"));
+    }
+
+    private CompletionStage<Void> verifySources() {
+      CompletionStage<Void> checked = CompletableFuture.completedStage(null);
+      for (var slot : confirmed.slots) {
+        var id = slot.member().document();
+        var revision = guarded.get(id);
+        if (revision == null) continue;
+        checked =
+            checked.thenCompose(
+                ignored ->
+                    context
+                        .onOwner(
+                            () -> {
+                              requireOpen();
+                              execution.checkpoint();
+                              return slot.member().actions.verifyBatchSource(revision);
+                            })
+                        .thenCompose(stage -> stage)
+                        .exceptionally(
+                            failed -> {
+                              throw targeted(id, failed);
+                            }));
+      }
+      return checked;
+    }
+
+    private <T> CompletionStage<Void> advanceGuard(Slot<T> slot, OperationSnapshot<?> observed) {
+      var id = slot.member().document();
+      if (!guarded.containsKey(id)) return CompletableFuture.completedStage(null);
+      return context.onWorker(
+          () -> {
+            var committed = (EditorActor.Commit<?>) observed.result().orElseThrow();
+            var receipt = committed.receipt().orElseThrow();
+            var source = receipt.observation().map(value -> value.document()).orElse(null);
+            var actual = source == null ? null : source.candidate().orElse(null);
+            var requested = slot.preflight().candidate().orElseThrow();
+            if (actual == null
+                || !source.report().valid()
+                || actual.definition() != requested.definition())
+              throw targeted(
+                  id,
+                  new PolicyRefusal(
+                      "batch.guard_observation",
+                      "The guarded source's verified readback is unavailable"));
+            // The exact definition and its codec establish the shared value type.
+            @SuppressWarnings("unchecked")
+            var actualTyped = (Candidate<T>) actual;
+            if (!requested.definition().type().equivalent(requested.value(), actualTyped.value()))
+              throw targeted(
+                  id,
+                  new PolicyRefusal(
+                      "batch.guard_value",
+                      "The guarded source's verified value differs from the reviewed value"));
+            guarded.put(id, source.revision());
+            return null;
+          });
     }
 
     Result stopped(ValidationReport failure) {
@@ -601,19 +737,28 @@ public final class DocumentBatch implements AutoCloseable {
       var already =
           known.stream().map(Outcome::document).collect(java.util.stream.Collectors.toSet());
       for (var member : members)
-        if (!already.contains(member.document()))
+        if (!already.contains(member.document())) {
+          var relevant =
+              failure.issues().stream()
+                  .filter(
+                      issue ->
+                          member.document().toString().equals(issue.arguments().get("document")))
+                  .toList();
           known.add(
               new Outcome(
                   member.document(),
                   member.intent(),
                   Optional.empty(),
-                  new ValidationReport(
-                      List.of(
-                          Issue.error(
-                              "batch.not_attempted",
-                              FieldPath.ROOT,
-                              "No batch operation was submitted for this document")),
-                      false)));
+                  relevant.isEmpty()
+                      ? new ValidationReport(
+                          List.of(
+                              Issue.error(
+                                  "batch.not_attempted",
+                                  FieldPath.ROOT,
+                                  "No batch operation was submitted for this document")),
+                          false)
+                      : new ValidationReport(relevant, failure.complete())));
+        }
       return new Result(
           confirmed.id(), known, false, failure, Optional.ofNullable(currentPreflight));
     }
