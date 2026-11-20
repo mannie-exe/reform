@@ -2,6 +2,20 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Coordinated Phase 1 candidate
+
+The local `design.inherent:reform:0.1.0` candidate is built from `71a3e97`. Its packaged JAR has SHA-256 `445a6ca31cf37801be756afbe4abc103083fddcaab7b6f2a9edb1b34210c62db`. A clean source archive rebuilt the same combined JAR, sources, POM and Gradle module metadata. `check build` and `mise run check` pass with 541 core, eight adapter and 31 tooling cases plus the independent packaged consumers. Compared with the integrated watcher fixture below, the `0.1.0` JAR changes only the version in `META-INF/neoforge.mods.toml`.
+
+Both independent policy fixtures run on that same `0.1.0` JAR. Dedicated first boot and reopen pass 33 assertions, 12 native command observations and 15 native search controls each. The integrated fixture passes 46 and 11 assertions, including actual watcher refusal and fresh-source save as described below. All processes finish their native shutdown checks and the fixtures are removed.
+
+The coordinated pack test uses the published Create: Skyweave 0.21.0 exports with the original released Compat 0.40.0 as the save-creation control. The earlier 0.20.0 export retains three retired Redstone Additions feature keys. Both sides refused those keys through Compat's existing strict parser. Pack 0.21.0 removes the keys in its authored configuration. The verified fixture keeps that configuration and the original pack inputs other than the candidate JARs, loopback server settings and the disabled test BlueMap listener.
+
+Empack 0.8.7-beta installed 515 server and 538 client files verified against the export manifests. The final trial uses Compat 0.41.0 at `c167e9b`, combined SHA-256 `221099a46a5781a1d584f6fa8d2ee6828c8a4a6eb16bc585f10ea520a850f86d`, and the Skyweave development candidate with SHA-256 `16c5ba6ad7865af80ae1cabcf3035a6f8d30112c1653943f60f65d50ba0b0428`. Both declare re:form `0.1.0` as a required dependency on both physical sides. Both loaded the same library JAR above. Each Configure entry opened its shared searchable overview, rendered and returned to the title screen. Compat's extra context chooser was exercised through its actual Local files action.
+
+All three final dedicated boots reached the console, answered `list`, saved and stopped. The existing Sky Arch save retained its complete `WorldGenSettings` and DH world identity. The new Skyweave save created a distinct DH identity and a second JVM retained both its generation settings and identity. The preceding joint trial exposed a Compat control ID that used Hoofprint's camel-case storage key and a Skyweave DH bridge that admitted older Compat versions only. The final packages preserve the original Hoofprint fields and shared DH marker format. Compat separately verified a live Hoofprint zoom save and a guarded generation/shape submission on these pinned library bytes. Skyweave's own native recipe, preview, Save and Quit, and reopen evidence applies to the candidate settings classes, which are byte-identical in the DH identity fix.
+
+The native client uses pinned ModDev game libraries and the installed pack with built product JARs. The full-pack client check covers Configure navigation. Individual native fixtures cover settings edits, readback and declared effects. Exact inputs, checksums, rendered frames and process results are retained with the coordinated verification record.
+
 ## Coordinated Phase 1 development candidates
 
 The builds stage immutable Maven coordinates and keep per-artifact receipts. `0.1.0-adoption.2` at `b83c50a` passed two `--files-only` client boots and a `--recipe-only` boot. The explicit custom source saved, reached the separate live owner and reopened with the same value. The composable recipe retained its cancellable preview. `0.1.0-adoption.4` at `25ad8ea` passed two `native_addon_server_probe.py --registered` boots. They exercise actual registered projection, exact version refusal, unrelated ambiguous fields, and a native no-op that writes nothing.
