@@ -26,6 +26,7 @@ import java.util.HexFormat;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;
 import net.minecraft.commands.CommandSource;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.ModList;
@@ -125,6 +126,8 @@ final class NativeServerPolicyProbe {
                             check(
                                 "admitted lifecycle initializes actual saved policy",
                                 receipt.application() == CommitReceipt.Application.APPLIED
+                                    && new ServerPolicyExample.Policy(reopen ? 12 : 9)
+                                        .equals(NativeExample.serverPolicies().effectivePolicy())
                                     && file.runtime()
                                         .orElseThrow()
                                         .view()
@@ -189,6 +192,7 @@ final class NativeServerPolicyProbe {
                             reloads = NativeExample.serverPolicies().reloads().saves();
                             return null;
                           }));
+      work = work.thenCompose(ignored -> reloadSavedWithoutWriting(server, reopen ? 12 : 9));
       work =
           work.thenCompose(
               ignored ->
@@ -534,6 +538,65 @@ final class NativeServerPolicyProbe {
       report.addProperty("failure", failed.toString());
       server.halt(false);
     }
+  }
+
+  private CompletionStage<Void> reloadSavedWithoutWriting(
+      MinecraftServer server, int originalLevel) {
+    var context = file.context();
+    return context
+        .onOwner(
+            () -> {
+              var nativeSource = server.createCommandSourceStack();
+              refused(
+                  "external reload checks actual command WRITE authority",
+                  () -> file.reloadFromSaved(nativeSource.withPermission(0), 2));
+              var original = Files.readString(filePath);
+              var replacement = "{\"schemaVersion\":1,\"values\":{\"level\":11}}\n";
+              Files.writeString(filePath, replacement);
+              return file.reloadFromSaved(nativeSource, 2)
+                  .thenCompose(
+                      receipt ->
+                          context.onOwner(
+                              () -> {
+                                check(
+                                    "reload applies the actual saved policy without rewriting its bytes",
+                                    receipt.application() == CommitReceipt.Application.APPLIED
+                                        && receipt.persistence()
+                                            == CommitReceipt.Persistence.NOT_ATTEMPTED
+                                        && new ServerPolicyExample.Policy(11)
+                                            .equals(
+                                                NativeExample.serverPolicies().effectivePolicy())
+                                        && Files.readString(filePath).equals(replacement));
+                                Files.delete(filePath);
+                                return file.reloadFromSaved(nativeSource, 2);
+                              }))
+                  .thenCompose(stage -> stage)
+                  .thenCompose(
+                      receipt ->
+                          context.onOwner(
+                              () -> {
+                                check(
+                                    "reload preserves previous effective policy and leaves missing source absent",
+                                    receipt.application() == CommitReceipt.Application.UNAVAILABLE
+                                        && receipt.persistence()
+                                            == CommitReceipt.Persistence.NOT_ATTEMPTED
+                                        && !Files.exists(filePath)
+                                        && new ServerPolicyExample.Policy(11)
+                                            .equals(
+                                                NativeExample.serverPolicies().effectivePolicy()));
+                                Files.writeString(filePath, original);
+                                return file.reloadFromSaved(nativeSource, 2);
+                              }))
+                  .thenCompose(stage -> stage)
+                  .thenAccept(
+                      receipt ->
+                          check(
+                              "restored exact source can be applied after unavailable reload",
+                              receipt.application() == CommitReceipt.Application.APPLIED
+                                  && new ServerPolicyExample.Policy(originalLevel)
+                                      .equals(NativeExample.serverPolicies().effectivePolicy())));
+            })
+        .thenCompose(stage -> stage);
   }
 
   private void stopped(ServerStoppedEvent event) {

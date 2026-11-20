@@ -228,13 +228,17 @@ public final class ClientRegisteredSettings {
   }
 
   public ClientForm form(Component title, FormPresentation presentation) {
-    Objects.requireNonNull(presentation);
+    return form(title, new ClientFormOptions<>(presentation, Map.of()));
+  }
+
+  public ClientForm form(Component title, ClientFormOptions<Map<String, Object>> options) {
+    Objects.requireNonNull(options);
     var label = Objects.requireNonNull(title).copy();
     return ClientForm.bound(
             nativeDocument,
             label,
             this::statusDisplay,
-            parent -> screen(parent, label, presentation),
+            parent -> screen(parent, label, options),
             Optional.of(this::retry))
         .atRoute(document);
   }
@@ -244,9 +248,14 @@ public final class ClientRegisteredSettings {
   }
 
   public Screen screen(Screen parent, Component title, FormPresentation presentation) {
+    return screen(parent, title, new ClientFormOptions<>(presentation, Map.of()));
+  }
+
+  public Screen screen(
+      Screen parent, Component title, ClientFormOptions<Map<String, Object>> options) {
     ClientSettingsRuntime.requireClientThread();
     Objects.requireNonNull(title);
-    Objects.requireNonNull(presentation);
+    Objects.requireNonNull(options);
     var observed = state.get();
     if (observed.lifecycle() == Lifecycle.READY && !sameBinding(observed.path())) retire(observed);
     var current = state.get();
@@ -255,13 +264,13 @@ public final class ClientRegisteredSettings {
           parent,
           title,
           this::statusDisplay,
-          () -> screen(parent, title, presentation),
+          () -> screen(parent, title, options),
           Optional.of(this::retry));
-    presentation.requireCompatible(current.owner().definition().type());
+    options.presentation().requireCompatible(current.owner().definition().type());
     return editing(
         current,
         actions ->
-            new SettingsScreen<>(
+            options.open(
                 parent,
                 title,
                 config.getType() == ModConfig.Type.CLIENT
@@ -270,9 +279,6 @@ public final class ClientRegisteredSettings {
                         "defaults_context", "Installation defaults · native COMMON configuration"),
                 current.owner().definition(),
                 actions,
-                Map.of(),
-                presentation,
-                FieldEditors.builder(current.owner().definition()).build(),
                 new SettingsScreen.SubmissionLabels(
                     text("save", "Save native settings"),
                     text("save_reviewed", "Save reviewed native settings"),

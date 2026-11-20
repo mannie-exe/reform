@@ -1,7 +1,10 @@
 package example.reform;
 
 import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.ClientFormOptions;
 import design.inherent.reform.neoforge.client.IntegratedSettings;
+import design.inherent.reform.presentation.FormPresentation;
+import java.util.Map;
 import java.util.Objects;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -36,10 +39,16 @@ public final class ClientExample {
   }
 
   public static Screen worldPolicy(Screen parent, boolean registered) {
+    if (registered)
+      return IntegratedSettings.screen(
+          parent, Component.literal("Native server policy"), ServerPolicyExample.NATIVE);
     return IntegratedSettings.screen(
         parent,
-        Component.literal(registered ? "Native server policy" : "World file policy"),
-        registered ? ServerPolicyExample.NATIVE : ServerPolicyExample.DEFINITION.id());
+        Component.literal("World file policy"),
+        ServerPolicyExample.DEFINITION.id(),
+        2,
+        ServerPolicyExample.DEFINITION,
+        new ClientFormOptions<>(FormPresentation.EMPTY, Map.of()));
   }
 
   private ClientExample() {}

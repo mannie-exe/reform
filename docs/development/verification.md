@@ -2,6 +2,14 @@
 
 This document records actual project checks. Planned native and consumer qualification is not supplied by a bootstrap build.
 
+## Coordinated Phase 1 development candidates
+
+The builds stage immutable Maven coordinates and keep per-artifact receipts. `0.1.0-adoption.2` at `b83c50a` passed two `--files-only` client boots and a `--recipe-only` boot. The explicit custom source saved, reached the separate live owner and reopened with the same value. The composable recipe retained its cancellable preview. `0.1.0-adoption.4` at `25ad8ea` passed two `native_addon_server_probe.py --registered` boots. They exercise actual registered projection, exact version refusal, unrelated ambiguous fields, and a native no-op that writes nothing.
+
+The `0.1.0-adoption.6` combined JAR at `3060d77` has SHA-256 `f6d4f84c801e6a6ebc9e88c443a0fde61e4154a1fbddaff0ec6369e93a8c6359`. Build and staging passed with 540 core, eight adapter and 31 tooling tests. The independent addon and headless artifact checks pass. Each of `--batch-only` and `--workflow-only` passed two native boots. The scoped fixture covers two placements of the same owner and draft, a separate route, a required review entered from the form, an absent unrelated owner, an unchanged dependency, retaken preflight, real saved/staged receipts and reopen. It includes regular and narrow layouts. The ordinary workflow regression retains separate native owners, operation lifetimes and a competing save refusal.
+
+A clean disposable Gradle project resolved that exact JAR from the artifact-only layout used by the GitHub release assets. The check used a local mirror of the path and compared the resolved SHA-256. Consumer and pack qualification remain separately recorded.
+
 ## Phase 1 standalone candidate
 
 The local `0.1.0-SNAPSHOT` candidate targets Minecraft 1.21.1 and NeoForge 21.1.265. This qualification ran on Apple Silicon with Temurin 21.0.13+9. The combined JAR is `2a44c742d872549077ab86e0098246ce63c9243512ea6e6b8d19764b65f6bff6`, the source JAR is `e7069964c7302c029fc3add39f5956646b9d8f9f05eee1671891b6fd3cf01768`, and the neutral core is `39cc5c562ede2d62b0a85740a99d2ac0d958b484abba7f6783c5b1c467751d40`. The three archives match byte for byte after their Gradle archive tasks rerun. All 152 Java entries in the source archive match the owned source files. The build and public packaging checks cover 533 core, eight NeoForge adapter and 31 tooling cases. The headless example executes without game classes, and the independent native addon compiles against the local Maven artifact.

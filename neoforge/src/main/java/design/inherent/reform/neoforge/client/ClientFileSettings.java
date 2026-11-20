@@ -367,14 +367,17 @@ public final class ClientFileSettings<T> {
       Component title,
       Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
       FormPresentation presentation) {
-    Objects.requireNonNull(presentation).requireCompatible(definition.type());
-    var references = Map.copyOf(sources);
+    return form(title, new ClientFormOptions<>(presentation, sources));
+  }
+
+  public ClientForm form(Component title, ClientFormOptions<T> options) {
+    options.presentation().requireCompatible(definition.type());
     var label = Objects.requireNonNull(title).copy();
     return ClientForm.bound(
         definition.id(),
         label,
         this::statusDisplay,
-        parent -> screen(parent, label, references, presentation),
+        parent -> screen(parent, label, options),
         Optional.of(this::retryInitialization));
   }
 
@@ -395,15 +398,19 @@ public final class ClientFileSettings<T> {
       Component title,
       Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
       FormPresentation presentation) {
+    return screen(parent, title, new ClientFormOptions<>(presentation, sources));
+  }
+
+  public Screen screen(Screen parent, Component title, ClientFormOptions<T> options) {
     requireClientThread();
-    Objects.requireNonNull(presentation).requireCompatible(definition.type());
+    options.presentation().requireCompatible(definition.type());
     var current = state.get();
     if (current.lifecycle() != Lifecycle.READY)
       return new ClientStatusScreen(
           parent,
           title,
           this::statusDisplay,
-          () -> screen(parent, title, sources, presentation),
+          () -> screen(parent, title, options),
           Optional.of(this::retryInitialization));
     current.context().requireOwner();
     return ClientEditors.open(
@@ -414,7 +421,7 @@ public final class ClientFileSettings<T> {
         store.valueLimits(),
         store.draftLimits(),
         actions ->
-            new SettingsScreen<>(
+            options.open(
                 parent,
                 title,
                 startup.isPresent()
@@ -429,9 +436,6 @@ public final class ClientFileSettings<T> {
                             "client_context", "Client preferences · applies to this installation"),
                 definition,
                 actions,
-                sources,
-                presentation,
-                FieldEditors.builder(definition).build(),
                 startup.isPresent()
                     ? new SettingsScreen.SubmissionLabels(
                         text("save_startup", "Save for restart"),

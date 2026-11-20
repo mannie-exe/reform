@@ -290,16 +290,23 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
       FormPresentation presentation,
       FieldEditors<T> fieldEditors,
       Optional<ImportCatalog<T>> imports) {
-    context.requireOwner();
-    Objects.requireNonNull(title);
     if (imports.filter(catalog -> catalog.definition() != definition).isPresent())
       throw new IllegalArgumentException("Recipe imports require this exact recipe definition");
+    return screen(
+        title,
+        new ClientFormOptions<>(
+            presentation, sources, ignored -> fieldEditors, ignored -> imports));
+  }
+
+  public Screen screen(Component title, ClientFormOptions<T> options) {
+    context.requireOwner();
+    Objects.requireNonNull(title);
     if (screenCreated)
       throw new IllegalStateException("This recipe editor already has a native screen");
     screenCreated = true;
     try {
       var form =
-          new SettingsScreen<>(
+          options.open(
               parent,
               title,
               Component.translatableWithFallback(
@@ -307,10 +314,7 @@ public final class WorldRecipe<T, P> implements AutoCloseable {
                   "New world recipe · affects only this unsaved creation context"),
               definition,
               actions,
-              sources,
-              presentation,
-              fieldEditors);
-      imports.ifPresent(form::withImports);
+              SettingsScreen.SubmissionLabels.standard(actions.commitKind()));
       if (preview != null) form.withPreview(preview);
       if (returnAfterApply) form.returnAfterApply();
       return form;

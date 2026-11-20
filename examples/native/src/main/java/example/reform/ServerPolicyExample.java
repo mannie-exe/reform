@@ -4,8 +4,14 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordTypes;
+import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.neoforge.configuration.ServerPolicyCommands;
 import design.inherent.reform.neoforge.configuration.ServerSettings;
+import design.inherent.reform.owner.ApplicationEffects;
+import design.inherent.reform.owner.LiveApplication;
+import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.storage.JsonStore;
+import design.inherent.reform.storage.OwnedFile;
 import design.inherent.reform.storage.StorageBinding;
 import design.inherent.reform.value.ValueTypes;
 import java.util.Objects;
@@ -51,6 +57,7 @@ public final class ServerPolicyExample {
   public static final String NATIVE_FILE = "reform-server-native.toml";
   private final ModContainer container;
   private final ModConfigSpec spec;
+  private volatile Policy effective;
   private volatile ModConfig config;
   private final AtomicReference<Reloads> reloads =
       new AtomicReference<>(new Reloads(0, 0, 0, null, null, 0));
@@ -143,16 +150,35 @@ public final class ServerPolicyExample {
   private void starting(ServerStartingEvent event) {
     var server = event.getServer();
     var settings = ServerSettings.forServer(server);
+    effective = null;
+    var root = server.getWorldPath(LevelResource.ROOT).toAbsolutePath();
+    var source =
+        new JsonStore<>(
+            DEFINITION,
+            new OwnedFile(StorageBinding.relative(root, "serverconfig", FILE), 262144),
+            JsonStore.Format.NEW_ENVELOPE,
+            new JsonLimits(262144, 64, 16384, 32768, 128, 4096),
+            DraftLimits.CONFIGURATION);
     settings.serverPolicy(
         container,
-        DEFINITION,
-        StorageBinding.relative(
-            server.getWorldPath(LevelResource.ROOT).toAbsolutePath(), "serverconfig", FILE));
+        source,
+        ApplicationEffects.OWNER_PUBLICATION,
+        new LiveApplication<>(
+            proposed -> proposed.equals(effective),
+            proposed -> {
+              if (!server.isSameThread())
+                throw new IllegalStateException("Expected native server effect executor");
+              effective = proposed;
+            }));
     settings.registeredNeoForge(container, Objects.requireNonNull(config), NATIVE);
   }
 
   public ServerSettings.Document<?> policy(MinecraftServer server) {
     return ServerSettings.forServer(server).document(DEFINITION.id()).orElseThrow();
+  }
+
+  public Policy effectivePolicy() {
+    return effective;
   }
 
   public ServerSettings.Document<?> nativePolicy(MinecraftServer server) {

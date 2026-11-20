@@ -24,6 +24,30 @@ Editor/operation updates must preserve actual session/generation/version identit
 
 The combined JAR contains own core/platform classes once. POM metadata declares the Java dependencies without a second owned core artifact. Artifact timestamps/order are reproducible. The wrapper distribution is checksum-pinned; its scripts/JAR retain [Gradle's license](../LICENSE-GRADLE.txt).
 
+## Consumer resolution
+
+For a published release, Gradle NeoForge consumers can resolve the exact release JAR through an artifact-only Ivy repository. The release assets already use this filename pattern. The game supplies DFU and Gson, so the dependency can be nontransitive. Keep the runtime dependency in the mod's NeoForge metadata and the same exact JAR in the pack.
+
+```groovy
+repositories {
+    exclusiveContent {
+        forRepository {
+            ivy {
+                url = uri('https://github.com/mannie-exe/reform/releases/download')
+                patternLayout { artifact 'v[revision]/[artifact]-[revision]-mc1.21.1-neoforge.[ext]' }
+                metadataSources { artifact() }
+            }
+        }
+        filter { includeModule 'design.inherent', 'reform' }
+    }
+}
+dependencies {
+    implementation('design.inherent:reform:0.1.0') { transitive = false }
+}
+```
+
+Use the selected immutable version rather than a dynamic version. Compare the resolved JAR with the release checksum. A development trial can select an explicit staged Maven repository and a unique pre-release version. Keep that machine-local location out of the release build. Publish the library before releasing a consumer that requires it.
+
 ## CI and release procedure
 
 CI checks/builds on Linux, Windows and Intel macOS, checks Markdown separately, and retains staged artifacts. Apple Silicon and native gameplay/UI qualification remain separately recorded. Successful matrix builds are a release gate, not a promise of cross-platform rendering behavior.

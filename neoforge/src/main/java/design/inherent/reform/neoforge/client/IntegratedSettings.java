@@ -1,5 +1,6 @@
 package design.inherent.reform.neoforge.client;
 
+import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.neoforge.configuration.ServerSettings;
 import design.inherent.reform.owner.OwnerContext;
@@ -28,9 +29,41 @@ public final class IntegratedSettings {
   /** The declared level (0–4) applies to both reading and saving, subject to native permission. */
   public static Screen screen(
       Screen parent, Component title, DocumentId document, int level, FormPresentation form) {
-    ClientSettingsRuntime.requireClientThread();
     Objects.requireNonNull(document);
     Objects.requireNonNull(form);
+    var host = currentHost(level);
+    if (host.isEmpty()) return unavailable(parent, title, worldRequired());
+    var target = ServerSettings.admittedDocument(host.orElseThrow().server(), document);
+    if (target.isEmpty()) return unavailable(parent, title, policyMissing());
+    return open(
+        parent,
+        title,
+        host.orElseThrow(),
+        target.orElseThrow(),
+        level,
+        new ClientFormOptions<>(form, Map.of()));
+  }
+
+  /** Compose an exact typed policy, including a possible consumer route alias. */
+  public static <T> Screen screen(
+      Screen parent,
+      Component title,
+      DocumentId route,
+      int level,
+      DocumentDefinition<T> definition,
+      ClientFormOptions<T> options) {
+    Objects.requireNonNull(route);
+    Objects.requireNonNull(definition);
+    Objects.requireNonNull(options);
+    var host = currentHost(level);
+    if (host.isEmpty()) return unavailable(parent, title, worldRequired());
+    var target = ServerSettings.admittedDocument(host.orElseThrow().server(), route, definition);
+    if (target.isEmpty()) return unavailable(parent, title, policyMissing());
+    return open(parent, title, host.orElseThrow(), target.orElseThrow(), level, options);
+  }
+
+  private static Optional<Host> currentHost(int level) {
+    ClientSettingsRuntime.requireClientThread();
     if (level < 0 || level > 4)
       throw new IllegalArgumentException("Native permission levels must be between zero and four");
     var client = Minecraft.getInstance();
@@ -42,25 +75,18 @@ public final class IntegratedSettings {
         || player == null
         || listener == null
         || world == null
-        || !listener.getConnection().isMemoryConnection())
-      return unavailable(
-          parent,
-          title,
-          text("integrated_required", "Open a local world to edit its server policy."));
-    var target = ServerSettings.admittedDocument(server, document);
-    if (target.isEmpty())
-      return unavailable(
-          parent,
-          title,
-          text("integrated_missing", "This world has no registered policy for this entry."));
-    var view =
-        new Opening<>(
-            new Host(client, server, player, listener, world),
-            target.orElseThrow(),
-            level,
-            form,
-            parent,
-            title.copy());
+        || !listener.getConnection().isMemoryConnection()) return Optional.empty();
+    return Optional.of(new Host(client, server, player, listener, world));
+  }
+
+  private static <T> Screen open(
+      Screen parent,
+      Component title,
+      Host host,
+      ServerSettings.Document<T> target,
+      int level,
+      ClientFormOptions<T> options) {
+    var view = new Opening<>(host, target, level, options, parent, title.copy());
     return new ClientStatusScreen(
         parent, title, view::state, view::open, Optional.empty(), view::begin, view::retire);
   }
@@ -85,7 +111,7 @@ public final class IntegratedSettings {
     private final Host host;
     private final ServerSettings.Document<T> document;
     private final int level;
-    private final FormPresentation form;
+    private final ClientFormOptions<T> form;
     private final Screen parent;
     private final Component title;
     private final AtomicBoolean live = new AtomicBoolean(true);
@@ -99,7 +125,7 @@ public final class IntegratedSettings {
         Host host,
         ServerSettings.Document<T> document,
         int level,
-        FormPresentation form,
+        ClientFormOptions<T> form,
         Screen parent,
         Component title) {
       this.host = host;
@@ -121,7 +147,7 @@ public final class IntegratedSettings {
         return;
       }
       try {
-        form.requireCompatible(document.definition().type());
+        form.presentation().requireCompatible(document.definition().type());
         context =
             new OwnerContext(
                 host.client()::execute,
@@ -187,14 +213,13 @@ public final class IntegratedSettings {
         var access = context.access(this::current, this::current);
         var actions = binding.attach(context, access);
         var screen =
-            new SettingsScreen<>(
+            form.open(
                 parent,
                 title,
                 text("integrated_context", "Integrated world policy · running world"),
                 document.definition(),
                 actions,
-                Map.of(),
-                form);
+                SettingsScreen.SubmissionLabels.standard(actions.commitKind()));
         transferred = true;
         return screen;
       } catch (RuntimeException failed) {
@@ -220,6 +245,14 @@ public final class IntegratedSettings {
         () -> new ClientStatusScreen.State(false, false, message),
         () -> parent,
         Optional.empty());
+  }
+
+  private static Component worldRequired() {
+    return text("integrated_required", "Open a local world to edit its server policy.");
+  }
+
+  private static Component policyMissing() {
+    return text("integrated_missing", "This world has no registered policy for this entry.");
   }
 
   private static Component reason(Throwable failure) {

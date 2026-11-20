@@ -560,7 +560,15 @@ public final class ServerSettings implements AutoCloseable {
   @SuppressWarnings("unchecked") // Exact definition identity pairs its document's value type.
   static <T> Optional<Document<T>> admittedDocument(
       MinecraftServer server, DocumentDefinition<T> definition) {
-    return admittedDocument(server, definition.id())
+    return admittedDocument(server, definition.id(), definition);
+  }
+
+  /** Typed metadata for a particular route. Opening an actor still requires native admission. */
+  @SuppressWarnings("unchecked") // Exact definition identity pairs its document's value type.
+  public static <T> Optional<Document<T>> admittedDocument(
+      MinecraftServer server, DocumentId route, DocumentDefinition<T> definition) {
+    Objects.requireNonNull(definition);
+    return admittedDocument(server, route)
         .filter(doc -> doc.definition() == definition)
         .map(doc -> (Document<T>) doc);
   }
