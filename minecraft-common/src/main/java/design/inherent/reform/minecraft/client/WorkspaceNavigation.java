@@ -1,0 +1,400 @@
+package design.inherent.reform.minecraft.client;
+
+import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.presentation.FormCatalog;
+import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.NavigationHistory;
+import design.inherent.reform.presentation.SectionNavigation;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.network.chat.Component;
+
+/** One persistent native tree over real workflow destinations and admitted field identities. */
+final class WorkspaceNavigation {
+  enum Kind {
+    CATEGORY,
+    DESTINATION,
+    FIELD
+  }
+
+  record Key(Kind kind, DocumentId placement, Optional<FieldPath> field) {
+    Key {
+      Objects.requireNonNull(kind);
+      Objects.requireNonNull(placement);
+      Objects.requireNonNull(field);
+      if ((kind == Kind.FIELD) != field.isPresent())
+        throw new IllegalArgumentException("Only a field navigation key names a field");
+    }
+  }
+
+  record Entry(
+      Key key,
+      Optional<Key> parent,
+      Component title,
+      Component help,
+      Runnable select,
+      boolean searchOnly,
+      String searchTerms) {
+    Entry(Key key, Optional<Key> parent, Component title, Component help, Runnable select) {
+      this(key, parent, title, help, select, false, title.getString() + " " + help.getString());
+    }
+
+    Entry {
+      Objects.requireNonNull(key);
+      Objects.requireNonNull(parent);
+      title = Objects.requireNonNull(title).copy();
+      help = Objects.requireNonNull(help).copy();
+      Objects.requireNonNull(searchTerms);
+      if (parent.filter(key::equals).isPresent())
+        throw new IllegalArgumentException("A navigation entry cannot parent itself");
+    }
+  }
+
+  private final BooleanSupplier active;
+  private final Runnable rebuild;
+  private final Consumer<Key> reveal;
+  private NavigationHistory<Key> history;
+  private int maximumHistory;
+  private Key observedSelection;
+  private boolean restoring;
+  private final Map<Key, Position> positions = new LinkedHashMap<>();
+  private final Set<Key> expanded = new HashSet<>();
+  private final Map<Key, Long> rowIds = new HashMap<>();
+  private long nextRowId;
+  private FormEditBox search;
+  private FormPanel panel;
+  private String query = "", focusedRow;
+  private int queryCursor, querySelection;
+  private boolean searchFocused;
+  private Object generation;
+
+  record Widgets(FormEditBox search, FormPanel panel, List<Button> history) {}
+
+  record Position(SectionNavigation.Bookmark scroll, String focus, DocumentId owner) {}
+
+  WorkspaceNavigation(BooleanSupplier active, Runnable rebuild, Consumer<Key> reveal) {
+    this.active = Objects.requireNonNull(active);
+    this.rebuild = Objects.requireNonNull(rebuild);
+    this.reveal = Objects.requireNonNull(reveal);
+  }
+
+  boolean restoring() {
+    return restoring;
+  }
+
+  void remember(Key key, Position position) {
+    if (key == null || position == null || history == null) return;
+    positions.remove(key);
+    positions.put(key, position);
+    while (positions.size() > maximumHistory)
+      positions.remove(positions.keySet().iterator().next());
+  }
+
+  Optional<Position> position(Key key) {
+    return Optional.ofNullable(positions.get(key));
+  }
+
+  void visit(Key selected, FormCatalog.Limits limits) {
+    if (selected == null) return;
+    if (history == null) {
+      maximumHistory = limits.maximumHistoryEntries();
+      history = new NavigationHistory<>(selected, maximumHistory);
+    } else if (maximumHistory != limits.maximumHistoryEntries())
+      throw new IllegalArgumentException("A navigation lifetime retains its history admission");
+    if (!selected.equals(observedSelection)) history.select(selected);
+    observedSelection = selected;
+  }
+
+  private void move(boolean forward) {
+    if (history == null
+        || !active.getAsBoolean()
+        || (forward ? !history.canForward() : !history.canBack())) return;
+    var requested = forward ? history.forward() : history.back();
+    observedSelection = requested;
+    searchFocused = false;
+    focusedRow = null;
+    restoring = true;
+    try {
+      reveal.accept(requested);
+    } finally {
+      restoring = false;
+    }
+    rebuild.run();
+  }
+
+  void preserve(GuiEventListener focused) {
+    if (search != null) {
+      queryCursor = search.getCursorPosition();
+      querySelection = search.selection();
+      searchFocused = focused == search;
+    }
+    focusedRow = panel != null && focused == panel ? panel.focusKey() : null;
+  }
+
+  boolean restoreSearchFocus() {
+    return searchFocused;
+  }
+
+  boolean restoreTreeFocus() {
+    return focusedRow != null;
+  }
+
+  void restoreTree() {
+    if (panel != null && focusedRow != null) panel.restoreFocus(focusedRow);
+  }
+
+  boolean focusSearch() {
+    if (search == null || !active.getAsBoolean()) return false;
+    searchFocused = true;
+    search.setFocused(true);
+    return true;
+  }
+
+  boolean clearFocusedFilter() {
+    if (search == null || !search.isFocused() || query.isEmpty()) return false;
+    search.setValue("");
+    return true;
+  }
+
+  Widgets build(
+      Minecraft client,
+      FormGeometry.Placement bounds,
+      List<Entry> declared,
+      Key selected,
+      FormCatalog.Limits limits) {
+    return build(client, bounds, declared, selected, limits, List.of());
+  }
+
+  Widgets build(
+      Minecraft client,
+      FormGeometry.Placement bounds,
+      List<Entry> declared,
+      Key selected,
+      FormCatalog.Limits limits,
+      List<Component> notices) {
+    Objects.requireNonNull(limits);
+    var entries = admit(declared, limits.maximumEntries());
+    visit(selected, limits);
+    rowIds.keySet().retainAll(entries.keySet());
+    expanded.retainAll(entries.keySet());
+    if (selected != null && !rowIds.containsKey(selected)) expanded.add(selected);
+    for (var current = entries.get(nearest(selected, entries)); current != null; ) {
+      if (current.parent().isEmpty()) break;
+      expanded.add(current.parent().orElseThrow());
+      current = entries.get(current.parent().orElseThrow());
+    }
+    var token = new Object();
+    generation = token;
+    var historyButtons = new ArrayList<Button>();
+    for (boolean forward : List.of(false, true)) {
+      var label = forward ? text("forward", "Forward") : text("back", "Back");
+      var button =
+          Button.builder(
+                  label,
+                  ignored -> {
+                    if (current(token)) move(forward);
+                  })
+              .bounds(0, 0, Math.max(40, client.font.width(label) + 16), 20)
+              .build();
+      button.active = history != null && (forward ? history.canForward() : history.canBack());
+      button.setTooltip(Tooltip.create(label));
+      historyButtons.add(button);
+    }
+    var historyGeometry =
+        FormGeometry.controls(
+            historyButtons.stream()
+                .map(button -> new FormGeometry.Size(button.getWidth(), button.getHeight()))
+                .toList(),
+            Math.max(1, bounds.width()),
+            4);
+    for (int i = 0; i < historyButtons.size(); i++) {
+      var placement = historyGeometry.placements().get(i);
+      var button = historyButtons.get(i);
+      button.setPosition(bounds.x() + placement.x(), bounds.y() + placement.y());
+      button.setWidth(placement.width());
+    }
+    int searchTop = bounds.y() + historyGeometry.height() + 4;
+    int searchWidth = Math.max(1, bounds.width());
+    search =
+        new FormEditBox(
+            client.font, bounds.x(), searchTop, searchWidth, 20, text("search", "Search settings"));
+    search.setMaxLength(limits.maximumQueryCharacters());
+    search.setHint(text("search", "Search settings"));
+    search.setValue(query);
+    search.setCursorPosition(Math.min(queryCursor, query.length()));
+    search.setHighlightPos(Math.min(querySelection, query.length()));
+    search.setResponder(
+        value -> {
+          if (!current(token) || query.equals(value)) return;
+          query = value;
+          queryCursor = search.getCursorPosition();
+          querySelection = search.selection();
+          searchFocused = true;
+          rebuild.run();
+        });
+    float scroll = panel == null ? 0 : panel.scroll();
+    panel =
+        new FormPanel(
+            client,
+            bounds.x(),
+            searchTop + 26,
+            bounds.width(),
+            Math.max(1, bounds.height() - (searchTop - bounds.y()) - 26),
+            true);
+    var children = new LinkedHashMap<Key, List<Entry>>();
+    var roots = new ArrayList<Entry>();
+    for (var entry : entries.values()) {
+      if (entry.parent().isEmpty()) roots.add(entry);
+      else
+        children
+            .computeIfAbsent(entry.parent().orElseThrow(), ignored -> new ArrayList<>())
+            .add(entry);
+    }
+    var matches = matching(entries);
+    boolean filtering = !query.isBlank();
+    var shownSelected = nearest(selected, entries);
+    while (!filtering
+        && shownSelected != null
+        && entries.containsKey(shownSelected)
+        && entries.get(shownSelected).searchOnly())
+      shownSelected = entries.get(shownSelected).parent().orElse(null);
+    for (var notice : notices) panel.row(Component.empty(), notice);
+    record Item(Entry entry, int depth) {}
+    var pending = new ArrayDeque<Item>();
+    for (var root : roots.reversed()) pending.push(new Item(root, 0));
+    int shown = 0;
+    while (!pending.isEmpty()) {
+      var item = pending.pop();
+      var entry = item.entry();
+      if (!filtering && entry.searchOnly()) continue;
+      if (filtering && !matches.contains(entry.key())) continue;
+      boolean branch = children.containsKey(entry.key());
+      boolean open = branch && (filtering || expanded.contains(entry.key()));
+      int indent = Math.min(28, item.depth() * 8);
+      int width = Math.max(24, bounds.width() - 20);
+      var button =
+          FormPanel.navigationButton(
+              entry.title(),
+              width,
+              branch,
+              entry.key().equals(shownSelected),
+              () -> {
+                if (!current(token)) return;
+                if (entry.select() != null) {
+                  if (branch && !expanded.remove(entry.key())) expanded.add(entry.key());
+                  searchFocused = false;
+                  entry.select().run();
+                } else {
+                  if (!expanded.remove(entry.key())) expanded.add(entry.key());
+                  searchFocused = false;
+                  rebuild.run();
+                }
+              });
+      button.treeRow(indent, branch ? open : null);
+      button.context(entry.help());
+      if (!entry.help().getString().isBlank()) button.setTooltip(Tooltip.create(entry.help()));
+      long row = rowIds.computeIfAbsent(entry.key(), ignored -> nextRowId++);
+      panel.row("workspace:" + row, Component.empty(), Component.empty(), button);
+      shown++;
+      if (open)
+        for (var child : children.get(entry.key()).reversed())
+          pending.push(new Item(child, item.depth() + 1));
+    }
+    if (shown == 0) panel.row(text("no_matches", "No matching settings"), Component.empty());
+    panel.finish(scroll);
+    return new Widgets(search, panel, List.copyOf(historyButtons));
+  }
+
+  private static Key nearest(Key requested, Map<Key, Entry> entries) {
+    if (requested == null || entries.containsKey(requested)) return requested;
+    if (requested.kind() != Kind.FIELD) return null;
+    var fallback = new Key(Kind.DESTINATION, requested.placement(), Optional.empty());
+    int depth = -1;
+    for (var key : entries.keySet())
+      if (key.kind() == Kind.FIELD
+          && key.placement().equals(requested.placement())
+          && requested.field().orElseThrow().startsWith(key.field().orElseThrow())
+          && key.field().orElseThrow().segments().size() > depth) {
+        fallback = key;
+        depth = key.field().orElseThrow().segments().size();
+      }
+    return entries.containsKey(fallback) ? fallback : null;
+  }
+
+  private Set<Key> matching(Map<Key, Entry> entries) {
+    if (query.isBlank()) return Set.of();
+    var result = new HashSet<Key>();
+    var terms = List.of(query.strip().toLowerCase(Locale.ROOT).split("\\s+"));
+    var inherited = new HashMap<Key, BitSet>();
+    for (var entry : entries.values()) {
+      var chain = new ArrayDeque<Entry>();
+      var parent = entry;
+      while (parent != null && !inherited.containsKey(parent.key())) {
+        chain.push(parent);
+        parent = parent.parent().map(entries::get).orElse(null);
+      }
+      var flags = parent == null ? new BitSet(terms.size()) : inherited.get(parent.key());
+      while (!chain.isEmpty()) {
+        var current = chain.pop();
+        flags = (BitSet) flags.clone();
+        var text = current.searchTerms().toLowerCase(Locale.ROOT);
+        for (int i = 0; i < terms.size(); i++)
+          if (!flags.get(i) && text.contains(terms.get(i))) flags.set(i);
+        inherited.put(current.key(), flags);
+        if (flags.cardinality() == terms.size()) {
+          for (var match = current; match != null && result.add(match.key()); )
+            match = match.parent().map(entries::get).orElse(null);
+        }
+      }
+    }
+    return result;
+  }
+
+  private static Map<Key, Entry> admit(List<Entry> declared, int maximumEntries) {
+    if (maximumEntries < 1 || declared.size() > maximumEntries)
+      throw new IllegalArgumentException("Complete navigation admission exhausted");
+    var entries = new LinkedHashMap<Key, Entry>();
+    for (var entry : declared)
+      if (entries.putIfAbsent(entry.key(), entry) != null)
+        throw new IllegalArgumentException("Duplicate navigation identity");
+    var admitted = new HashSet<Key>();
+    for (var entry : entries.values()) {
+      var seen = new HashSet<Key>();
+      var current = entry;
+      while (current != null && !admitted.contains(current.key())) {
+        if (!seen.add(current.key()))
+          throw new IllegalArgumentException("Navigation parents must form bounded trees");
+        if (current.parent().isEmpty()) break;
+        current = entries.get(current.parent().orElseThrow());
+        if (current == null) throw new IllegalArgumentException("Navigation parent is absent");
+      }
+      admitted.addAll(seen);
+    }
+    return entries;
+  }
+
+  private boolean current(Object token) {
+    return generation == token && active.getAsBoolean();
+  }
+
+  private static Component text(String key, String fallback) {
+    return Component.translatableWithFallback("reform.workspace." + key, fallback);
+  }
+}

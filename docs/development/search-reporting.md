@@ -18,6 +18,8 @@ Attach this request's actual native ticket-removal action after acquiring the ti
 
 At completion, settle the reservation on the native thread **before** testing whether its originating job is still selected. That test controls whether the delivered data can be used for results. It does not control cleanup. Preserve distinct ticket keys and the native scheduler's actual queue, status and concurrency policy. The library does not start or cancel chunk futures.
 
+Minecraft 1.21.1 region tickets accept a caller key such as a UUID. Minecraft 26.3 instead matches tickets by the exact `TicketType` object and level in a chunk; equal record values do not establish the same native type identity. A provider reusing one type/level for overlapping requests must retain its own sharing count so one cancellation cannot remove another request's physical ticket. `WorkBudget` accepts the provider's actual cleanup action and does not invent UUID keys or a force-ticking facility where the game lacks them.
+
 ## Native command binding
 
 Capture `SearchRecipient` from the actual console or current player on the native server thread. It retains the exact level and the origin selected at admission. A movement within that world changes the recipient's current position and leaves the origin intact. A native replacement player on the same play connection can receive the search's results. A different login, another level, or loss of current permission yields no recipient. Providers use that check to retire work when its audience leaves, and handle world unload and server shutdown through their native lifecycle.
@@ -26,6 +28,6 @@ Capture `SearchRecipient` from the actual console or current player on the nativ
 
 The cancellation branch freezes report updates, stops reservation admission and asks the provider to cancel. The provider records the terminal reason and handles its own native cleanup. A terminal result may still display outstanding requests. Search rows can describe coordinates or suggested actions through a bounded consumer renderer. Their presence confirms only the provider's declared result facts.
 
-[Verification](verification.md#native-search-reporting) records evidence from the pinned legacy control flow and independent native fixtures. Consumer adoption must qualify its actual candidate counts, source scheduling, structure identity and result meanings.
+[Verification](verification.md#native-search-reporting) records evidence from the pinned Minecraft 1.21.1 control flow and independent native fixtures. Consumer adoption must qualify its actual candidate counts, source scheduling, structure identity and result meanings.
 
 On Minecraft or NeoForge updates, recheck native player replacement and connection timing, command parsing and click actions, ticket key comparison, chunk future admission, and owner-thread delivery during world unload and server stop.

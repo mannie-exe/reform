@@ -20,8 +20,7 @@ final class NumericType<N extends Number> implements ValueType<N> {
     shape =
         new ValueShape.Scalar(
             scalar.kind(),
-            scalar.minimum(),
-            scalar.maximum(),
+            scalar.domain(),
             scalar.maximumLength(),
             scalar.choices(),
             Optional.of(Objects.requireNonNull(display)));

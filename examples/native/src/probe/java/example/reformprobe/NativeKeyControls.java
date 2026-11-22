@@ -10,10 +10,10 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.FieldEditors;
-import design.inherent.reform.neoforge.client.KeyBindingOptions;
-import design.inherent.reform.neoforge.client.KeyBindingScreen;
-import design.inherent.reform.neoforge.client.SettingsScreen;
+import design.inherent.reform.minecraft.client.FieldEditors;
+import design.inherent.reform.minecraft.client.KeyBindingOptions;
+import design.inherent.reform.minecraft.client.KeyBindingScreen;
+import design.inherent.reform.minecraft.client.SettingsScreen;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
@@ -141,7 +141,8 @@ final class NativeKeyControls {
 
   private KeyBindingOptions.Binding binding(int code, KeyModifier modifier) {
     return new KeyBindingOptions.Binding(
-        InputConstants.Type.KEYSYM.getOrCreate(code).getName(), modifier);
+        InputConstants.Type.KEYSYM.getOrCreate(code).getName(),
+        KeyBindingOptions.Modifier.valueOf(modifier.name()));
   }
 
   private String raw(FieldPath path) {
@@ -180,7 +181,8 @@ final class NativeKeyControls {
             .orElseThrow()
             .equals(
                 new KeyBindingOptions.Binding(
-                    InputConstants.Type.MOUSE.getOrCreate(3).getName(), KeyModifier.NONE)));
+                    InputConstants.Type.MOUSE.getOrCreate(3).getName(),
+                    KeyBindingOptions.Modifier.NONE)));
   }
 
   boolean tick() throws Exception {

@@ -48,12 +48,20 @@ public final class ValueTypes {
         BigDecimal.valueOf(maximum));
   }
 
+  public static ValueType<Byte> byteInteger(NumericDomain domain) {
+    return number(ExactCodecs.BYTE, ValueShape.ScalarKind.BYTE, domain);
+  }
+
   public static ValueType<Short> shortInteger(short minimum, short maximum) {
     return number(
         ExactCodecs.SHORT,
         ValueShape.ScalarKind.SHORT,
         BigDecimal.valueOf(minimum),
         BigDecimal.valueOf(maximum));
+  }
+
+  public static ValueType<Short> shortInteger(NumericDomain domain) {
+    return number(ExactCodecs.SHORT, ValueShape.ScalarKind.SHORT, domain);
   }
 
   public static ValueType<Float> floating(float minimum, float maximum) {
@@ -64,12 +72,20 @@ public final class ValueTypes {
         new BigDecimal(Float.toString(maximum)));
   }
 
+  public static ValueType<Float> floating(NumericDomain domain) {
+    return number(ExactCodecs.FLOAT, ValueShape.ScalarKind.FLOAT, domain);
+  }
+
   public static ValueType<Integer> integer(int minimum, int maximum) {
     return number(
         ExactCodecs.INT,
         ValueShape.ScalarKind.INTEGER,
         BigDecimal.valueOf(minimum),
         BigDecimal.valueOf(maximum));
+  }
+
+  public static ValueType<Integer> integer(NumericDomain domain) {
+    return number(ExactCodecs.INT, ValueShape.ScalarKind.INTEGER, domain);
   }
 
   public static ValueType<Long> longInteger(long minimum, long maximum) {
@@ -80,8 +96,16 @@ public final class ValueTypes {
         BigDecimal.valueOf(maximum));
   }
 
+  public static ValueType<Long> longInteger(NumericDomain domain) {
+    return number(ExactCodecs.LONG, ValueShape.ScalarKind.LONG, domain);
+  }
+
   public static ValueType<Double> decimal(BigDecimal minimum, BigDecimal maximum) {
     return number(ExactCodecs.DOUBLE, ValueShape.ScalarKind.DOUBLE, minimum, maximum);
+  }
+
+  public static ValueType<Double> decimal(NumericDomain domain) {
+    return number(ExactCodecs.DOUBLE, ValueShape.ScalarKind.DOUBLE, domain);
   }
 
   public static ValueType<Double> decimal(double minimum, double maximum) {
@@ -189,8 +213,16 @@ public final class ValueTypes {
 
   private static <N extends Number> ValueType<N> number(
       Codec<N> codec, ValueShape.ScalarKind kind, BigDecimal minimum, BigDecimal maximum) {
-    return scalar(
-        ExactCodecs.bounded(codec, minimum, maximum), kind, minimum, maximum, -1, List.of());
+    return number(codec, kind, NumericDomain.closed(minimum, maximum));
+  }
+
+  private static <N extends Number> ValueType<N> number(
+      Codec<N> codec, ValueShape.ScalarKind kind, NumericDomain domain) {
+    Objects.requireNonNull(domain);
+    return ValueType.of(
+        ExactCodecs.bounded(codec, domain),
+        new ValueShape.Scalar(kind, domain, -1, List.of(), Optional.empty()),
+        SnapshotPolicy.immutable());
   }
 
   private static <T> ValueType<T> scalar(

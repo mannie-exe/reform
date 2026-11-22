@@ -1,0 +1,13 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven { url = 'https://maven.neoforged.net/releases/' }
+        maven { url = 'https://maven.fabricmc.net/' }
+    }
+}
+
+dependencyResolutionManagement {
+    versionCatalogs { libs { from(files('../../gradle/libs.versions.toml')) } }
+}
+
+rootProject.name = 'reform-native-platform-consumer'

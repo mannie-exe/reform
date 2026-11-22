@@ -2,6 +2,8 @@
 
 Use [README](README.md) for prerequisites and [development](docs/development/README.md) for build and ownership details. Version 0.1.x is the initial public API line. Discuss a change that alters serialized meaning, authority, supported platforms or licensing before depending on it.
 
+Code contributions use Apache-2.0; preserve applicable copyright and third-party notices. Published 0.1.0 retains its original MIT terms.
+
 Implement against the pinned artifacts. Keep common/core signatures free of client and optional-mod types. Introduce public extension contracts through independently compiled consumers; do not require private implementation access. Preserve existing consumer settings and native callbacks during extraction.
 
 Before a commit:

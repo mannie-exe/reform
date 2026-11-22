@@ -26,6 +26,7 @@ public final class NumericInput {
   private final String text;
   private final Optional<DraftEdit.SetUnitRaw> action;
   private final String notice;
+  private final Optional<NumericDisplay.Caption> caption;
 
   private NumericInput(
       ValueShape.Scalar shape,
@@ -41,6 +42,7 @@ public final class NumericInput {
     this.text = Objects.requireNonNull(text);
     this.action = Objects.requireNonNull(action);
     this.notice = Objects.requireNonNull(notice);
+    caption = NumericPresentation.caption(shape, expected);
   }
 
   public static NumericInput open(ValueShape.Scalar shape, DraftNode.Scalar source) {
@@ -63,6 +65,10 @@ public final class NumericInput {
 
   public String notice() {
     return notice;
+  }
+
+  public Optional<NumericDisplay.Caption> caption() {
+    return caption;
   }
 
   public DraftNode.Scalar expected() {
@@ -127,10 +133,10 @@ public final class NumericInput {
     } catch (IllegalArgumentException limit) {
       return refused("The step exceeds the declared numeric representation budget");
     }
-    if (shape.minimum() != null && next.compareTo(shape.minimum()) < 0)
-      return refused("The step would go below the declared minimum");
-    if (shape.maximum() != null && next.compareTo(shape.maximum()) > 0)
-      return refused("The step would exceed the declared maximum");
+    if (!shape.domain().contains(next))
+      return refused("The step requires " + shape.domain().description());
+    if (!shape.domain().acceptsRepresentation(shape.kind(), next))
+      return refused("The step cannot be represented by this numeric type within its bounds");
     var converted = display.fromStored(next.toString(), unit);
     if (converted.convertedText().isEmpty()) return refused(converted.reason());
     return new Change(edit(converted.text()), true, "");
@@ -143,7 +149,7 @@ public final class NumericInput {
       var mapped = display.toStored(text, unit);
       if (mapped.convertedText().isEmpty()) return OptionalDouble.empty();
       var number = display.limits().parse(mapped.text());
-      if (number.compareTo(shape.minimum()) < 0 || number.compareTo(shape.maximum()) > 0)
+      if (!shape.domain().acceptsRepresentation(shape.kind(), number))
         return OptionalDouble.empty();
       return OptionalDouble.of(
           number
@@ -166,13 +172,17 @@ public final class NumericInput {
       var index =
           span.multiply(BigDecimal.valueOf(position))
               .divide(display.step(), 0, RoundingMode.HALF_UP);
+      index = display.grid(shape.domain()).constrain(index);
       number = shape.minimum().add(index.multiply(display.step())).stripTrailingZeros();
       display.limits().check(number);
     } catch (IllegalArgumentException | ArithmeticException unavailable) {
       return refused("The slider value exceeds the declared numeric representation budget");
     }
-    if (number.compareTo(shape.minimum()) < 0 || number.compareTo(shape.maximum()) > 0)
+    if (!shape.domain().contains(number))
       return refused("The slider value is outside its declared bounds");
+    if (!shape.domain().acceptsRepresentation(shape.kind(), number))
+      return refused(
+          "The slider value cannot be represented by this numeric type within its bounds");
     final NumericDisplay.Conversion converted;
     try {
       converted = display.fromStored(number.toString(), unit);

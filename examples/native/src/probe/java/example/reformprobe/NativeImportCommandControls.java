@@ -9,12 +9,12 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.importing.FileImportSource;
+import design.inherent.reform.importing.ImportCatalog;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.ImportInput;
 import design.inherent.reform.importing.ImportSource;
 import design.inherent.reform.importing.JsonImportFormat;
-import design.inherent.reform.neoforge.command.ImportCatalog;
-import design.inherent.reform.neoforge.command.SettingsCommands;
+import design.inherent.reform.minecraft.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentImports;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
@@ -931,6 +931,8 @@ final class NativeImportCommandControls {
                               .commandBranch(
                                   "factoryimports",
                                   ImportExample.settings().importCatalog(sources),
+                                  design.inherent.reform.neoforge.client.NeoForgeClientRegistration
+                                      .commandSource(),
                                   this::receive));
                       return null;
                     }))

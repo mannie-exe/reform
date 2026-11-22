@@ -1,17 +1,19 @@
 re:form
 Copyright (c) 2026 mannie-exe
 
-Project code is distributed under the MIT License in LICENSE.
+Current project code is licensed under the Apache License, Version 2.0 in LICENSE.
+Published re:form 0.1.0 retains its original MIT license and immutable artifacts.
 
 Measured form geometry, section navigation, the native form panel and control sizing are adapted
-from Skyweave: Compatibility Patches, Copyright (c) 2026 mannie-exe, under the same
-MIT License. They are owned source extractions; neither that mod nor the modpack
-is a runtime dependency.
+from Skyweave: Compatibility Patches, Copyright (c) 2026 mannie-exe, originally
+released under MIT. These owned source extractions are included here under
+Apache-2.0 by the copyright owner's authorization. Neither that mod nor the
+modpack is a runtime dependency. Third-party licenses remain with their owners.
 
 The Gradle wrapper scripts and JAR are Gradle build tooling, distributed under
 Apache License 2.0. See LICENSE-GRADLE.txt. They are not mod runtime code.
 
-Minecraft, NeoForge, DataFixerUpper, Gson, Brigadier and other platform libraries
+Minecraft, NeoForge, Fabric Loader/API, DataFixerUpper, Gson, Brigadier and other platform libraries
 retain their upstream licenses. They are resolved as dependencies, not copied
 into the installable mod. JUnit, jqwik, Spotless, Google Java Format and dprint
 are build/test tools, not mod runtime content.

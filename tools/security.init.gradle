@@ -1,17 +1,39 @@
-// Generate a disposable native Gradle lock for Trivy without changing normal dependency resolution.
+// Resolve exact target graphs into disposable standard-named Gradle locks for Trivy.
 gradle.beforeProject { project ->
-    if (project.path == ':core') {
-        project.plugins.withId('java') {
-            project.dependencyLocking.lockFile = project.rootProject.layout.buildDirectory.file('security/gradle.lockfile')
-            def scopes = ['runtimeClasspath', 'testRuntimeClasspath']
-            scopes.each { name ->
-                project.configurations.named(name) { resolutionStrategy.activateDependencyLocking() }
+    def matrix = project.rootProject.file('gradle/minecraft-targets.json')
+    if (matrix.isFile()) {
+        def targets = new groovy.json.JsonSlurper().parse(matrix).targets*.project
+        if (project.path == ':core' || targets.contains(project.name)) {
+            project.plugins.withId('java') {
+                project.dependencyLocking.lockFile = project.rootProject.layout.buildDirectory.file(
+                    "security/${project.name}/gradle.lockfile")
+                def scopes = ['runtimeClasspath', 'testRuntimeClasspath', 'minecraft26_3Runtime']
+                project.configurations.configureEach { configuration ->
+                    if (scopes.contains(configuration.name))
+                        configuration.resolutionStrategy.activateDependencyLocking()
+                }
+                project.tasks.register('securityDependencies') {
+                    group = 'verification'
+                    description = 'Resolve the actual runtime and test dependency inventory.'
+                    doLast {
+                        scopes.collect { project.configurations.findByName(it) }
+                            .findAll { it != null }.each { it.resolve() }
+                    }
+                }
             }
-            project.tasks.register('securityDependencies') {
-                group = 'verification'
-                description = 'Resolve library and test dependencies for vulnerability scanning.'
-                doLast { scopes.each { name -> project.configurations.getByName(name).resolve() } }
-            }
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    def root = gradle.rootProject
+    def matrix = root.file('gradle/minecraft-targets.json')
+    if (matrix.isFile()) {
+        def projects = ['core'] + new groovy.json.JsonSlurper().parse(matrix).targets*.project
+        root.tasks.register('securityDependencies') {
+            group = 'verification'
+            description = 'Resolve separate inventories for the core and all native targets.'
+            dependsOn projects.collect { ":${it}:securityDependencies" }
         }
     }
 }

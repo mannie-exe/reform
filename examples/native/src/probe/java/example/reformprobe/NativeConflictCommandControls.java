@@ -7,7 +7,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.command.SettingsCommands;
+import design.inherent.reform.minecraft.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentConflicts;
 import design.inherent.reform.operation.OperationScope;

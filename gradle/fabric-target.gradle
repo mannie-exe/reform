@@ -1,0 +1,78 @@
+apply from: rootProject.file('gradle/native-common.gradle')
+
+def remapsMinecraft = nativeTarget.remapMinecraft
+loom {
+    accessWidenerPath = file('src/main/resources/reform.accesswidener')
+    mods {
+        reform {
+            sourceSet sourceSets.main
+            sourceSet project(':core').sourceSets.main
+        }
+    }
+    runs {
+        client { client(); runDir 'runs/client' }
+        server { server(); runDir 'runs/server'; programArg '--nogui' }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${nativeTarget.minecraftVersion}"
+    if (remapsMinecraft) {
+        modCompileOnly "maven.modrinth:modmenu:${nativeTarget.modMenuVersion}"
+        mappings loom.officialMojangMappings()
+        modImplementation "net.fabricmc:fabric-loader:${nativeTarget.loaderVersion}"
+        modImplementation "net.fabricmc.fabric-api:fabric-api:${nativeTarget.fabricApiVersion}"
+    } else {
+        compileOnly "maven.modrinth:modmenu:${nativeTarget.modMenuVersion}"
+        implementation "net.fabricmc:fabric-loader:${nativeTarget.loaderVersion}"
+        implementation "net.fabricmc.fabric-api:fabric-api:${nativeTarget.fabricApiVersion}"
+    }
+}
+
+repositories {
+    exclusiveContent {
+        forRepository { maven { url = 'https://api.modrinth.com/maven' } }
+        filter { includeModule('maven.modrinth', 'modmenu') }
+    }
+}
+
+if (remapsMinecraft) {
+    tasks.named('jar') {
+        archiveFileName = "reform-${project.version}-mc${nativeTarget.minecraftVersion}-fabric-dev.jar"
+    }
+    tasks.named('remapJar') {
+        archiveFileName = "reform-${project.version}-mc${nativeTarget.minecraftVersion}-fabric-platform.jar"
+    }
+    tasks.named('sourcesJar') {
+        archiveFileName = "reform-${project.version}-mc${nativeTarget.minecraftVersion}-fabric-dev-sources.jar"
+    }
+    tasks.named('remapSourcesJar') {
+        archiveFileName = "reform-${project.version}-mc${nativeTarget.minecraftVersion}-fabric-sources.jar"
+    }
+    def remappedPlatform = tasks.named('remapJar').flatMap { it.archiveFile }
+    def bundled = tasks.register('bundleJar', Jar) {
+        description = 'Combine the remapped game adapter with the unchanged neutral core.'
+        dependsOn 'remapJar', ':core:classes'
+        archiveFileName = "reform-${project.version}-mc${nativeTarget.minecraftVersion}-fabric.jar"
+        from({ zipTree(remappedPlatform.get().asFile) }) {
+            exclude 'META-INF/MANIFEST.MF', 'LICENSE', 'NOTICE'
+        }
+        from project(':core').sourceSets.main.output
+        manifest.from(provider {
+            zipTree(remappedPlatform.get().asFile).matching { include 'META-INF/MANIFEST.MF' }.singleFile
+        })
+        duplicatesStrategy = DuplicatesStrategy.FAIL
+    }
+    tasks.named('assemble') { dependsOn bundled }
+    afterEvaluate {
+        ['apiElements', 'runtimeElements'].each { variant ->
+            configurations.named(variant) {
+                outgoing.artifacts.clear()
+                outgoing.artifact(bundled)
+            }
+        }
+        publishing.publications.named('mavenJava') {
+            setArtifacts([bundled, tasks.named('remapSourcesJar')])
+        }
+    }
+}

@@ -2,7 +2,7 @@ package example.reformprobe;
 
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import design.inherent.reform.neoforge.configuration.ServerSettings;
+import design.inherent.reform.minecraft.configuration.ServerSettings;
 import example.reform.ServerPolicyExample;
 import java.nio.file.Files;
 import java.nio.file.Path;

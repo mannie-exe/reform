@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "project": "neoforge-1_21_1",
+      "directory": "neoforge-1_21_1",
+      "loader": "neoforge",
+      "minecraftVersionRef": "minecraft-1_21_1",
+      "loaderVersionRef": "neoforge-1_21_1",
+      "java": 21,
+      "dfuVersionRef": "dfu-1_21_1",
+      "gsonVersionRef": "gson-1_21_1",
+      "loaderUpperBound": "21.2",
+      "fmlVersionRange": "[4,5)",
+      "testedLoaderVersionRef": "neoforge-1_21_1-tested",
+      "connectorVersionRef": "connector-1_21_1",
+      "forgifiedFabricApiVersionRef": "forgified-fabric-api-1_21_1",
+      "remapMinecraft": false
+    },
+    {
+      "project": "fabric-1_21_1",
+      "directory": "fabric-1_21_1",
+      "loader": "fabric",
+      "installableTask": "bundleJar",
+      "sourcesTask": "remapSourcesJar",
+      "minecraftVersionRef": "minecraft-1_21_1",
+      "loaderVersionRef": "fabric-loader",
+      "fabricApiVersionRef": "fabric-api-1_21_1",
+      "modMenuVersionRef": "modmenu-1_21_1",
+      "java": 21,
+      "dfuVersionRef": "dfu-1_21_1",
+      "gsonVersionRef": "gson-1_21_1",
+      "remapMinecraft": true,
+      "developmentNamespace": "named",
+      "productionNamespace": "intermediary"
+    },
+    {
+      "project": "neoforge-26_3",
+      "directory": "neoforge-26_3",
+      "loader": "neoforge",
+      "minecraftVersionRef": "minecraft-26_3",
+      "loaderVersionRef": "neoforge-26_3",
+      "java": 25,
+      "dfuVersionRef": "dfu-26_3",
+      "gsonVersionRef": "gson-26_3",
+      "loaderUpperBound": "26.4",
+      "fmlVersionRange": "[12,13)",
+      "remapMinecraft": false
+    },
+    {
+      "project": "fabric-26_3",
+      "directory": "fabric-26_3",
+      "loader": "fabric",
+      "minecraftVersionRef": "minecraft-26_3",
+      "loaderVersionRef": "fabric-loader",
+      "fabricApiVersionRef": "fabric-api-26_3",
+      "modMenuVersionRef": "modmenu-26_3",
+      "java": 25,
+      "dfuVersionRef": "dfu-26_3",
+      "gsonVersionRef": "gson-26_3",
+      "remapMinecraft": false,
+      "developmentNamespace": "official",
+      "productionNamespace": "official"
+    }
+  ]
+}

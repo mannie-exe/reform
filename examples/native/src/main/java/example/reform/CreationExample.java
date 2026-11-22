@@ -4,7 +4,7 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordType;
-import design.inherent.reform.neoforge.client.WorldRecipe;
+import design.inherent.reform.minecraft.client.WorldRecipe;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.value.SnapshotPolicy;
 import design.inherent.reform.value.ValueTypes;

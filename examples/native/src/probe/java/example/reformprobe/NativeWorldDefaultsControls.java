@@ -5,10 +5,10 @@ import static example.reformprobe.NativeFormProbe.*;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.definition.DocumentId;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
-import design.inherent.reform.neoforge.client.ImportScreen;
-import design.inherent.reform.neoforge.client.SettingsScreen;
-import design.inherent.reform.neoforge.client.WorldRecipe;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ImportScreen;
+import design.inherent.reform.minecraft.client.SettingsScreen;
+import design.inherent.reform.minecraft.client.WorldRecipe;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.CreationExample;
@@ -85,18 +85,29 @@ final class NativeWorldDefaultsControls {
   }
 
   private void press(Screen screen, String label) {
-    click(screen, button(screen, label));
+    click(screen, ownerAction(screen, label));
   }
 
   private boolean ready() {
     return client.screen == form
         && form.editorView().availability() == EditorActor.Availability.READY
         && form.editorView().snapshot().isPresent()
-        && button(form, "Import…").active;
+        && button(form, "Done").active
+        && !form.editingActions().hasActiveOperations();
   }
 
   private String depthText() {
     return input(form, "Soil depth").getValue();
+  }
+
+  private boolean showSettings() {
+    if (!ready()) return false;
+    if (widgets(form).stream()
+        .anyMatch(widget -> widget.getMessage().getString().equals("Settings"))) {
+      press(form, "Settings");
+      return false;
+    }
+    return true;
   }
 
   private int depth(WorldCreationContext context) {
@@ -377,7 +388,7 @@ final class NativeWorldDefaultsControls {
         next("reviewed defaults stage as one explicit draft edit");
       }
       case 7 -> {
-        if (!ready() || !depthText().equals("11")) return false;
+        if (!showSettings() || !depthText().equals("11")) return false;
         check(
             "staging changes only the selected draft",
             form.editorView().dirty()
@@ -387,13 +398,13 @@ final class NativeWorldDefaultsControls {
         next("default staging is undoable without native admission");
       }
       case 8 -> {
-        if (!ready() || !depthText().equals("2")) return false;
+        if (!showSettings() || !depthText().equals("2")) return false;
         check("one Undo restores the earlier recipe", !form.editorView().dirty());
         press(form, "Redo");
         next("redo restores captured saved defaults");
       }
       case 9 -> {
-        if (!ready() || !depthText().equals("11")) return false;
+        if (!showSettings() || !depthText().equals("11")) return false;
         check(
             "redo still has no native dimension effect",
             creation.getUiState().getSettings() == original);

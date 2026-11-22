@@ -8,9 +8,9 @@ import com.mojang.brigadier.CommandDispatcher;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftRevision;
-import design.inherent.reform.neoforge.client.ReviewScreen;
-import design.inherent.reform.neoforge.client.SettingsScreen;
-import design.inherent.reform.neoforge.command.SettingsCommands;
+import design.inherent.reform.minecraft.client.ReviewScreen;
+import design.inherent.reform.minecraft.client.SettingsScreen;
+import design.inherent.reform.minecraft.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentReview;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.CatalogExample;
@@ -349,7 +349,7 @@ final class NativeReviewControls {
       }
       case 12 -> {
         if (!(client.screen
-            instanceof design.inherent.reform.neoforge.client.OperationScreen<?> output))
+            instanceof design.inherent.reform.minecraft.client.OperationScreen<?> output))
           throw new AssertionError("Export did not open actual operation feedback");
         var observed = output.observedOperation().orElse(null);
         if (observed == null || !observed.terminal()) return false;
@@ -388,7 +388,13 @@ final class NativeReviewControls {
         check(
             "ordinary addon registers review-capable command root",
             dispatcher.getRoot().getChild("reformcatalog") != null);
-        dispatcher.register(CatalogExample.settings().commandBranch("reviewprobe", replies::add));
+        dispatcher.register(
+            CatalogExample.settings()
+                .commandBranch(
+                    "reviewprobe",
+                    design.inherent.reform.neoforge.client.NeoForgeClientRegistration
+                        .commandSource(),
+                    replies::add));
         var source =
             new ClientCommandSourceStack(
                 CommandSource.NULL,

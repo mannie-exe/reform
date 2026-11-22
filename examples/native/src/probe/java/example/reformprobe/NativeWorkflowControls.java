@@ -8,12 +8,13 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
-import design.inherent.reform.neoforge.client.ClientEditor;
-import design.inherent.reform.neoforge.client.ClientWorkflowLayout;
-import design.inherent.reform.neoforge.client.KeyBindingScreen;
-import design.inherent.reform.neoforge.client.SettingsScreen;
-import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
+import design.inherent.reform.minecraft.client.ClientEditingWorkflow;
+import design.inherent.reform.minecraft.client.ClientEditor;
+import design.inherent.reform.minecraft.client.ClientWorkflowLayout;
+import design.inherent.reform.minecraft.client.KeyBindingScreen;
+import design.inherent.reform.minecraft.client.NativeScreens;
+import design.inherent.reform.minecraft.client.SettingsForm;
+import design.inherent.reform.minecraft.client.UnsavedChangesScreen;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.ApplicationEffects;
@@ -42,10 +43,19 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
-/** Real JSON, native CLIENT/COMMON and Options owners across retained generated views. */
+/** Real JSON, client-source/COMMON and Options owners across retained generated views. */
 final class NativeWorkflowControls {
+  public String diagnostic() {
+    return "workflow stage="
+        + stage
+        + ", hierarchy="
+        + hierarchyStage
+        + ", screen="
+        + NativeScreens.current(client).getClass().getSimpleName();
+  }
+
   private final Minecraft client = Minecraft.getInstance();
-  private final Screen parent = client.screen;
+  private final Screen parent = NativeScreens.current(client);
   private final boolean reopen;
   private final Consumer<String> progress;
   private final BiConsumer<String, Runnable> capture;
@@ -54,9 +64,11 @@ final class NativeWorkflowControls {
   private ClientEditingWorkflow workflow, independent, shutdown;
   private ClientEditingWorkflow hierarchy;
   private int hierarchyStage;
-  private SettingsScreen<?> hierarchyForm;
+  private SettingsForm<?> hierarchyForm;
   private ClientEditor<?> json, keys, nativeClient, defaults, competing;
-  private SettingsScreen<?> form;
+  private SettingsForm<?> form;
+  private ClientEditor<?> displayedEditor;
+  private Screen host;
   private CompletableFuture<?> waiting;
   private byte[] initialJson, initialOptions, initialNative, initialDefaults;
   private String initialDistance;
@@ -72,13 +84,33 @@ final class NativeWorkflowControls {
     this.capture = capture;
   }
 
-  JsonObject report() {
+  public JsonObject report() {
     var report = new JsonObject();
     report.addProperty("status", complete ? "PASS" : "RUNNING");
     report.add("checks", checks);
+    report.addProperty("sourceKind", "Native CLIENT/COMMON registrations");
+    report.add("sourceEvidence", sourceReport());
     report.addProperty("workflowClosed", workflow != null && !workflow.isOpen());
     report.addProperty("independentClosed", independent == null || !independent.isOpen());
     report.addProperty("shutdownClosed", shutdown != null && !shutdown.isOpen());
+    return report;
+  }
+
+  private boolean sourcesReady() {
+    return RegisteredExample.client().status().lifecycle()
+            == design.inherent.reform.neoforge.client.ClientRegisteredSettings.Lifecycle.READY
+        && RegisteredExample.common().status().lifecycle()
+            == design.inherent.reform.neoforge.client.ClientRegisteredSettings.Lifecycle.READY;
+  }
+
+  private JsonObject sourceReport() {
+    var report = new JsonObject();
+    report.addProperty(
+        "clientSource", RegisteredExample.clientConfig().getFullPath().getFileName().toString());
+    report.addProperty(
+        "defaultSource", RegisteredExample.commonConfig().getFullPath().getFileName().toString());
+    report.addProperty("clientReloads", RegisteredExample.clientReloads());
+    report.addProperty("defaultReloads", RegisteredExample.commonReloads());
     return report;
   }
 
@@ -93,25 +125,46 @@ final class NativeWorkflowControls {
   }
 
   private void press(Screen screen, String label) {
-    click(screen, button(screen, label));
+    click(screen, ownerAction(screen, label));
+  }
+
+  private Button navigation(Screen screen, String label) {
+    return widgets(screen).stream()
+        .filter(Button.class::isInstance)
+        .map(Button.class::cast)
+        .filter(
+            widget ->
+                widget.getMessage().getString().strip().replaceFirst("^[+−] ", "").equals(label))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("Missing native navigation: " + label));
   }
 
   private void show(DocumentId document) {
-    workflow.show(document);
-    form = (SettingsScreen<?>) client.screen;
+    show(workflow, document);
+  }
+
+  private void show(ClientEditingWorkflow context, DocumentId document) {
+    context.show(document);
+    host = context.screen();
+    displayedEditor = context.editor(document);
+    form = displayedEditor.form();
+    check(
+        "document navigation retains the shared native screen",
+        NativeScreens.current(client) == host);
   }
 
   private boolean ready() {
-    return client.screen == form
+    return NativeScreens.current(client) == host
         && form.editorView().availability() == EditorActor.Availability.READY
         && form.editorView().snapshot().isPresent()
-        && button(form, "Back to overview").active;
+        && !displayedEditor.busy()
+        && button(host, "Done").active;
   }
 
   private void edit(String field, String value) {
     var path = FieldPath.ROOT.field(field);
     check("composed form can focus " + field, form.focusField(path));
-    replace(form, (EditBox) form.fieldControl(path).orElseThrow(), value);
+    replace(host, (EditBox) form.fieldControl(path).orElseThrow(), value);
   }
 
   private String raw(ClientEditor<?> editor, String field) {
@@ -120,9 +173,10 @@ final class NativeWorkflowControls {
         .raw();
   }
 
-  private void back() {
-    press(form, "Back to overview");
-    check("native Back returns to the same retained overview", client.screen == workflow.screen());
+  private void retained() {
+    check(
+        "owner operations retain the same native workspace and actual form",
+        NativeScreens.current(client) == workflow.screen() && form == displayedEditor.form());
   }
 
   private byte[] jsonBytes() throws Exception {
@@ -138,18 +192,17 @@ final class NativeWorkflowControls {
     return !editor.busy() && editor.view().lastReceipt().isPresent() && !editor.view().dirty();
   }
 
-  boolean tick() throws Exception {
+  public boolean tick() throws Exception {
     switch (stage) {
       case 0 -> {
         if (ClientExample.settings().runtime().isEmpty()
             || KeyExample.settings().definition().isEmpty()
-            || RegisteredExample.client().definition().isEmpty()
-            || RegisteredExample.common().definition().isEmpty()) return false;
+            || !sourcesReady()) return false;
         if (!reopen && !hierarchyControls()) return false;
         var forms = WorkflowExample.forms();
         for (var invalid :
             List.of(
-                List.<design.inherent.reform.neoforge.client.ClientForm>of(),
+                List.<design.inherent.reform.minecraft.client.ClientForm>of(),
                 List.of(forms.getFirst(), forms.getFirst()),
                 java.util.Collections.nCopies(33, forms.getFirst()))) {
           try {
@@ -163,11 +216,11 @@ final class NativeWorkflowControls {
             java.util.stream.IntStream.range(0, ClientEditingWorkflow.MAXIMUM_DOCUMENTS)
                 .mapToObj(
                     index ->
-                        design.inherent.reform.neoforge.client.ClientForm.of(
+                        design.inherent.reform.minecraft.client.ClientForm.of(
                             DocumentId.parse("reform_native_example:unavailable_" + index),
                             Component.literal("Unavailable " + index),
                             () ->
-                                new design.inherent.reform.neoforge.client.ClientForm.Availability(
+                                new design.inherent.reform.minecraft.client.ClientForm.Availability(
                                     false, false, Component.literal("Absent optional source")),
                             ignored -> {
                               throw new AssertionError(
@@ -194,26 +247,32 @@ final class NativeWorkflowControls {
         check(
             "composed declaration keeps the actual native provider singular",
             KeyExample.selections() == 1);
-        client.setScreen(workflow.screen());
-        var search = input(workflow.screen(), "Search documents");
+        NativeScreens.open(client, workflow.screen());
+        var search = input(workflow.screen(), "Search settings");
         replace(workflow.screen(), search, "Controls");
         check(
             "search retains native keyboard focus across every typed rebuild",
-            input(workflow.screen(), "Search documents").getValue().equals("Controls"));
+            input(workflow.screen(), "Search settings").getValue().equals("Controls"));
         check(
-            "search exposes only the matching actual document",
-            widgets(workflow.screen()).stream()
-                    .filter(
+            "search exposes the matching native document without opening its source",
+            navigation(workflow.screen(), "Native Controls") != null
+                && workflow.documents().stream()
+                    .filter(state -> state.document().equals(KeyExample.DOCUMENT))
+                    .noneMatch(ClientEditingWorkflow.DocumentState::opened)
+                && widgets(workflow.screen()).stream()
+                    .noneMatch(
                         widget ->
                             widget instanceof Button
-                                && widget.getMessage().getString().equals("Open"))
-                    .count()
-                == 1);
+                                && widget
+                                    .getMessage()
+                                    .getString()
+                                    .strip()
+                                    .equals("Client preferences")));
         for (int remaining = 8;
             // Native typing above checked filtering; clear it through actual Backspace events.
-            remaining > 0 && !input(workflow.screen(), "Search documents").getValue().isEmpty();
+            remaining > 0 && !input(workflow.screen(), "Search settings").getValue().isEmpty();
             remaining--) {
-          var current = input(workflow.screen(), "Search documents");
+          var current = input(workflow.screen(), "Search settings");
           check("clearing search keeps native focus", focus(workflow.screen(), current));
           current.moveCursorToEnd(false);
           current.setHighlightPos(current.getValue().length());
@@ -223,18 +282,19 @@ final class NativeWorkflowControls {
         }
         check(
             "repeated row actions narrate their actual document",
-            NativeStructuredControls.narration(button(workflow.screen(), "Open"))
+            NativeStructuredControls.narration(navigation(workflow.screen(), "Client preferences"))
                 .contains("Client preferences"));
         check(
-            "cleared search restores every declared document",
-            input(workflow.screen(), "Search documents").getValue().isEmpty()
-                && widgets(workflow.screen()).stream()
-                        .filter(
-                            widget ->
-                                widget instanceof Button
-                                    && widget.getMessage().getString().equals("Open"))
+            "cleared search restores every declared document without opening other sources",
+            input(workflow.screen(), "Search settings").getValue().isEmpty()
+                && forms.stream()
+                    .allMatch(
+                        declared ->
+                            navigation(workflow.screen(), declared.title().getString()) != null)
+                && workflow.documents().stream()
+                        .filter(ClientEditingWorkflow.DocumentState::opened)
                         .count()
-                    == 4);
+                    == 1);
         geometry(workflow.screen());
         next("composed ordinary owners enter native overview");
         capture.accept("form-workflow-wide.png", () -> show(preferences));
@@ -243,15 +303,18 @@ final class NativeWorkflowControls {
         if (!ready()) return false;
         json = workflow.editor(preferences);
         initialDistance = raw(json, "distance");
-        check("workflow reuses the displayed actor", json.screen() == form);
+        check(
+            "workflow reuses the displayed actor",
+            json.form() == form && json.screen() == workflow.screen());
         if (reopen) {
           check("fresh JVM observes only completed JSON save", raw(json, "distance").equals("256"));
           check(
               "fresh JVM observes native Controls save",
-              KeyExample.PRIMARY.getKey().getName().equals("key.keyboard.4"));
-          check("fresh JVM observes native COMMON save", RegisteredExample.defaults() == 10);
-          check("discarded native CLIENT draft was never saved", RegisteredExample.live() == 4);
-          back();
+              KeyExample.PRIMARY.saveString().equals("key.keyboard.4"));
+          check(
+              "fresh JVM observes installation defaults save", RegisteredExample.defaults() == 10);
+          check("discarded client-source draft was never saved", RegisteredExample.live() == 4);
+          retained();
           press(workflow.screen(), "Done");
           shutdown = WorkflowExample.open(parent);
           complete = true;
@@ -263,7 +326,7 @@ final class NativeWorkflowControls {
       case 2 -> {
         if (!ready() || form.editorView().validation().valid()) return false;
         check("invalid text remains actual actor data", raw(json, "distance").equals("broken"));
-        back();
+        retained();
         check(
             "overview identifies invalid dirty document",
             workflow.documents().stream()
@@ -278,8 +341,8 @@ final class NativeWorkflowControls {
         keys = workflow.editor(KeyExample.DOCUMENT);
         var path = FieldPath.ROOT.field(KeyExample.PRIMARY.getName());
         check("composed native Controls editor is reachable", form.focusField(path));
-        click(form, (Button) form.fieldControl(path).orElseThrow());
-        var popup = (KeyBindingScreen) client.screen;
+        click(host, (Button) form.fieldControl(path).orElseThrow());
+        var popup = (KeyBindingScreen) NativeScreens.current(client);
         click(popup, (Button) popup.control(KeyBindingScreen.Control.CAPTURE).orElseThrow());
         popup.keyPressed(GLFW.GLFW_KEY_4, 0, 0);
         popup.keyReleased(GLFW.GLFW_KEY_4, 0, 0);
@@ -291,31 +354,31 @@ final class NativeWorkflowControls {
         check(
             "key draft leaves actual Options untouched",
             Arrays.equals(initialOptions, optionsBytes()));
-        back();
+        retained();
         show(RegisteredExample.client().document());
-        next("native client TOML shares workflow");
+        next("client-owned source shares workflow");
       }
       case 5 -> {
         if (!ready()) return false;
         nativeClient = workflow.editor(RegisteredExample.client().document());
         edit("live", "14");
-        next("native CLIENT draft stages independently");
+        next("client-source draft stages independently");
       }
       case 6 -> {
         if (!ready() || !raw(nativeClient, "live").equals("14")) return false;
-        back();
+        retained();
         show(RegisteredExample.common().document());
-        next("native COMMON defaults retain separate owner");
+        next("installation defaults defaults retain separate owner");
       }
       case 7 -> {
         if (!ready()) return false;
         defaults = workflow.editor(RegisteredExample.common().document());
         edit("level", "10");
-        next("native COMMON draft stages independently");
+        next("installation defaults draft stages independently");
       }
       case 8 -> {
         if (!ready() || !raw(defaults, "level").equals("10")) return false;
-        back();
+        retained();
         check(
             "four owners retain four independent drafts",
             workflow.documents().stream().filter(ClientEditingWorkflow.DocumentState::dirty).count()
@@ -323,13 +386,13 @@ final class NativeWorkflowControls {
         show(preferences);
         check(
             "returning uses identical form and actual actor",
-            form == json.screen() && workflow.editor(preferences) == json);
+            form == json.form() && workflow.editor(preferences) == json);
         check(
             "invalid input survives owner navigation",
             ((EditBox) form.fieldControl(FieldPath.ROOT.field("distance")).orElseThrow())
                 .getValue()
                 .equals("broken"));
-        press(form, "Undo");
+        press(host, "Undo");
         next("retained undo history repairs invalid input");
       }
       case 9 -> {
@@ -340,13 +403,14 @@ final class NativeWorkflowControls {
       }
       case 10 -> {
         if (!ready() || !raw(json, "distance").equals("128")) return false;
-        press(form, "Save and apply");
-        back();
-        check("entered save remains pending across Back", json.busy());
+        press(host, "Save and apply");
+        show(KeyExample.DOCUMENT);
+        retained();
+        check("entered save remains pending across native owner navigation", json.busy());
         workflow.screen().onClose();
         check(
             "normal workflow exit waits for actual pending save",
-            client.screen == workflow.screen());
+            NativeScreens.current(client) == workflow.screen());
         try {
           workflow.discard(preferences);
           throw new AssertionError("Pending editor was discarded");
@@ -378,26 +442,29 @@ final class NativeWorkflowControls {
                     initialDefaults,
                     Files.readAllBytes(RegisteredExample.commonConfig().getFullPath())));
         show(KeyExample.DOCUMENT);
-        press(form, "Save and apply");
-        back();
+        press(host, "Save and apply");
+        retained();
         next("retained key save uses actual Options writer");
       }
       case 12 -> {
         if (!settled(keys)) return false;
         check(
             "key binding is actually applied",
-            KeyExample.PRIMARY.getKey().getName().equals("key.keyboard.4"));
+            KeyExample.PRIMARY.saveString().equals("key.keyboard.4"));
         show(RegisteredExample.common().document());
-        press(form, "Save native settings");
-        back();
-        next("retained native COMMON save uses native callbacks");
+        press(host, "Save native settings");
+        retained();
+        next("retained installation defaults use their actual source writer");
       }
       case 13 -> {
         if (!settled(defaults)) return false;
         check("native default value is actually saved", RegisteredExample.defaults() == 10);
+        check(
+            "source-specific publication or native callback is observed",
+            RegisteredExample.defaults() == 10 && RegisteredExample.commonReloads() > 0);
         workflow.discard(RegisteredExample.client().document());
         check(
-            "discard does not write native CLIENT draft",
+            "discard does not write client-source draft",
             Arrays.equals(
                 initialNative, Files.readAllBytes(RegisteredExample.clientConfig().getFullPath())));
         check(
@@ -409,7 +476,7 @@ final class NativeWorkflowControls {
       }
       case 14 -> {
         if (!ready() || !raw(json, "distance").equals("192")) return false;
-        back();
+        retained();
         independent = WorkflowExample.open(parent);
         competing = independent.editor(preferences);
         check("independent workflow has a different actual actor", competing != json);
@@ -469,7 +536,7 @@ final class NativeWorkflowControls {
             "closing another workflow leaves original actors alive",
             json.isOpen() && keys.isOpen());
         show(preferences);
-        press(form, "Save and apply");
+        press(host, "Save and apply");
         next("original actor retains native source conflict checks");
       }
       case 18 -> {
@@ -481,7 +548,7 @@ final class NativeWorkflowControls {
         check(
             "source conflict preserves original unsaved draft",
             raw(json, "distance").equals("192"));
-        back();
+        retained();
         check(
             "overview distinguishes prior receipt from current revision refusal",
             workflow.documents().stream()
@@ -501,9 +568,16 @@ final class NativeWorkflowControls {
       case 19 -> {
         if (workflow.screen().width > 340) return false;
         geometry(workflow.screen());
+        var narrated = workflow.screen().getNarrationMessage().getString();
         check(
-            "compact composed overview remains narratable",
-            workflow.screen().getNarrationMessage().getString().contains("separately"));
+            "compact workspace narration identifies the current save scope: " + narrated,
+            narrated.contains("Composed settings") && narrated.contains("Client preferences"));
+        check(
+            "compact presentation retains the actual source refusal separately from prior saved receipt",
+            json.view().operationReport().issues().stream()
+                    .anyMatch(issue -> issue.code().equals("owner.revision"))
+                && json.view().lastReceipt().orElseThrow().persistence()
+                    == CommitReceipt.Persistence.SAVED);
         next("compact overview retains separate receipt and refusal feedback");
         capture.accept(
             "form-workflow-narrow.png",
@@ -518,8 +592,8 @@ final class NativeWorkflowControls {
       case 20 -> {
         check(
             "dirty workflow exit requests an explicit decision",
-            client.screen instanceof UnsavedChangesScreen);
-        var decision = (UnsavedChangesScreen) client.screen;
+            NativeScreens.current(client) instanceof UnsavedChangesScreen);
+        var decision = (UnsavedChangesScreen) NativeScreens.current(client);
         waiting = DocumentActions.result(keys.actions().load(EntryPoint.GUI)).toCompletableFuture();
         check(
             "public native source load remains active during a close decision",
@@ -527,24 +601,26 @@ final class NativeWorkflowControls {
         press(decision, "Discard draft");
         check(
             "workflow rechecks pending operations at the actual discard decision",
-            workflow.isOpen() && client.screen == workflow.screen() && json.isOpen());
+            workflow.isOpen()
+                && NativeScreens.current(client) == workflow.screen()
+                && json.isOpen());
         next("late custom-view operation invalidates earlier discard decision");
       }
       case 21 -> {
         if (!waiting.isDone()) return false;
         waiting.join();
         press(workflow.screen(), "Done");
-        var decision = (UnsavedChangesScreen) client.screen;
+        var decision = (UnsavedChangesScreen) NativeScreens.current(client);
         press(decision, "Keep editing");
         check(
             "keep editing preserves same overview and actor",
-            client.screen == workflow.screen() && json.isOpen());
+            NativeScreens.current(client) == workflow.screen() && json.isOpen());
         press(workflow.screen(), "Done");
-        press(client.screen, "Discard draft");
+        press(NativeScreens.current(client), "Discard draft");
         check(
             "normal discard closes all workflow actors",
             !workflow.isOpen() && !json.isOpen() && !keys.isOpen() && !defaults.isOpen());
-        check("normal close returns to original parent", client.screen == parent);
+        check("normal close returns to original parent", NativeScreens.current(client) == parent);
         try {
           workflow.editor(preferences);
           throw new AssertionError("Closed workflow reopened a hidden actor");
@@ -552,7 +628,7 @@ final class NativeWorkflowControls {
           check("closed workflow refuses reuse", true);
         }
         independent = WorkflowExample.open(parent);
-        client.setScreen(independent.screen());
+        NativeScreens.open(client, independent.screen());
         var stale = independent.editor(preferences);
         stale.actions().close();
         try {
@@ -567,25 +643,21 @@ final class NativeWorkflowControls {
         independent.discard(preferences);
         competing = independent.editor(preferences);
         check("explicit discard permits a fresh actor", competing != stale && competing.isOpen());
-        independent.show(KeyExample.DOCUMENT);
-        form = (SettingsScreen<?>) client.screen;
+        show(independent, preferences);
         next("forced native navigation will release the entire workflow");
       }
       case 22 -> {
         if (!ready()) return false;
-        press(form, "Back to overview");
-        replace(
-            independent.screen(), input(independent.screen(), "Search documents"), "preferences");
         press(independent.screen(), "Discard draft");
         waiting =
             DocumentActions.result(competing.actions().load(EntryPoint.GUI)).toCompletableFuture();
         check(
             "per-document decision can observe a newly queued source operation",
             !waiting.isDone() && competing.busy());
-        press(client.screen, "Discard draft");
+        press(NativeScreens.current(client), "Discard draft");
         check(
             "late per-document discard reports refusal and retains actual actor",
-            competing.isOpen() && client.screen == independent.screen());
+            competing.isOpen() && NativeScreens.current(client) == independent.screen());
         next("per-document decision rechecks live pending work without throwing");
       }
       case 23 -> {
@@ -593,7 +665,7 @@ final class NativeWorkflowControls {
         waiting.join();
         var auxiliary = independent.editor(KeyExample.DOCUMENT);
         independent.show(KeyExample.DOCUMENT);
-        client.setScreen(parent);
+        NativeScreens.open(client, parent);
         check(
             "unexpected child removal closes all workflow editors",
             !independent.isOpen() && !auxiliary.isOpen() && !competing.isOpen());
@@ -654,80 +726,100 @@ final class NativeWorkflowControls {
                 List.of(form),
                 new ClientWorkflowLayout(
                     List.of(new ClientWorkflowLayout.Group(path, rows, List.of())), List.of()));
-        client.setScreen(hierarchy.screen());
-        for (int i = 0; i < 3; i++) press(hierarchy.screen(), "Open");
+        NativeScreens.open(client, hierarchy.screen());
         check(
-            "native three-level workflow reached a large shared-owner placement list",
-            widgets(hierarchy.screen()).stream()
-                        .filter(
-                            w -> w instanceof Button && w.getMessage().getString().equals("Open"))
-                        .count()
-                    == 131
+            "nested categories remain in one native tree over one actual owner",
+            navigation(hierarchy.screen(), "Interface") != null
+                && navigation(hierarchy.screen(), "Map module") != null
+                && navigation(hierarchy.screen(), "Map planning") != null
                 && hierarchy.documents().stream()
-                    .noneMatch(ClientEditingWorkflow.DocumentState::opened));
+                        .filter(ClientEditingWorkflow.DocumentState::opened)
+                        .count()
+                    == 1);
         replace(
-            hierarchy.screen(), input(hierarchy.screen(), "Search documents"), "horizon threshold");
+            hierarchy.screen(), input(hierarchy.screen(), "Search settings"), "horizon threshold");
         check(
-            "description search across groups stays scoped to the actual matching placement",
-            widgets(hierarchy.screen()).stream()
-                    .filter(w -> w instanceof Button && w.getMessage().getString().equals("Open"))
-                    .count()
-                == 1);
-        press(hierarchy.screen(), "Open");
-        hierarchyForm = (SettingsScreen<?>) client.screen;
+            "description search across groups keeps only the matching placement",
+            navigation(hierarchy.screen(), "Map distance") != null
+                && widgets(hierarchy.screen()).stream()
+                    .noneMatch(
+                        widget ->
+                            widget instanceof Button
+                                && widget
+                                    .getMessage()
+                                    .getString()
+                                    .strip()
+                                    .matches("Map label [0-9]+")));
+        var destination = navigation(hierarchy.screen(), "Map distance");
+        focus(hierarchy.screen(), destination);
+        click(hierarchy.screen(), destination);
+        hierarchyForm = hierarchy.editor(form.route()).form();
         hierarchyStage++;
       }
       case 1 -> {
         if (hierarchyForm.editorView().availability() != EditorActor.Availability.READY
-            || !button(hierarchyForm, "Back to overview").active) return false;
+            || hierarchy.editor(preferences).busy()
+            || !button(hierarchy.screen(), "Done").active
+            || hierarchyForm.fieldControl(FieldPath.ROOT.field("distance")).isEmpty()) return false;
         var control =
             (EditBox) hierarchyForm.fieldControl(FieldPath.ROOT.field("distance")).orElseThrow();
         check("selected catalog placement reveals its existing field", control.isFocused());
-        replace(hierarchyForm, control, "bad");
+        replace(hierarchy.screen(), control, "bad");
         hierarchyStage++;
       }
       case 2 -> {
         if (hierarchyForm.editorView().validation().valid()
-            || !button(hierarchyForm, "Back to overview").active) return false;
-        press(hierarchyForm, "Back to overview");
+            || hierarchy.editor(preferences).busy()
+            || !button(hierarchy.screen(), "Done").active) return false;
         var root = hierarchy.screen();
         check(
             "overview retains its earlier query when returning from a field",
-            input(root, "Search documents").getValue().equals("horizon threshold"));
-        input(root, "Search documents").setValue("");
+            input(root, "Search settings").getValue().equals("horizon threshold"));
+        replace(root, input(root, "Search settings"), "");
         check(
             "changing the query clears the exact active native input",
-            input(root, "Search documents").getValue().isEmpty());
+            input(root, "Search settings").getValue().isEmpty());
         for (String expected : List.of("MODIFIED", "INVALID", "RESTART")) {
           workflowView().onPress();
           check(
               "expected " + expected + " but observed " + workflowView().getValue(),
               workflowView().getValue().toString().equals(expected));
           check(
-              "modified, invalid and restart filters each show only the relevant cached placement",
+              "filter " + expected + " keeps only its matching physical field",
+              hierarchyForm.fieldControl(FieldPath.ROOT.field("distance")).isPresent()
+                  && hierarchyForm.fieldControl(FieldPath.ROOT.field("label")).isEmpty());
+          long unmatched =
               widgets(root).stream()
-                      .filter(
-                          w -> w instanceof Button && w.getMessage().getString().equals("Resume"))
-                      .count()
-                  == 1);
+                  .filter(
+                      widget ->
+                          widget instanceof Button
+                              && widget
+                                  .getMessage()
+                                  .getString()
+                                  .strip()
+                                  .matches("Map label [0-9]+"))
+                  .count();
+          check(
+              "filter " + expected + " removes unmatched navigation aliases; observed=" + unmatched,
+              navigation(root, "Map distance") != null && unmatched == 0);
         }
         workflowView().onPress();
-        var resumed =
+        long aliases =
             widgets(root).stream()
-                .filter(w -> w instanceof Button && w.getMessage().getString().equals("Resume"))
+                .filter(
+                    widget ->
+                        widget instanceof Button
+                            && widget.getMessage().getString().strip().matches("Map label [0-9]+"))
                 .count();
-        var retained = hierarchy.documents().getFirst().dirty();
         check(
-            "clearing filters returns to the selected category and keeps the original draft ("
-                + workflowView().getValue()
-                + ", resumed="
-                + resumed
-                + ", dirty="
-                + retained
-                + ")",
-            workflowView().getValue().toString().equals("ALL") && resumed == 131 && retained);
+            "clearing filters preserves all declared aliases with one physical control and draft",
+            workflowView().getValue().toString().equals("ALL")
+                && aliases == 130
+                && hierarchy.documents().getFirst().dirty()
+                && hierarchyForm.fieldControl(FieldPath.ROOT.field("distance")).isPresent()
+                && hierarchyForm.fieldControl(FieldPath.ROOT.field("label")).isPresent());
         hierarchy.close();
-        client.setScreen(parent);
+        NativeScreens.open(client, parent);
         hierarchyStage++;
         return true;
       }

@@ -6,14 +6,14 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
-import design.inherent.reform.neoforge.client.BatchReviewScreen;
-import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
-import design.inherent.reform.neoforge.client.ClientEditor;
-import design.inherent.reform.neoforge.client.ClientForm;
-import design.inherent.reform.neoforge.client.ClientWorkflowLayout;
-import design.inherent.reform.neoforge.client.OperationScreen;
-import design.inherent.reform.neoforge.client.ReviewScreen;
-import design.inherent.reform.neoforge.client.SettingsScreen;
+import design.inherent.reform.minecraft.client.BatchReviewScreen;
+import design.inherent.reform.minecraft.client.ClientEditingWorkflow;
+import design.inherent.reform.minecraft.client.ClientEditor;
+import design.inherent.reform.minecraft.client.ClientForm;
+import design.inherent.reform.minecraft.client.ClientWorkflowLayout;
+import design.inherent.reform.minecraft.client.OperationScreen;
+import design.inherent.reform.minecraft.client.ReviewScreen;
+import design.inherent.reform.minecraft.client.SettingsForm;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentBatch;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
@@ -63,7 +63,7 @@ final class NativeBatchControls {
   private final AtomicInteger crossChecks = new AtomicInteger(), nativeChecks = new AtomicInteger();
   private ClientEditingWorkflow workflow;
   private ClientEditor<?> json, nativeClient, defaults;
-  private SettingsScreen<?> form;
+  private SettingsForm<?> form;
   private BatchReviewScreen batch;
   private DocumentBatch.Review invalid;
   private CompletableFuture<?> waiting;
@@ -102,26 +102,39 @@ final class NativeBatchControls {
   }
 
   private void press(Screen screen, String label) {
-    click(screen, button(screen, label));
+    click(screen, ownerAction(screen, label));
+  }
+
+  private void press(SettingsForm<?> selected, String label) {
+    press(workflow.screen(), label);
+  }
+
+  private void navigation() {
+    check("navigation retains the native workflow", client.screen == workflow.screen());
+    check(
+        "native navigation search is reachable",
+        focus(workflow.screen(), input(workflow.screen(), "Search settings")));
   }
 
   private void show(ClientEditor<?> selected) {
     if (selected == json) workflow.showPlacement(ROUTE_FIRST);
     else workflow.show(selected.document());
-    form = selected.screen();
+    form = selected.form();
   }
 
   private boolean ready() {
-    return client.screen == form
+    return client.screen == workflow.screen()
         && form.editorView().availability() == EditorActor.Availability.READY
         && form.editorView().snapshot().isPresent()
-        && button(form, "Back to overview").active;
+        && workflow.documents().stream()
+            .filter(state -> state.ownerDocument().equals(form.document()))
+            .noneMatch(ClientEditingWorkflow.DocumentState::busy);
   }
 
   private void edit(String name, String raw) {
     var path = FieldPath.ROOT.field(name);
     check("generated field is reachable: " + name, form.focusField(path));
-    replace(form, (EditBox) form.fieldControl(path).orElseThrow(), raw);
+    replace(workflow.screen(), (EditBox) form.fieldControl(path).orElseThrow(), raw);
   }
 
   private boolean raw(ClientEditor<?> editor, String name, String value) {
@@ -261,7 +274,7 @@ final class NativeBatchControls {
                   .equals(
                       Files.readString(
                           client.gameDirectory.toPath().resolve("native-batch-key.txt"))));
-          press(form, "Back to overview");
+          navigation();
           workflow.close();
           client.setScreen(parent);
           complete = true;
@@ -279,11 +292,11 @@ final class NativeBatchControls {
       }
       case 2 -> {
         if (!ready() || !raw(json, "distance", "320")) return false;
-        press(form, "Back to overview");
+        navigation();
         workflow.showPlacement(ROUTE_SECOND);
         check(
             "two placement routes share the same native editor and draft",
-            client.screen == form
+            client.screen == workflow.screen()
                 && raw(json, "distance", "320")
                 && workflow.editor(PREFERENCES_ROUTE) == json);
         check(
@@ -349,7 +362,7 @@ final class NativeBatchControls {
             || !raw(nativeClient, "live", "7")
             || !raw(nativeClient, "world", "2")
             || !raw(nativeClient, "game", "3")) return false;
-        press(form, "Back to overview");
+        navigation();
         show(defaults);
         next("second native owner retains its own serializer");
       }
@@ -360,7 +373,7 @@ final class NativeBatchControls {
       }
       case 8 -> {
         if (!ready() || !raw(defaults, "level", "8")) return false;
-        press(form, "Back to overview");
+        navigation();
         press(workflow.screen(), "Review changes");
         batch = (BatchReviewScreen) client.screen;
         next("fresh combined review over three edited and one clean owner");
@@ -526,7 +539,7 @@ final class NativeBatchControls {
             ((EditBox) form.fieldControl(FieldPath.ROOT.field("distance")).orElseThrow())
                 .getValue()
                 .equals("448"));
-        press(form, "Back to overview");
+        navigation();
         check(
             "unaccepted local input remains dirty in overview",
             workflow.documents().stream()
@@ -554,7 +567,7 @@ final class NativeBatchControls {
             || !((EditBox) form.fieldControl(FieldPath.ROOT.field("distance")).orElseThrow())
                 .getValue()
                 .equals("384")) return false;
-        press(form, "Back to overview");
+        navigation();
         press(workflow.screen(), "Done");
         check(
             "ordinary clean exit releases all actual sessions",

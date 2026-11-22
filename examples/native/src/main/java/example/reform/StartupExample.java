@@ -7,7 +7,8 @@ import design.inherent.reform.definition.RecordTypes;
 import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.OwnedFile;
 import design.inherent.reform.storage.PropertiesStore;
@@ -81,11 +82,19 @@ public final class StartupExample {
     var brokenInput = select(brokenSource);
     knownSelected = knownInput.value();
     brokenSelected = brokenInput.value();
-    known = ClientFileSettings.startupFile(bus, container, knownSource, Optional.of(knownInput));
+    known =
+        ClientFileSettings.startupFile(
+            NeoForgeClientRegistration.of(bus, container), knownSource, Optional.of(knownInput));
     unknown =
         ClientFileSettings.startupProperties(
-            bus, container, UNKNOWN, Optional.empty(), "startup-tools", "unknown.properties");
-    broken = ClientFileSettings.startupFile(bus, container, brokenSource, Optional.of(brokenInput));
+            NeoForgeClientRegistration.of(bus, container),
+            UNKNOWN,
+            Optional.empty(),
+            "startup-tools",
+            "unknown.properties");
+    broken =
+        ClientFileSettings.startupFile(
+            NeoForgeClientRegistration.of(bus, container), brokenSource, Optional.of(brokenInput));
     known.registerCommands("reformstartup");
   }
 

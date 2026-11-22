@@ -2,6 +2,7 @@ package design.inherent.reform.presentation;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /** Measured form geometry without widget, renderer, or file ownership. */
@@ -15,6 +16,103 @@ public final class FormGeometry {
   public record Placement(int x, int y, int width, int height) {}
 
   public record Columns(int firstWidth, int secondX, int secondWidth) {}
+
+  /** Native font/control measurements, not screen-size guesses or consumer storage structure. */
+  public record WorkspaceMetrics(
+      int navigationMinimum,
+      int editorMinimum,
+      int informationMinimum,
+      int preferredNavigation,
+      int preferredInformation,
+      int gap) {
+    public WorkspaceMetrics {
+      if (navigationMinimum < 1
+          || editorMinimum < 1
+          || informationMinimum < 1
+          || preferredNavigation < 1
+          || preferredInformation < 1
+          || gap < 0) throw new IllegalArgumentException("Invalid workspace measurements");
+    }
+  }
+
+  /** A compact navigation drawer overlaps the editor explicitly; ordinary columns never do. */
+  public record Workspace(
+      Optional<Placement> navigation,
+      Placement editor,
+      Optional<Placement> information,
+      boolean compactNavigation,
+      boolean navigationOverlay) {
+    public Workspace {
+      Objects.requireNonNull(navigation);
+      Objects.requireNonNull(editor);
+      Objects.requireNonNull(information);
+      if (navigationOverlay && (!compactNavigation || navigation.isEmpty()))
+        throw new IllegalArgumentException("Only an open compact drawer overlays the editor");
+    }
+  }
+
+  /** Keep the editor available; information moves inline before measured navigation collapses. */
+  public static Workspace workspace(
+      int width,
+      int top,
+      int bottom,
+      WorkspaceMetrics metrics,
+      boolean drawerOpen,
+      boolean informationOpen) {
+    Objects.requireNonNull(metrics);
+    if (width < 1 || top < 0 || bottom <= top)
+      throw new IllegalArgumentException("Invalid workspace bounds");
+    int height = bottom - top;
+    boolean wide =
+        (long) metrics.navigationMinimum() + metrics.gap() + metrics.editorMinimum() <= width;
+    if (!wide) {
+      var navigation =
+          drawerOpen
+              ? Optional.of(
+                  new Placement(
+                      0,
+                      top,
+                      Math.min(
+                          width,
+                          Math.max(metrics.navigationMinimum(), metrics.preferredNavigation())),
+                      height))
+              : Optional.<Placement>empty();
+      return new Workspace(
+          navigation, new Placement(0, top, width, height), Optional.empty(), true, drawerOpen);
+    }
+    boolean information =
+        informationOpen
+            && (long) metrics.navigationMinimum()
+                    + metrics.editorMinimum()
+                    + metrics.informationMinimum()
+                    + 2L * metrics.gap()
+                <= width;
+    int navigation =
+        Math.clamp(
+            metrics.preferredNavigation(),
+            metrics.navigationMinimum(),
+            width
+                - metrics.gap()
+                - metrics.editorMinimum()
+                - (information ? metrics.informationMinimum() + metrics.gap() : 0));
+    int informationWidth =
+        information
+            ? Math.clamp(
+                metrics.preferredInformation(),
+                metrics.informationMinimum(),
+                width - navigation - 2 * metrics.gap() - metrics.editorMinimum())
+            : 0;
+    int editor =
+        width - navigation - metrics.gap() - (information ? informationWidth + metrics.gap() : 0);
+    return new Workspace(
+        Optional.of(new Placement(0, top, navigation, height)),
+        new Placement(navigation + metrics.gap(), top, editor, height),
+        information
+            ? Optional.of(new Placement(width - informationWidth, top, informationWidth, height))
+            : Optional.empty(),
+        false,
+        false);
+  }
 
   /** Split only when both measured minima fit; compact views choose their own list/detail mode. */
   public static Optional<Columns> columns(

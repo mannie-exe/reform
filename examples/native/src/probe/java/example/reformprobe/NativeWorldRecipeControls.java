@@ -5,8 +5,8 @@ import static example.reformprobe.NativeFormProbe.*;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.EditSession;
-import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
-import design.inherent.reform.neoforge.client.WorldRecipe;
+import design.inherent.reform.minecraft.client.UnsavedChangesScreen;
+import design.inherent.reform.minecraft.client.WorldRecipe;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.CommitReceipt;
@@ -146,7 +146,9 @@ final class NativeWorldRecipeControls {
             "native original values, not invented defaults",
             soil.getValue().equals("2") && !actions.view().dirty());
         check("native apply is not labeled file save", button(form, "Apply recipe").active);
-        check("native context reload is explicit", button(form, "Reload context").active);
+        check("native context reload is explicit", ownerAction(form, "Reload context").active);
+        click(form, button(form, "Settings"));
+        soil = input(form, "Soil depth");
         geometry(form);
         capture.accept("form-recipe.png", () -> replace(form, soil, "-"));
         step("actual widgets and creation-only action labels");
@@ -315,11 +317,11 @@ final class NativeWorldRecipeControls {
             actions.view().pending().orElseThrow() == EditSession.PendingState.UNKNOWN
                 && actions.view().dirty()
                 && !button(form, "Apply recipe").active);
-        click(form, button(form, "Operation…"));
+        click(form, ownerAction(form, "Operation…"));
         check(
             "native unknown can be inspected without another admission",
-            client.screen instanceof design.inherent.reform.neoforge.client.OperationScreen<?>);
-        var feedback = (design.inherent.reform.neoforge.client.OperationScreen<?>) client.screen;
+            client.screen instanceof design.inherent.reform.minecraft.client.OperationScreen<?>);
+        var feedback = (design.inherent.reform.minecraft.client.OperationScreen<?>) client.screen;
         check(
             "actual unknown feedback forbids application-only fallback",
             feedback.observedOperation().orElseThrow().result().isPresent()

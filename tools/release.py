@@ -7,6 +7,11 @@ import re
 import subprocess
 import sys
 
+if __package__:
+    from .targets import release_assets
+else:
+    from targets import release_assets
+
 ROOT = Path(__file__).resolve().parents[1]
 RUNNERS = ("ubuntu-24.04", "windows-2025", "macos-15-intel")
 
@@ -27,8 +32,7 @@ def stage(tag):
         raise ValueError("Tag must identify the checked-out source commit")
     if git("status", "--porcelain", "--untracked-files=normal"):
         raise ValueError("Release source worktree must be clean")
-    expected = {f"reform-{version}-mc1.21.1-neoforge.jar", f"reform-{version}-sources.jar",
-                f"reform-{version}.pom"}
+    expected = release_assets(ROOT, version)
     baseline = None
     for runner in RUNNERS:
         directory = ROOT / "build/ci" / ("build-" + runner)

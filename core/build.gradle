@@ -10,11 +10,37 @@ repositories {
     }
 }
 
+configurations { minecraft26_3Runtime }
+
 dependencies {
-    api libs.dfu
-    api libs.gson
+    api libs.dfu.minecraft1211
+    api libs.gson.minecraft1211
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit.jupiter
     testImplementation libs.jqwik
     testRuntimeOnly libs.junit.launcher
+    minecraft26_3Runtime libs.dfu.minecraft263
+    minecraft26_3Runtime libs.gson.minecraft263
+    minecraft26_3Runtime platform(libs.junit.bom)
+    minecraft26_3Runtime libs.junit.jupiter
+    minecraft26_3Runtime libs.jqwik
+    minecraft26_3Runtime libs.junit.launcher
+}
+
+tasks.register('testMinecraft26_3Codecs', Test) {
+    description = 'Run the same Java 21 classes with the Minecraft 26.3 serialization libraries.'
+    group = 'verification'
+    dependsOn testClasses
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = files(sourceSets.main.output, sourceSets.test.output) + configurations.minecraft26_3Runtime
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+tasks.named('check') { dependsOn 'testMinecraft26_3Codecs' }
+
+tasks.named('test') { description = 'Run core tests with Minecraft 1.21.1 serialization libraries.' }
+tasks.register('testMinecraft1_21_1Codecs') {
+    group = 'verification'
+    description = 'Run the Minecraft 1.21.1 codec baseline.'
+    dependsOn test
 }

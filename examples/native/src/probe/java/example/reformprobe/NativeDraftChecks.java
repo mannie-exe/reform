@@ -29,9 +29,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
-/** Typed collection services over an actual native COMMON owner; never commits its draft. */
-final class NativeDraftChecks {
-  static CompletionStage<Void> verify(
+/** Typed collection services over an actual registered native owner; never commits its draft. */
+public final class NativeDraftChecks {
+  public static CompletionStage<Void> verify(
       OwnerContext context, RegisteredConfig owner, Path file, JsonObject parent) throws Exception {
     context.requireOwner();
     byte[] original = Files.readAllBytes(file);

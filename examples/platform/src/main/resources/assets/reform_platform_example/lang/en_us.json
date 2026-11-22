@@ -1,0 +1,9 @@
+{
+  "reform_platform_example:settings/collections/fields/tones/choices/CAFE": "CAFÉ",
+  "reform_platform_example:settings/catalog/fields/global/minimum": "Lower global limit",
+  "reform_platform_example:settings/catalog/fields/global/minimum.help": "Example minimum threshold for authored profiles",
+  "key.reform_platform.workflow_primary": "Workflow primary action",
+  "key.reform_platform.workflow_secondary": "Unselected workflow action",
+  "reform_platform_example:settings/workflow_keys/fields/key.reform_platform.workflow_primary": "Primary action",
+  "reform_platform_example:settings/workflow_keys/fields/key.reform_platform.workflow_secondary": "Secondary action"
+}

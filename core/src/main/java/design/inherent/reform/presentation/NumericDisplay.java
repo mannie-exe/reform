@@ -1,6 +1,7 @@
 package design.inherent.reform.presentation;
 
 import design.inherent.reform.serialization.DecimalText;
+import design.inherent.reform.value.NumericDomain;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
@@ -14,7 +15,8 @@ public record NumericDisplay(
     BigDecimal step,
     Optional<BigDecimal> referenceTicksPerSecond,
     DecimalText.Limits limits,
-    Optional<Slider> slider) {
+    Optional<Slider> slider,
+    List<Caption> captions) {
   public enum Slider {
     LINEAR_NEAREST_STEP
   }
@@ -28,6 +30,41 @@ public record NumericDisplay(
     this(canonicalUnit, units, step, referenceTicksPerSecond, limits, Optional.empty());
   }
 
+  public NumericDisplay(
+      String canonicalUnit,
+      List<Unit> units,
+      BigDecimal step,
+      Optional<BigDecimal> referenceTicksPerSecond,
+      DecimalText.Limits limits,
+      Optional<Slider> slider) {
+    this(canonicalUnit, units, step, referenceTicksPerSecond, limits, slider, List.of());
+  }
+
+  /** Exact stored-value meaning, supplied by the domain owner rather than inferred from zero. */
+  public record Caption(BigDecimal value, String translationKey, String fallback) {
+    public Caption {
+      DecimalText.Limits.CONFIGURATION.check(Objects.requireNonNull(value));
+      if (Objects.requireNonNull(translationKey).isBlank()
+          || translationKey.length() > 256
+          || Objects.requireNonNull(fallback).isBlank()
+          || fallback.length() > 256)
+        throw new IllegalArgumentException(
+            "Numeric captions need bounded labels and translation keys");
+    }
+  }
+
+  public NumericDisplay withCaptions(List<Caption> declarations) {
+    return new NumericDisplay(
+        canonicalUnit, units, step, referenceTicksPerSecond, limits, slider, declarations);
+  }
+
+  public Optional<Caption> caption(BigDecimal storedValue) {
+    Objects.requireNonNull(storedValue);
+    return captions.stream()
+        .filter(caption -> caption.value().compareTo(storedValue) == 0)
+        .findFirst();
+  }
+
   /** Explicit pointer quantization; typed input and ordinary steps stay exact and unrounded. */
   public NumericDisplay withSlider() {
     return new NumericDisplay(
@@ -36,12 +73,34 @@ public record NumericDisplay(
         step,
         referenceTicksPerSecond,
         limits,
-        Optional.of(Slider.LINEAR_NEAREST_STEP));
+        Optional.of(Slider.LINEAR_NEAREST_STEP),
+        captions);
   }
 
   /** Validate explicit slider metadata against its declared scalar, without invoking a codec. */
   public void requireSliderBounds(BigDecimal minimum, BigDecimal maximum, boolean integral) {
+    requireSliderBounds(NumericDomain.closed(minimum, maximum), integral);
+  }
+
+  public void requireSliderBounds(
+      NumericDomain domain, design.inherent.reform.value.ValueShape.ScalarKind kind) {
+    requireSliderBounds(
+        domain,
+        kind != design.inherent.reform.value.ValueShape.ScalarKind.FLOAT
+            && kind != design.inherent.reform.value.ValueShape.ScalarKind.DOUBLE);
     if (slider.isEmpty()) return;
+    var grid = grid(domain);
+    var first = domain.minimum().add(grid.first().multiply(step));
+    var last = domain.minimum().add(grid.last().multiply(step));
+    if (!domain.acceptsRepresentation(kind, first) || !domain.acceptsRepresentation(kind, last))
+      throw new IllegalArgumentException(
+          "Numeric slider grid endpoints cannot be represented within their bounds");
+  }
+
+  public void requireSliderBounds(NumericDomain domain, boolean integral) {
+    if (slider.isEmpty()) return;
+    var minimum = domain.minimum();
+    var maximum = domain.maximum();
     if (minimum == null || maximum == null || minimum.compareTo(maximum) >= 0)
       throw new IllegalArgumentException("Numeric sliders need distinct bounded endpoints");
     limits.check(minimum);
@@ -54,10 +113,27 @@ public record NumericDisplay(
       if (integral
           && (minimum.stripTrailingZeros().scale() > 0 || step.stripTrailingZeros().scale() > 0))
         throw new IllegalArgumentException("An integer slider needs whole canonical steps");
+      grid(domain);
     } catch (ArithmeticException nonuniform) {
       throw new IllegalArgumentException(
           "Slider bounds must align to their declared step", nonuniform);
     }
+  }
+
+  /** Indices are computed arithmetically; the grid never enumerates the accepted domain. */
+  record Grid(BigDecimal first, BigDecimal last) {
+    BigDecimal constrain(BigDecimal index) {
+      return index.max(first).min(last);
+    }
+  }
+
+  Grid grid(NumericDomain domain) {
+    var first = domain.minimumInclusive() ? BigDecimal.ZERO : BigDecimal.ONE;
+    var last = domain.maximum().subtract(domain.minimum()).divide(step);
+    if (!domain.maximumInclusive()) last = last.subtract(BigDecimal.ONE);
+    if (first.compareTo(last) > 0)
+      throw new IllegalArgumentException("Numeric slider has no selectable grid value");
+    return new Grid(first, last);
   }
 
   public record Unit(
@@ -111,6 +187,15 @@ public record NumericDisplay(
     Objects.requireNonNull(referenceTicksPerSecond);
     Objects.requireNonNull(limits);
     Objects.requireNonNull(slider);
+    captions = List.copyOf(captions);
+    if (captions.size() > 32)
+      throw new IllegalArgumentException("Too many numeric special-value captions");
+    var captionValues = new java.util.TreeSet<BigDecimal>();
+    for (var caption : captions) {
+      limits.check(caption.value());
+      if (!captionValues.add(caption.value()))
+        throw new IllegalArgumentException("Duplicate semantic numeric caption value");
+    }
     if (units.isEmpty() || units.size() > 16 || step.signum() <= 0)
       throw new IllegalArgumentException(
           "Numeric display requires bounded units and a positive step");

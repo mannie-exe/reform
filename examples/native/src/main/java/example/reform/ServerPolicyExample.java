@@ -5,8 +5,8 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordTypes;
 import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.minecraft.configuration.ServerSettings;
 import design.inherent.reform.neoforge.configuration.ServerPolicyCommands;
-import design.inherent.reform.neoforge.configuration.ServerSettings;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.LiveApplication;
 import design.inherent.reform.serialization.JsonLimits;
@@ -160,7 +160,7 @@ public final class ServerPolicyExample {
             new JsonLimits(262144, 64, 16384, 32768, 128, 4096),
             DraftLimits.CONFIGURATION);
     settings.serverPolicy(
-        container,
+        design.inherent.reform.neoforge.configuration.NeoForgeServerRegistration.of(container),
         source,
         ApplicationEffects.OWNER_PUBLICATION,
         new LiveApplication<>(
@@ -170,7 +170,8 @@ public final class ServerPolicyExample {
                 throw new IllegalStateException("Expected native server effect executor");
               effective = proposed;
             }));
-    settings.registeredNeoForge(container, Objects.requireNonNull(config), NATIVE);
+    design.inherent.reform.neoforge.configuration.NeoForgeServerSettings.registered(
+        settings, container, Objects.requireNonNull(config), NATIVE);
   }
 
   public ServerSettings.Document<?> policy(MinecraftServer server) {

@@ -76,6 +76,92 @@ class DocumentActionsTest {
   }
 
   @Test
+  void fieldInformationSharesActualReadPolicyAndRetainsInvalidDraftWithoutSaving()
+      throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "-", EntryPoint.GUI);
+      var snapshot = h.actions.view().snapshot().orElseThrow();
+      var target = snapshot.target(FieldPath.ROOT.field("count"));
+      var bytes = Files.readString(h.path);
+      var information = h.run(() -> h.actions.information(EntryPoint.GUI, target));
+      assertEquals(java.util.Optional.of("\"-\""), information.draft().text());
+      assertEquals(java.util.Optional.of("\"1\""), information.baseline().text());
+      assertEquals(java.util.Optional.of("\"1\""), information.declaredDefault().text());
+      assertEquals(DraftRevision.of(snapshot), information.target());
+      assertTrue(h.nativeCall(h.actions::mayInspect));
+      h.read.set(false);
+      assertFalse(h.nativeCall(h.actions::mayInspect));
+      h.nativeCall(
+          () -> {
+            assertThrows(
+                PolicyRefusal.class, () -> h.actions.information(EntryPoint.COMMAND, target));
+            return null;
+          });
+      assertEquals(bytes, Files.readString(h.path));
+      assertEquals(1, h.writes.get());
+      assertSame(snapshot, h.actions.view().snapshot().orElseThrow());
+    }
+  }
+
+  @Test
+  void staleAndTypingTargetsCannotBePresentedAsCurrentFieldInformation() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var target = h.actions.view().snapshot().orElseThrow().target(FieldPath.ROOT.field("count"));
+      h.edit("count", "4", EntryPoint.GUI);
+      for (var stale : java.util.List.of(target, target.typing())) {
+        var result =
+            await(h.nativeCall(() -> h.actions.information(EntryPoint.GUI, stale)).completion());
+        assertEquals(OperationSnapshot.State.REFUSED, result.state());
+        assertEquals("information.stale", result.report().issues().getFirst().code());
+        assertTrue(result.result().isEmpty());
+      }
+      var fresh = h.actions.view().snapshot().orElseThrow().target(FieldPath.ROOT.field("count"));
+      assertEquals(
+          java.util.Optional.of("\"4\""),
+          h.run(() -> h.actions.information(EntryPoint.COMMAND, fresh)).draft().text());
+      assertTrue(h.actions.view().dirty());
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
+  void queuedFieldInformationDoesNotDiscloseValuesAfterReadRevocation() throws Exception {
+    var pause = new AtomicBoolean();
+    var entered = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var type =
+        ValueType.of(
+            TYPE.codec(),
+            TYPE.shape(),
+            (Profile value, design.inherent.reform.value.SnapshotContext ignored) -> {
+              if (pause.compareAndSet(true, false)) {
+                entered.countDown();
+                waitFor(release);
+              }
+              return value;
+            });
+    try (var h = new Harness(type)) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var target = h.actions.view().snapshot().orElseThrow().target(FieldPath.ROOT.field("count"));
+      pause.set(true);
+      var operation = h.nativeCall(() -> h.actions.information(EntryPoint.GUI, target));
+      waitFor(entered);
+      h.read.set(false);
+      release.countDown();
+      var outcome = await(operation.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, outcome.state());
+      assertEquals("owner.permission", outcome.report().issues().getFirst().code());
+      assertTrue(outcome.result().isEmpty());
+      assertFalse(h.nativeCall(h.actions::mayInspect));
+      assertEquals(1, h.writes.get());
+    } finally {
+      release.countDown();
+    }
+  }
+
+  @Test
   void closedSourceRefusesFreshInspectionWithoutClosingItsSharedOwnerContext() throws Exception {
     try (var h = new Harness()) {
       h.run(() -> h.actions.load(EntryPoint.GUI));

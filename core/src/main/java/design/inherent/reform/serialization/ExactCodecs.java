@@ -7,6 +7,7 @@ import com.mojang.serialization.DataResult;
 import com.mojang.serialization.Decoder;
 import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.JsonOps;
+import design.inherent.reform.value.NumericDomain;
 import java.math.BigDecimal;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -45,8 +46,8 @@ public final class ExactCodecs {
   public static final Codec<Float> FLOAT =
       numeric(
               Codec.FLOAT,
-              new BigDecimal(-Float.MAX_VALUE),
-              new BigDecimal(Float.MAX_VALUE),
+              new BigDecimal(Float.toString(-Float.MAX_VALUE)),
+              new BigDecimal(Float.toString(Float.MAX_VALUE)),
               (decimal, text) -> {
                 float value = Float.parseFloat(text);
                 if (!Float.isFinite(value) || value == 0 && decimal.signum() != 0) {
@@ -80,32 +81,34 @@ public final class ExactCodecs {
   /** Check authored numeric bounds before native floating-point rounding loses that information. */
   public static <N extends Number> Codec<N> bounded(
       Codec<N> codec, BigDecimal minimum, BigDecimal maximum) {
-    if (minimum.compareTo(maximum) > 0)
-      throw new IllegalArgumentException("Reversed numeric bounds");
+    return bounded(codec, NumericDomain.closed(minimum, maximum));
+  }
+
+  public static <N extends Number> Codec<N> bounded(Codec<N> codec, NumericDomain domain) {
     Codec<N> validated =
         codec.validate(
             value ->
-                inRange(value.toString(), minimum, maximum)
+                inRange(value.toString(), domain)
                     ? DataResult.success(value)
-                    : DataResult.error(() -> "Number is outside the declared range"));
+                    : DataResult.error(() -> "Expected " + domain.description()));
     return Codec.of(
         validated,
         new Decoder<N>() {
           @Override
           public <O> DataResult<Pair<N, O>> decode(DynamicOps<O> ops, O input) {
             var number = ops.getNumberValue(input).result();
-            if (number.isEmpty() || !inRange(number.orElseThrow().toString(), minimum, maximum)) {
-              return DataResult.error(() -> "Number is outside the declared range");
+            if (number.isEmpty() || !inRange(number.orElseThrow().toString(), domain)) {
+              return DataResult.error(() -> "Expected " + domain.description());
             }
             return validated.decode(ops, input);
           }
         });
   }
 
-  private static boolean inRange(String text, BigDecimal minimum, BigDecimal maximum) {
+  private static boolean inRange(String text, NumericDomain domain) {
     try {
       var value = new BigDecimal(text);
-      return value.compareTo(minimum) >= 0 && value.compareTo(maximum) <= 0;
+      return domain.contains(value);
     } catch (NumberFormatException invalid) {
       return false;
     }

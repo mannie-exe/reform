@@ -43,7 +43,7 @@ final class DraftEditTypes {
       RecordTypes.record(FieldPath.class)
           .field("segments", FieldKey.of("segments", ValueTypes.list(SEGMENT, 128)))
           .build();
-  private static final ValueType<DraftTarget> TARGET =
+  static final ValueType<DraftTarget> TARGET =
       RecordTypes.record(DraftTarget.class)
           .register(UUID.class, ValueTypes.uuid())
           .register(FieldPath.class, PATH)
@@ -117,6 +117,17 @@ final class DraftEditTypes {
               "override",
               DraftEdit.Override.class,
               RecordTypes.record(DraftEdit.Override.class).build())
+          .variant(
+              "defaulted_scalar",
+              DraftEdit.SelectDefaultedScalar.class,
+              RecordTypes.record(DraftEdit.SelectDefaultedScalar.class)
+                  .field(
+                      "value",
+                      FieldKey.of(
+                          "value",
+                          ValueTypes.optional(
+                              ValueTypes.text(32768), ValueShape.OptionalEncoding.SINGLETON_LIST)))
+                  .build())
           .variant(
               "variant",
               DraftEdit.SelectVariant.class,

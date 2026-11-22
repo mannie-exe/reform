@@ -1,7 +1,7 @@
 package example.reform;
 
-import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
-import design.inherent.reform.neoforge.client.ClientForm;
+import design.inherent.reform.minecraft.client.ClientEditingWorkflow;
+import design.inherent.reform.minecraft.client.ClientForm;
 import java.util.List;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;

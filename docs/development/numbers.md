@@ -2,6 +2,27 @@
 
 `ValueTypes.numericDisplay(original, display)` decorates a declared numeric scalar with `NumericDisplay` metadata. It retains the original codec, snapshot policy, custom decode diagnostics and equivalence. Storage stays canonical; this declaration neither changes a file schema nor validates an owner value on its own. The existing five-argument `ValueShape.Scalar` constructor still declares no numeric display metadata.
 
+## Stored domains
+
+`NumericDomain` owns lower and upper bounds in stored units, with independent endpoint inclusivity. `closed`, `open`, `openClosed`, and `closedOpen` construct the usual intervals; a null endpoint is unbounded and cannot be exclusive. The six numeric `ValueTypes` factories accept this declaration. Existing minimum/maximum factory overloads and scalar constructors remain closed. `ValueShape.Scalar.domain()` retains the same declaration through display wrappers; its minimum/maximum accessors remain available.
+
+```java
+var positive = ValueTypes.decimal(
+    NumericDomain.openClosed(BigDecimal.ZERO, BigDecimal.ONE));
+var belowOne = ValueTypes.decimal(
+    NumericDomain.closedOpen(BigDecimal.ZERO, BigDecimal.ONE));
+var control = ValueTypes.numericDisplay(
+    positive, NumericDisplay.probability().withSlider());
+```
+
+The codec checks authored bounds before native conversion and checks the resulting value again. Zero, including negative zero, is excluded by an open zero boundary, while `1e-300` remains a valid double in the positive example. Floating-point overflow, underflow to zero, or rounding onto an excluded endpoint is refused. Empty mathematical intervals and intervals containing no value of the declared type refuse at declaration. Bounds, type representation, text budgets, and interaction steps are separate constraints. The complete owner validator still runs; native registration predicates are not inferred by probing them.
+
+Information, review, and selected-field command inspection use `NumericComponents.bounds` to show the same declared inequalities. Numeric display fields name the stored unit, so a percent display cannot make a stored 0..1 boundary look like a 0..1 percent policy. Unbounded metadata says that it adds no numeric bound; it does not advertise values beyond the native type or owner validator. Information captures this metadata alongside its actual read-authorized revision, outside rendering, and retains the normal stale-observation and disclosure guards.
+
+Stepping refuses an excluded endpoint or an unrepresentable result without replacing the input. Sliders keep their explicit step grid, anchored at the lower bound. Open endpoints remove those grid points; pointer selection uses the nearest remaining grid point. A single selectable point is allowed; an empty grid, unbounded or identical endpoints, unaligned span/step, fractional integer grid, or grid edge whose native rounding crosses a bound refuses the declaration. Such a refusal affects the chosen slider policy, not the underlying typed domain or exact entry. Grid indices are computed without enumeration. Exact input remains valid between grid points, and observing the thumb never quantizes it.
+
+## Units and controls
+
 ```java
 var ticks = NumericDisplay.ticks(BigDecimal.valueOf(20));
 var duration = ValueTypes.numericDisplay(ValueTypes.integer(0, 12000), ticks);
@@ -33,8 +54,28 @@ The generated native form renders declared numeric metadata as an exact text inp
 
 An opted-in native slider shows the actual displayed value and unit. Pointer changes update local display immediately and retain only the latest deferred value while input admission is pending. A completed admission may flush that latest value once; refusal retains it for explicit retry rather than starting an automatic retry loop. Retired widgets and replaced sources cannot flush into a new editor.
 
+## Special-value captions
+
+`NumericDisplay.withCaptions` adds up to 32 owner-declared `Caption` values, each with an exact stored number, translation key, and fallback. Keys and fallbacks admit at most 256 characters. Semantic duplicates such as `0` and `0.00`, invalid labels, and values outside the scalar's stored type/domain refuse before opening a control. A distinct decimal that merely rounds to a stored value cannot declare that value's caption. Existing display constructors declare no captions; zero never acquires an implicit meaning.
+
+```java
+var ticks = NumericDisplay.ticks(BigDecimal.valueOf(20)).withCaptions(List.of(
+    new NumericDisplay.Caption(BigDecimal.ZERO, "my_mod.duration.off", "Off")));
+var duration = ValueTypes.numericDisplay(ValueTypes.integer(0, 12000), ticks);
+```
+
+`NumericPresentation.caption` derives annotations from an actual declared type and captured numeric input, not a rendered report string. It compares exact semantic numbers independently of spelling or selected display units. Invalid or stale unit mappings, omitted defaults, absent optional values, unavailable observations, and neighboring values that round similarly do not receive a caption. `NumericInput` caches its annotation with the immutable input state.
+
+Native numeric summaries, slider readouts, field information, review values, and selected-field command inspection share `NumericComponents.value`. Exact entry remains numeric, and captions never enter its parser. `FieldInformation.Value.numericCaption` and `DocumentReview.Entry.numericValues` accompany the original raw text; capture budgets include the annotations. Existing constructors retain empty annotations. Exports, typed JSON comparisons, source bytes, and raw technical observations remain numeric or retain their original raw descriptions. Consumers should reuse these declarations and formatter rather than implementing a second sentinel detector.
+
+## Related fields
+
 `FormPresentation.Range` groups two distinct sibling numeric fields by their actual structured paths. The owner supplies a stable group ID, localized caption and help. Pass the presentation to `SettingsScreen` or the client factory's `screen`/`registerMenu` overload. Registration checks declared shapes without invoking codecs, snapshots or value constructors. Duplicate groups/endpoints, unknown fields and unsupported shapes refuse before opening an editor. `DraftTypes.declaredAt` inspects metadata only; it grants no active-row membership or editing authority.
 
 The form renders the pair in measured columns when both controls fit and stacks them otherwise. Unit choices and input/history stay independent. Presentation adds no range value, field rename or implicit validator: the owner's complete validator still enforces its actual invariant and should route an issue to one path with the other in `related`. Both fields remain repairable; editing or stepping one never swaps or clamps the other. Initialization retry preserves the caller's exact presentation and borrowed source bindings.
 
-The independent packaged headless examples exercise shared unit edits and owner-validated range repair; `NumericExample` demonstrates the ordinary native client factory without consumer-owned editing/storage infrastructure. [Verification](verification.md) owns tested artifacts and material limits. Dependent fields and the remaining promoted workflows still require Phase 1 work.
+The independent [headless numeric example](../../examples/headless/src/main/java/example/NumericDomains.java) exercises typed-record and object-map domains, exact sub-step edits, and captions through the packaged API. [The shared native example](../../examples/platform/src/main/java/example/reform/platform/PlatformNumericExample.java) supplies open bounds, units, related fields, and owner-declared zero meanings without another editor or storage implementation. [Verification](verification.md) owns tested artifacts and material limits.
+
+## Dependency updates
+
+Codec or game-library updates must retain both runtime suites' endpoint, signed-zero, native-extrema, underflow, and wrapper-propagation controls. Native input or rendering changes require the affected numeric, information/review, and client-command fixtures, including compact layouts and saved reopen. Consumer declarations must keep actual ranges, units, increments, captions, and complete validation aligned; an opaque native predicate is not a source of inferred bounds or permission to replace its serializer.

@@ -6,7 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.SettingsScreen;
+import design.inherent.reform.minecraft.client.SettingsScreen;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.StructuredExample;

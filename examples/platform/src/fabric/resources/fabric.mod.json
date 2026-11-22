@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "reform_platform_example",
+  "version": "1.0.0",
+  "name": "re:form platform fixture",
+  "license": "Apache-2.0", ${probeAccessWidener}
+  "entrypoints": {"main": ["example.reform.platform.FabricPlatform"], "client": ["example.reform.platform.FabricPlatformClient"]},
+  "depends": {"minecraft": "${game}", "fabricloader": ">=${loader}", "reform": "=${libraryVersion}"}
+}

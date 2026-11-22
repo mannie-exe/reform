@@ -3,6 +3,7 @@ package design.inherent.reform.value;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,7 +26,7 @@ class SnapshotTest {
     var nodes = new AtomicReference<ValueType<Node>>();
     nodes.set(
         ValueType.of(
-            Codec.unit(new Node(List.of())),
+            MapCodec.unit(new Node(List.of())).codec(),
             new ValueShape.Custom("fixture:node"),
             (value, context) ->
                 new Node(

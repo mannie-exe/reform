@@ -26,7 +26,8 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 // An ordinary, separate mod build: no library source set or project dependency.
-dependencies { implementation "design.inherent:reform:${providers.gradleProperty('reformVersion').get()}" }
+def libraryArtifact = providers.gradleProperty('reformArtifact').getOrElse('reform-neoforge-1.21.1')
+dependencies { implementation "design.inherent:${libraryArtifact}:${providers.gradleProperty('reformVersion').get()}" }
 
 sourceSets {
     probe {
@@ -64,7 +65,7 @@ tasks.register('verifyLibrary') {
         def artifacts = consumerRuntime.incoming.artifacts.artifacts.findAll { artifact ->
             def id = artifact.id.componentIdentifier
             id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier &&
-                id.group == 'design.inherent' && id.module == 'reform'
+                id.group == 'design.inherent' && id.module == libraryArtifact
         }
         if (artifacts.size() != 1) throw new GradleException('Expected one packaged reform artifact')
         def actual = java.security.MessageDigest.getInstance('SHA-256')

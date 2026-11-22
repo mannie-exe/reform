@@ -1,17 +1,39 @@
 [versions]
-minecraft = "1.21.1"
-neoforge = "21.1.265"
+minecraft-1_21_1 = "1.21.1"
+neoforge-1_21_1 = "21.1.265"
+minecraft-26_3 = "26.3"
+neoforge-1_21_1-tested = "21.1.267"
+neoforge-26_3 = "26.3.0.115"
+fabric-loader = "0.20.1"
+fabric-api-1_21_1 = "0.116.18+1.21.1"
+fabric-api-26_3 = "0.166.2+26.3"
+modmenu-1_21_1 = "11.0.3"
+modmenu-26_3 = "21.0.0"
+connector-1_21_1 = "2.0.0-beta.17+1.21.1"
+forgified-fabric-api-1_21_1 = "0.116.15+2.3.6+1.21.1"
+connector-userdev = "1.2.1-20260813.224440-42"
+loom = "1.18.4"
 moddev = "2.0.148"
+mixinextras = "0.5.5"
 spotless = "8.11.0"
 google-java-format = "1.35.0"
-dfu = "8.0.16"
-gson = "2.10.1"
+dfu-1_21_1 = "8.0.16"
+gson-1_21_1 = "2.10.1"
+dfu-26_3 = "10.0.21"
+gson-26_3 = "2.14.0"
 junit = "5.13.1"
 jqwik = "1.9.3"
 
 [libraries]
-dfu = { module = "com.mojang:datafixerupper", version.ref = "dfu" }
-gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+mixinextras-common = { module = "io.github.llamalad7:mixinextras-common", version.ref = "mixinextras" }
+dfu-minecraft1211 = { module = "com.mojang:datafixerupper", version.ref = "dfu-1_21_1" }
+gson-minecraft1211 = { module = "com.google.code.gson:gson", version.ref = "gson-1_21_1" }
+dfu-minecraft263 = { module = "com.mojang:datafixerupper", version.ref = "dfu-26_3" }
+gson-minecraft263 = { module = "com.google.code.gson:gson", version.ref = "gson-26_3" }
+fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
+fabric-api-minecraft1211 = { module = "net.fabricmc.fabric-api:fabric-api", version.ref = "fabric-api-1_21_1" }
+fabric-api-minecraft263 = { module = "net.fabricmc.fabric-api:fabric-api", version.ref = "fabric-api-26_3" }
+connector-userdev = { module = "org.sinytra.adapter:userdev", version.ref = "connector-userdev" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-launcher = { module = "org.junit.platform:junit-platform-launcher" }
@@ -20,3 +42,5 @@ jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
 [plugins]
 moddev = { id = "net.neoforged.moddev", version.ref = "moddev" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+loom = { id = "net.fabricmc.fabric-loom", version.ref = "loom" }
+loom-remap = { id = "net.fabricmc.fabric-loom-remap", version.ref = "loom" }

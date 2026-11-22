@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "providedRuntime": [
+    {
+      "package": "com.google.guava:guava",
+      "versions": ["32.1.2-jre", "33.6.0-jre"],
+      "reason": "Reviewed Minecraft serialization runtime dependency; host advisories are retained for separate assessment."
+    },
+    {
+      "package": "io.netty:netty-codec",
+      "versions": ["4.1.97.Final"],
+      "reason": "Reviewed Minecraft 1.21.1 networking runtime; re:form does not supply a replacement."
+    },
+    {
+      "package": "io.netty:netty-handler",
+      "versions": ["4.1.97.Final", "4.2.16.Final"],
+      "reason": "Reviewed Minecraft networking runtime; affected handler reachability remains a separate host assessment."
+    },
+    {
+      "package": "org.lz4:lz4-java",
+      "versions": ["1.8.0"],
+      "reason": "Reviewed Minecraft 1.21.1 compression runtime; decompression and native-loading risks remain open advisories."
+    },
+    {
+      "package": "at.yawk.lz4:lz4-java",
+      "versions": ["1.10.1"],
+      "reason": "Reviewed Minecraft 26.3 compression runtime; native-library extraction remains an open advisory."
+    },
+    {
+      "package": "org.codehaus.plexus:plexus-utils",
+      "versions": ["3.3.0"],
+      "reason": "Reviewed NeoForge 1.21.1 legacy classpath dependency; archive-extraction reachability remains unqualified."
+    }
+  ]
+}

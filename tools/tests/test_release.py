@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ from unittest.mock import patch
 import zipfile
 
 TOOLS = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("reform_release", TOOLS / "release.py")
+SPEC = importlib.util.spec_from_file_location("tools.release", TOOLS / "release.py")
 RELEASE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RELEASE)
 
@@ -26,12 +27,15 @@ class ReleaseStaging(unittest.TestCase):
         (self.root / ".gitattributes").write_bytes(b"* text=auto eol=lf\n")
         (self.root / ".gitignore").write_text("build/\n")
         (self.root / "gradle.properties").write_bytes(b"mod_version=1.2.3\n")
+        (self.root / "gradle").mkdir()
+        for name in ("minecraft-targets.json", "libs.versions.toml"):
+            shutil.copy2(TOOLS.parent / "gradle" / name, self.root / "gradle" / name)
         self.command("add", ".")
         self.command("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
                      "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
         self.command("tag", "v1.2.3")
-        self.files = {"reform-1.2.3-mc1.21.1-neoforge.jar": b"binary fixture",
-                      "reform-1.2.3-sources.jar": b"sources fixture", "reform-1.2.3.pom": b"pom fixture"}
+        self.files = {name: ("fixture " + name).encode("utf-8")
+                      for name in RELEASE.release_assets(self.root, "1.2.3")}
         for runner in RELEASE.RUNNERS:
             path = self.root / "build/ci" / ("build-" + runner)
             path.mkdir(parents=True)
@@ -54,14 +58,14 @@ class ReleaseStaging(unittest.TestCase):
             RELEASE.stage("v1.2.3")
 
     def test_runner_difference_refused_before_staging(self):
-        changed = self.root / "build/ci/build-windows-2025/reform-1.2.3-sources.jar"
+        changed = self.root / "build/ci/build-windows-2025/reform-1.2.3-mc1.21.1-neoforge-sources.jar"
         changed.write_bytes(b"different")
         with self.assertRaisesRegex(ValueError, "Non-reproducible"):
             RELEASE.stage("v1.2.3")
         self.assertFalse((self.root / "build/release").exists())
 
     def test_missing_artifact_refused(self):
-        (self.root / "build/ci/build-ubuntu-24.04/reform-1.2.3.pom").unlink()
+        (self.root / "build/ci/build-ubuntu-24.04/reform-1.2.3-mc1.21.1-neoforge.pom").unlink()
         with self.assertRaisesRegex(ValueError, "missing CI"):
             RELEASE.stage("v1.2.3")
 

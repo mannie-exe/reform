@@ -7,7 +7,8 @@ import design.inherent.reform.definition.RecordTypes;
 import design.inherent.reform.edit.Candidate;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.LiveApplication;
 import design.inherent.reform.serialization.JsonLimits;
@@ -77,16 +78,26 @@ public final class FileFormatsExample {
   static void register(IEventBus bus, ModContainer container) {
     properties =
         ClientFileSettings.properties(
-            bus, container, CHOICES, "legacy-tools", "choices.properties");
+            NeoForgeClientRegistration.of(bus, container),
+            CHOICES,
+            "legacy-tools",
+            "choices.properties");
     bare =
         ClientFileSettings.existingJson(
-            bus, container, BARE, JsonStore.Format.EXISTING_BARE, "legacy-tools", "bare.json");
+            NeoForgeClientRegistration.of(bus, container),
+            BARE,
+            JsonStore.Format.EXISTING_BARE,
+            "legacy-tools",
+            "bare.json");
     broken =
-        ClientFileSettings.properties(bus, container, BROKEN, "legacy-tools", "broken.properties");
+        ClientFileSettings.properties(
+            NeoForgeClientRegistration.of(bus, container),
+            BROKEN,
+            "legacy-tools",
+            "broken.properties");
     custom =
         ClientFileSettings.clientFile(
-            bus,
-            container,
+            NeoForgeClientRegistration.of(bus, container),
             new CounterStore(),
             ApplicationEffects.OWNER_PUBLICATION,
             new LiveApplication<>(

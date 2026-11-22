@@ -4,10 +4,11 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
-import design.inherent.reform.neoforge.client.ClientKeyBindings;
-import design.inherent.reform.neoforge.client.SettingsScreen;
-import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientKeyBindings;
+import design.inherent.reform.minecraft.client.SettingsScreen;
+import design.inherent.reform.minecraft.client.UnsavedChangesScreen;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
 import example.reform.ClientExample;
@@ -175,8 +176,7 @@ public final class NativeFormProbe {
     if (mode.startsWith("keys-factory")) {
       invalidKeys =
           ClientKeyBindings.clientKeys(
-              bus,
-              probeContainer,
+              NeoForgeClientRegistration.of(bus, probeContainer),
               design.inherent.reform.definition.DocumentId.parse(
                   probeContainer.getModId() + ":invalid_keys"),
               () -> {
@@ -225,7 +225,9 @@ public final class NativeFormProbe {
               }
               return design.inherent.reform.validation.ValidationReport.VALID;
             });
-    reentrantSettings = ClientFileSettings.clientJson(bus, probeContainer, definition);
+    reentrantSettings =
+        ClientFileSettings.clientJson(
+            NeoForgeClientRegistration.of(bus, probeContainer), definition);
     reentrantSettings
         .initialization()
         .whenComplete(
@@ -305,18 +307,23 @@ public final class NativeFormProbe {
       expectRefusal(
           () ->
               ClientFileSettings.properties(
-                  bus, actualContainer, sameFile, "legacy-tools", "choices.properties"));
+                  NeoForgeClientRegistration.of(bus, actualContainer),
+                  sameFile,
+                  "legacy-tools",
+                  "choices.properties"));
       expectRefusal(
           () ->
               ClientFileSettings.properties(
-                  bus, actualContainer, sameFile, "LEGACY-TOOLS", "CHOICES.properties"));
+                  NeoForgeClientRegistration.of(bus, actualContainer),
+                  sameFile,
+                  "LEGACY-TOOLS",
+                  "CHOICES.properties"));
       controls.add(
           "owned file aliases and portable-case collisions refuse metadata without defaults or IO");
       expectRefusal(
           () ->
               ClientKeyBindings.clientKeys(
-                  bus,
-                  actualContainer,
+                  NeoForgeClientRegistration.of(bus, actualContainer),
                   example.reform.KeyExample.DOCUMENT,
                   () -> {
                     throw new AssertionError("Duplicate entered provider");
@@ -324,8 +331,7 @@ public final class NativeFormProbe {
       expectRefusal(
           () ->
               ClientKeyBindings.clientKeys(
-                  bus,
-                  probeContainer,
+                  NeoForgeClientRegistration.of(bus, probeContainer),
                   example.reform.KeyExample.DOCUMENT,
                   () -> {
                     throw new AssertionError("Foreign namespace entered provider");
@@ -336,11 +342,18 @@ public final class NativeFormProbe {
               1,
               NativeExample.DEFINITION.type(),
               NativeExample.DEFINITION::defaults);
-      expectRefusal(() -> ClientFileSettings.clientJson(bus, actualContainer, duplicate));
       expectRefusal(
-          () -> ClientFileSettings.clientJson(bus, actualContainer, NativeExample.DEFINITION));
+          () ->
+              ClientFileSettings.clientJson(
+                  NeoForgeClientRegistration.of(bus, actualContainer), duplicate));
       expectRefusal(
-          () -> ClientFileSettings.clientJson(bus, probeContainer, NativeExample.DEFINITION));
+          () ->
+              ClientFileSettings.clientJson(
+                  NeoForgeClientRegistration.of(bus, actualContainer), NativeExample.DEFINITION));
+      expectRefusal(
+          () ->
+              ClientFileSettings.clientJson(
+                  NeoForgeClientRegistration.of(bus, probeContainer), NativeExample.DEFINITION));
       for (String path : List.of("../escape", "double//slash", "trailing./leaf", "con")) {
         var invalid =
             new design.inherent.reform.definition.DocumentDefinition<>(
@@ -348,7 +361,10 @@ public final class NativeFormProbe {
                 1,
                 NativeExample.DEFINITION.type(),
                 NativeExample.DEFINITION::defaults);
-        expectRefusal(() -> ClientFileSettings.clientJson(bus, actualContainer, invalid));
+        expectRefusal(
+            () ->
+                ClientFileSettings.clientJson(
+                    NeoForgeClientRegistration.of(bus, actualContainer), invalid));
       }
       var existing = actualContainer.getCustomExtension(IConfigScreenFactory.class).orElseThrow();
       expectRefusal(
@@ -1221,13 +1237,28 @@ public final class NativeFormProbe {
         .orElseThrow();
   }
 
+  /** Reach a mounted action through the actual native More pane, without calling owner services. */
+  static Button ownerAction(Screen screen, String label) {
+    if (widgets(screen).stream()
+        .noneMatch(
+            widget -> widget instanceof Button && widget.getMessage().getString().equals(label))) {
+      var more = button(screen, "More…");
+      if (!focus(screen, more)) throw new AssertionError("More is outside the native focus tree");
+      click(screen, more);
+    }
+    var action = button(screen, label);
+    if (!focus(screen, action))
+      throw new AssertionError("Owner action is outside the native focus tree");
+    return action;
+  }
+
   static Button button(ContainerEventHandler parent, String label) {
     return widgets(parent).stream()
         .filter(Button.class::isInstance)
         .map(Button.class::cast)
         .filter(widget -> widget.getMessage().getString().equals(label))
         .findFirst()
-        .orElseThrow();
+        .orElseThrow(() -> new AssertionError("Missing native button: " + label));
   }
 
   static List<AbstractWidget> widgets(ContainerEventHandler parent) {

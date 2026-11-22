@@ -20,7 +20,11 @@ public final class NativeAddonServerProbe {
   public NativeAddonServerProbe(
       net.neoforged.bus.api.IEventBus bus, net.neoforged.fml.ModContainer container) {
     if (Files.isRegularFile(java.nio.file.Path.of("registered-probe-mode.json")))
-      new RegisteredOwnerProbe(bus, container);
+      new RegisteredOwnerProbe(
+          bus,
+          container,
+          net.neoforged.fml.config.ModConfig.Type.COMMON,
+          NativeReferenceChecks::verify);
     else if (Files.isRegularFile(java.nio.file.Path.of("server-policy-probe-mode.json")))
       new NativeServerPolicyProbe();
     else NeoForge.EVENT_BUS.addListener(this::started);

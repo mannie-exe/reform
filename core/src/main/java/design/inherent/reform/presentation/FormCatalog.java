@@ -232,11 +232,11 @@ public final class FormCatalog {
   /** Bounded history retains requested row identities through removal, undo and branch changes. */
   public static final class Navigation {
     private Snapshot snapshot;
-    private final List<FieldPath> history = new ArrayList<>(List.of(FieldPath.ROOT));
-    private int cursor;
+    private final NavigationHistory<FieldPath> history;
 
     public Navigation(Snapshot snapshot) {
       this.snapshot = Objects.requireNonNull(snapshot);
+      history = new NavigationHistory<>(FieldPath.ROOT, snapshot.limits.maximumHistoryEntries());
     }
 
     public void update(Snapshot snapshot) {
@@ -246,37 +246,33 @@ public final class FormCatalog {
     }
 
     public Entry selected() {
-      return snapshot.nearest(history.get(cursor));
+      return snapshot.nearest(history.selected());
     }
 
     public FieldPath requested() {
-      return history.get(cursor);
+      return history.selected();
     }
 
     public void select(FieldPath path) {
       if (snapshot.entry(path).isEmpty())
         throw new IllegalArgumentException("Select an existing catalog identity");
-      if (history.get(cursor).equals(path)) return;
-      history.subList(cursor + 1, history.size()).clear();
-      history.add(path);
-      if (history.size() > snapshot.limits.maximumHistoryEntries()) history.removeFirst();
-      cursor = history.size() - 1;
+      history.select(path);
     }
 
     public boolean canBack() {
-      return cursor > 0;
+      return history.canBack();
     }
 
     public boolean canForward() {
-      return cursor + 1 < history.size();
+      return history.canForward();
     }
 
     public void back() {
-      if (canBack()) cursor--;
+      history.back();
     }
 
     public void forward() {
-      if (canForward()) cursor++;
+      history.forward();
     }
   }
 

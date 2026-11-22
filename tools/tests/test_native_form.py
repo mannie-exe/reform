@@ -1,20 +1,10 @@
 """The GUI runner may remove only the disposable tree it created, even after a failed boot."""
 
-import importlib.util
 from pathlib import Path
-import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
-TOOLS = Path(__file__).resolve().parents[1]
-CONFIG_SPEC = importlib.util.spec_from_file_location("native_config_probe", TOOLS / "native_config_probe.py")
-CONFIG = importlib.util.module_from_spec(CONFIG_SPEC)
-CONFIG_SPEC.loader.exec_module(CONFIG)
-SPEC = importlib.util.spec_from_file_location("reform_form_probe", TOOLS / "native_form_probe.py")
-PROBE = importlib.util.module_from_spec(SPEC)
-with patch.dict(sys.modules, {"native_config_probe": CONFIG}):
-    SPEC.loader.exec_module(PROBE)
+from tools import native_form_probe as PROBE
 
 
 class NativeFormFixtureGuards(unittest.TestCase):

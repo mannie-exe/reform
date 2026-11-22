@@ -27,6 +27,7 @@ public record DraftEdit(DraftTarget target, Action action) {
           MoveRow,
           Presence,
           Override,
+          SelectDefaultedScalar,
           SelectVariant,
           DiscardBranch,
           RestoreOverride,
@@ -121,6 +122,15 @@ public record DraftEdit(DraftTarget target, Action action) {
   public record Presence(boolean present) implements Action {}
 
   public record Override(boolean overridden) implements Action {}
+
+  /** Select an omitted default or an explicit scalar value with one exact history boundary. */
+  public record SelectDefaultedScalar(Optional<String> value) implements Action {
+    public SelectDefaultedScalar {
+      Objects.requireNonNull(value);
+      if (value.filter(text -> text.length() > 32768).isPresent())
+        throw new IllegalArgumentException("Scalar input exceeds its admitted text budget");
+    }
+  }
 
   public record SelectVariant(String id) implements Action {
     public SelectVariant {

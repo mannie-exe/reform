@@ -10,6 +10,7 @@ import design.inherent.reform.edit.DraftEdits;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.edit.DraftRevision;
+import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.edit.DraftTree;
 import design.inherent.reform.importing.ImportFormat;
 import design.inherent.reform.importing.ImportSource;
@@ -154,6 +155,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationDescriptor<Empty, Description> describe;
   private final OperationDescriptor<Optional<DraftRevision>, ExportArtifact> export;
   private final OperationDescriptor<Empty, DocumentReview> review;
+  private final OperationDescriptor<DraftTarget, FieldInformation> information;
   private final OperationDescriptor<Empty, EditorActor.Preflight<T>> preflight;
 
   public DocumentActions(
@@ -352,6 +354,47 @@ public final class DocumentActions<T> implements AutoCloseable {
                                     throw unavailable(current);
                                   return captured;
                                 })));
+    information =
+        descriptor(
+            "information",
+            DraftTarget.type(),
+            OwnerContext.Right.READ,
+            Set.of(OperationDescriptor.Effect.INSPECT));
+    scope.register(
+        information,
+        (execution, target) ->
+            actor
+                .inspect()
+                .thenCompose(
+                    observed ->
+                        context.onWorker(
+                            () -> {
+                              execution.checkpoint();
+                              var snapshot = observed.snapshot();
+                              if (!target.session().equals(snapshot.session())
+                                  || target.generation() != snapshot.generation()
+                                  || target
+                                      .version()
+                                      .filter(value -> value == snapshot.version())
+                                      .isEmpty())
+                                throw new PolicyRefusal(
+                                    "information.stale",
+                                    "Refresh information for the current draft");
+                              return FieldInformation.capture(
+                                  observed, target.path(), reviewLimits);
+                            }))
+                .thenCompose(
+                    captured ->
+                        context.onOwner(
+                            () -> {
+                              requireBatchRead();
+                              execution.checkpoint();
+                              if (!captured.target().matches(actor.view().snapshot().orElseThrow()))
+                                throw new PolicyRefusal(
+                                    "information.stale",
+                                    "The draft changed while information was captured");
+                              return captured;
+                            })));
     preflight =
         query(
             "preflight",
@@ -669,6 +712,24 @@ public final class DocumentActions<T> implements AutoCloseable {
   /** One captured draft/source/effective comparison; no reload, preparation or effect. */
   public OperationHandle<DocumentReview> review(OperationDescriptor.EntryPoint entry) {
     return scope.submit(review, entry, Empty.VALUE, readiness(entry));
+  }
+
+  /** Explicit selected-field inspection; the actual read policy and revision are checked again. */
+  public OperationHandle<FieldInformation> information(
+      OperationDescriptor.EntryPoint entry, DraftTarget target) {
+    return scope.submit(
+        information, entry, java.util.Objects.requireNonNull(target), readiness(entry));
+  }
+
+  /** Current owner-thread disclosure check, without IO; never a transferable read grant. */
+  public boolean mayInspect() {
+    if (!isOpen()) return false;
+    try {
+      requireBatchRead();
+      return true;
+    } catch (PolicyRefusal refused) {
+      return false;
+    }
   }
 
   /** Complete identified candidate/backend checks, without marking a submission or writing. */

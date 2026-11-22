@@ -5,9 +5,9 @@ import static example.reformprobe.NativeFormProbe.*;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.edit.DraftRevision;
-import design.inherent.reform.neoforge.client.FieldEditors;
-import design.inherent.reform.neoforge.client.OperationScreen;
-import design.inherent.reform.neoforge.client.WorldRecipe;
+import design.inherent.reform.minecraft.client.FieldEditors;
+import design.inherent.reform.minecraft.client.OperationScreen;
+import design.inherent.reform.minecraft.client.WorldRecipe;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.EditorActor;
@@ -108,6 +108,9 @@ final class NativeRecipePreviewControls {
   }
 
   private void edit(String value) {
+    if (widgets(form).stream()
+        .anyMatch(widget -> widget.getMessage().getString().equals("Settings")))
+      click(form, button(form, "Settings"));
     replace(form, input(form, "Soil depth"), value);
   }
 
@@ -115,7 +118,7 @@ final class NativeRecipePreviewControls {
     return client.screen == form
         && actions.view().availability() == EditorActor.Availability.READY
         && actions.view().validation().valid()
-        && button(form, "Preview…").active
+        && button(form, "Done").active
         && input(form, "Soil depth").getValue().equals(value);
   }
 
@@ -136,7 +139,7 @@ final class NativeRecipePreviewControls {
       case 1 -> {
         if (!ready("6") || !actions.view().dirty()) return false;
         check("ordinary typing starts no analysis", calls.get() == 0);
-        click(form, button(form, "Preview…"));
+        click(form, ownerAction(form, "Preview…"));
         step("explicit preview requested");
       }
       case 2 -> {
@@ -162,7 +165,7 @@ final class NativeRecipePreviewControls {
             calls.get() == 1
                 && release.getCount() == 1
                 && parent.getUiState().getSettings() == original);
-        click(form, button(form, "Preview…"));
+        click(form, ownerAction(form, "Preview…"));
         var view = operation();
         check(
             "reopen observes the same live preview identity",
@@ -206,7 +209,7 @@ final class NativeRecipePreviewControls {
       }
       case 7 -> {
         if (!ready("9")) return false;
-        click(form, button(form, "Preview…"));
+        click(form, ownerAction(form, "Preview…"));
         var view = operation();
         check(
             "older result is named and narrated without rerunning",
@@ -225,6 +228,13 @@ final class NativeRecipePreviewControls {
         step("older preview retained with its source and draft; revert requested");
       }
       case 8 -> {
+        if (client.screen == form
+            && button(form, "Done").active
+            && widgets(form).stream()
+                .anyMatch(widget -> widget.getMessage().getString().equals("Settings"))) {
+          click(form, button(form, "Settings"));
+          return false;
+        }
         if (!ready("2") || actions.view().dirty()) return false;
         form.onClose();
         check(

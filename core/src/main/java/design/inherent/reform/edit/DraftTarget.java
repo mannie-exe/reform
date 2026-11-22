@@ -7,6 +7,10 @@ import java.util.UUID;
 
 /** Actual editor lifetime, optional optimistic draft version and structural location. */
 public record DraftTarget(UUID session, long generation, Optional<Long> version, FieldPath path) {
+  public static design.inherent.reform.value.ValueType<DraftTarget> type() {
+    return DraftEditTypes.TARGET;
+  }
+
   public DraftTarget {
     Objects.requireNonNull(session);
     Objects.requireNonNull(version);

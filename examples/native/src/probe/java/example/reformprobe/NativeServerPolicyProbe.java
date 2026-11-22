@@ -6,7 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
-import design.inherent.reform.neoforge.configuration.ServerSettings;
+import design.inherent.reform.minecraft.configuration.ServerSettings;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
@@ -107,6 +107,48 @@ final class NativeServerPolicyProbe {
       check(
           "native initialization and domain effective state remain separate",
           nativeDocument.initialization().isEmpty() && nativeDocument.runtime().isEmpty());
+      var unrelatedKind = ServerSettings.<java.util.Map<String, Object>>nativeKind();
+      check(
+          "native provider lookup requires its exact typed identity",
+          ServerSettings.admittedNative(server, ServerPolicyExample.NATIVE, unrelatedKind)
+              .isEmpty());
+      check(
+          "a file policy is not a registered native provider",
+          ServerSettings.admittedNative(server, ServerPolicyExample.DEFINITION.id(), unrelatedKind)
+              .isEmpty());
+      var failedRoute = DocumentId.parse(NativeExample.ID + ":failed_native_provider");
+      var untouched = filePath.resolveSibling("never-created-native-provider.json");
+      var originalFailure = new IllegalStateException("native provider construction refused");
+      var cleanupFailure = new IllegalStateException("native provider cleanup refused");
+      var failedContext = new java.util.concurrent.atomic.AtomicReference<OwnerContext>();
+      try {
+        scope.nativePolicy(
+            design.inherent.reform.neoforge.configuration.NeoForgeServerRegistration.of(
+                NativeExample.serverPolicies().container()),
+            failedRoute,
+            untouched,
+            unrelatedKind,
+            owner -> {
+              failedContext.set(owner);
+              owner.onClose(
+                  () -> {
+                    throw cleanupFailure;
+                  });
+              throw originalFailure;
+            });
+        throw new AssertionError("failed native provider was admitted");
+      } catch (IllegalStateException expected) {
+        check(
+            "native provider cleanup retains the original failure and suppressed cause",
+            expected == originalFailure
+                && Arrays.asList(expected.getSuppressed()).contains(cleanupFailure));
+      }
+      check(
+          "failed native provider closes its context without registration or file creation",
+          failedContext.get() != null
+              && !failedContext.get().isOpen()
+              && scope.document(failedRoute).isEmpty()
+              && !Files.exists(untouched));
       check(
           "native SERVER file uses its actual world-specific root",
           NativeExample.serverPolicies()
@@ -159,7 +201,9 @@ final class NativeServerPolicyProbe {
                                 "different IDs cannot claim the same source",
                                 () ->
                                     scope.serverPolicy(
-                                        NativeExample.serverPolicies().container(),
+                                        design.inherent.reform.neoforge.configuration
+                                            .NeoForgeServerRegistration.of(
+                                            NativeExample.serverPolicies().container()),
                                         alias,
                                         StorageBinding.relative(
                                             filePath.getParent(),
@@ -168,7 +212,9 @@ final class NativeServerPolicyProbe {
                                 "portable-case file aliases refuse before initialization",
                                 () ->
                                     scope.serverPolicy(
-                                        NativeExample.serverPolicies().container(),
+                                        design.inherent.reform.neoforge.configuration
+                                            .NeoForgeServerRegistration.of(
+                                            NativeExample.serverPolicies().container()),
                                         alias,
                                         StorageBinding.relative(
                                             filePath.getParent(),
@@ -180,7 +226,9 @@ final class NativeServerPolicyProbe {
                                 "an owned file cannot replace the admitted native serializer",
                                 () ->
                                     scope.serverPolicy(
-                                        NativeExample.serverPolicies().container(),
+                                        design.inherent.reform.neoforge.configuration
+                                            .NeoForgeServerRegistration.of(
+                                            NativeExample.serverPolicies().container()),
                                         alias,
                                         StorageBinding.relative(
                                             filePath.getParent(),
@@ -422,7 +470,9 @@ final class NativeServerPolicyProbe {
                                     ServerPolicyExample.DEFINITION::defaults);
                             var bad =
                                 scope.serverPolicy(
-                                    NativeExample.serverPolicies().container(),
+                                    design.inherent.reform.neoforge.configuration
+                                        .NeoForgeServerRegistration.of(
+                                        NativeExample.serverPolicies().container()),
                                     badDefinition,
                                     StorageBinding.relative(
                                         filePath.getParent(), "reform-server-bad.json"));
@@ -472,15 +522,19 @@ final class NativeServerPolicyProbe {
                                 scope.document(ServerPolicyExample.DEFINITION.id()).isEmpty());
                             file =
                                 scope.serverPolicy(
-                                    NativeExample.serverPolicies().container(),
+                                    design.inherent.reform.neoforge.configuration
+                                        .NeoForgeServerRegistration.of(
+                                        NativeExample.serverPolicies().container()),
                                     ServerPolicyExample.DEFINITION,
                                     StorageBinding.relative(
                                         filePath.getParent(), ServerPolicyExample.FILE));
                             nativeDocument =
-                                scope.registeredNeoForge(
-                                    NativeExample.serverPolicies().container(),
-                                    NativeExample.serverPolicies().nativeConfig(),
-                                    ServerPolicyExample.NATIVE);
+                                design.inherent.reform.neoforge.configuration.NeoForgeServerSettings
+                                    .registered(
+                                        scope,
+                                        NativeExample.serverPolicies().container(),
+                                        NativeExample.serverPolicies().nativeConfig(),
+                                        ServerPolicyExample.NATIVE);
                             return file.initialization()
                                 .orElseThrow()
                                 .thenCompose(

@@ -10,10 +10,10 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.ClientKeyBindings;
-import design.inherent.reform.neoforge.client.KeyBindingScreen;
-import design.inherent.reform.neoforge.client.SettingsScreen;
-import design.inherent.reform.neoforge.command.SettingsCommands;
+import design.inherent.reform.minecraft.client.ClientKeyBindings;
+import design.inherent.reform.minecraft.client.KeyBindingScreen;
+import design.inherent.reform.minecraft.client.SettingsScreen;
+import design.inherent.reform.minecraft.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
@@ -187,7 +187,7 @@ final class NativeKeyFactoryControls {
     check(
         "JSON factory still admits a view after repeated constructor refusals",
         ClientExample.settings().status().lifecycle()
-            == design.inherent.reform.neoforge.client.ClientFileSettings.Lifecycle.READY);
+            == design.inherent.reform.minecraft.client.ClientFileSettings.Lifecycle.READY);
   }
 
   private CompletionStage<SettingsCommands.Reply> command(String input) {
@@ -226,7 +226,12 @@ final class NativeKeyFactoryControls {
     check(
         "ordinary key factory registers native commands",
         dispatcher.getRoot().getChild("reformkeys") != null);
-    dispatcher.register(KeyExample.settings().commandBranch("keyfactoryprobe", this::reply));
+    dispatcher.register(
+        KeyExample.settings()
+            .commandBranch(
+                "keyfactoryprobe",
+                design.inherent.reform.neoforge.client.NeoForgeClientRegistration.commandSource(),
+                this::reply));
     return command("keyfactoryprobe describe")
         .thenCompose(
             reply -> {

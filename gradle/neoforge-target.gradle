@@ -1,0 +1,14 @@
+apply from: rootProject.file('gradle/native-common.gradle')
+neoForge {
+    version = nativeTarget.loaderVersion
+    runs {
+        client { client(); gameDirectory = file('runs/client') }
+        server { server(); gameDirectory = file('runs/server'); programArgument '--nogui' }
+    }
+    mods {
+        reform {
+            sourceSet sourceSets.main
+            sourceSet project(':core').sourceSets.main
+        }
+    }
+}

@@ -1,0 +1,80 @@
+apply plugin: 'java-library'
+apply plugin: 'maven-publish'
+
+def target = rootProject.nativeTargets.find { it.project == project.name }
+if (target == null) throw new GradleException("Missing native target: ${project.name}")
+ext.nativeTarget = target
+def versionDirectory = "minecraft-${target.minecraftVersion.replace('.', '_')}"
+
+base { archivesName = 'reform' }
+sourceSets.main.java.srcDir rootProject.file('minecraft-common/src/main/java')
+sourceSets.main.resources.srcDir rootProject.file('minecraft-common/src/main/resources')
+sourceSets.main.java.srcDir rootProject.file("${versionDirectory}/src/main/java")
+sourceSets.main.java.srcDir rootProject.file("platform/${target.loader}/src/main/java")
+sourceSets.main.java.srcDir rootProject.file("platform/${target.loader}/${versionDirectory}/src/main/java")
+sourceSets.main.resources.srcDir rootProject.file("platform/${target.loader}/src/main/resources")
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://libraries.minecraft.net/'; content { includeGroup 'com.mojang' } }
+}
+
+dependencies {
+    compileOnly rootProject.libs.mixinextras.common
+    compileOnly project(':core')
+    api "com.mojang:datafixerupper:${target.dfuVersion}"
+    api "com.google.code.gson:gson:${target.gsonVersion}"
+    testImplementation project(':core')
+    testImplementation platform(rootProject.libs.junit.bom)
+    testImplementation rootProject.libs.junit.jupiter
+    testRuntimeOnly rootProject.libs.junit.launcher
+}
+
+tasks.named('processResources') {
+    def metadata = [version: project.version.toString(), minecraft: target.minecraftVersion,
+                    loader: target.loaderVersion, javaVersion: target.java,
+                    loaderUpperBound: target.loaderUpperBound ?: '', fabricApi: target.fabricApiVersion ?: '',
+                    fmlVersionRange: target.fmlVersionRange ?: '']
+    inputs.properties metadata
+    filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json', 'reform.client.mixins.json']) { expand metadata }
+}
+
+tasks.named('jar', Jar) {
+    dependsOn ':core:classes'
+    if (!target.remapMinecraft)
+        from project(':core').sourceSets.main.output
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    archiveFileName = "reform-${project.version}-mc${target.minecraftVersion}-${target.loader}.jar"
+}
+
+tasks.named('sourcesJar', Jar) {
+    from project(':core').sourceSets.main.allSource
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    archiveFileName = "reform-${project.version}-mc${target.minecraftVersion}-${target.loader}-sources.jar"
+}
+
+tasks.withType(org.gradle.api.publish.maven.tasks.GenerateMavenPom).configureEach {
+    doLast { destination.setText(destination.getText('UTF-8').replace('\r\n', '\n'), 'UTF-8') }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = "reform-${target.loader}-${target.minecraftVersion}"
+            from components.java
+            pom {
+                name = 're:form'
+                description = 'Native Minecraft configuration editing and command services for mods'
+                url = 'https://github.com/mannie-exe/reform'
+                licenses { license { name = 'Apache License, Version 2.0'; url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'; distribution = 'repo' } }
+                developers { developer { id = 'mannie-exe'; name = 'mannie-exe' } }
+                scm {
+                    url = 'https://github.com/mannie-exe/reform'
+                    connection = 'scm:git:https://github.com/mannie-exe/reform.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/mannie-exe/reform.git'
+                }
+            }
+        }
+    }
+    repositories { maven { name = 'staging'; url = rootProject.layout.buildDirectory.dir('repository') } }
+}

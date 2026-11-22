@@ -1,9 +1,16 @@
 pluginManagement {
     repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
         gradlePluginPortal()
         maven { url = 'https://maven.neoforged.net/releases/' }
     }
 }
 
 rootProject.name = 'reform'
-include 'core', 'neoforge'
+include 'core'
+def matrix = new groovy.json.JsonSlurper().parse(file('gradle/minecraft-targets.json'))
+if (matrix.schemaVersion != 1) throw new GradleException('Unsupported Minecraft target matrix')
+matrix.targets.each { target ->
+    include target.project
+    project(":${target.project}").projectDir = file(target.directory)
+}

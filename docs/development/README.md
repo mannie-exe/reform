@@ -1,6 +1,8 @@
 # Development
 
 - [Architecture](architecture.md) owns modules and implementation boundaries.
+- [Native targets](platform-targets.md) owns version-specific names, pins, remapping capabilities and target update procedures.
+- [Native client bindings](native-bindings.md) owns loader registration, optional menus, command origins and the portable source migration.
 - [Core API](api.md) owns implemented definition/decoding/snapshot contracts.
 - [Editing](editing.md) owns raw drafts, history, submissions and conflict review.
 - [Owned storage](storage.md) owns bounded file and typed JSON backend behavior.
@@ -21,13 +23,14 @@
 - [Server settings](server-settings.md) owns actual-server lifecycle, policy/native binding and local native-source access.
 - [World recipes](world-recipes.md) owns unsaved creation-context admission and domain compilation.
 - [Presentation](presentation.md) owns measured panel/geometry/navigation boundaries.
+- [Interface writing](interface-writing.md) owns built-in labels, help, outcomes and narration.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.
 - [Verification](verification.md) owns current evidence and material gaps.
 - [Publishing](../publishing.md) owns artifact/version/update procedures.
 
 Build with `./gradlew --no-daemon check build`. Gradle checks Java formatting, documentation links and distribution metadata as well as applicable tests. Pinned dprint and actionlint check Markdown and CI syntax; `mise run check` and CI combine these checks.
 
-`core` uses Java 21 and the pinned DFU/Gson dependencies without game classes. `neoforge` builds against Minecraft 1.21.1 / NeoForge 21.1.265. The version catalog owns dependency pins; `gradle.properties` owns the project version. Gradle's wrapper pins the distribution and checksum.
+`core` uses Java 21 without game classes and tests both games' pinned DFU/Gson runtimes. The [target matrix](platform-targets.md) selects native game/loader projects, Java toolchains, mappings and artifacts. The version catalog owns dependency pins; `gradle.properties` owns the library version. Launch the checksum-pinned Gradle wrapper with JDK 25.
 
 `verifyPublicConsumer` runs the separate [headless examples](../../examples/headless/README.md) against the staged Maven publication. It must retain no source-set/project or native-game dependency. The compound example combines nested roles, maps/lists, tagged references, a missing optional source, diagnostics, provenance and validate/compare/explain/export with actual bare-profile persistence. The combined JAR's core API is consumed directly; no second core runtime JAR is installed.
 
@@ -37,6 +40,6 @@ No additional annotation processor is required. ModDevGradle supplies the native
 
 ## Native runs
 
-The development tasks create task-owned fixtures under `neoforge/runs/`. `:neoforge:runClient` needs desktop focus; `:neoforge:runServer` is headless. Accept the Minecraft EULA only for the intended disposable server. Never point these tasks at a personal world or installed instance.
+Development tasks create task-owned fixtures under each target's `runs/` directory. `:<target>:runClient` needs desktop focus; `:<target>:runServer` is headless. Select an explicit project such as `neoforge-1_21_1`. Accept the Minecraft EULA only for the intended disposable server. Never point these tasks at a personal world or installed instance.
 
 Headless checks and core tests do not qualify widgets, narration, native callbacks, reconnect behavior or consumer integration. Record those checks separately against the actual packaged artifact.

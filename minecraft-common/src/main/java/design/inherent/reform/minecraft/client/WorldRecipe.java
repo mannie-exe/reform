@@ -1,0 +1,402 @@
+package design.inherent.reform.minecraft.client;
+
+import design.inherent.reform.definition.DocumentDefinition;
+import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.edit.DraftLimits;
+import design.inherent.reform.edit.DraftRevision;
+import design.inherent.reform.importing.ImportCatalog;
+import design.inherent.reform.importing.ImportFormat;
+import design.inherent.reform.importing.ImportSource;
+import design.inherent.reform.importing.JsonImportFormat;
+import design.inherent.reform.minecraft.internal.ClientSettingsRuntime;
+import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.OperationDescriptor.Effect;
+import design.inherent.reform.operation.OperationScope;
+import design.inherent.reform.owner.ContextRecipeOwner;
+import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.owner.OwnerContext;
+import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.FormPresentation;
+import design.inherent.reform.reference.ReferenceActions;
+import design.inherent.reform.reference.ReferenceLimits;
+import design.inherent.reform.serialization.JsonLimits;
+import design.inherent.reform.value.SnapshotPolicy;
+import design.inherent.reform.value.ValueType;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CompletionStage;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.levelgen.WorldDimensions;
+
+/** Ordinary unsaved native world-recipe construction; no file or existing world is initialized. */
+public final class WorldRecipe<T, P> implements AutoCloseable {
+  private static final JsonLimits JSON = new JsonLimits(262144, 64, 16384, 32768, 128, 4096);
+
+  public interface Domain<T, P> {
+    /** Native immutable recipe capture; do not substitute a default for the current generator. */
+    T read(WorldCreationContext context);
+
+    /**
+     * Worker-only bounded pure compilation. Do not read widgets, live worlds or rendering state.
+     */
+    P compile(WorldCreationContext original, T recipe);
+
+    /** Native dimension update. Preserve unedited dimensions and the owner's generation guards. */
+    WorldDimensions dimensions(
+        WorldCreationContext original,
+        RegistryAccess.Frozen registries,
+        WorldDimensions dimensions,
+        P compiled);
+
+    /**
+     * Native notification after the actual update, for owner admission flags such as recipe
+     * acceptance.
+     */
+    default void admitted(WorldCreationContext actual) {}
+  }
+
+  /** One explicit analysis over this recipe's frozen runtime inputs. */
+  public record Preview<P, O>(
+      Component title,
+      BiFunction<P, OperationScope.Execution, O> analyze,
+      SnapshotPolicy<O> snapshots,
+      Function<PreviewResult<O>, OperationScreen.Outcome> describe) {
+    public Preview {
+      title = Objects.requireNonNull(title).copy();
+      Objects.requireNonNull(analyze);
+      Objects.requireNonNull(snapshots);
+      Objects.requireNonNull(describe);
+    }
+
+    @Override
+    public Component title() {
+      return title.copy();
+    }
+  }
+
+  public record PreviewResult<O>(DraftRevision draft, O value) {}
+
+  /** An opt-in owner operation over a reviewed, complete recipe, as distinct from native Apply. */
+  public record ReviewedAction<P, O>(
+      DocumentId id,
+      Component title,
+      Effect effect,
+      Supplier<Optional<Component>> unavailable,
+      BiFunction<ReviewedInput<P>, OperationScope.Execution, CompletionStage<O>> run,
+      SnapshotPolicy<O> snapshots,
+      Function<O, OperationScreen.Outcome> describe) {
+    public ReviewedAction {
+      Objects.requireNonNull(id);
+      title = Objects.requireNonNull(title).copy();
+      if (effect != Effect.PERSIST && effect != Effect.EXPORT)
+        throw new IllegalArgumentException("Recipe review supports only persistence and export");
+      Objects.requireNonNull(unavailable);
+      Objects.requireNonNull(run);
+      Objects.requireNonNull(snapshots);
+      Objects.requireNonNull(describe);
+    }
+
+    @Override
+    public Component title() {
+      return title.copy();
+    }
+  }
+
+  /** Captured identity and immutable compiled value for an admitted owner callback. */
+  public static final class ReviewedInput<P> {
+    private final DraftRevision draft;
+    private final P compiled;
+    private final Runnable authority;
+
+    ReviewedInput(DraftRevision draft, P compiled, Runnable authority) {
+      this.draft = draft;
+      this.compiled = compiled;
+      this.authority = authority;
+    }
+
+    public DraftRevision draft() {
+      return draft;
+    }
+
+    public P compiled() {
+      return compiled;
+    }
+
+    /** Recheck the original native source, draft and policy on the client before a later effect. */
+    public void requireCurrent() {
+      authority.run();
+    }
+  }
+
+  private final OwnerContext context;
+  private final OwnerContext.Access access;
+  private final OwnerContext.Access referenceAccess;
+  private final ContextRecipeOwner<T, WorldCreationContext, P>.Session source;
+  private final DocumentActions<T> actions;
+  private final DocumentDefinition<T> definition;
+  private CreateWorldScreen parent;
+  private boolean screenCreated;
+  private boolean returnAfterApply;
+  private SettingsScreen.PreviewEntry preview;
+  private RecipeReviewActions<T, P> reviewActions;
+
+  private WorldRecipe(
+      CreateWorldScreen parent,
+      WorldCreationContext original,
+      DocumentDefinition<T> definition,
+      Domain<T, P> domain,
+      SnapshotPolicy<P> snapshots,
+      Function<WorldCreationContext, ContextRecipeOwner.Defaults<T, WorldCreationContext, P>>
+          defaultsSource) {
+    requireClient();
+    this.parent = Objects.requireNonNull(parent);
+    this.definition = Objects.requireNonNull(definition);
+    Objects.requireNonNull(original);
+    Objects.requireNonNull(domain);
+    Objects.requireNonNull(snapshots);
+    if (parent.getUiState().getSettings() != original)
+      throw new PolicyRefusal("owner.revision", "Use the original native world-creation context");
+    var client = Minecraft.getInstance();
+    context =
+        new OwnerContext(
+            client::execute,
+            ClientSettingsRuntime.workers(),
+            WorldRecipe::requireClient,
+            OwnerContext.Limits.STANDARD);
+    try {
+      ClientSettingsRuntime.manageContext(context);
+      var limits = JSON;
+      var owner =
+          new ContextRecipeOwner<>(
+              context,
+              definition,
+              original,
+              new ContextRecipeOwner.Domain<T, WorldCreationContext, P>() {
+                @Override
+                public WorldCreationContext current() {
+                  return parent.getUiState().getSettings();
+                }
+
+                @Override
+                public T read(WorldCreationContext source) {
+                  return domain.read(source);
+                }
+
+                @Override
+                public P compile(WorldCreationContext source, T recipe) {
+                  return domain.compile(source, recipe);
+                }
+
+                @Override
+                public WorldCreationContext admit(WorldCreationContext expected, P compiled) {
+                  if (parent.getUiState().getSettings() != expected)
+                    throw new PolicyRefusal(
+                        "owner.revision", "The original creation context changed");
+                  parent
+                      .getUiState()
+                      .updateDimensions(
+                          (registries, dimensions) ->
+                              Objects.requireNonNull(
+                                  domain.dimensions(expected, registries, dimensions, compiled)));
+                  var admitted = parent.getUiState().getSettings();
+                  domain.admitted(admitted);
+                  return admitted;
+                }
+              },
+              snapshots,
+              limits,
+              DraftLimits.CONFIGURATION,
+              16,
+              defaultsSource);
+      access = context.access(() -> true, () -> true);
+      referenceAccess =
+          context.access(
+              () -> {
+                if (this.parent.getUiState().getSettings() != original)
+                  throw new PolicyRefusal(
+                      "reference.context", "The reference creation context changed");
+                return true;
+              },
+              () -> false);
+      source = owner.open(access);
+      var actor =
+          new EditorActor<>(context, source, definition, limits, DraftLimits.CONFIGURATION, 64);
+      actions =
+          DocumentActions.owningContext(
+              context,
+              access,
+              actor,
+              new OperationScope.Limits(32, 64, 128, OperationScope.Limits.STANDARD.input()),
+              limits.maximumBytes());
+      context.onClose(
+          () -> {
+            this.parent = null;
+            preview = null;
+            reviewActions = null;
+          });
+    } catch (RuntimeException failed) {
+      context.close();
+      throw failed;
+    }
+  }
+
+  public static <T, P> WorldRecipe<T, P> worldRecipe(
+      CreateWorldScreen parent,
+      WorldCreationContext original,
+      DocumentDefinition<T> definition,
+      Domain<T, P> domain,
+      SnapshotPolicy<P> compiledSnapshots) {
+    return new WorldRecipe<>(parent, original, definition, domain, compiledSnapshots, null);
+  }
+
+  /** Supply an explicit saved defaults loader and their complete domain compilation basis. */
+  public static <T, P> WorldRecipe<T, P> worldRecipe(
+      CreateWorldScreen parent,
+      WorldCreationContext original,
+      DocumentDefinition<T> definition,
+      Domain<T, P> domain,
+      SnapshotPolicy<P> compiledSnapshots,
+      Function<WorldCreationContext, ContextRecipeOwner.Defaults<T, WorldCreationContext, P>>
+          defaultsSource) {
+    return new WorldRecipe<>(
+        parent,
+        original,
+        definition,
+        domain,
+        compiledSnapshots,
+        Objects.requireNonNull(defaultsSource));
+  }
+
+  public DocumentActions<T> actions() {
+    context.requireOwner();
+    return actions;
+  }
+
+  /** Return to Create World after a confirmed, current recipe admission. */
+  public WorldRecipe<T, P> returnAfterApply() {
+    context.requireOwner();
+    if (screenCreated)
+      throw new IllegalStateException("Set recipe return behavior before opening the screen");
+    returnAfterApply = true;
+    return this;
+  }
+
+  /** Borrow this recipe's lifetime and original native context for explicit reference lookups. */
+  public <K, V> ReferenceActions<K, V> references(
+      DocumentId source, ValueType<K> keys, SnapshotPolicy<V> values, ReferenceLimits limits) {
+    context.requireOwner();
+    referenceAccess.require(OwnerContext.Right.READ);
+    return new ReferenceActions<>(context, referenceAccess, source, keys, values, limits);
+  }
+
+  /** Add an opt-in preview before constructing the generated form. */
+  public <O> WorldRecipe<T, P> withPreview(Preview<P, O> declaration) {
+    context.requireOwner();
+    if (screenCreated || preview != null)
+      throw new IllegalStateException("Declare one preview before opening the recipe form");
+    preview =
+        new RecipePreview<>(context, access, actions, source, Objects.requireNonNull(declaration));
+    return this;
+  }
+
+  /** Declare a bounded owner operation on the generated Review screen before opening the form. */
+  public <O> WorldRecipe<T, P> withReviewedAction(ReviewedAction<P, O> declaration) {
+    context.requireOwner();
+    if (screenCreated)
+      throw new IllegalStateException("Declare reviewed actions before opening the recipe form");
+    if (reviewActions == null)
+      reviewActions = new RecipeReviewActions<>(context, access, actions, source);
+    reviewActions.register(Objects.requireNonNull(declaration));
+    return this;
+  }
+
+  /** Explicit sources become draft-only imports under this recipe's own definition and bounds. */
+  public ImportCatalog<T> importCatalog(List<? extends ImportSource> sources) {
+    context.requireOwner();
+    return new ImportCatalog<>(
+        definition,
+        sources,
+        JsonImportFormat.documentFormats(
+            definition,
+            JSON,
+            DraftLimits.CONFIGURATION,
+            ImportFormat.InvalidDraftPolicy.ALLOW_REPAIRABLE));
+  }
+
+  public Screen screen(Component title) {
+    return screen(title, Optional.empty());
+  }
+
+  /** Explicit saved-source comparison/staging; import never admits or changes native dimensions. */
+  public Screen screen(Component title, ImportCatalog<T> imports) {
+    return screen(title, Optional.of(imports));
+  }
+
+  private Screen screen(Component title, Optional<ImportCatalog<T>> imports) {
+    return screen(
+        title, Map.of(), FormPresentation.EMPTY, FieldEditors.builder(definition).build(), imports);
+  }
+
+  /**
+   * Compose the generated form while keeping this recipe's actual actions, preview and lifetime.
+   */
+  public Screen screen(
+      Component title,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> sources,
+      FormPresentation presentation,
+      FieldEditors<T> fieldEditors,
+      Optional<ImportCatalog<T>> imports) {
+    if (imports.filter(catalog -> catalog.definition() != definition).isPresent())
+      throw new IllegalArgumentException("Recipe imports require this exact recipe definition");
+    return screen(
+        title,
+        new ClientFormOptions<>(
+            presentation, sources, ignored -> fieldEditors, ignored -> imports));
+  }
+
+  public Screen screen(Component title, ClientFormOptions<T> options) {
+    context.requireOwner();
+    Objects.requireNonNull(title);
+    if (screenCreated)
+      throw new IllegalStateException("This recipe editor already has a native screen");
+    screenCreated = true;
+    try {
+      var form =
+          options.open(
+              parent,
+              title,
+              Component.translatableWithFallback(
+                  "reform.settings.creation_context",
+                  "New world recipe · affects only this unsaved creation context"),
+              definition,
+              actions,
+              SettingsScreen.SubmissionLabels.standard(actions.commitKind()));
+      if (preview != null) form.withPreview(preview);
+      if (reviewActions != null) form.withReviewActions(reviewActions.freeze());
+      if (returnAfterApply) form.returnAfterApply();
+      return form;
+    } catch (RuntimeException failed) {
+      close();
+      throw failed;
+    }
+  }
+
+  private static void requireClient() {
+    design.inherent.reform.minecraft.internal.NativeClientThread.require();
+  }
+
+  @Override
+  public void close() {
+    actions.close();
+  }
+}

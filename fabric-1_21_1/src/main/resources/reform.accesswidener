@@ -1,0 +1,9 @@
+accessWidener v2 named
+# Preserve native source identity checks already available on NeoForge; no field writes.
+accessible field net/minecraft/commands/CommandSourceStack source Lnet/minecraft/commands/CommandSource;
+# Observe the actual native Controls identity/path; no field replacement.
+accessible field net/minecraft/client/KeyMapping key Lcom/mojang/blaze3d/platform/InputConstants$Key;
+accessible field net/minecraft/client/Options optionsFile Ljava/io/File;
+accessible field net/minecraft/server/network/ServerCommonPacketListenerImpl connection Lnet/minecraft/network/Connection;
+# Bind current client command sources to their actual native listener, including restricted sources.
+accessible field net/minecraft/client/multiplayer/ClientSuggestionProvider connection Lnet/minecraft/client/multiplayer/ClientPacketListener;

@@ -1,10 +1,2 @@
-vulnerabilities:
-  - id: CVE-2026-102554
-    purls:
-      - pkg:maven/com.google.guava/guava@32.1.2-jre
-    expired_at: 2027-02-20
-    statement: >-
-      Minecraft 1.21.1 supplies this Guava version. The advisory requires Java object
-      deserialization of attacker-controlled streams. re:form reads explicit text
-      formats and native codecs; its exception serialization hooks refuse
-      ObjectInputStream. See SECURITY.md for the source review and update trigger.
+# Provided-runtime findings remain visible and are classified by security-policy.json.
+vulnerabilities: []

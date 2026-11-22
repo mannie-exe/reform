@@ -15,10 +15,69 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = ".reform-native-fixture.json"
+CHOOSER_EXECUTABLES = frozenset({"osascript"})
+
+
+def process_table():
+    """Native identities only; do not retain command arguments or infer ownership from names."""
+    rows = {}
+    output = subprocess.check_output(["ps", "-axo", "pid=,ppid=,lstart=,stat=,comm="], text=True, timeout=5)
+    for line in output.splitlines():
+        parts = line.strip().split(None, 8)
+        if len(parts) == 9 and parts[0].isdigit() and parts[1].isdigit():
+            rows[int(parts[0])] = (int(parts[1]), " ".join(parts[2:7]), parts[7], Path(parts[8]).name)
+    return rows
+
+
+def observe_choosers(root, rows):
+    descendants = {root}
+    while True:
+        found = {pid for pid, info in rows.items() if info[0] in descendants}
+        if found <= descendants:
+            break
+        descendants |= found
+    return {pid: (rows[pid][1], rows[pid][3]) for pid in descendants - {root}
+            if rows[pid][3] in CHOOSER_EXECUTABLES}
+
+
+def retire_choosers(observed):
+    """Only helpers actually observed below this launch, with unchanged native birth identities."""
+    retired = []
+    for sent in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            rows = process_table()
+        except (OSError, subprocess.SubprocessError) as failed:
+            retired.append({"error": "Native helper identity check failed: " + type(failed).__name__})
+            break
+        active = {pid for pid, identity in observed.items() if pid in rows
+                  and (rows[pid][1], rows[pid][3]) == identity and not rows[pid][2].startswith("Z")}
+        if not active:
+            break
+        for pid in active:
+            try:
+                os.kill(pid, sent)
+                retired.append({"pid": pid, "signal": sent.name})
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                retired.append({"pid": pid, "error": "Native helper retirement permission changed"})
+        if sent == signal.SIGTERM:
+            time.sleep(0.2)
+    return retired
+
+
+def native_failed(path):
+    if path is None or path.is_symlink() or not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
+        return False
+    try:
+        value = json.loads(path.read_text())
+        return isinstance(value, dict) and value.get("status") == "FAIL"
+    except (OSError, ValueError):  # The native shutdown writer may still be completing its report.
+        return False
 
 
 def create_fixture(root, token):
-    fixture = root / "neoforge/runs/native-config"
+    fixture = root / "neoforge-1_21_1/runs/native-config"
     fixture.mkdir(parents=True, exist_ok=False)
     (fixture / MARKER).write_text(json.dumps({"token": token, "purpose": "native-config-probe"}))
     (fixture / "eula.txt").write_text("eula=true\n")
@@ -39,7 +98,7 @@ def create_fixture(root, token):
 
 
 def cleanup_fixture(root, token):
-    fixture = root / "neoforge/runs/native-config"
+    fixture = root / "neoforge-1_21_1/runs/native-config"
     if fixture.is_symlink() or not fixture.is_dir():
         raise ValueError("Expected the task-owned native fixture directory")
     expected = {"token": token, "purpose": "native-config-probe"}
@@ -52,19 +111,45 @@ def cleanup_fixture(root, token):
     shutil.rmtree(fixture)
 
 
-def execute(command, root, log, deadline):
+def execute(command, root, log, deadline, chooser_report=None, ready_console=None):
     start = time.monotonic()
     termination = None
+    choosers = {}
+    retired = []
+    console_receipt = None
     with log.open("wb") as output:
         process = subprocess.Popen(command, cwd=root, stdout=output, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True,
+                                   stdin=subprocess.PIPE if ready_console is not None else None)
         while process.poll() is None:
-            if time.monotonic() - start > deadline:
+            if chooser_report is not None:
+                try:
+                    choosers.update(observe_choosers(process.pid, process_table()))
+                except (OSError, subprocess.SubprocessError):
+                    termination = "native process observation failed"
+            if termination:
+                pass
+            elif native_failed(chooser_report):
+                termination = "native failure"
+            elif time.monotonic() - start > deadline:
                 termination = "deadline"
             elif log.stat().st_size > 8 * 1024 * 1024:
                 termination = "log limit"
+            if termination is None and ready_console is not None and console_receipt is None:
+                try:
+                    console_receipt = ready_console(process.pid, log)
+                    if console_receipt is not None:
+                        process.stdin.write(b"stop\n")
+                        process.stdin.flush()
+                except Exception as failed:
+                    termination = "native console qualification failed: " + type(failed).__name__
             if termination:
-                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                if choosers:
+                    retired.extend(retire_choosers(choosers))
                 try:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
@@ -75,8 +160,21 @@ def execute(command, root, log, deadline):
                 process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 pass
+        if choosers:
+            retired.extend(retire_choosers(choosers))
+        if any("error" in value for value in retired):
+            termination = termination or "native chooser cleanup failed"
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
     result = {"command": command, "exitCode": process.returncode,
               "seconds": round(time.monotonic() - start, 3), "termination": termination}
+    if chooser_report is not None:
+        result["nativeChooserCleanup"] = retired
+    if ready_console is not None:
+        result["nativeConsole"] = console_receipt
     if process.returncode != 0 or termination:
         with log.open("rb") as stream:
             stream.seek(max(0, log.stat().st_size - 4096))
@@ -85,16 +183,16 @@ def execute(command, root, log, deadline):
 
 
 def run(root, java_home, timeout):
-    fixture = root / "neoforge/runs/native-config"
+    fixture = root / "neoforge-1_21_1/runs/native-config"
     if fixture.exists() or fixture.is_symlink():
         raise FileExistsError("Native fixture already exists; inspect it before running this tool")
     report_dir = root / "build/reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     report = {"launchMode": "ModDev source containers, not packaged-product loading",
               "scope": "native FML/NeoForge callback contract only", "status": "FAIL", "runs": []}
-    inputs = ["neoforge/build.gradle", "tools/native_config_probe.py",
-              "neoforge/src/nativeProbe/java/example/reform/NativeConfigProbe.java",
-              "neoforge/src/nativeProbe/resources/META-INF/neoforge.mods.toml"]
+    inputs = ["neoforge-1_21_1/build.gradle", "tools/native_config_probe.py",
+              "neoforge-1_21_1/src/nativeProbe/java/example/reform/NativeConfigProbe.java",
+              "neoforge-1_21_1/src/nativeProbe/resources/META-INF/neoforge.mods.toml"]
     report["sourceDigests"] = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in inputs}
     report["gitHead"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     command = [str(root / "gradlew"), "--no-daemon"]
@@ -106,7 +204,7 @@ def run(root, java_home, timeout):
     try:
         log = root / "build/native-config-build.log"
         logs.append(log)
-        built = execute(command + ["check", "build", ":neoforge:nativeProbeJar"], root, log, timeout)
+        built = execute(command + ["check", "build", ":neoforge-1_21_1:nativeProbeJar"], root, log, timeout)
         report["build"] = built
         if built["exitCode"] != 0 or built["termination"]:
             raise RuntimeError("Native fixture build failed")
@@ -116,7 +214,7 @@ def run(root, java_home, timeout):
             (fixture / "native-probe-mode.json").write_text(json.dumps({"mode": mode}) + "\n")
             log = root / f"build/native-config-{mode}.log"
             logs.append(log)
-            result = execute(command + ["-PnativeProbe=true", ":neoforge:runNativeProbeServer"], root, log, timeout)
+            result = execute(command + ["-PnativeProbe=true", ":neoforge-1_21_1:runNativeProbeServer"], root, log, timeout)
             report["runs"].append(result)
             evidence = fixture / f"native-config-{mode}.json"
             if evidence.is_file() and evidence.stat().st_size <= 65536:

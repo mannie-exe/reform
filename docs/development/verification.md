@@ -1,6 +1,223 @@
 # Verification
 
-This record distinguishes build checks, native behavior and consumer integration by the artifact exercised. The pinned target is Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. Native UI and installed-pack observations were made on Apple Silicon with Temurin 21.0.13+9.
+## Stable 0.2.0 release preparation
+
+The stable four-target build passes the required local `mise run check`. Every owned compiled class in each 0.2.0 JAR is byte-identical to its native-qualified dev.67 counterpart; only release identity and metadata change. Local dependency review passes with 31 explicitly classified supplied-runtime advisories and no source-secret findings. Hosted checks, reproducible release assets, and public dependency resolution have their own delivery evidence. Skyweave's actual 0.2 adoption remains deferred by its owner and, under the release authorization, is follow-up work rather than a publication gate. The actual Compat dev.67 binding is qualified below.
+
+This record distinguishes build checks, native behavior and consumer integration by the artifact exercised. The 0.1.0 records target Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. Native UI and installed-pack observations for that release were made on Apple Silicon with Temurin 21.0.13+9.
+
+## Platform development candidates
+
+The unpublished 0.2.0 development work compiles shared commands, forms, native keys, file/server owners and reference providers in all four actual loader classpaths. `spotlessApply check build -Pmod_version=0.2.0-dev.15` passed, including 546 core cases on each game's codec runtime, complete artifact inspection, native addon compilation and four independent headless artifact consumers. A later direct tool run passed 54 cases. Compilation is separate from the following native results.
+
+The independent [platform consumer](../../examples/platform/README.md) passed two dedicated-server boots per row against these exact combined artifacts. It records actual game, loader and JVM identities. Controls cover native console-source refusal, complete registry/named-tag capture without chunk loading, worker identifier lookup, file preparation/persistence/publication, unchanged reopen and native-stop removal. Each boot passed 13 controls. The Minecraft 1.21.1 NeoForge artifact also passed both boots with the additional 21.1.267 loader input.
+
+| Target            | Native minimum loader | Actual JVM             | Combined 0.2.0-dev.15 SHA-256                                      |
+| ----------------- | --------------------- | ---------------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | 21.1.265              | Temurin 21.0.13+9-LTS  | `86a36efcd3250ac64b1b77a903303bd46a9e36ceca585e1f09e20422912f8985` |
+| Fabric / 1.21.1   | 0.20.1                | Temurin 21.0.13+9-LTS  | `56ec16b26a9c345cf891a8ec774bd474f8c44fe42a1be0c146bc662738d3e10e` |
+| NeoForge / 26.3   | 26.3.0.115            | Temurin 25.0.4.1+1-LTS | `1ea0c6dda9e9aeb30fe12797527d3a46d55e1ec9f1f9b993714f9160af725f51` |
+| Fabric / 26.3     | 0.20.1                | Temurin 25.0.4.1+1-LTS | `0700e537bda63d81c7531405adfab8f7341a0262dd2e2ed9f7bb75a8f857a4f8` |
+
+The larger NeoForge 1.21.1 fixture separately passed actual registered-owner and server-policy save/reopen checks on 0.2.0-dev.11. The shared reference port passed 30 native reference controls per boot on 0.2.0-dev.13. The extracted server binding passed its existing file/native policy, command/search and lifetime regressions on 0.2.0-dev.14, with added native-provider identity and original/suppressed-failure controls. A native key diagnostic failed against dev.11 and passed against corrected dev.12; dev.12 also retained the 97 key-control and saved-reopen cases. These are exact prior-artifact results, not a new client qualification of dev.15.
+
+The independent four-target candidate preserves the Phase 1 baseline. The [coverage matrix](coverage.md) records tested native and consumer boundaries; the separate results below qualify only their stated scenes and products. Production consumer migration and hosted/public release checks retain separate execution authority. The expanded inventories retain unresolved provided-host security findings. The owner subsequently selected advisory-only reporting for exact reviewed runtime packages; [security policy](../../SECURITY.md) distinguishes this from first-party gates and from vulnerability remediation. Native/presentation, security, consumer and release-readiness checks remain separate obligations.
+
+### Native client startup and visible values
+
+The same independent consumer passed two native client boots on each target, plus NeoForge 21.1.267, against frozen 0.2.0-dev.18 artifacts. It opens an ordinary owner-backed form, focuses its native EditBox, dispatches an actual Unicode character event, observes the typed draft separately from effective values, commits through the GUI operation service, captures the framebuffer, and verifies unchanged saved reopen and shutdown closure. Native Mod Menu is absent. The exact first/reopen reports and PNGs retain their source and product identities under the local task capture owner.
+
+| Target            | Combined 0.2.0-dev.18 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `822ebfec3ee46d7bd1c388c2bd9d1be9906b001a1e5853c742d24088c6282f2e` |
+| Fabric / 1.21.1   | `ca14cad6957e3db817734a568b4095e432f632e632b9fb32b5da12397b3c0973` |
+| NeoForge / 26.3   | `0c62063c91c0f9dc6bcb79ca4d8fba238b8624d513aa62042999a9ff65e162f5` |
+| Fabric / 26.3     | `c58f78eb5314b5f0362f918bc83276a947601a1ff0eee947244c50ffee796775` |
+
+This exposed two native defects. A pre-client runtime callback on dev.15 produced a null-client exception; its corrected guard gives a lifecycle refusal. Dev.16 then demonstrated that FML 12's deferred setup queue uses a worker while Minecraft waits for it. The NeoForge adapter now hands callbacks to the actual client executor without waiting; registered native settings use that same bridge. Dev.17 passed the functional client flow, but screenshot inspection found invisible EditBox values: RGB colors were interpreted as transparent ARGB. Dev.18 normalizes widget colors too. A matched interior label region has zero visible glyph pixels in the dev.17 image and 444 in dev.18. All ten final client boots pass the visible-value check, with loading overlays gone before capture. Native NeoForge 26.3, Fabric 26.3 and Fabric 1.21.1 screenshots were also inspected.
+
+These controls qualify the stated form/input/persistence path on this Apple Silicon host. They do not exercise native mouse/keybinding capture, IME or spoken narration, complex/narrow/high-scale layouts, OS pickers, server-originated command links or every owner/creation workflow. A successful framebuffer and a few controls are not full capability parity.
+
+### Shared settings workspace
+
+`spotlessApply check build -Pmod_version=0.2.0-dev.51` passed with 562 core cases on each codec runtime, 101 tooling cases, eight independent Maven/release-asset headless consumers and four native consumer compilations. The independent `--client --workspace-client` scene then passed two boots on every minimum-loader target below. Each first boot passed 89 workspace checks. Each fresh JVM passed 28. Every fixture was removed after preserving its report and native captures.
+
+The later default `mise run check` also passed with 103 tooling cases. Its first attempt exposed a stale Fabric 1.21.1 named dependency: the actual SNAPSHOT product contained `SettingsForm`, while Loom's existing remap for that coordinate did not. The independent mutable consumer now isolates its task-owned project cache by the verified input hash. The same product compiles through its fresh remap while the old cache remains unchanged. Frozen native candidates still use explicit immutable coordinates; their artifact bytes were not changed by this tooling repair.
+
+| Target            | Combined 0.2.0-dev.51 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `80d4b31ac68e325c06fd3734442940da7c64ef63668ac0ad672900b2dd39982a` |
+| Fabric / 1.21.1   | `15438a42c807a90cf83fe7f1f6b0693421d533ac169bf8735d79b05b77839a8b` |
+| NeoForge / 26.3   | `d3d2f1d05dbd0dd3150060974ecb94668d638f08932027bbd6390ca22698f17a` |
+| Fabric / 26.3     | `098b220066b5ff4c9fdaa34b126311c515559cafb2b712e3b6983ca5618a3570` |
+
+The scene combines five actual owners in one native screen: JSON preferences, native Options, registered or portable client settings, future defaults and an independent JSON document with overlapping field names. It exercises alias deduplication, cached scalar/help search, retained invalid input while navigating, the native keybinding auxiliary, separate source-specific saves, discarded unrelated drafts, guarded closure and saved reopen. Public `SettingsForm` views are distinct from native screen ownership; reopening the current entry preserves its actual form and actors. Default/On/Off traverses both explicit values and omission through the real owner.
+
+Back/Forward controls exercise the requested navigation identities, native pointer and Enter activation, retained drafts, caret/selection, page viewport, action scope and abandoned forward branches. Retired widget callbacks cannot navigate the replacement page. Both the shared workflow and a standalone catalog form accept native character input immediately after pointer Back; the standalone form also discards its invalid draft without changing its actual source file. This exposed losing the last field when native focus moved into navigation and a separate standalone initial-focus reset. The corrected controls preserve the remembered available field and respect an already restored native focus. Fixture admission waits for native controls and settled loading, separately from actor readiness. A separate default-layout workflow reproduces a lost requested-field history entry on dev.42 and passes on dev.43; both custom layouts and the ordinary factory preserve Back/Forward and native input without source writes.
+
+Contextual information retains its exact field/source/revision, captures supplied facts once, and survives actual GUI-scale changes without rereading its owner. The high-scale control checks that Close information is inside the same clipped editing viewport, visibly positioned and focused. Native wide, docked, inline and compact captures were inspected; the compact title no longer overlaps Categories. A failed fixture also reproduced rendering after lifetime closure; the corrected candidate ignores retired rendering and narration source access. Core controls separately cover READ revocation, stale/typing targets, unavailable effective values and unmapped collection rows.
+
+These results qualify the independent workspace scene. The focused authoring qualification below covers the broader portable editor regression on the same product. Native batch/creation/integrated contexts, production Compat metadata and Skyweave recipe bindings retain their separate scope. No owner UX approval, physical IME, spoken narration or another desktop OS is inferred.
+
+### Readable information and bold context actions
+
+`spotlessApply check build -Pmod_version=0.2.0-dev.52` passed after the information-presentation change, retaining both 562-case codec suites, 103 tooling cases, eight independent public headless consumers and four native consumer compilations. The independent workspace scene passed two boots on every minimum-loader target below: 100 first-boot checks and 28 saved-reopen checks per target. The ordinary native form, source save/readback, visible-value pixels and shutdown controls also passed. All eight task-owned clients exited and their fixtures were removed.
+
+| Target            | Combined 0.2.0-dev.52 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `197464215dc4a174e93b9f0f2317d75765c0c2ba0ed6806b761438fdf0c25d41` |
+| Fabric / 1.21.1   | `fcfd77b8b34c965db939b3a8a18e52f8e08d5280a3542dcd0d6a4214b2307c8e` |
+| NeoForge / 26.3   | `7088e5390c162273f58c6516a4b2043f4f192400ff406e082cdbfe0a2f22bde5` |
+| Fabric / 26.3     | `7de6d38b9938ae76e3a610a56838a00425e11aa3d090a9f538c2b0f7aebfdd47` |
+
+The native controls verify bold `i` text and an owner-selected technical-details disclosure. Native Enter expands it; collapsing and wide/inline reflow preserve the exact admitted observation without another owner capture. A retired disclosure button cannot toggle rebuilt information. The diagnostic key remains reachable in the inline presentation. Existing alias, default choice, source-specific save, Back/Forward, caret/viewport, native typing and shutdown assertions remain in that scene. Application requirements and failed source/effective observation messages remain outside the technical disclosure; permission/source authority still comes from the existing read operation and controller guards.
+
+An archive comparison against the recorded dev.51 products confines changed owned classes to `FormInformation`, `InformationButton` and `WorkspaceInformation`, including their nested classes: eight entries per target. All other owned class entries are byte-identical: 624 for NeoForge 1.21.1, 602 for Fabric 1.21.1, 626 for NeoForge 26.3 and 604 for Fabric 26.3. This bounds reuse of the earlier authoring, creation, chooser and backend evidence while the changed information path has its own dev.52 native checks. Versioned metadata and packaging retain their separate checks.
+
+This result qualifies the independent workspace on the exact four products. The broader authoring, creation, OS chooser and integrated results retain their earlier artifact identities. Actual Compat and Skyweave menu bindings, full-pack behavior and owner UX approval require separate evidence.
+
+### Owner-defined document defaults
+
+`spotlessApply check build -Pmod_version=0.2.0-dev.53` passed with the owner-supplied document-default label and help, retaining both 562-case codec suites, 103 tooling cases, eight public headless consumers and four native consumer compilations. The final source check passed in 29 seconds. Independent workspace pairs passed on the exact minimum-loader products below. All eight final boots exited normally, and their disposable fixtures were removed.
+
+| Target            | First / reopen checks | Combined 0.2.0-dev.53 SHA-256                                      |
+| ----------------- | --------------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | 117 / 32              | `1cb48029289ca99e21f68a76652636b8141e38d53a05af7dc91add9516e73a2b` |
+| Fabric / 1.21.1   | 117 / 32              | `99d96087cf3f4b218529f1241cc05e242af0fcd2f71d9024bf10d5e8f7546ec5` |
+| NeoForge / 26.3   | 118 / 32              | `29da02928995685f9d91c41bd38d509130f473c4445cb8152e17be559cc7e64e` |
+| Fabric / 26.3     | 118 / 32              | `9f8a61e6d6e4ce9b61775390906d7121bb50fc3ce7bef1cd4b55e15198622b5c` |
+
+The native controls exercise copied labels/help, preservation through `withInformation`, measured action rows and native narration in standalone and composed forms. The custom action uses the existing document defaults operation and Undo, leaves another owner's values and saved bytes unchanged, and refuses a retired callback. Activated forms refuse replacement presentation. Unmodified callers retain the built-in Defaults action, and per-field Default omission controls remain independent. The 26.3 probes additionally assert native Enter for Undo. Narration text is observed through the native collector; spoken output is not qualified.
+
+The earlier information, search, aliases, Back/Forward, caret/viewport, native typing, owner-specific save and shutdown controls remain in these scenes. An archive comparison against dev.52 confines changed owned classes to `ClientFormOptions`, `SettingsScreen` and `SettingsView`, including nested classes: eight entries per target. The other owned classes are byte-identical: 625 for NeoForge 1.21.1, 603 for Fabric 1.21.1, 627 for NeoForge 26.3 and 605 for Fabric 26.3. This preserves the attribution of earlier backend, authority and broader authoring evidence rather than relabelling it as a new run.
+
+A separate NeoForge 26.3 launch stalled in the loader's early-display OpenGL swap and was stopped before the settings scene. The reported pair passed on a fresh retry with the ordinary pinned loader configuration; loader startup reliability is not inferred. Actual consumer startup-default bindings, full-pack behavior and Skyweave's composed menu/recipe remain separate qualification boundaries.
+
+### Wrapped navigation at high GUI scale
+
+An extended actual Compat capture on dev.53 showed wrapped navigation text crossing adjacent rows at GUI scale 4. An independent nested-label scene reproduced it on that frozen product: the native row's text-height assertion failed, and the retained frame shows the overlap. Navigation rows had been measured from an empty structural caption while their buttons rendered the complete title. The final panel measurement also overwrote an earlier caller-supplied height.
+
+Dev.54 measures the actual button message at its final content width and removes the competing preliminary height. `spotlessApply check build -Pmod_version=0.2.0-dev.54` passed in 41 seconds, retaining both codec suites, tooling and independent consumer checks. All four minimum-loader workspace pairs passed 131 first-boot and 32 reopen checks on the exact products below. All eight final clients exited normally and their fixtures were removed.
+
+| Target            | Combined 0.2.0-dev.54 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `42fe39544802e0cb5772f94ff00c9ef5f219a1843fc00c36d656958c2503919e` |
+| Fabric / 1.21.1   | `bb1171799f73ed1438342bee6d203b826fde780815878db12f094390d1309f65` |
+| NeoForge / 26.3   | `83f03daf6fe4481634b4497ba062d77ee13c77b6bfd8a1f7d4e7216b80f07f18` |
+| Fabric / 26.3     | `448f8b758f54e6bb996125ff5b02d5c37b7522f9a46b61456034b254bc31206e` |
+
+The new controls check three actual nested navigation rows at native GUI scale 4, then after restoring the wider layout. A font-derived lower bound checks that each row can contain its wrapped label; separate rectangle checks reject overlap between rows. The test does not repeat the panel's indentation/sizing algorithm. Native frames establish the visible result, while the original defaults, information, input, history, owner/save/reopen and shutdown assertions remain. Only `FormPanel`, its `NavigationButton` and `WorkspaceNavigation` owned class entries differ from dev.53; APIs, editing, storage and owner code retain identical class bytes. Actual consumer requalification remains separately owned.
+
+### Custom submission and retained native input
+
+Source review identified a composition risk: a custom action calling raw document operations cannot observe text rejected before reaching the actor. Dev.55 adds `ClientEditor.canSubmit()` as a client-thread presentation guard. It does not flush input, read a file, grant authority or change standard submission. An operation still needs its actual backend checks and domain preflight.
+
+`spotlessApply check build -Pmod_version=0.2.0-dev.55` passed in 41 seconds, retaining both 562-case codec suites, 103 tooling cases, eight independent headless consumers and four native consumer compilations. All four minimum-loader workspace pairs passed 152 first-boot and 32 reopen checks on the products below. All eight clients exited normally and their disposable fixtures were removed.
+
+| Target            | Combined 0.2.0-dev.55 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `f1d6c89176e25c4e7849711e028ebef002856a03d3102857f793713c05e97f8d` |
+| Fabric / 1.21.1   | `377c75882f24f2191091c3781b8e0d3bb484336ea6b635622e7f12bc711c9840` |
+| NeoForge / 26.3   | `1bbf874736cf16beda117bdad2005739b83edd2db8976af2ed0a34ad8a51cd38` |
+| Fabric / 26.3     | `8c7ab5b6823a2d9bc59a89a0fb5387e151a65b17f4d5b8505808f2ab7483f12c` |
+
+The independent native scene uses a declared 64-character draft budget and 96 characters of actual widget input. Native character events can admit a valid prefix while retaining later rejected text. A valid sibling edit remains dirty, yet the public guard refuses partial submission and preserves exact source bytes and effective values. Explicit repair makes the complete draft submittable; the actual owner receipt and published values confirm both fields were saved. Restoration uses the same native controls and writer. An admitted invalid actor draft and a closed editor also refuse the guard. Prior defaults, navigation, information, owner-save and reopen controls remain in the scene.
+
+Only five owned class entries across `ClientEditor`, `SettingsScreen` and `SettingsView`, including nested classes, differ from dev.54; all other class bytes are identical. This qualifies the shared guard and independent workspace. It is not a reproduced Lootr failure, an asynchronous resource-reload witness or a new actual Compat/Skyweave adoption result.
+
+### Titled reference presentation
+
+Dev.58 adds opt-in `ReferenceTitles` presentation over the existing reference source, browser, and draft services. Standard raw-ID forms retain their presentation. The final `spotlessApply check build -Pmod_version=0.2.0-dev.58` passed in 24 seconds, retaining both 562-case codec suites, 103 tooling cases, eight independent public consumers, and four native consumer compilations.
+
+All four minimum-loader workspace pairs passed 188 first-boot and 33 reopen checks on the exact products below. The 36 added title-control assertions exercise copied/bounded metadata, live cache publication without draft/file changes, friendly button narration, the ID/source tooltip, actual source-nonce refusal and explicit refresh, resolved selection, malformed-ID repair, valid missing-ID persistence, unbound manual editing, collapsed/retired controls, exact restoration, and closure. All eight clients exited normally and their fixtures were removed.
+
+| Target            | Combined 0.2.0-dev.58 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `7ad62fc819e2de2c4f407762b9a2e81af46bb97f01a3ce9480318d3dbd59edf0` |
+| Fabric / 1.21.1   | `b37f881f1bebce55b22d4fb8e1a728518b7dc44db651f8d271b6d5deaf4e5886` |
+| NeoForge / 26.3   | `711bf3cb34d1a319ab8cbf15c47fc8c9b0cfe66113e1848dd01fd36cdedc45b1` |
+| Fabric / 26.3     | `60c150960740f14e18a554b246e349d5edbe83e5df60727b423bce3c16d05f2e` |
+
+An actual dev.56 malformed-ID capture showed validation only in the footer after collapsing raw input. The corrected capture retains the error beside the selector. A later native control failed on dev.57 because ordinary editor feedback cleared the title button's tooltip; dev.58 retains it, with source-ID evidence read through native widget narration on both games. This avoids relying on the tooltip getter removed in 26.3. The frames establish this bounded presentation result, rather than spoken output or another desktop OS.
+
+Core reference resolution, source owners, storage, and operations retain identical class bytes against dev.55. These independent vanilla-source fixtures do not qualify a consumer's catalogue, resource-reload publication, or production migration. Actual Compat and Skyweave bindings retain the separate inputs below.
+
+### Numeric domains and value captions
+
+The frozen `0.2.0-dev.61` candidate passed `check build` in 39 seconds: 578 core cases on each codec runtime, eight packaged public headless consumers, four native consumer compilations and the tooling/distribution checks. Independent record and map definitions exercise an exclusive zero and an exclusive upper bound. Boundary controls distinguish mathematical membership, native representation, text budgets and interaction grids, including tiny valid positives, floating-point underflow/rounding, native extrema, units and empty grids. Existing closed declarations retain their semantics.
+
+All four minimum-loader `--client --authoring-client` pairs passed on these exact combined products. Each target retained 889 first-boot and 81 fresh-JVM reopen assertions across the full authoring suite, including 139 and five numeric assertions respectively. These counts include interaction checks, rather than independent domain cases.
+
+| Target            | Combined 0.2.0-dev.61 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `4fada72d508d1e9d3771b3239de184fa6dcba1f7f954370ad557d57165a34bde` |
+| Fabric / 1.21.1   | `01394ec693eba394367dfbaeb8b5871957ed6da21ad0a440710b7affab305afb` |
+| NeoForge / 26.3   | `8dc38474f3d5fe2d894b1cf5292418fef5426e6f47441c49acb54cf80b383b5a` |
+| Fabric / 26.3     | `0c20b9c9fbf20d2743a6f6793dafb4aa3775345536d44fb12cdc79072c1fe298` |
+
+Actual text and pointer input retain and refuse zero/100 at their excluded boundaries, admit `1e-300` below the slider grid and select valid grid endpoints. Native controls, information and review share owner captions without changing raw observations or source bytes. A zero draft differs from nonzero saved/effective/default values; a saved zero independently retains its declared meaning in all four observations. Native narration content includes captions and stored-unit bounds. Exact spelling, unit/caret retention, source repair, explicit Revert, save, reopen and owner shutdown remain exercised. Wide information/review and 320×240 numeric captures were inspected on both game renderers.
+
+The 21 native pointer-dispatch samples per first boot range from 0.034 to 1.310 milliseconds across these runs. They exclude queued owner work, rendering, capture and file IO; they are not frame-time or end-to-end latency measurements. These independent fixtures do not qualify consumer declarations, another OS/GPU, physical IME or spoken output. Actual consumer adoption and public release remain separate.
+
+### Wrapped navigation and information typography
+
+The owner observed wrapped navigation returning to the outer indentation. The retained dev.58 native frame reproduces it, and its `FormPanel`, `NavigationButton` and `WorkspaceNavigation` class bytes equal dev.61. Depth and disclosure were encoded as text prefixes, so continuation lines lost them. The correction separates the marker gutter and tree inset from the title and uses the same text area for measurement and drawing. Branches retain explicit Expanded/Collapsed narration and the complete native row target.
+
+The final `0.2.0-dev.63` also selects Minecraft's supplied Unicode font for the bold information glyph through its game-specific style adapter. It changes no global font option. `check build` passed in 40 seconds with both 578-case codec suites, eight packaged public consumers, four native consumer compilations and the tooling/distribution checks.
+
+All four minimum-loader workspace pairs passed 199 first-boot and 33 fresh-JVM reopen assertions on the exact products below. New controls check title content separately from layout/disclosure and read actual expanded-state narration and the information glyph's bold/font style. Existing row-height, no-overlap, narrow/wide, focus/history, source, guard, reference, default and shutdown controls remain. Native long-label and information captures were inspected on both game renderers; the repaired wrapped lines share their title origin.
+
+| Target            | Combined 0.2.0-dev.63 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `2213e0d81f8f2d7c0807dbfb60c2e5658c1da2da2ed7e550ee712afa47a19523` |
+| Fabric / 1.21.1   | `949e53b5952d164ee54a5839c4a19e08674bd343516bb2e0b1623c60805e7a86` |
+| NeoForge / 26.3   | `6c10099f3f302af4b36813ce5023e4074b15671af9b50cb73657ea548b76bf85` |
+| Fabric / 26.3     | `04af2d6d637dccf2dff22a5b364bc568101d389be6b9b93e78d650e1d56ca773` |
+
+All 410 neutral core class bytes equal dev.61. Dev.62 changed navigation code only; five other changed class entries retain identical disassembly with shifted source metadata. Against dev.62, dev.63 changes only `InformationButton` and adds the private `NativeFonts` adapter. Numeric/storage/owner behavior retains the earlier evidence and its product identity. These independent results do not qualify a consumer migration, spoken output or another OS/GPU.
+
+### Reference preview facts and final authoring regression
+
+The consumer's actual dev.63 tag inspection distinguished an empty tag from a one-member tag in its source report, but the collection picker discarded those preview facts. The shared scalar and collection presentation now retains bounded owner facts in choices and inspection, hides retired-source observations, and preserves unresolved manual input. It adds no provider lookup, tag policy, storage change, or public API.
+
+Native dev.65 and dev.66 data/narration controls passed, but image inspection showed the lookup result outside the visible viewport. Dev.67 reveals the inspected stable member row after restoring focus. Actual 1.21.1 and 26.3 captures show the requested ID, resolved status, kind, and zero/one match count beside the focused Inspect action. The collection fixture also retains Unicode-abbreviation, source-replacement, no-write browsing, explicit Revert, and saved-reopen controls.
+
+All four `--client --authoring-client` pairs passed on these exact `0.2.0-dev.67` products, with 917 first-boot and 81 fresh-JVM reopen assertions each. These include 94/eight collection and 139/five numeric assertions. Recursive editing, references, dependencies, import/conflict recovery, catalog, review, commands, and composed-workflow assertions remain in the same suite.
+
+| Target            | Combined 0.2.0-dev.67 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `40ef70166dca0ff90d2a3ad926abc3dbec86937ba49083beea6c32013fc2cb9c` |
+| Fabric / 1.21.1   | `300f67bab7c9a420202a7b19023fdfd786f0797b2a2cb6bd0e0778727fe847fb` |
+| NeoForge / 26.3   | `163d77e9ce41f60ea3b352ffd3d4833388ded36abfe8dca2f2ad7fce3ff9dc69` |
+| Fabric / 26.3     | `6ba939c9e60ee137f7c43451ce8c7c0df669ed850ce2c2085a75599bfd89eb7f` |
+
+The final `check build` passed in 37 seconds with 578 cases on each codec runtime, 103 tooling cases, eight packaged public consumers, and four native consumer compilations. One earlier build lost a Loom source-remapping temporary file; the unchanged retry passed. Compared with dev.63, only `CollectionScreen`, its private choice record, `ReferenceScreen`, and the new private `ReferencePreview` class differ. Other owned class bytes, including all 410 neutral core classes and the command implementation, are identical. Earlier native evidence retains its exact artifact identity.
+
+The separate typed-client-command pairs passed 43 variant and 13 held-operation controls per boot: NeoForge 1.21.1, Fabric 1.21.1, and NeoForge 26.3 on dev.63; Fabric 26.3 on dev.67. Both boots check owner captions alongside the original numeric observation and declared stored-unit bounds. Actual native ChatScreen submissions retain held-read disconnect/reconnect and owner shutdown checks. These are separate command fixtures, not a TCP transport or rendered-chat claim. The unchanged command class bytes support carrying the three earlier pairs forward with their original product identities.
+
+These are independent controlled-source fixtures, not qualification of a consumer's native tag catalogue, full migration, or publication. Consumer owners retain their actual context, count semantics, and adoption checks. One NeoForge pair's desktop release preceded wrapper termination; both boots passed and its fixture was removed, but that coordination error supplies no evidence about the next owner's concurrent scene.
+
+### Actual Compat workspace binding
+
+The later Compat settings/input candidate `8b00e464cc246c5f8ad8d3670e61ec82261a0c6b22661f6ddec697e4bfb3fdcc` qualifies its actual NeoForge 1.21.1 binding on frozen re:form dev.67 (`40ef70166dca0ff90d2a3ad926abc3dbec86937ba49083beea6c32013fc2cb9c`). The library owner independently checked the product, sources, source-snapshot and library checksums, then inspected the four consumer-native reference, numeric, staged-settings and two-boot workspace reports. All four identify those exact product/library bytes and report PASS. This is inspection of consumer execution evidence, not a duplicate execution by the library owner.
+
+The actual registry report resolves the same named tag first to an empty list with zero matches, then to `minecraft:stone` with one match after reload. Its native frame shows the current count beside the inspected member and preview facts beside available choices. The numeric report retains the declared open-zero domain, exact tiny input, units, captions and staged/live observations. The staged report retains related-field diagnostics and inactive drafts. The high-GUI long-label workspace frame was inspected and retains aligned wrapped navigation without row overlap. The consumer reports 474 Java and 21 tooling checks passing; its separate installed-mod input evidence does not establish complete resource, shader, gameplay or performance readiness. Stable public delivery and Skyweave's actual dev.67 composed-menu/recipe binding remain separate.
+
+The consumer-owned NeoForge 1.21.1 workspace pair passed on Compat `0.42.0-reform-dev.8` with re:form `0.2.0-dev.54`. Its actual long-label frames and retained native receipts were independently inspected; this is a review of consumer evidence, not another execution by the library owner. Separate probes qualify the workspace and native-owner scenes.
+
+| Input                      | SHA-256                                                            |
+| -------------------------- | ------------------------------------------------------------------ |
+| Compat product             | `30b0bd9e8368ef53646b3554b858b1891831f43b281d7308eeae550619c6cecc` |
+| Workspace probe            | `07201b83cf51d1db804076d8996d35c982dda637eca9842eeea270f19ddf6446` |
+| Native-owner probe         | `0fe89a9038458948cbac6abcd2a9334bf1caee1c2f94e43cecc7af17fd44e2b5` |
+| Two-boot workspace receipt | `9a16b665c5a18208f7ed5e9c5d377af7f265933f8fefb684d1b12f80069adb80` |
+| Native-owner receipt       | `ec9d989db14b05d93a1221f985fc02396ffb82569b080e5aa38c76f314e78552` |
+
+The actual startup document labels its action **Restore loaded choices** and explains next-launch staging separately from a field's Default omission. The first boot restores the loaded default-true choice as an omitted key; the second retains the loaded explicit false. Both restored drafts are valid and idle, and the source bytes stay unchanged through Defaults and Revert. Native missing-file actions report REFUSED without creating a file. Information/disclosure, file status and owner closure are retained in that pair. Its native captures include logical 427×320 and GUI-scale-4 427×240 with long translated labels. The library owner verified the high-GUI frame hash and visible separation of navigation rows. The action-help frame is captured before activating Defaults; the restored draft is a separate observation.
+
+The native-owner scene passed in 76.47 seconds with exit code zero. Adding then removing `minecraft:desert` through the actual Dynamic Waters list controls preserved every other field in the complete 46-field native map. Two delayed native reloads refused stale saves with `native.context_changed`. Each used explicit Reload and the real conflict screen, selected the draft, and proved the full draft, source bytes and native values unchanged before a separate save. Persistence was SAVED with application STAGED. The native client preference reader observed Wayfinder debug enabled; operator-message transport was unchanged and was not exercised by that assertion.
+
+This bounds qualification of those bindings. Other consumer policy/locator results retain their recorded products and probes, with applicability reviewed by the consumer owner. Skyweave's actual 0.2 composed-menu/recipe binding remains owner-deferred; neither full-pack behavior nor public availability follows from the Compat results.
 
 ## Release artifact
 
@@ -68,9 +285,11 @@ A packaged public workload used a 384 MiB heap and JFR while other native fixtur
 
 The 32-document review contains twelve profiles per owner. Fifteen complete reviews have a 74.170 ms median and 195.107 ms maximum. Sixty exports have a 0.738 ms p95. Native frame timing, cold disk, long-session retention and other hosts are outside this sample.
 
+A separate NeoForge 1.21.1 native sample compares dev.50 with dev.51 using the same workflow fixture. It alternates cached search across 131 placements over one opened owner, with sixteen warmups and 64 measured synchronous callbacks per product. The draft revision and opened-owner count remain unchanged. Median response/rebuild cost is 1.047 ms on dev.50 and 1.056 ms on dev.51; p95 is 1.509 ms and 1.280 ms, with observed maxima of 13.899 ms and 1.668 ms. Both workflow/reopen pairs retain their 110/33 functional assertions. This is a short calling-thread sample on the shared host, not a controlled speedup result, rendered frame-time measurement, allocation profile or maximum-layout qualification.
+
 ## Reproduction and evidence
 
-`mise run check` validates Markdown, workflow syntax, Java, tests and packaged consumers. `mise run check:security` scans resolved library/test dependencies and source secrets. [Security reporting](../../SECURITY.md) owns the reviewed dependency exception.
+`mise run check` validates Markdown, workflow syntax, Java, tests and packaged consumers. `mise run check:security` scans resolved library/test dependencies and source secrets. [Security reporting](../../SECURITY.md) owns the dependency ownership policy and unresolved host advisory scope.
 
 Explicit native controls use disposable fixtures and the exact packaged Maven library. The addon/probe source containers stay separate from the product. The runners retain bounded reports and matched captures under `build/reports/`, then remove their marked worlds and logs.
 
@@ -86,3 +305,283 @@ python3 tools/native_form_probe.py --recipe-only --java-home /path/to/jdk21
 The form runner exposes additional focused modes through `--help`. Run affected cases after changing their owner, parser, widget, permission or lifetime contract. Desktop runs require current shared-focus access. Physical IME, host clipboard, spoken audio, Windows/Linux native rendering, shader image quality and maximum document/heap cost retain explicit qualification limits.
 
 Keep exact commands, source identities, artifacts, outcomes and relevant omissions with consequential checks. Retain compact evidence and only required immutable inputs. Phase 2's richer presentation and remote forms have separate implementation scope.
+
+### Apache-2.0 and advisory policy candidate
+
+Frozen `0.2.0-dev.26` changes current/future licensing to Apache-2.0 while preserving published 0.1.0 and earlier frozen trial bytes. All four binary/source archives contain the canonical license and updated notice; loader metadata and POMs agree. Every runtime class remains byte-identical to dev.25: 607 NeoForge 1.21.1 classes, 585 Fabric 1.21.1, 609 NeoForge 26.3 and 587 Fabric 26.3. Only LICENSE, NOTICE and game/loader mod-version metadata differ. This is archive equivalence, not a new native boot of dev.26.
+
+The candidate passed `check build`, 98 tooling tests, both 546-case codec suites, all eight Maven/release-asset public consumer executions and four independent native-consumer compilations. License controls reject an old packaged license and inconsistent POM license metadata. The ownership policy's negative controls retain blocking outcomes for unknown dependency versions, first-party findings, incomplete/duplicate inventories, wildcard policy rules and malformed scanner input.
+
+The revised complete security command passed with 31 visible provided-runtime advisory entries, zero blocking dependency findings and zero detected source secrets. Removing the former Guava suppression increases the count without asserting that any host issue was fixed. Raw reports and the exact classification policy remain available; further host hardening is deferred. [Security reporting](../../SECURITY.md) owns that policy.
+
+### Library-only dedicated startup
+
+All four dev.25 products passed two dedicated boots without a consumer. The fixture excludes addon sources, resources and loader source containers, resolves the exact Maven artifact and observes the loaded library entry class in the actual JVM. It verifies the game and Java versions, records no `reform-` worker threads at the ready inspection, finds no library settings paths after shutdown and stops through actual console input. The world then reopens in another JVM. These are dedicated startup controls, not GUI, Connector or whole-process allocation qualification.
+
+The first library-only trial omitted the dedicated properties and used vanilla's wildcard/default port; both short boots stopped and their runtimes were removed. That setup is rejected as isolation evidence. The shared fixture factory now always seeds loopback, an ephemeral port and disabled auxiliary listeners for dedicated runs. Missing/changed properties refuse before launch; native qualification also verifies the actual kernel listening address. Controlled child-process tests cover readiness, real console shutdown, callback failure cleanup and clean exit without native evidence. No product or personal-instance configuration changed.
+
+### Registered native CLIENT source on both games
+
+The independent platform consumer passed a real registered CLIENT TOML on both NeoForge targets with `0.2.0-dev.25`, in two separate JVMs per target inside the expanded recipe runs. Factory registration remains metadata-only until native setup. A native out-of-range candidate is refused by explicit backend preflight before changing the loaded value or firing callbacks. A valid edit saves through the actual native owner, preserves the unedited field and declared comment, and fires exactly one native reload callback on the client thread. Saved reopen reports unchanged persistence and no extra callback. Async operation completions explicitly return to the client executor; they carry no implicit thread guarantee.
+
+| Target            | Loader     | Combined 0.2.0-dev.25 SHA-256                                      |
+| ----------------- | ---------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | 21.1.265   | `cd758d5d7df960defd33b577c19dab96d0652edaef4bd7d039d9d23565d8fa00` |
+| NeoForge / 26.3   | 26.3.0.115 | `d5518da1f9b79b46cc6ace76f3c8d52a929006f2c36fa73c8fc422b3c180ca8a` |
+
+The earlier dev.19 NeoForge 26.3 product also passed the basic dedicated-server save/reopen flow with its new FML `[12,13)` metadata; the 1.21.1 product declares `[4,5)`. These bounds admit compatible FML minor/patch updates without expanding Minecraft support. One client attempt stopped before native mod execution in the early SDL loading-screen swap; its thread dump is retained separately from settings evidence. Two fixture assumptions were corrected before qualification: asynchronous completions require explicit owner dispatch, and native backend preflight is distinct from draft type validation. These bounded CLIENT checks do not certify delegated owners, complete restart/source/conflict behavior, server native configs or Fabric native facilities that do not exist.
+
+The same dev.19 NeoForge products also passed two-boot native server-bound config controls: backend preflight, native save, exact callback on the server executor, retained unedited values/comment and unchanged reopen. A third two-boot 26.3 scenario provides different installation and world `SYNCED` files. The owner selects `world/syncedconfig/platform-native-server.toml`, saves there and leaves installation defaults byte-for-byte unchanged. This establishes that actual override selection, not generic world-root storage or full restart/delegation/network coverage.
+
+### Registered native COMMON and LOCAL backends
+
+The shared owner fixture passed dev.25 on NeoForge 21.1.265 COMMON and NeoForge 26.3.0.115 LOCAL, each in two JVMs. It retains 47 first-boot and 13 reopen owner assertions, plus sixteen native draft controls per boot. Real registered specs, files, validators, callbacks and restart caches cover source replacement, explicit delegation/version refusal, bounded projections, permission changes, native listener/readback failure, reentrant close and truthful unknown persistence. Programmatic access predicates exercise the backend; actual native player authority has separate controls. The 1.21.1 fixture retains its thirty reference checks; the 26.3 owner supplement checks native registry capture and namespace resolution, with the fuller portable reference scenes qualified separately.
+
+A trial using the same full definition as a 1.21.1 SERVER config was refused by NeoForge before library binding: its GAME-restart field is illegal for that native type. The invalid profile is retained as negative evidence and is not exposed as a successful runner mode. COMMON/LOCAL results do not qualify every CLIENT/SERVER/SYNCED lifecycle. The current dedicated SERVER regression separately passes 37 policy, twelve console-command and fifteen search controls per boot. Native SYNCED world-override and ordinary binding checks keep their own evidence.
+
+One earlier NeoForge 26.3 invalid-preflight assertion failed without identifying which validation/value/callback condition differed. Its diagnostic now reports those conditions separately; subsequent minimum and override runs passed. No cause or product fix is established for that isolated failure, and the LOCAL backend suite does not close a different SYNCED-source question.
+
+### Native Controls on all four targets
+
+Frozen `0.2.0-dev.20` products passed two native client boots per target, plus NeoForge 21.1.267. The independent consumer registers real native mappings and uses the ordinary public key factory and generated editor. Native pointer events open its capture screen; keyboard press/release, Shift chords and mouse button 4 retain the actual game/loader identities. Reset and Unbind remain proposals. Applying capture changes only the draft until the shared commit saves actual Options, preserving an unselected mapping. Reopen retains that binding and reports unchanged persistence. NeoForge admits its native Shift modifier; Fabric refuses that unsupported modifier at backend preflight, with the correct field diagnostic. Explicit revert and editor closure complete. Each NeoForge boot passed 33 controls and each Fabric boot 34, in addition to the basic Unicode/form checks.
+
+| Target            | Combined 0.2.0-dev.20 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| neoforge / 1.21.1 | `48d68486d249d2ce32c616bcf2861dce7402c11968f8206a2ee5539c73d8e4c3` |
+| fabric / 1.21.1   | `9db076f59ee9b85c4f0e0cd8781253959772d773a91740476d3478472e10d4bf` |
+| neoforge / 26.3   | `54d9a4c79a075376af33d439506cdf572a5eaafa060104bb54402615734f491c` |
+| fabric / 26.3     | `234b0810449406cdadca2aa8f4a72edee0fa2226b029750755959a2d386403e7` |
+
+The same products passed twelve dedicated-server boots: all four minimum targets, NeoForge 21.1.267 and the separate 26.3 world-override scenario. Both NeoForge client products also retain the preceding real CLIENT-config checks. Compilation, both 546-case codec runtimes, 56 tooling cases and the independent public headless/native consumers pass. A screen actor can become ready before its queued widget rebuild; the fixture waits for actual focusable controls within its existing bound. Captured negative runs retain this fixture-order distinction. These are representative native Controls and source-lifetime results, not complete authoring, command-origin, integrated, creation, accessibility or optional-mod parity.
+
+### Native command origin and integrated sessions
+
+The independent world-client fixture passed two JVMs per minimum target on frozen `0.2.0-dev.21`, with two real integrated sessions in each JVM. The client connects through native memory transport, receives an actual server-issued component, and invokes its native RUN_COMMAND action. That action is refused before operation admission. Native ChatScreen Enter submissions still edit the correct local draft and save explicitly; completion feedback remains usable after the typed invocation frame ends. The public integrated form edits a separate world-root policy. Disconnect closes that editor and its actual server context; reconnect creates a new connection/context, restores the saved world value and admits a fresh local client command. A second disconnect closes that session too. Saved reopen retains both the local preference and world policy without an extra save.
+
+| Target            | Combined 0.2.0-dev.21 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| neoforge / 1.21.1 | `d7a06ee4042960686b09f866a8411ad914cfa6d06d63480a2286b235c9e46581` |
+| fabric / 1.21.1   | `63774ec81f0fa182bb39c19abdb45b3776c1714a31a36c2de64cb5eb1fa2af42` |
+| neoforge / 26.3   | `ddf7479be033e94d41cfb455add05991fc02d564ff88a8a3755a9e60fef8991d` |
+| fabric / 26.3     | `3403dd1f00a05f85a14af2d41065ace6ec576ca78afae55d6d04b9bb39dc52e2` |
+
+The matched Fabric 26.3 dev.20 negative queued and completed the server-issued draft edit at `distance=22`; it requested no file save. Exact Fabric command API 3.1.2 source showed why: unattended dispatch can execute with its full attended source after restricted-source confirmation checks. Dev.21 additionally requires the verified typed-chat frame before resolving a target. Fabric source availability also binds its immutable native listener to the current connection; the access declaration is read-only. Each target retains its own exact game input and click-action bridge. The eight final boots also retain the native Controls/Unicode checks and real NeoForge CLIENT callbacks.
+
+An initial 1.21.1 fixture supplied the native hardcore/cheats booleans incorrectly and timed out waiting for the operator-only form. Corrected world settings and an explicit host-permission check passed; this is not a product permission fix. The native memory-session results do not certify held work across disconnect, permission revocation, respawn, remote TCP forms, unsaved creation recipes, rich authoring/accessibility or the optional-mod matrix. Those remain separate qualification work.
+
+A retained-source extension passed both boots on all four dev.21 targets. It captures an actual source only after a trusted native invocation, verifies it is current in that session, reconnects with a new listener/player/level, and verifies the old source is unavailable while a new typed command succeeds. The matched dev.20 Fabric 1.21.1 negative still considered the old source current after reconnect. That establishes the need for actual listener identity beyond dynamic getters. It does not exercise a deliberately held operation or its eventual effect/reply. Exact initial and extended probe sources remain separately attributed.
+
+### Optional Mod Menu
+
+The dev.21 Fabric products passed actual Mod Menu presence and absence on both games, two boots per combination. Mod Menu 11.0.3 runs on 1.21.1 and 21.0.0 on 26.3. Its public native screen API resolves the registered consumer form and no screen for the library itself. The returned form retains Unicode input, visible value pixels, shared save/reopen and native Controls behavior. The absent combinations load and complete the same ordinary flow without linking the optional helper. Runtime reports record the actual installed version. Direct bytecode inspection confirmed that provided factories are queried on each native lookup, rather than assuming an initialization-order cache defect. These results do not certify Connector, other menu frameworks or a full modpack.
+
+### Optional Connector coexistence
+
+The unchanged dev.25 NeoForge 1.21.1 product passed two dedicated boots on both 21.1.265 and 21.1.267 with Connector 2.0.0-beta.17+1.21.1 and Forgified Fabric API 0.116.15+2.3.6+1.21.1. Actual Fabric Loader API classes are present, but the native mod list contains one re:form identity, its entry annotation matches the NeoForge identity, and the Fabric re:form entry is absent. The normal server owner, source, console-command and ticket/drain controls pass in both profiles. This is coexistence qualification, not a claim about translating arbitrary Fabric mods, client rendering or a full pack.
+
+The fixture follows Connector's [pinned developer guide](https://github.com/Sinytra/Connector/blob/5a2f668ad492c1586c279a197423f5a1d1a16509/README.md). Its userdev adapter supplies the clean mapped game input. ModDev 2.0.148 exposes each run's `additionalRuntimeClasspathConfiguration`; the older global configuration shown in that guide is absent. Connector must use that launch classpath while FFAPI remains a runtime mod. Initial probes that omitted the active Connector, or failed before native launch while configuring the older classpath name, remain rejected fixture evidence. They did not establish library defects. The optional userdev input is pinned to the exact `1.2.1-20260813.224440-42` publication; ordinary runs do not resolve it.
+
+The queried [upstream versions](https://modrinth.com/mod/connector/versions) provided no NeoForge 26.3 build. That combination remains unqualified. The runner refuses undeclared targets before resolution or fixture creation, rather than substituting another game version or manufacturing a second bootstrap.
+
+### Initialization failure diagnostics
+
+A controlled public client-file owner-construction failure on dev.21 Fabric 1.21.1 left the document unavailable, without a runtime handle or source IO, but discarded the original exception from the log. The native lifecycle control passed while the diagnostic gate failed. Dev.22 retains that cause with document and lifecycle-stage context. Two native boots on each of the four targets passed the same failure, a separate structured-policy-refusal control, ordinary form/Controls save/reopen and shutdown. Both failed owners remain unavailable without files or effective defaults; the expected refusal retains its own issue code and does not produce an unexpected-error log entry.
+
+These controls cover constructor failure during actual native setup. They do not inject cleanup failure or certify every structured source/application receipt, fatal JVM error, lifecycle race or consumer callback failure. The source and native product hashes, first/reopen outcomes and matched pre-fix diagnostic failure belong to the local task capture.
+
+### Release-shaped artifact resolution
+
+The development source build `0.2.0-SNAPSHOT` passed the independent public headless consumer through all four target Maven modules and all four locally staged release-shaped Ivy repositories. Each consumer verifies its exact binary hash before running the public API/file controls, with native game classes absent. The artifact-only path declares the selected game's DFU/Gson dependencies explicitly and has no staged-Maven fallback. Its fixed `reform` filename prefix is independent of the lane-specific Maven module name.
+
+Two actual Gradle resolution negatives refuse the old module-prefix filename pattern and an empty release-asset directory, despite the correct product remaining available in staged Maven. These are local publication-layout and consumer-resolution controls. They establish neither public release availability nor a production consumer migration, and do not change the frozen dev.25 native products.
+
+### Native permission changes and respawn
+
+The dev.22 world-client fixture passed two JVMs on every minimum target, retaining 34 checks per boot and two integrated sessions per JVM. A real native permission change refuses both a retained search recipient and an existing editor operation. Restoring permission re-admits the current recipient. The native respawn API then replaces the actual server and client player while retaining the play connection: the recipient resolves the new server player, the old source cannot own it, the old editor is refused, and a new editor is usable. Native server stop retires the recipient; reconnect still creates a distinct connection/context and restores the saved policy.
+
+The fixture uses each game's actual permission rules. In 1.21.1 an explicit level-zero operator entry restricts the integrated host. In 26.3 the integrated-owner override still grants host authority for an operator entry, so the fixture removes that entry and temporarily disables world commands, then restores both. A failing control verified that the first 26.3 setup had not actually changed permission; it was corrected without changing product authorization.
+
+Respawn is an explicit native player-list call retaining player data, rather than a damage/death gameplay test. These results do not certify held worker effects or delayed disclosures across revocation/disconnect, remote TCP command delivery, full search/ticket flows or unsaved recipe creation. Product and fixture hashes, original setup refusal and actual per-boot checks remain in the local task capture.
+
+### Unsaved native creation and registry codecs
+
+The dev.22 recipe-client fixture passed two native boots on each minimum target, with 16 checks per boot. It opens the actual Create World screen, selects the registered flat preset and constructs an ordinary public `WorldRecipe` over a small typed projection. Its consumer-owned compiled input retains a separate immutable 2,310,000-character payload. Editing changes neither the native menu context nor the owner callback. Admission updates the actual generator on the client executor, calls the owner after that update, preserves the original context and unedited Nether/End dimension objects, and returns an applied receipt without file persistence.
+
+The admitted generator passes encode/decode using `ChunkGenerator.CODEC` and `RegistryOps` over the actual loaded native registries. Construction from a stale menu context is refused. A different context installed after editing but before Apply produces a traceable editor-level `owner.revision` refusal, preserving the newer context and dirty draft. The initial negative test incorrectly searched only the operation/application reports; the actual pre-commit refusal was already in `EditorActor.Commit.editorReport`. The fixture was corrected without changing product behavior.
+
+No server starts during this scenario. It is a native flat-generator and opaque consumer-payload control, not a complete Skyweave recipe, every registry-dependent codec, gameplay creation, saved-default/import/export workflow or post-update callback-failure qualification. The runner requires the selected scenario's own successful result, so an ordinary passing client cannot silently substitute for creation, world-session or initialization-failure coverage.
+
+Dev.25 additionally passed the expanded recipe workflow on all four minimum targets in two JVMs each. The original sixteen controls remain, alongside 41 native recipe-flow assertions, ten explicit-preview controls, ten reviewed-effect controls (eleven on reopen), thirty first-boot or five saved-reopen defaults controls and seven malformed-default repair controls per boot. Opening or typing starts no analysis; an explicit worker preview reports bounded progress, retains one active identity through cancellation/drain and identifies an older result after later edits. Reviewed save/export preserves the complete owner input above 2 MiB; stale reviewed authority refuses before writing, and reopen reads the previous JVM's saved output. Each boot writes a separate owner-admitted output using create-if-absent.
+
+The native post-update callback deliberately fails after the generator changes. The receipt retains an unknown application outcome and a blocked dirty draft; inspection offers no application-only fallback, and discard does not undo that native mutation. Future-world defaults separately cover missing/deferred, eager, saved/reopened and malformed/repaired sources. Saving defaults is staged for future worlds and leaves the open recipe unchanged; explicit import, undo/redo and Apply are distinct operations. Native shutdown closes the managed recipe and both defaults owners. Initial portable trials exposed fixture ordering: actor completion can precede queued screen synchronization. Further NeoForge 1.21.1 trials reproduced the same ordering at invalid-input inspection and stale-refusal close: native narration still said to wait for the current operation. The fixture now waits for queued input/receipt feedback through the actual context-reload control, and for the primary control where needed, before inspecting, clicking or closing. Assertions and product behavior were retained. Each report records its actual fixture source rather than attributing all runs to one later revision. Selected native captures were inspected, without claiming spoken output or other operating systems.
+
+### Recursive native forms and cycle initialization
+
+The portable recursive fixture retains the existing native baseline's assertions for lists, maps, sets, optional values, declared defaults and tagged alternatives. Dev.23 passed all four minimum targets: 56 first-boot control assertions and three saved-reopen assertions per target. Real native text and pointer events preserve invalid nested input, block saving, copy and move rows without losing stable paths or the retained scalar widget, expose duplicate-set diagnostics, and edit map keys and values separately. Deactivated optional/default/variant inputs retain their raw drafts, and a restored invalid branch can be repaired before explicit save. Saving agrees with the actual disk/runtime profile, closing retires the editor, and a second JVM restores that profile cleanly. First-boot invalid/ready PNGs are retained with their hashes; the Fabric 26.3 ready frame was also inspected visually. Native widget narration content identifies contextual row actions; the 26.3 collector supplies the actual keyboard narration trigger.
+
+The dev.22 Fabric 1.21.1 control stalled when switching an alternative back. A bounded diagnostic retry showed the actual form still READY and valid, with the selected branch's field absent. Pinned native sources explain the defect: 1.21.1 computes a cycle button's cursor in `withInitialValue`, while 26.3 computes it at creation. The port helper supplied the initial value before installing choices, leaving the 1.21.1 label and cursor inconsistent. Dev.23 supplies both inputs to the adapter and sets the 1.21.1 values first. Shared scalar, variant, unit, import, conflict, review and workflow-filter construction uses that corrected seam. The matched native alternative-selection failure now passes; this does not separately qualify every affected screen or arbitrary catalogs.
+
+These runs use the ordinary window/GUI scale. They do not certify narrow/high-scale layouts, drag/caret edge cases, resource/language reload, spoken narration, OS dialogs, full import/conflict/review workflows, or a modpack. Product, fixture, native-source and image identities belong to the local task capture. Published 0.1.0 was not changed.
+
+### Native numeric controls and narrow reflow
+
+The expanded dev.23 authoring fixture passed two boots on every minimum target. It retains the recursive controls above and adds 107 first-boot numeric assertions plus four on saved reopen. A deliberately malformed numeric file remains unchanged and opens an unavailable status view. After explicit source repair, Retry opens the actual owner with its declared presentation; retired status callbacks cannot replace that successor. Native unit choices change display without rewriting canonical values, and invalid/tiny/inverted-range inputs remain available for repair. Slider pointer-down, repeated drag and release, native keyboard navigation, explicit save and canonical disk/runtime agreement are exercised.
+
+The fixture changes the actual native window to 480×360 and requests GUI scale 3. Each target reports a 320×240 GUI. Reflow preserves the existing text/unit/range controls, caret and selected text; the paired range stacks its measured controls and footer geometry stays within the screen without overlap. First-boot initial/invalid/range/narrow PNGs are retained with hashes. The Fabric 26.3 narrow frame was inspected visually. This qualifies those particular dimensions and controls, not every layout, translation, input method or graphics platform.
+
+The first 26.3 attempt sent a zero logical keycode in the fixture's typed event. Its Left-arrow control failed before the later numeric checks. Pinned native source shows that `EditBox` uses `KeyEvent.shortcutKey()`; the fixture now supplies SDL's actual scancode-to-keycode mapping. Product forwarding already retained both fields and was unchanged. The shared form driver preserves the existing assertions and bounded capture/cleanup behavior across recursive and numeric scenes. Source, product, failure and frame identities remain in the local task capture. Those runs do not exercise language/resource reload, spoken output or OS dialogs.
+
+Both dev.21 Fabric products also passed dedicated-server policy/reference/save/reopen/stop regressions after the client origin and read-only access-declaration changes. Each ran two boots without client optional dependencies. This bounds the dedicated classloading claim separately from the native client results.
+
+### Native references, collections and dependent controls
+
+The expanded dev.23 authoring suite passed first delivery and saved reopen on all four minimum targets. In addition to the recursive and numeric controls above, each first boot passed 45 reference, 64 collection and 49 dependency assertions. Reopen passed three, eight and four respectively. The product is unchanged; these controls adapt the existing native baseline through the shared fixture driver and each game's actual input API.
+
+Registry and resource pickers preserve authored keys, distinguish malformed and unknown references from missing dependencies, disable stale selections after source replacement and require explicit refresh. An oversized source choice remains an invalid draft without native text truncation. Borrowed source owners survive picker closure, while detached picker callbacks cannot revive a retired editor. Choices reach disk and runtime only through explicit save.
+
+Collection selection exercises localized diacritic search, duplicates, stable row identities, exact row removal, bounded continuation and one-step undo of a visible-page batch. Source replacement disables obsolete callbacks without discarding authored entries. Missing and unbound sources retain manual editing. Dependency controls distinguish unavailable, unknown, disabled and available states; inactive raw values remain fully validated, explanatory actions remain keyboard reachable, and disabled callbacks cannot edit. These scenes inherit the 320×240 GUI, with collection and dependency footer geometry checked. Their native narration content and captured frames are retained; the Fabric 26.3 collection and inactive-dependency frames were inspected visually.
+
+The first collection attempt omitted the portable fixture's language resource and stopped at its required `CAFÉ` choice. Adding that fixture translation preserves the original assertion. A separate Fabric 1.21.1 reopen was invalidated by overlapping root verification and a native launch using the same consumer outputs; the sequential rerun passed. Root verification and native launches must run sequentially. Neither correction changed the product. Actual resource/language reload, spoken narration, OS dialogs, complete import/conflict/review workflows and modpack qualification remain separate.
+
+### Native file import and source-conflict repair
+
+The same dev.23 product passed the expanded authoring suite on all four minimum targets: 39 first-boot import assertions and 112 source-conflict assertions, followed by three saved-reopen assertions for each workflow. Earlier recursive, numeric, reference, collection and dependency controls remain in these runs. The portable fixture preserves the existing native baseline's assertions and uses each game's pointer, keyboard and window APIs. No product change was required.
+
+Import checks submit real UTF-8 files through the native file-drop callback, preview without writing, stage and undo a draft, refuse malformed or mismatched-schema input, and retain an invalid imported field for explicit repair. The narrow review retains its focus and geometry. A held source read asserts that capture runs on the native owner and reading runs elsewhere; cancellation releases the reader and prevents staging. Explicit save agrees with effective state, while the source file remains unchanged. The fixture cleanup also releases its reader on failure. These checks do not open an OS file picker.
+
+Conflict checks compare an actual changed file with an unsaved draft, select field or whole-collection values, and resolve a new draft separately from saving it. Failed source reads recover after explicit repair. A file changed again after resolution refuses the conditional save and requires a fresh review. Mixed choices still require complete cross-field validation, and detached controls cannot repeat an edit. Review, narrow and invalid frames are retained with hashes; the Fabric 26.3 narrow conflict frame was inspected visually. The GUI is 320×240. This does not qualify the separate review/catalog workflow, command variants, native config delegation, held network effects or a modpack.
+
+### Native catalog reload and editor shutdown
+
+The expanded dev.23 authoring fixture passed all four minimum targets with 85 first-boot catalog assertions and nine on saved reopen. It exercises focused profile/role navigation, filtering, stable identity through row reorder/undo, retained invalid fields, display units and complete save. Wide/narrow reflow preserves the selected section, filter, caret, text selection and unsaved values. Actual German language and alternate-font reloads, followed by restoration, retain that same draft and focus. Bounded catalog exhaustion refuses a partial catalog and offers an explicit all-fields fallback over the same source. Wide, narrow and localized frames are retained; the corrected Fabric 26.3 localized frame was inspected visually.
+
+Two fixture defects were distinguished from product behavior. Completing a resource future does not imply the native loading overlay has disappeared: the first localized PNG showed the overlay. The driver now waits for actual native overlay absence before input and capture. A later Fabric 1.21.1 diagnostic identified an abandoned baseline settings screen retained as the catalog parent; its focus referenced a removed panel before the catalog opened. The baseline now closes explicitly before unrelated editors open, and catalog entry requires the native title screen. The matched focus assertion passes afterward. These corrections did not change the frozen product.
+
+The fixture also opens a fresh editor, waits for its actual READY snapshot and then exits. Every target's two boots require both document-runtime closure and that ready editor becoming CLOSED. The outcome verifier rejects missing or false editor readiness/closure evidence independently of runtime closure. Earlier shutdown reports establish their original runtime scope, without retroactively proving this stronger editor control. These runs retain the preceding recursive, numeric, reference, collection, dependency, import and conflict checks. They do not qualify OS file pickers, input methods, spoken output, the separate review/composed workflow or a modpack.
+
+### Composed workflows and native activation
+
+The independent `--client --workflow-client --library-version 0.2.0-dev.45` regression passed on all four minimum targets: 110 first-boot workflow assertions and 33 on saved reopen. The frozen product's combined hashes are listed below. These runs qualify the retained-workflow scene separately from the other authoring editors. A three-level hierarchy presents 131 placements of one actual owner, with description search, focused field reveal and All/Modified/Invalid/Restart filtering. The composed workflow then retains four independent drafts, native key popups, history and pending operations across views. Each document saves separately. Competing-owner revision refusal remains distinct from an earlier recorded receipt, and late whole-workflow or per-document discard decisions recheck pending work. Unexpected child removal releases the workflow and its actual editors. A separate managed workflow is closed by native shutdown; the fresh ready-editor shutdown control remains required too.
+
+NeoForge uses actual registered CLIENT and installation-local sources, with its native serializer and cached values: COMMON on 1.21.1 and LOCAL on 26.3. Each NeoForge target's first boot observed the actual defaults save and a native reload callback on the client thread. Additional watcher callbacks are recorded separately; the test does not assert that every native callback uses that thread. Fabric has no FML registry and instead uses two explicit JSON owners. It uses their actual submit affordance and runtime publication, with no fabricated native callback. Both backends preserve the discarded client-source file and saved defaults across JVMs. Wide and narrow frames are retained; the Fabric 26.3 narrow overview was inspected visually.
+
+The first NeoForge 26.3 workflow failed on dev.23 when `ClientForm.open` tried to retain a newly constructed form. Pinned native bytecode confirms that 26.3 supplies the screen's Minecraft reference during construction. The shared guard treated that non-null reference as evidence of activation. Dev.24 tracks the first native `init()` instead, covering form ownership and pre-activation imports, previews, review actions and scoped-save declarations. Review-screen declarations use the same lifecycle distinction. The matched retained-form failure passes on dev.24; active forms still refuse ownership transfer on every target. This workflow control does not separately qualify all preview/import/review-action consumers of those guards. NeoForge's defaults context and registration diagnostics also use terminology valid for both native type sets, without changing source identities or file formats.
+
+The first Fabric 26.3 workflow attempt reached saving but expected NeoForge's native submit label. The fixture now selects each source owner's real action. This was a fixture adaptation, not a portable-owner product failure. Root/tooling, source, product, failure and image identities are retained in the task capture. Public 0.1.0 remains unchanged. Actual OS file pickers, held command/search effects, deeper native source/restart/delegation controls and full consumer qualification remain open.
+
+The dev.44 negative filtered physical fields while retaining 130 unmatched aliases in navigation. Dev.45 applies the same cached-state predicate to both: Modified, Invalid and Restart each retain the matching field and destination; All restores every declared alias with one physical control per field. No unselected source is opened for these filters. The regression uses the real shared screen and `SettingsForm`, with Undo and per-document discard reached through More. Compact narration names the current save scope, while the actual revision refusal and earlier saved receipt remain separately inspectable. Test-only registration and old narration assumptions were corrected independently from the product filter fix.
+
+| Target            | Combined 0.2.0-dev.45 SHA-256                                      |
+| ----------------- | ------------------------------------------------------------------ |
+| NeoForge / 1.21.1 | `2f8e1f042553c1ed1abb95caceaae0df543fa6b3edb3cf8c5043f39cb5bbd659` |
+| Fabric / 1.21.1   | `952f38d43940daf535646ef3f0fbb8dbd2f0bffe229690f2362d82ad14ea1d23` |
+| NeoForge / 26.3   | `3106d0cb41e04fff63ea15bba11c54a12a981caab3404b7d2e78e79c735461fc` |
+| Fabric / 26.3     | `b91fa6594728846de06091e9dd3eab2abf14aee2ee22eaac5a20c755ccb22e71` |
+
+Every run retained its source/product/probe identity, two native captures and terminal shutdown evidence before removing the fixture. The NeoForge 1.21.1 wide and compact captures were inspected. These outcomes do not extend the earlier catalog/language, import, batch, integrated-world or actual-consumer qualification to this UI candidate.
+
+### Focused authoring in the shared workspace
+
+The frozen `0.2.0-dev.51` product passed `--client --authoring-client` on NeoForge and Fabric for both games, using the minimum loader inputs. Each target completed 857 first-boot assertions and 80 on a fresh-JVM reopen across recursive, numeric, reference, collection, dependency, import, conflict, catalog, inspection, typed review-command and retained-workflow scenes. This includes native language/font reload, real source writes and callbacks, stale controls, strict complete-catalog refusal and explicit fallback, inactive sections and managed shutdown. These assertion counts include native interaction checks; they are not independent domain test counts.
+
+These runs use the combined product hashes listed in the shared settings workspace table. The refactor retires the obsolete native catalog frontend and its duplicate history/focus paths. The bounded metadata index and single workspace retain the passing dev.50 behavior; the complete authoring and workspace pairs passed again on all four targets.
+
+Matched native failures exposed missing collection-row captions, profile controls remaining mounted outside their selected detail and hidden widgets overwriting retained caret/selection. The corrected view restores fallback captions, mounts the nearest admitted detail subtree and creates fresh native controls over retained editing and numeric-display state. A retired text callback remains refused after returning. Section selection also succeeds for an admitted inactive section without manufacturing a control. Exact requested field identities remain separate from the structural section used for presentation and public inspection.
+
+Reports, source/product identities and allowed captures were retained before removing every fixture. NeoForge 1.21.1 wide and compact catalog frames were inspected. The independent workspace/history scene above is qualified separately on the same product; native batch/creation/integrated contexts and actual consumer bindings retain their own qualification. These runs do not establish physical IME, spoken narration, another OS or owner UX approval.
+
+### Native batch saves and creation workflows
+
+The dev.51 NeoForge 1.21.1 example passed batch review and retained workflows in two JVMs each. Batch controls passed 51 initial and five reopen assertions, retaining complete-vector validation, required scopes, ordered owner writes, real callbacks, explicit refusal and retained results. The original native workflow passed 109 initial and 33 reopen assertions against its own JSON, CLIENT/COMMON and Options sources. These are separate from the portable four-target fixtures.
+
+Three native defaults boots passed 30 initial, five reopen and seven malformed-source assertions. Optional absence remains distinct from declared defaults, source recovery is explicit and future-default saves leave the selected creation recipe unchanged. Staging and Undo/Redo affect the draft; only explicit Apply changes native dimensions, preserving the other dimensions and saved source.
+
+The native recipe scene passed 41 admission assertions, ten preview checks and ten reviewed owner-effect checks. Explicit analysis retains cancellation/drain and stale-result identity. Separate reviewed save/export preserves the full compiled owner input above 2 MiB; stale authority refuses before writing. Admission retains original context guards and reports post-update failure as uncertainty rather than rollback. This creates no playable world.
+
+The expanded portable creation scene also passed two JVMs on all four dev.51 minimum targets. Each boot retains sixteen original context/codec controls, 41 recipe-flow assertions, ten preview controls, separate reviewed owner effects and malformed-default recovery. Initial/default-reopen paths retain thirty/five assertions. Native registry serialization and foreign/current creation-context identity are exercised independently of the editable JSON boundary.
+
+The dev.51 integrated-world example passed 48 first-boot and eleven reopen assertions. Real host admission keeps the shared root visible while each editor opens asynchronously. Actual native operator revocation refuses a save through a stale positive client mirror; the later native permission packet retires that local presentation and clears its previously displayed field information while the server owner remains open. Real TOML watcher conflicts, explicit draft resolution, callbacks, saved reopen and disconnect closure remain covered. This is native memory transport, not remote TCP or full-pack qualification.
+
+The same NeoForge 1.21.1 flow passed 53 first-boot and eleven reopen assertions on the unchanged dev.52 product. Its ordinary public server-policy example now declares owner information with technical disclosure. Native controls open and collapse the source/key details before actual permission revocation. After the native permission update, the visible information retires, and invoking the retained disclosure button cannot reopen it or navigate away from the current entry. Saved/effective policy, watcher conflict, reopen and context-closure assertions remain intact. Both clients exited and the fixture was removed. This adds an integrated authority control for the new disclosure; it does not establish a remote transport or actual-consumer result.
+
+The adapted fixtures navigate secondary actions through More and explicitly return to Settings before field input. They wait for loaded native controls independently of actor readiness. Earlier failures from those obsolete fixture assumptions are retained separately; no product change or weakened persistence/admission assertion was required. Actual consumer mappings, physical input-method and spoken-output checks retain their own qualification.
+
+### Native inspection and typed review
+
+The unchanged dev.24 products passed the independent inspection fixture on all four minimum targets, with 173 first-boot assertions and four on saved reopen. Native input retains long unsaved text and a cross-field invalid draft. Inspection distinguishes baseline, draft, effective value, source provenance and declared application effects. Related-field navigation returns to the same editor, while a retired callback cannot navigate it. Whole-collection inspection, filtered selection and narrow reflow retain the capture, caret and text selection. Explicit validation and exact authored-JSON export leave the saved source unchanged. Revert and closing release the editor; the next JVM sees none of the discarded input. Twelve native review frames are retained, including an inspected NeoForge 26.3 narrow view.
+
+A separate six-assertion scene runs in both JVMs through each loader's actual client command registration and ChatScreen Enter path. Its review uses an independent actor for the same document, returns bounded source feedback and preserves the retired GUI lifetime and unchanged source. It closes the integrated world before the composed-workflow checks. No synthetic client source or origin bypass is used. This exercises the review command, not the complete command/search or in-flight authority matrix.
+
+The first Fabric 26.3 run failed its immediate post-Revert close assertion; a diagnostic retry returned to the original title screen with a closed, clean actor. The fixture now yields a native tick between clean owner publication and the next click. A discarded diagnostic gate also assumed a particular field remained visible after Revert changed catalog selection. Both failures remain in the evidence; neither establishes a product fix. All four targets passed the final paced fixture in two JVMs. Actor readiness and native presentation completion remain separate boundaries.
+
+### Native file-dialog ownership
+
+The dev.51 workspace products passed the actual macOS chooser scene in two JVMs on all four minimum targets. Each boot completed five identified native-dialog requests and at least 25 assertions; the NeoForge 1.21.1 first boot recorded 28 during delayed driver startup. Cancel, Unicode selection, explicit preview, abandoned-result refusal, slot reuse and source read-only behavior remain covered. The two 26.3 products use the actual SDL-owned sheet; 1.21.1 uses the game's TinyFD helper. No product change was needed for this requalification.
+
+The external driver's earlier fixed delay could reach Go to Folder before its editable field existed. It now waits within a bounded deadline for that exact owned native field, checks writable value/focus and refuses on lost foreground identity. The failed Fabric 1.21.1 attempt and a NeoForge 26.3 attempt that could not observe the field are retained separately. The owner reported taking focus during the latter check; that report does not establish its exact cause. The clean NeoForge retry passed both JVMs without another product or driver change. This qualifies the selected macOS English environment, not other operating systems or arbitrary focus interruption.
+
+Dev.25 passed the actual macOS chooser fixture in two JVMs on all four targets. Each boot passes 25 assertions with five external native-dialog observations/actions. They cover Cancel preserving a prior review, Unicode file selection requiring explicit preview, read-only source/draft behavior, leaving an entered chooser, refusing a second request, ignoring an abandoned result and reusing the slot after completion. The 26.3 runs report SDL 3.4.14 (`SDL-3.4.14-62f10da`) and actual main-thread entry. Fabric 1.21.1's earlier driver focus/control failures, interrupted attempts and manual-assisted first-Cancel timeouts remain separate negative evidence.
+
+The first Fabric 26.3 dev.24 attempt remained in `SDL_ShowFileDialogWithProperties` until the bounded process deadline. Its render-thread stack and the pinned SDL Cocoa source distinguish the two native branches: no parent uses blocking `runModal`, while an owning window uses an asynchronous sheet. Dev.25 supplies Minecraft's actual SDL window property. Both 26.3 targets then pass selection, cancellation, entered-screen abandonment and reuse. Archive comparison confines changed product code to the 26.3 dialog adapter; its nested selection class has equal disassembly. The 1.21.1 products change only version metadata. No replacement native library is bundled.
+
+The external macOS driver also required correction. A System Events reference requested for one JVM resolved a different Java process, so observation and input now use explicit PID-native Accessibility elements. Frontmost-identity checks precede synthetic keyboard input. Automation failures remain fixture failures, not successful import checks or established product defects. Native reports retain their actual driver/source identities; later driver revisions do not retroactively qualify earlier attempts. Manual-assisted receipts observe dialog entry/completion and rely on the same native import assertions, without claiming automated input. These runs qualify the selected macOS English-dialog environment, not Windows, Linux, another language/window provider or general assistive-software support.
+
+A later Fabric 1.21.1 diagnostic observed the real Cancel callback re-enable the native import screen while Accessibility returned `cannotComplete` (`-25204`) for its button press. The driver now retains that uncertain result and acknowledges cancellation only after the exact owned dialog, observed before the press, is absent afterward. A still-present dialog, another PID/action/error or failed ownership check earns no receipt. Native selection and import assertions still have to pass. The final two-JVM run passed all 25 assertions per boot, including an observed uncertain Cancel with verified closure; no 1.21.1 library change was needed.
+
+### Native server console commands
+
+The unchanged dev.25 products passed the expanded dedicated fixture in two JVMs on every minimum target, NeoForge 21.1.267 and the distinct NeoForge 26.3 world-override profile. The tree is registered through the actual loader event. Invocations use the actual server console stack and native Brigadier dispatcher; feedback is captured from the server's own logger on its thread. Lowered native permissions and a foreign feedback source refuse access. An unknown operation UUID allocates no editor/access slot, checked against the actual context budget.
+
+The portable file flow exercises description, reading, staged editing, validation, comparison, review, export, save and explicit restoration. Staging leaves disk/effective state unchanged; save and restore agree with those values, preserve the unselected field and restore the original bytes. NeoForge additionally queries the actual registered TOML policy after its separate native owner checks. Each NeoForge boot passes twelve commands and seventeen assertions; Fabric passes eleven and sixteen, without a fabricated FML branch. The 26.3 override query uses the actual world source and preserves installation defaults. These are console controls, separate from player and held-disclosure qualification.
+
+### Native search, ticket ownership and drain
+
+The unchanged dev.25 products passed sixteen search assertions per boot on all four minimum targets, NeoForge 21.1.267 and the NeoForge 26.3 world-override profile, each across two JVMs. Actual console/Brigadier calls cover unknown totals, retained pages after ranking changes, coalesced watch notices, explicit cancellation, partial-result counts, stale page/cancel refusal against a successor and a complete empty result. Lowered native authority and a foreign feedback source cannot disclose rows.
+
+Two native ticket owners coexist on one prepared flat chunk. The 1.21.1 fixture observes actual UUID tickets through narrowly declared test-only access to the native table/key; it uses no NeoForge-only force flag. The 26.3 fixture reads actual `TicketStorage` and uses distinct nonpersistent type identities at the same level. Cancellation removes only the old owner's ticket while its reservation still occupies shared capacity. A worker requests actual `STRUCTURE_STARTS` with `create=false`; owner-thread settlement releases the stopped job exactly once, permits capacity reuse and preserves the unrelated ticket until its own closure. Scene preparation explicitly loads its one flat FULL chunk because the 26.3 dedicated server need not retain spawn without players. This is not a search implementation or a claim about provider generation cost, natural candidate selection or TCP delivery.
+
+An earlier 26.3 run failed the fixture's assumption that spawn was already loaded; preparation now explicitly loads its one flat chunk. Registered-source qualification and its remaining limits are recorded separately above.
+
+### Native player search navigation
+
+All four minimum targets passed the expanded dev.25 integrated-world fixture in two JVMs each: 43 controls per boot, including nine new player-search assertions. The real ChatScreen submits a server command, and actual client message callbacks receive its Components. A native issued Next link is clicked after the server changes ranking; its captured page still contains the older row. Watch pauses publication, resumes a coalesced notice and preserves a notice while actual server permission is revoked. Restoring permission sends that pending notice. Typed cancellation reports the observed partial count; an old received page link and an explicit old-job cancel cannot disclose or control the successor.
+
+The existing source-origin, local settings, world policy, actual same-connection respawn, disconnect and reconnect controls remain in the same runs. Provider state is retired by actual server stop; client tick subscriptions close. One first attempt timed out because its expectation used a numeral/plural notice while the product correctly sent “One new match found”; only that fixture expectation changed. This qualifies the game's memory connection and native command/message flow, not TCP, gameplay death, a real discovery provider or held in-flight effects and disclosures.
+
+### Native typed client command variants
+
+The unchanged dev.25 products passed the separate command-client fixture in two JVMs on all four minimum targets. Each boot submits 41 commands through the actual ChatScreen Enter path and passes 41 assertions. The flow covers description, reading, invalid raw drafts, validation/refused save, comparison, export, effective/source inspection, save, retained status, completed cancellation and unknown-operation refusal. Explicit restoration recovers the original JSON bytes.
+
+The same native tree exercises registered-source import listing, preview, review, staging, one-step undo/redo and consumed-review refusal. Manual source conflict review exposes baseline, observed and draft alternatives; incomplete resolution refuses, explicit choices resolve only the draft, settled reviews cannot replay, and a separate save/restoration controls the file. Every callback is bounded and runs on the actual client owner thread. The fixture captures the ordinary typed reply consumer; it does not inspect rendered chat output or TCP delivery. Field/source/format suggestions use the same public branch and captured actual native source in a separate Brigadier dispatcher, rather than claiming native suggestion-widget navigation. The integrated world and then the installation owner close through their actual lifecycles.
+
+These ordinary command results do not qualify held effects or delayed disclosure across disconnect/player replacement. The [server held-permission controls](#held-native-command-permission-changes) remain a separate source and effect boundary.
+
+### Held client import source and reconnect
+
+The unchanged dev.25 products passed thirteen held-client assertions in two JVMs on all four minimum targets, alongside the ordinary 41-command flow. The fixture deliberately keeps its caller-owned installation context open while a registered import's admitted worker read is held and the actual integrated world disconnects. The old native source becomes unavailable. The read returns, but post-read registered-source validation refuses the preview with `import.admission` and no accepted result. The original recipient receives only its initial queued receipt. This distinguishes completed physical work from accepted data or a claimed rollback.
+
+Reopening the saved world does not revive the old source or registered import. Its stale lookup refuses; an explicitly requested new preview captures current native authority and succeeds. The installation file and clean draft stay unchanged, then the caller-owned context closes after settled work. These are read-only source/recipient controls, not held file persistence/application, actual player replacement, gameplay death, TCP, factory-owned lifetime or fullpack qualification.
+
+Two initial fixture failures remain separate evidence. The first omitted its declared parent directory and ignored the initialization receipt before readback; setup now creates only its owned directory and checks that receipt. The next expected an accepted preview after disconnect. The actual `RegisteredSource` wrapper and post-read checks retain the original invocation's authority, so strict corrected assertions require refusal, no result, no late disclosure and a new explicit preview. No product guard was weakened. The first failed assertion did not retain its exact operation state; the final passing controls establish the stated refusal.
+
+### Held native command permission changes
+
+The dev.25 integrated fixture subsequently passed 57 controls per boot on all four targets in two JVMs each. Fourteen added controls use a real server policy, a bounded caller-owned JSON store and the shared command bridge with the actual player's source and native permissions. A worker barrier holds prepared output before owner admission, then separately holds entry to an already admitted write. Revoking actual permission at the first boundary prevents persistence. At the second boundary, the write remains saved, runtime application is refused and the receipt withholds its private saved observation. The native bridge's actual terminal delivery guard observes the revoked source and sends only the earlier queued reply, with no late completion disclosure.
+
+After permission returns, a fresh native editor explicitly applies the saved value, then restores the original saved/effective value and exact source bytes. Barriers are bounded and released on failure/stop; native owner checks and file work retain their own threads. The fixture observes the bridge's guard without changing its decision and queues its assertion after that guard returns. These controls qualify native in-flight permission changes. They do not qualify held client-only command work, disconnect or player replacement during the barrier, TCP or gameplay death.
+
+### Held player replacement and server shutdown
+
+The unchanged dev.25 products passed an expanded world fixture on all four minimum targets, in two JVMs each. Each boot retains 74 session/authority assertions, including sixteen held-player-replacement assertions, and two additional shutdown controls. Replacing the actual server player on its existing connection while preparation is held prevents a physical write. Replacement after write admission retains saved data, refuses application through the old editor and withholds its private observation and terminal reply. A fresh native editor explicitly applies and restores the saved value. This is a controlled native respawn retaining player data, not gameplay damage/death.
+
+Shutdown then occurs with preparation held and, in a separate integrated session, after a physical write has returned its actual storage receipt. Native stopping closes the document context before the fixture releases either worker. Preparation leaves the original bytes unchanged and produces no persistence receipt. The completed physical write remains saved at nine while runtime application is unavailable; its retained receipt has no private observation. Both operations drain to zero outstanding calls, and neither departed recipient receives terminal feedback. The operation wrapper can be `COMPLETED` while its editor report is invalid: the actual persistence/application receipt determines the effect outcome. The next JVM reads the saved nine before an explicit fixture reset.
+
+Three earlier failures exposed fixture defects, without a library change. One follow-up registered a client tick callback from the server thread. The next two exposed an incomplete direct respawn: vanilla's packet handler assigns the returned replacement to its connection's player reference, whereas the fixture had called only `PlayerList.respawn`. The diagnostic observed a current permitted player and matching level but a different feedback source. Waiting for a new client player did not repair that omitted server-side assignment. The corrected fixture performs both native steps; old player sources remain refused and subsequent real packet commands succeed. Earlier direct-respawn results retain their narrower list/client-replacement scope.
+
+These results qualify the existing portable server-file owner and native memory connection. They do not establish a process-crash transaction, synchronous draining of arbitrary foreign listeners, remote TCP behavior, held client invocation authority across respawn, or consumer-production migration.
+
+### Chooser fixture process cleanup
+
+A manual-assisted Fabric 1.21.1 attempt timed out awaiting its first native Cancel. The already observed `osascript` helper then survived its JVM with parent PID 1 in a different process group; terminating the Gradle wrapper's group alone did not retire it. This is a measured fixture cleanup problem, independent of import success. The optional chooser runner now observes only actual descendants of its own launch, retains their native executable/birth identities, and retires matching helpers after job completion or native failure. A reused PID or unrelated same-name process is excluded. It does not add process management to the library or claim that leaving an import screen cancels an entered native dialog.
+
+Five cleanup controls include a real POSIX child in a separate session, early native-failure handling, exact ownership and recycled-PID refusal, plus incomplete/non-object report handling. The controlled escaping child is retired after failure. A subsequent macOS assisted attempt again timed out at its first Cancel; early native-failure detection retired its observed `osascript` helper and removed the runtime. The import check remains incomplete, while failure cleanup has this additional native witness. Normal import and explicit user cancellation retain their separate evidence. Both chooser runners use the optional cleanup path. Other native runs keep their original execution path.

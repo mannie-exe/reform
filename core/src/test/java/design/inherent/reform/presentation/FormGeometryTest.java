@@ -6,6 +6,78 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FormGeometryTest {
+  private static final FormGeometry.WorkspaceMetrics WORKSPACE =
+      new FormGeometry.WorkspaceMetrics(112, 180, 180, 160, 220, 8);
+
+  @Test
+  void workspaceRetainsEditorAndUsesCompactDrawerOnlyBelowMeasuredMinimum() {
+    var compact = FormGeometry.workspace(299, 40, 240, WORKSPACE, false, true);
+    assertTrue(compact.compactNavigation());
+    assertTrue(compact.navigation().isEmpty());
+    assertTrue(compact.information().isEmpty());
+    assertEquals(new FormGeometry.Placement(0, 40, 299, 200), compact.editor());
+    var drawer = FormGeometry.workspace(299, 40, 240, WORKSPACE, true, true);
+    assertTrue(drawer.navigationOverlay());
+    assertEquals(compact.editor(), drawer.editor());
+    assertEquals(new FormGeometry.Placement(0, 40, 160, 200), drawer.navigation().orElseThrow());
+    var boundary = FormGeometry.workspace(300, 40, 240, WORKSPACE, false, true);
+    assertFalse(boundary.compactNavigation());
+    assertEquals(180, boundary.editor().width());
+    assertEquals(112, boundary.navigation().orElseThrow().width());
+    assertTrue(boundary.information().isEmpty());
+  }
+
+  @Test
+  void informationBecomesAThirdColumnOnlyWhenAllThreeMeasuredMinimaFit() {
+    assertTrue(
+        FormGeometry.workspace(487, 40, 240, WORKSPACE, false, true).information().isEmpty());
+    var boundary = FormGeometry.workspace(488, 40, 240, WORKSPACE, false, true);
+    assertEquals(112, boundary.navigation().orElseThrow().width());
+    assertEquals(180, boundary.editor().width());
+    assertEquals(180, boundary.information().orElseThrow().width());
+    var wide = FormGeometry.workspace(900, 40, 240, WORKSPACE, false, true);
+    assertEquals(160, wide.navigation().orElseThrow().width());
+    assertEquals(220, wide.information().orElseThrow().width());
+    assertEquals(504, wide.editor().width());
+    assertTrue(
+        FormGeometry.workspace(900, 40, 240, WORKSPACE, false, false).information().isEmpty());
+  }
+
+  @Test
+  void workspaceNeverClipsAnEditorOrOverflowsEvenWithExtremeFontMeasurements() {
+    for (int width : List.of(1, 2, 100, 299, 300, 487, 488, 900, 16384)) {
+      var layout = FormGeometry.workspace(width, 4, 80, WORKSPACE, true, true);
+      var editor = layout.editor();
+      assertTrue(
+          editor.x() >= 0 && editor.width() >= 1 && (long) editor.x() + editor.width() <= width);
+      for (var at : List.of(layout.navigation(), layout.information()))
+        at.ifPresent(
+            value ->
+                assertTrue(
+                    value.x() >= 0
+                        && value.width() >= 1
+                        && (long) value.x() + value.width() <= width));
+      if (!layout.navigationOverlay())
+        layout.navigation().ifPresent(value -> assertTrue(value.x() + value.width() <= editor.x()));
+      layout.information().ifPresent(value -> assertTrue(editor.x() + editor.width() <= value.x()));
+    }
+    var huge =
+        new FormGeometry.WorkspaceMetrics(
+            Integer.MAX_VALUE,
+            Integer.MAX_VALUE,
+            Integer.MAX_VALUE,
+            Integer.MAX_VALUE,
+            Integer.MAX_VALUE,
+            Integer.MAX_VALUE);
+    assertTrue(FormGeometry.workspace(320, 4, 80, huge, true, true).compactNavigation());
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> FormGeometry.workspace(0, 4, 80, WORKSPACE, false, false));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> FormGeometry.workspace(320, 80, 80, WORKSPACE, false, false));
+  }
+
   @Test
   void catalogColumnsRespectBothMinimaAndCompactBoundaryWithoutOverflow() {
     assertTrue(FormGeometry.columns(299, 112, 180, 150, 8).isEmpty());

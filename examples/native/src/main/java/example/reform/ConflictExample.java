@@ -5,7 +5,8 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueTypes;
@@ -46,7 +47,8 @@ public final class ConflictExample {
   private static ClientFileSettings<Profile> settings;
 
   static void register(IEventBus bus, ModContainer container) {
-    settings = ClientFileSettings.clientJson(bus, container, DEFINITION);
+    settings =
+        ClientFileSettings.clientJson(NeoForgeClientRegistration.of(bus, container), DEFINITION);
     settings.registerCommands("reformconflicts");
   }
 

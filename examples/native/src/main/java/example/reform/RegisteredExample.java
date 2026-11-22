@@ -1,8 +1,9 @@
 package example.reform;
 
 import design.inherent.reform.definition.DocumentId;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
 import design.inherent.reform.neoforge.client.ClientRegisteredSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.storage.JsonStore;
 import java.util.Objects;
 import net.neoforged.bus.api.IEventBus;
@@ -76,8 +77,7 @@ public final class RegisteredExample {
     reject(
         () ->
             ClientFileSettings.existingJson(
-                bus,
-                container,
+                NeoForgeClientRegistration.of(bus, container),
                 NativeExample.DEFINITION,
                 JsonStore.Format.EXISTING_BARE,
                 COMMON_FILE));

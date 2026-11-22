@@ -47,7 +47,15 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
 /** Independent native consumer of the packaged public owner/editor API, never shipped. */
-final class RegisteredOwnerProbe {
+public final class RegisteredOwnerProbe {
+  @FunctionalInterface
+  public interface ReferenceChecks {
+    CompletionStage<Void> verify(
+        net.minecraft.server.MinecraftServer server, OwnerContext context, JsonObject report);
+  }
+
+  private final ReferenceChecks references;
+
   private enum Choice {
     FIRST,
     SECOND
@@ -65,7 +73,7 @@ final class RegisteredOwnerProbe {
   private final AtomicBoolean closeOnReload = new AtomicBoolean();
   private final List<String> checks = new ArrayList<>();
   private final JsonObject report = new JsonObject();
-  private final DocumentId id = new DocumentId("reform_native_example_probe", "registered");
+  private final DocumentId id;
   private ModConfig config;
   private Thread ownerThread;
   private OwnerContext context;
@@ -76,7 +84,10 @@ final class RegisteredOwnerProbe {
   private RegisteredConfig.Prepared prepared;
   private Set<PosixFilePermission> directoryPermissions;
 
-  RegisteredOwnerProbe(IEventBus bus, ModContainer container) {
+  public RegisteredOwnerProbe(
+      IEventBus bus, ModContainer container, ModConfig.Type kind, ReferenceChecks references) {
+    this.references = java.util.Objects.requireNonNull(references);
+    id = new DocumentId(container.getModId(), "registered");
     var builder = new ModConfigSpec.Builder();
     live = builder.defineInRange("live", 1, 0, 100);
     world = builder.worldRestart().defineInRange("world", 1, 0, 100);
@@ -98,7 +109,8 @@ final class RegisteredOwnerProbe {
         "names", List.<String>of(), () -> "name", String.class::isInstance);
     builder.pop();
     spec = builder.build();
-    container.registerConfig(ModConfig.Type.COMMON, spec, "registered-owner.toml");
+    net.neoforged.fml.config.ConfigTracker.INSTANCE.registerConfig(
+        kind, spec, container, "registered-owner.toml");
     bus.addListener(
         (ModConfigEvent.Loading event) -> {
           if (event.getConfig().getSpec() == spec) config = event.getConfig();
@@ -170,6 +182,23 @@ final class RegisteredOwnerProbe {
     var server = event.getServer();
     ownerThread = Thread.currentThread();
     report.addProperty("status", "FAIL");
+    report.addProperty("java", Runtime.version().toString());
+    report.addProperty(
+        "minecraft",
+        ModList.get()
+            .getModContainerById("minecraft")
+            .orElseThrow()
+            .getModInfo()
+            .getVersion()
+            .toString());
+    report.addProperty(
+        "loader",
+        ModList.get()
+            .getModContainerById("neoforge")
+            .orElseThrow()
+            .getModInfo()
+            .getVersion()
+            .toString());
     final Path directory = server.getServerDirectory().toAbsolutePath();
     final boolean reopen;
     try {
@@ -198,6 +227,9 @@ final class RegisteredOwnerProbe {
       check(
           "actual registered loaded native spec",
           config != null && config.getSpec() == spec && spec.isLoaded());
+      report.addProperty("nativeType", config.getType().name());
+      report.addProperty(
+          "nativePath", directory.relativize(config.getFullPath().toAbsolutePath()).toString());
       boolean ambiguous = false;
       try {
         new RegisteredConfig(context, config, id);
@@ -224,7 +256,8 @@ final class RegisteredOwnerProbe {
       return;
     }
     CompletionStage<Void> work =
-        NativeReferenceChecks.verify(server, context, report)
+        references
+            .verify(server, context, report)
             .thenCompose(ignored -> delegatedProjection())
             .thenCompose(
                 ignored ->

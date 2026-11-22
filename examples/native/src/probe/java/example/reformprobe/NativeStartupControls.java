@@ -9,11 +9,12 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
-import design.inherent.reform.neoforge.client.OperationScreen;
-import design.inherent.reform.neoforge.client.ReviewScreen;
-import design.inherent.reform.neoforge.client.SettingsScreen;
-import design.inherent.reform.neoforge.client.UnsavedChangesScreen;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.OperationScreen;
+import design.inherent.reform.minecraft.client.ReviewScreen;
+import design.inherent.reform.minecraft.client.SettingsScreen;
+import design.inherent.reform.minecraft.client.UnsavedChangesScreen;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
@@ -96,7 +97,11 @@ final class NativeStartupControls {
             .orElseThrow();
     held =
         ClientFileSettings.startupProperties(
-            bus, container, definition, Optional.of(actual), "startup-tools", "held.properties");
+            NeoForgeClientRegistration.of(bus, container),
+            definition,
+            Optional.of(actual),
+            "startup-tools",
+            "held.properties");
   }
 
   static void shutdownHeld() {

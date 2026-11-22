@@ -6,7 +6,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftTree;
-import design.inherent.reform.neoforge.client.KeyBindingOptions;
+import design.inherent.reform.minecraft.client.KeyBindingOptions;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -72,7 +72,8 @@ final class NativeKeyOwnerControls {
   }
 
   private KeyBindingOptions.Binding binding(InputConstants.Key key, KeyModifier modifier) {
-    return new KeyBindingOptions.Binding(key.getName(), modifier);
+    return new KeyBindingOptions.Binding(
+        key.getName(), KeyBindingOptions.Modifier.valueOf(modifier.name()));
   }
 
   private KeyBindingOptions.Prepared prepare(
@@ -145,10 +146,10 @@ final class NativeKeyOwnerControls {
                 && !noOp.nativeSaveReturned());
     for (var invalid :
         List.of(
-            new KeyBindingOptions.Binding("not-a-native-key", KeyModifier.NONE),
-            new KeyBindingOptions.Binding("key.keyboard.31", KeyModifier.NONE),
-            new KeyBindingOptions.Binding("key.keyboard.0000000", KeyModifier.NONE),
-            new KeyBindingOptions.Binding("scancode.99999999", KeyModifier.NONE),
+            new KeyBindingOptions.Binding("not-a-native-key", KeyBindingOptions.Modifier.NONE),
+            new KeyBindingOptions.Binding("key.keyboard.31", KeyBindingOptions.Modifier.NONE),
+            new KeyBindingOptions.Binding("key.keyboard.0000000", KeyBindingOptions.Modifier.NONE),
+            new KeyBindingOptions.Binding("scancode.99999999", KeyBindingOptions.Modifier.NONE),
             binding(
                 InputConstants.Type.KEYSYM.getOrCreate(GLFW.GLFW_KEY_LEFT_SHIFT),
                 KeyModifier.SHIFT))) {
@@ -161,9 +162,40 @@ final class NativeKeyOwnerControls {
             () -> expected.getCause() instanceof PolicyRefusal);
       }
     }
+    var unsupported =
+        java.util.Arrays.stream(KeyBindingOptions.Modifier.values())
+            .filter(value -> !KeyBindingOptions.supportedModifiers().contains(value))
+            .findFirst();
+    if (unsupported.isPresent()) {
+      try {
+        prepare(
+            initial,
+            new KeyBindingOptions.Binding(
+                initial.document().candidate().orElseThrow().value().get(name).key(),
+                unsupported.orElseThrow()));
+        throw new AssertionError("Unsupported native modifier prepared");
+      } catch (ExecutionException expected) {
+        verify(
+            "unsupported native modifier diagnostic identifies the modifier field",
+            () ->
+                expected.getCause() instanceof PolicyRefusal refused
+                    && refused.report().issues().stream()
+                        .anyMatch(
+                            issue ->
+                                issue.code().equals("keys.unsupported_modifier")
+                                    && issue
+                                        .path()
+                                        .equals(
+                                            design.inherent.reform.definition.FieldPath.ROOT
+                                                .field(name)
+                                                .field("modifier"))));
+      }
+    }
     for (char digit = '0'; digit <= '9'; digit++) {
       var nameOfKey = "key.keyboard." + digit;
-      var prepared = prepare(initial, new KeyBindingOptions.Binding(nameOfKey, KeyModifier.NONE));
+      var prepared =
+          prepare(
+              initial, new KeyBindingOptions.Binding(nameOfKey, KeyBindingOptions.Modifier.NONE));
       verify(
           "canonical symbolic digit binding prepares without mutation: " + digit,
           () ->
@@ -260,7 +292,7 @@ final class NativeKeyOwnerControls {
     nativeCall(
         () -> {
           KeyExample.PRIMARY.setKeyModifierAndCode(
-              shifted.modifier(), InputConstants.getKey(shifted.key()));
+              KeyModifier.valueOf(shifted.modifier().name()), InputConstants.getKey(shifted.key()));
           KeyMapping.resetMapping();
           return null;
         });
@@ -391,7 +423,7 @@ final class NativeKeyOwnerControls {
     nativeCall(
         () -> {
           KeyExample.PRIMARY.setKeyModifierAndCode(
-              mouse.modifier(), InputConstants.getKey(mouse.key()));
+              KeyModifier.valueOf(mouse.modifier().name()), InputConstants.getKey(mouse.key()));
           KeyMapping.resetMapping();
           client.options.save();
           return null;

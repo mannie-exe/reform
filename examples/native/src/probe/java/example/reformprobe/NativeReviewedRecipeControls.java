@@ -6,9 +6,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import design.inherent.reform.definition.DocumentId;
-import design.inherent.reform.neoforge.client.OperationScreen;
-import design.inherent.reform.neoforge.client.ReviewScreen;
-import design.inherent.reform.neoforge.client.WorldRecipe;
+import design.inherent.reform.minecraft.client.OperationScreen;
+import design.inherent.reform.minecraft.client.ReviewScreen;
+import design.inherent.reform.minecraft.client.WorldRecipe;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.Effect;
 import design.inherent.reform.operation.OperationSnapshot;
@@ -61,7 +61,7 @@ final class NativeReviewedRecipeControls {
   private final CompletableFuture<Receipt> held = new CompletableFuture<>();
   private final DocumentActions<CreationExample.Recipe> actions;
   private final Screen form;
-  private boolean permit;
+  private boolean permit, defaultsMenuOpened;
   private int stage, saves, exports;
   private UUID saveId;
   private WorldRecipe.ReviewedInput<Compiled> first, saved;
@@ -172,7 +172,7 @@ final class NativeReviewedRecipeControls {
   }
 
   private void press(String label) {
-    click(client.screen, button(client.screen, label));
+    click(client.screen, ownerAction(client.screen, label));
   }
 
   private void next(String message) {
@@ -187,6 +187,20 @@ final class NativeReviewedRecipeControls {
   boolean tick() throws IOException {
     switch (stage) {
       case 0 -> {
+        if (actions.view().snapshot().isEmpty()
+            || actions.hasActiveOperations()
+            || !button(form, "Done").active) return false;
+        if (!defaultsMenuOpened) {
+          press("More…");
+          defaultsMenuOpened =
+              widgets(form).stream()
+                  .anyMatch(widget -> widget.getMessage().getString().equals("Settings"));
+          return false;
+        }
+        if (widgets(form).stream()
+            .noneMatch(widget -> widget.getMessage().getString().equals("Settings")))
+          throw new AssertionError(
+              "The entered actions pane was dismissed: " + form.getNarrationMessage().getString());
         if (!button(form, "Load defaults").active) return false;
         press("Load defaults");
         next("staging full defaults for reviewed owner effects");
@@ -196,6 +210,7 @@ final class NativeReviewedRecipeControls {
         recorded(
             "defaults stage leaves the native context intact and performs no writes",
             parent.getUiState().getSettings() == original && !Files.exists(output) && saves == 0);
+        press("Settings");
         replace(form, input(form, "Soil depth"), "8");
         next("edited the visible projection");
       }

@@ -9,7 +9,12 @@ import shutil
 import subprocess
 import uuid
 
-from native_config_probe import execute
+if __package__:
+    from .native_config_probe import execute
+    from .native_library import select_library
+else:
+    from native_config_probe import execute
+    from native_library import select_library
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = ".reform-form-fixture.json"
@@ -20,6 +25,21 @@ def create_fixture(fixture, token, client=True):
     (fixture / MARKER).write_text(json.dumps({"token": token, "purpose": "independent-native-form"}))
     if client:
         (fixture / "options.txt").write_text("onboardAccessibility:false\nguiScale:2\nfullscreen:false\nmaxFps:60\n")
+    else:
+        configure_dedicated_fixture(fixture)
+
+
+def configure_dedicated_fixture(fixture):
+    if fixture.is_symlink() or not (fixture / MARKER).is_file():
+        raise ValueError("Dedicated settings require the owned fixture directory")
+    terrain = {"biome": "minecraft:plains", "layers": [{"block": "minecraft:bedrock", "height": 1}], "structure_overrides": []}
+    properties = {"server-ip": "127.0.0.1", "server-port": "0", "online-mode": "false",
+                  "enforce-secure-profile": "false", "level-seed": "42", "level-type": "minecraft:flat",
+                  "generator-settings": json.dumps(terrain, separators=(",", ":")),
+                  "view-distance": "2", "simulation-distance": "2", "max-players": "1",
+                  "enable-status": "false", "enable-rcon": "false", "enable-query": "false", "allow-nether": "false"}
+    (fixture / "server.properties").write_text("".join(f"{k}={v}\n" for k, v in properties.items()))
+    (fixture / "eula.txt").write_text("eula=true\n")
 
 
 def cleanup_fixture(fixture, token):
@@ -155,24 +175,22 @@ def successful_report(report, modes, digest):
             and captures.issubset(report["screenshots"]))
 
 
-def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False, review_only=False, catalog_review_only=False, close_only=False, submission_only=False, files_only=False, startup_only=False, registered_only=False, workflow_only=False, batch_only=False, defaults_only=False, integrated_only=False):
+def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_only=False, references_only=False, numeric_only=False, dependencies_only=False, collections_only=False, imports_only=False, command_imports_only=False, chooser_only=False, conflicts_only=False, command_conflicts_only=False, keys_owner_only=False, keys_controls_only=False, keys_factory_only=False, catalog_only=False, review_only=False, catalog_review_only=False, close_only=False, submission_only=False, files_only=False, startup_only=False, registered_only=False, workflow_only=False, batch_only=False, defaults_only=False, integrated_only=False, library_version=None):
     example = ROOT / "examples/native"
     fixture = example / "runs/client"
     if fixture.exists() or fixture.is_symlink():
         raise FileExistsError("Client fixture exists; inspect it before starting a new run")
-    version = next(line.split("=", 1)[1] for line in (ROOT / "gradle.properties").read_text().splitlines()
-                   if line.startswith("mod_version="))
-    jar = ROOT / f"neoforge/build/libs/reform-{version}-mc1.21.1-neoforge.jar"
-    digest = hashlib.sha256(jar.read_bytes()).hexdigest()
+    library = select_library(ROOT, "neoforge-1_21_1", library_version)
+    version, digest = library.version, library.sha256
     command = [str(ROOT / "gradlew"), "--no-daemon"]
     if java_home:
         command.append("-Dorg.gradle.java.home=" + str(java_home))
-    command.extend([f"-PreformVersion={version}", f"-PreformSha256={digest}", "-PnativeProbe=true"])
+    command.extend([f"-PreformVersion={version}", f"-PreformArtifact={library.module}", f"-PreformSha256={digest}", "-PnativeProbe=true"])
     report_dir = ROOT / "build/reports/native-form"
     report_dir.mkdir(parents=True, exist_ok=True)
     token = str(uuid.uuid4())
     create_fixture(fixture, token)
-    report = {"status": "FAIL", "librarySha256": digest, "runs": [],
+    report = {"status": "FAIL", "librarySha256": digest, "libraryVersion": version, "target": library.project, "runs": [],
               "gitHead": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
               "launch": "ModDev native example/probe source containers; dependency is a packaged Maven JAR",
               "inputs": {}, "screenshots": {}}
@@ -291,7 +309,8 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
             evidence = fixture / "native-form-report.json"
             evidence.unlink(missing_ok=True)
             (fixture / "native-form-mode.txt").write_text(mode + "\n")
-            result = execute(command + ["probeJar", "runClient"], example, log, timeout)
+            chooser_options = {"chooser_report": evidence} if mode == "chooser" else {}
+            result = execute(command + ["probeJar", "runClient"], example, log, timeout, **chooser_options)
             if evidence.is_file() and evidence.stat().st_size <= 131072:
                 result["native"] = json.loads(evidence.read_text())
             report["runs"].append(result)
@@ -327,7 +346,8 @@ def run(java_home, timeout, lifecycle_only=False, recipe_only=False, structured_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--java-home", type=Path)
+    parser.add_argument("--java-home", type=Path, help="Gradle build JDK; the game uses its declared toolchain")
+    parser.add_argument("--library-version", help="Frozen staged candidate; defaults to the selected built POM version")
     parser.add_argument("--timeout", type=int, default=180, help="Client/build timeout in seconds (1..600)")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--recipe-only", action="store_true", help="Run only native unsaved creation recipe controls")
@@ -360,4 +380,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only, args.review_only, args.catalog_review_only, args.close_only, args.submission_only, args.files_only, args.startup_only, args.registered_only, args.workflow_only, args.batch_only, args.defaults_only, args.integrated_only))
+    raise SystemExit(run(args.java_home, args.timeout, args.lifecycle_only, args.recipe_only, args.structured_only, args.references_only, args.numeric_only, args.dependencies_only, args.collections_only, args.imports_only, args.command_imports_only, args.chooser_only, args.conflicts_only, args.command_conflicts_only, args.keys_owner_only, args.keys_controls_only, args.keys_factory_only, args.catalog_only, args.review_only, args.catalog_review_only, args.close_only, args.submission_only, args.files_only, args.startup_only, args.registered_only, args.workflow_only, args.batch_only, args.defaults_only, args.integrated_only, args.library_version))

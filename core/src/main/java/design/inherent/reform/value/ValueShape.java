@@ -30,8 +30,7 @@ public sealed interface ValueShape
 
   record Scalar(
       ScalarKind kind,
-      BigDecimal minimum,
-      BigDecimal maximum,
+      NumericDomain domain,
       int maximumLength,
       List<String> choices,
       java.util.Optional<design.inherent.reform.presentation.NumericDisplay> numericDisplay)
@@ -45,17 +44,40 @@ public sealed interface ValueShape
       this(kind, minimum, maximum, maximumLength, choices, java.util.Optional.empty());
     }
 
+    public Scalar(
+        ScalarKind kind,
+        BigDecimal minimum,
+        BigDecimal maximum,
+        int maximumLength,
+        List<String> choices,
+        java.util.Optional<design.inherent.reform.presentation.NumericDisplay> numericDisplay) {
+      this(kind, NumericDomain.closed(minimum, maximum), maximumLength, choices, numericDisplay);
+    }
+
+    public BigDecimal minimum() {
+      return domain.minimum();
+    }
+
+    public BigDecimal maximum() {
+      return domain.maximum();
+    }
+
     public Scalar {
       Objects.requireNonNull(kind);
+      Objects.requireNonNull(domain).requireRepresentable(kind);
       choices = List.copyOf(choices);
       Objects.requireNonNull(numericDisplay);
       if (numericDisplay.isPresent()
           && (kind == ScalarKind.BOOLEAN || kind == ScalarKind.TEXT || kind == ScalarKind.CHOICE))
         throw new IllegalArgumentException("Numeric display metadata needs a numeric scalar");
       numericDisplay.ifPresent(
-          display ->
-              display.requireSliderBounds(
-                  minimum, maximum, kind != ScalarKind.FLOAT && kind != ScalarKind.DOUBLE));
+          display -> {
+            for (var caption : display.captions())
+              if (!domain.isStoredValue(kind, caption.value()))
+                throw new IllegalArgumentException(
+                    "Numeric caption is outside its declared type/domain");
+            display.requireSliderBounds(domain, kind);
+          });
     }
   }
 

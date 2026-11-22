@@ -1,0 +1,22 @@
+modLoader="javafml"
+loaderVersion="${fmlVersionRange}"
+license="Apache-2.0"
+[[mods]]
+modId="reform_platform_example"
+version="1.0.0"
+displayName="re:form platform fixture"
+[[dependencies.reform_platform_example]]
+modId="minecraft"
+type="required"
+versionRange="[${game}]"
+side="BOTH"
+[[dependencies.reform_platform_example]]
+modId="neoforge"
+type="required"
+versionRange="[${loader},)"
+side="BOTH"
+[[dependencies.reform_platform_example]]
+modId="reform"
+type="required"
+versionRange="[${libraryVersion}]"
+side="BOTH"

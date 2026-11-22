@@ -1,11 +1,15 @@
 package example.reform;
 
-import design.inherent.reform.neoforge.client.ClientFileSettings;
-import design.inherent.reform.neoforge.client.ClientFormOptions;
-import design.inherent.reform.neoforge.client.IntegratedSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFormOptions;
+import design.inherent.reform.minecraft.client.FormInformation;
+import design.inherent.reform.minecraft.client.IntegratedSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.presentation.FormPresentation;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.bus.api.IEventBus;
@@ -29,7 +33,9 @@ public final class ClientExample {
     StartupExample.register(bus, container);
     RegisteredExample.register(bus, container);
     WorldDefaultsExample.register(bus, container);
-    preferences = ClientFileSettings.clientJson(bus, container, NativeExample.DEFINITION);
+    preferences =
+        ClientFileSettings.clientJson(
+            NeoForgeClientRegistration.of(bus, container), NativeExample.DEFINITION);
     preferences.registerMenu(Component.literal("Native example settings"));
     preferences.registerCommands("reformprefs");
   }
@@ -48,7 +54,24 @@ public final class ClientExample {
         ServerPolicyExample.DEFINITION.id(),
         2,
         ServerPolicyExample.DEFINITION,
-        new ClientFormOptions<>(FormPresentation.EMPTY, Map.of()));
+        new ClientFormOptions<ServerPolicyExample.Policy>(FormPresentation.EMPTY, Map.of())
+            .withInformation(
+                definition ->
+                    Optional.of(
+                        FormInformation.of(
+                            definition,
+                            information ->
+                                new FormInformation.Subject(
+                                        Component.literal(
+                                            "Saving this policy requests an update to this running world."),
+                                        List.of(
+                                            new FormInformation.Fact(
+                                                Component.literal("Scope"),
+                                                Component.literal("Current integrated server"))),
+                                        List.of(),
+                                        Optional.of("level"))
+                                    .withTechnicalDetails(
+                                        FormInformation.TechnicalDetails.DISCLOSURE)))));
   }
 
   private ClientExample() {}

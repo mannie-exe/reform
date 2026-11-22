@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0
+
+- License current source and future releases under Apache-2.0; preserve the original MIT license on published 0.1.0.
+- Report reviewed Minecraft/loader dependency advisories separately from release-blocking dependency findings and source secrets. Preserve the supplied game libraries.
+
+- Retain the delivered Phase 1 API across Minecraft 1.21.1 and 26.3 on NeoForge and Fabric, with the corresponding Java 21 and 25 toolchains.
+- Separate portable game APIs under `design.inherent.reform.minecraft` from explicit loader bindings. Preserve native configuration facilities, command origins, source paths and owner lifetimes.
+- Build target-specific combined JARs, sources and Maven modules from one checked matrix. Verify both Maven and artifact-only release resolution without changing the public 0.1.0 assets.
+- Adapt native extraction, input, client setup and file-dialog ownership to the selected game APIs. Preserve retained drafts, forms, workflows and unsaved recipe admission.
+- Replace the separate settings browser with a responsive workspace: persistent nested navigation, inline controls, field search, Back/Forward history, and contextual information. Preserve drafts, scroll position, and keyboard focus across views.
+- Add owner-labelled default actions and optional titled resource selectors with explicit ID editing. Guard custom submissions against retained invalid native input.
+- Preserve native authority and truthful receipts across reconnect, player replacement, permission loss and server shutdown. Keep cancelled-work draining separate from effect success.
+- Declare inclusive/exclusive numeric domains consistently across codecs, metadata, exact input, units, steps, and slider grids. Preserve existing closed defaults and valid sub-step input.
+- Share optional owner-declared numeric captions across native controls, information, review, and command inspection while preserving numeric storage and raw observations.
+- Show bounded source preview facts in reference choices and entry inspection, distinguishing resolved-empty results and retiring stale observations.
+
 ## 0.1.0
 
 - Define and validate typed recursive settings, references, units and ranges. Preserve invalid drafts, stable collection rows, undo/redo and explicit conflict review.

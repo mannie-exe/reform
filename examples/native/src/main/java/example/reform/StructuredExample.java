@@ -4,7 +4,8 @@ import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.RecordType;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.value.TaggedType;
 import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueType;
@@ -94,7 +95,8 @@ public final class StructuredExample {
   private static ClientFileSettings<Profile> settings;
 
   static void register(IEventBus bus, ModContainer container) {
-    settings = ClientFileSettings.clientJson(bus, container, DEFINITION);
+    settings =
+        ClientFileSettings.clientJson(NeoForgeClientRegistration.of(bus, container), DEFINITION);
   }
 
   public static ClientFileSettings<Profile> settings() {

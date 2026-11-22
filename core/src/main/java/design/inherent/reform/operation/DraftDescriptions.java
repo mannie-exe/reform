@@ -2,6 +2,10 @@ package design.inherent.reform.operation;
 
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.NumericDisplay;
+import design.inherent.reform.presentation.NumericPresentation;
+import design.inherent.reform.value.ValueType;
+import java.util.Optional;
 
 /** Complete bounded raw-input descriptions, including inactive data; never a saved-file codec. */
 final class DraftDescriptions {
@@ -28,6 +32,17 @@ final class DraftDescriptions {
     var result = new StringBuilder();
     node(node, result);
     return result.toString();
+  }
+
+  Optional<NumericDisplay.Caption> caption(ValueType<?> type, DraftNode node) {
+    var caption = NumericPresentation.caption(type, node);
+    caption.ifPresent(
+        value -> {
+          account(value.value().toString());
+          account(value.translationKey());
+          account(value.fallback());
+        });
+    return caption;
   }
 
   private void node(DraftNode node, StringBuilder out) {

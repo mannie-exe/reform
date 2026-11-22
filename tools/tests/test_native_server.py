@@ -1,29 +1,24 @@
 """Native policy qualification must retain actual shutdown, process and artifact facts."""
 
-import importlib.util
-from pathlib import Path
-import sys
 import unittest
 from unittest.mock import patch
 
-TOOLS = Path(__file__).resolve().parents[1]
-
-
-def module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, TOOLS / filename)
-    value = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(value)
-    return value
-
-
-CONFIG = module("native_config_probe", "native_config_probe.py")
-with patch.dict(sys.modules, {"native_config_probe": CONFIG}):
-    FORM = module("native_form_probe", "native_form_probe.py")
-    with patch.dict(sys.modules, {"native_form_probe": FORM}):
-        SERVER = module("native_addon_server_probe", "native_addon_server_probe.py")
+from tools import native_addon_server_probe as SERVER
 
 
 class NativeServerResultGuards(unittest.TestCase):
+    def test_native_registry_scene_refuses_fabric_before_resolution_or_launch(self):
+        with patch.object(SERVER, "select_library") as resolve:
+            with self.assertRaisesRegex(ValueError, "admitted NeoForge target"):
+                SERVER.run(None, 1, registered=True, target="fabric-26_3")
+            resolve.assert_not_called()
+
+    def test_additional_target_refuses_an_unimplemented_scene_before_resolution(self):
+        with patch.object(SERVER, "select_library") as resolve:
+            with self.assertRaisesRegex(ValueError, "registered-owner scene only"):
+                SERVER.run(None, 1, policies=True, target="neoforge-26_3")
+            resolve.assert_not_called()
+
     def test_policy_pass_requires_actual_commands_and_shutdown_on_the_selected_artifact(self):
         boot = {"run": {"exitCode": 0, "termination": None},
                 "native": {"status": "PASS", "librarySha256": "selected"}}

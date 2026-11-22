@@ -5,45 +5,66 @@
     "helpers:pinGitHubActionDigests"
   ],
   "configMigration": true,
-  "schedule": ["before 9am on monday"],
+  "schedule": [
+    "before 9am on monday"
+  ],
   "timezone": "America/Los_Angeles",
   "automerge": false,
   "prConcurrentLimit": 5,
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": ["/.github/workflows/.*\\.yml$/"],
-      "matchStrings": ["version: (?<currentValue>v[0-9.]+) # renovate: depName=(?<depName>[^\\s]+)"],
+      "managerFilePatterns": [
+        "/.github/workflows/.*\\.yml$/"
+      ],
+      "matchStrings": [
+        "version: (?<currentValue>v[0-9.]+) # renovate: depName=(?<depName>[^\\s]+)"
+      ],
       "datasourceTemplate": "github-releases"
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^gradle/libs\\.versions\\.toml$/"],
-      "matchStrings": ["google-java-format\\s*=\\s*\"(?<currentValue>[0-9.]+)\""],
+      "managerFilePatterns": [
+        "/^gradle/libs\\.versions\\.toml$/"
+      ],
+      "matchStrings": [
+        "google-java-format\\s*=\\s*\"(?<currentValue>[0-9.]+)\""
+      ],
       "datasourceTemplate": "maven",
       "depNameTemplate": "com.google.googlejavaformat:google-java-format"
     }
   ],
   "packageRules": [
     {
-      "description": "Keep Minecraft-owned DFU on the reviewed platform version",
-      "matchPackageNames": ["com.mojang:datafixerupper"],
+      "description": "Keep game-owned DFU and Gson versions with their reviewed Minecraft target",
+      "matchPackageNames": [
+        "com.mojang:datafixerupper",
+        "com.google.code.gson:gson"
+      ],
       "enabled": false
     },
     {
       "description": "Keep CI runtime majors as explicit compatibility targets",
-      "matchManagers": ["github-actions"],
-      "matchDatasources": ["java-version"],
-      "matchUpdateTypes": ["major"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDatasources": [
+        "java-version"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "enabled": false
     },
     {
       "description": "Review JUnit and its platform as one test boundary",
-      "matchPackageNames": ["/^org\\.junit[.:]/"],
+      "matchPackageNames": [
+        "/^org\\.junit[.:]/"
+      ],
       "groupName": "JUnit"
     },
     {
-      "description": "Review Java 21 tooling updates together",
+      "description": "Review shared Java formatting updates together",
       "matchPackageNames": [
         "com.diffplug.spotless",
         "com.diffplug.spotless:com.diffplug.spotless.gradle.plugin",

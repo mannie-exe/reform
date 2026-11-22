@@ -6,7 +6,8 @@ import design.inherent.reform.definition.FieldKey;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordTypes;
 import design.inherent.reform.edit.DraftNode;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.NumericDisplay;
@@ -137,8 +138,7 @@ public final class CatalogExample {
   static void register(IEventBus bus, ModContainer container) {
     settings =
         ClientFileSettings.clientJson(
-            bus,
-            container,
+            NeoForgeClientRegistration.of(bus, container),
             DEFINITION,
             design.inherent.reform.owner.ApplicationEffects.OWNER_PUBLICATION);
     settings.registerCommands("reformcatalog");

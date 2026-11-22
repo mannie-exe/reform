@@ -4,7 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import design.inherent.reform.neoforge.command.SettingsCommands;
+import design.inherent.reform.minecraft.command.SettingsCommands;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.CommitReceipt;
@@ -98,7 +98,12 @@ final class NativeCommandControls {
       check(
           "ordinary addon registered its native client command event",
           dispatcher.getRoot().getChild("reformprefs") != null);
-      dispatcher.register(ClientExample.settings().commandBranch("probe", this::reply));
+      dispatcher.register(
+          ClientExample.settings()
+              .commandBranch(
+                  "probe",
+                  design.inherent.reform.neoforge.client.NeoForgeClientRegistration.commandSource(),
+                  this::reply));
     } catch (Throwable failed) {
       return CompletableFuture.failedFuture(failed);
     }

@@ -92,6 +92,15 @@ public final class DraftEdits {
               : value.value());
     if (shape instanceof ValueShape.Defaulted<?> defaults
         && node instanceof DraftNode.Defaulted value) {
+      if (action instanceof DraftEdit.SelectDefaultedScalar selection) {
+        if (!(defaults.element().shape() instanceof ValueShape.Scalar))
+          throw new IllegalArgumentException("Select a declared defaulted scalar field");
+        return selection.value().isPresent()
+            ? value
+                .withValue(new DraftNode.Scalar(selection.value().orElseThrow()))
+                .withOverride(true)
+            : value.withOverride(false);
+      }
       if (action instanceof DraftEdit.Override override)
         return value
             .withValue(

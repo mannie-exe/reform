@@ -30,7 +30,8 @@ run = "actionlint"
 [tasks."check:security"]
 description = "Scan resolved library dependencies and source secrets"
 run = [
-  "./gradlew --no-daemon -I tools/security.init.gradle :core:securityDependencies --write-locks",
-  "trivy fs --config trivy.yaml --scanners vuln --severity HIGH,CRITICAL --exit-code 1 build/security",
-  "trivy fs --config trivy.yaml --scanners secret --severity HIGH,CRITICAL --exit-code 1 .",
+  "./gradlew --no-daemon -I tools/security.init.gradle securityDependencies --write-locks",
+  "trivy fs --config trivy.yaml --scanners vuln --severity HIGH,CRITICAL --exit-code 0 --format json --output build/security-dependencies.json build/security",
+  "python3 tools/review_security.py build/security-dependencies.json",
+  "trivy fs --config trivy.yaml --scanners secret --severity HIGH,CRITICAL --exit-code 1 --format json --output build/security-secrets.json .",
 ]

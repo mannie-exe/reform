@@ -2,47 +2,54 @@
 
 ## Identity and artifacts
 
-Display name is **re:form**. Repository, mod ID and Maven artifact are `reform`; Java packages use `design.inherent.reform`. `gradle.properties` owns the project version. `gradle/libs.versions.toml` owns the Minecraft, NeoForge and Java dependency pins.
+Display name is **re:form**. Repository and mod ID are `reform`; Java packages use `design.inherent.reform`. `gradle.properties` owns the library version. [Native targets](development/platform-targets.md) owns version-specific names, dependency pins and update procedures.
 
-`./gradlew check build` checks the product and stages three files under `build/distributions/`.
+Source builds check four selected game/loader products and stage twelve files under `build/distributions/`.
 
-- `reform-<version>-mc1.21.1-neoforge.jar` contains the library core and NeoForge adapter once.
-- `reform-<version>-sources.jar` contains their matching sources.
-- `reform-<version>.pom` declares the public DFU and Gson dependencies.
+- `reform-<version>-mc<game>-<loader>.jar` contains the core and selected adapter once.
+- `reform-<version>-mc<game>-<loader>-sources.jar` contains their matching sources.
+- `reform-<version>-mc<game>-<loader>.pom` declares the target's public dependency metadata.
+
+Maven modules use `design.inherent:reform-<loader>-<game>:<version>`. The published 0.1.0 module `design.inherent:reform` and its three original download paths remain immutable. Target-specific source and resolution changes do not rewrite that release.
 
 The separate development core JAR is for headless development. Minecraft supplies its runtime serialization libraries. The Gradle wrapper is checksum-pinned and retains [Gradle's license](../LICENSE-GRADLE.txt). Archive timestamps and entry order are reproducible.
 
 ## Consumer resolution
 
-The release assets supply an artifact-only Ivy repository for Gradle. Use an exact qualified version and install the same combined JAR with the dependent mod. NeoForge metadata must declare `reform` as a required dependency on both applicable installed sides.
+The release assets supply an artifact-only Ivy repository for Gradle. Use an exact qualified version and install the same combined JAR with the dependent mod. NeoForge metadata must declare `reform` as a required dependency on both applicable installed sides. For a target-specific release, the Maven module identifies the lane while the asset pattern uses its actual filename. Substituting `[artifact]` for the fixed `reform` filename prefix would request a nonexistent file.
 
 ```groovy
+def reformVersion = providers.gradleProperty('reform_version').get()
 repositories {
     exclusiveContent {
         forRepository {
             ivy {
                 url = uri('https://github.com/mannie-exe/reform/releases/download')
-                patternLayout { artifact 'v[revision]/[artifact]-[revision]-mc1.21.1-neoforge.[ext]' }
+                patternLayout { artifact 'v[revision]/reform-[revision]-mc1.21.1-neoforge.[ext]' }
                 metadataSources { artifact() }
             }
         }
-        filter { includeModule 'design.inherent', 'reform' }
+        filter { includeModule 'design.inherent', 'reform-neoforge-1.21.1' }
     }
 }
 dependencies {
-    implementation('design.inherent:reform:0.1.0') { transitive = false }
+    implementation("design.inherent:reform-neoforge-1.21.1:${reformVersion}") { transitive = false }
 }
 ```
 
-Compare the resolved JAR against the release checksum. Native mods can use a nontransitive dependency because Minecraft supplies DFU and Gson. The artifact-only repository does not read the supplied POM. Headless consumers must also declare `com.mojang:datafixerupper:8.0.16` and `com.google.code.gson:gson:2.10.1`, admitting `com.mojang` from `https://libraries.minecraft.net/` and other dependencies from Maven Central. The [headless example](../examples/headless/README.md) exercises the same dependencies through its staged Maven repository.
+This example selects NeoForge 1.21.1; use the chosen target's module and game/loader filename together for another lane. Fabric 1.21.1's remapping build uses `modImplementation`; unobfuscated Fabric 26.3 uses its ordinary `implementation` dependency. These are consumer build choices, separate from the library's installed mod identity. No target-specific public release is implied by this recipe.
 
-For an unpublished trial, `./gradlew :neoforge:publishMavenJavaPublicationToStagingRepository` creates a local Maven repository under `build/repository/`. Use a unique development coordinate for each frozen candidate, retain its exact bytes and verify the consumer's resolved hash. Keep machine-local repositories out of release builds. Publish re:form before releasing a consumer that requires it.
+The immutable 0.1.0 recipe instead uses `design.inherent:reform:0.1.0`, filters module `reform` and requests `v[revision]/reform-[revision]-mc1.21.1-neoforge.[ext]`. Its filename is unchanged.
+
+Compare the resolved JAR against the release checksum. Native mods can use a nontransitive dependency because Minecraft supplies DFU and Gson. The artifact-only repository does not read the supplied POM. Headless consumers must also declare the selected game's exact DFU and Gson inputs from the [target pins](development/platform-targets.md), admitting `com.mojang` from `https://libraries.minecraft.net/` and other dependencies from Maven Central. `verifyPublicConsumer` exercises every target through both its staged Maven metadata and its release-shaped artifact-only repository. The latter has no staged-Maven fallback and declares those serialization dependencies explicitly. These local checks do not establish public upload availability.
+
+For an unpublished trial, `./gradlew :<target>:publishMavenJavaPublicationToStagingRepository` creates the selected target's local Maven publication under `build/repository/`. Use a unique development coordinate for each frozen candidate, retain its exact bytes and verify the consumer's resolved hash. Keep machine-local repositories out of release builds. Publish re:form before releasing a consumer that requires it.
 
 ## CI and release procedure
 
-The build workflow checks Linux, Windows and Intel macOS with Java 21, plus Markdown and workflow syntax. Its reusable Trivy workflow is a release dependency. Security scanning also runs weekly and on explicit dispatch. Every action is pinned to a commit. Pull requests use read-only Gradle caches, and only the release job receives write access to repository contents.
+The build workflow checks Linux, Windows and Intel macOS with the declared Java 21/25 toolchains, plus Markdown and workflow syntax. Its reusable Trivy workflow is a release dependency. Security scanning also runs weekly and on explicit dispatch. Every action is pinned to a commit. Pull requests use read-only Gradle caches, and only the release job receives write access to repository contents.
 
-The POM producer uses UTF-8 and LF endings on every platform. The tag job downloads the three runners' distribution artifacts and compares all three files byte for byte. A mismatch, missing artifact, dirty source, incorrect version/tag, or existing staging directory stops preparation. `tools/release.py` adds the tagged source ZIP and SHA-256/SHA-512 manifests, then creates a draft GitHub release. Repeated creation cannot overwrite a published release.
+The POM producer uses UTF-8 and LF endings on every platform. The tag job compares the complete target-derived asset set from all three runners byte for byte. A mismatch, missing artifact, dirty source, incorrect version/tag, or existing staging directory stops preparation. `tools/release.py` adds the tagged source ZIP and SHA-256/SHA-512 manifests, then creates a draft GitHub release. Repeated creation cannot overwrite a published release.
 
 1. Finish relevant implementation and qualification, including native and consumer checks for affected boundaries.
 2. Update `mod_version`, [changelog](../CHANGELOG.md), [verification](development/verification.md) and supported-dependency guidance. Review licensing and packaged contents.
@@ -68,6 +75,6 @@ Renovate proposes version-catalog, Gradle wrapper, mise tool and GitHub Actions 
 
 Renovate keeps CI Java major changes explicit and leaves the Minecraft-owned DFU version under manual platform review. Mojang does not publish a Maven version index for that dependency. The formatter version in the catalog has an explicit Maven extraction rule; review its updates together with Spotless. Other proposed updates still require manual merge and the affected checks above.
 
-`tools/security.init.gradle` resolves the core's actual runtime and test classpaths into a disposable Gradle lock under `build/security/`. `--write-locks` also emits an empty settings-catalog lock, which is ignored as a scan artifact. The regular build keeps its declared dependency resolution. CI generates the inventory in the checked Linux build and passes that exact artifact to the security workflow, avoiding another cold dependency download. Scheduled and manual security runs resolve their own inventory. Trivy scans this inventory for vulnerabilities and the source tree for secrets, skipping generated runs and caches. [Security reporting](../SECURITY.md) owns the exact, expiring dependency exception.
+`tools/security.init.gradle` resolves separate inventories for the neutral core and every checked native target under `build/security/<project>/gradle.lockfile`. Runtime and test classpaths are included, together with the explicit 26.3 native runtime where supplied by the build adapter. These inventories include game/loader-provided libraries; their presence does not mean those libraries are bundled into re:form. `--write-locks` also emits an empty settings-catalog lock, which is ignored as a scan artifact. The regular build keeps its declared dependency resolution. CI generates the inventories in the checked Linux build and passes those exact artifacts to the security workflow, avoiding another cold dependency download. Scheduled and manual security runs resolve their own inventories. Trivy scans them for vulnerabilities and scans the source tree for secrets, skipping generated runs and caches. [Security reporting](../SECURITY.md) owns applicability boundaries and the exact provided-runtime classification policy. Reviewed provided-runtime findings remain visible as advisories under `security-policy.json`. Unclassified or library-owned HIGH/CRITICAL findings, source secrets, scanner errors and incomplete inventories still fail release qualification. The security job retains raw scanner JSON and the ownership summary. Publishing a mod does not authorize replacing the host's libraries.
 
 Keep credentials in the host or CI credential mechanism. In-game settings continue to use their declared files and native owners.

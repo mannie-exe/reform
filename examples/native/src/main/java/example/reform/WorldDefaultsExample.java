@@ -3,7 +3,8 @@ package example.reform;
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.edit.DraftLimits;
-import design.inherent.reform.neoforge.client.ClientFileSettings;
+import design.inherent.reform.minecraft.client.ClientFileSettings;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.owner.FileOwner;
 import design.inherent.reform.serialization.JsonLimits;
 import design.inherent.reform.storage.JsonStore;
@@ -33,8 +34,7 @@ public final class WorldDefaultsExample {
   static void register(IEventBus bus, ModContainer container) {
     optional =
         ClientFileSettings.newWorldDefaultsFile(
-            bus,
-            container,
+            NeoForgeClientRegistration.of(bus, container),
             new JsonStore<>(
                 OPTIONAL,
                 new OwnedFile(
@@ -47,7 +47,9 @@ public final class WorldDefaultsExample {
                 new JsonLimits(262144, 64, 16384, 32768, 128, 4096),
                 DraftLimits.CONFIGURATION),
             FileOwner.Initialization.DEFER_MISSING);
-    eager = ClientFileSettings.newWorldDefaultsJson(bus, container, EAGER);
+    eager =
+        ClientFileSettings.newWorldDefaultsJson(
+            NeoForgeClientRegistration.of(bus, container), EAGER);
     optional.registerCommands("reformdefaults");
   }
 

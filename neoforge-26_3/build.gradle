@@ -1,0 +1,2 @@
+plugins { alias(libs.plugins.moddev) }
+apply from: rootProject.file('gradle/neoforge-target.gradle')

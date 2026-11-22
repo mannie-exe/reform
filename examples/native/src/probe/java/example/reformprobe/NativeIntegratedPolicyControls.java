@@ -7,15 +7,15 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
-import design.inherent.reform.neoforge.client.ClientEditingWorkflow;
-import design.inherent.reform.neoforge.client.ClientForm;
-import design.inherent.reform.neoforge.client.ClientFormOptions;
-import design.inherent.reform.neoforge.client.ConflictScreen;
-import design.inherent.reform.neoforge.client.IntegratedSettings;
-import design.inherent.reform.neoforge.client.SettingsScreen;
-import design.inherent.reform.neoforge.command.SearchCommands;
-import design.inherent.reform.neoforge.command.SearchRecipient;
-import design.inherent.reform.neoforge.configuration.ServerSettings;
+import design.inherent.reform.minecraft.client.ClientEditingWorkflow;
+import design.inherent.reform.minecraft.client.ClientForm;
+import design.inherent.reform.minecraft.client.ClientFormOptions;
+import design.inherent.reform.minecraft.client.ConflictScreen;
+import design.inherent.reform.minecraft.client.IntegratedSettings;
+import design.inherent.reform.minecraft.client.SettingsScreen;
+import design.inherent.reform.minecraft.command.SearchCommands;
+import design.inherent.reform.minecraft.command.SearchRecipient;
+import design.inherent.reform.minecraft.configuration.ServerSettings;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.SearchReport;
@@ -82,6 +82,7 @@ final class NativeIntegratedPolicyControls {
   private UUID player;
   private Screen gate;
   private SettingsScreen<?> form;
+  private design.inherent.reform.minecraft.client.SettingsForm<?> workspaceForm;
   private DocumentActions<?> fileActions, nativeActions;
   private final ArrayList<String> commandFeedback = new ArrayList<>();
   private String retiredOperation;
@@ -92,6 +93,8 @@ final class NativeIntegratedPolicyControls {
   private CompletableFuture<?> pending;
   private Path nativePath;
   private int beforeSaveStage;
+  private int permissionInspectionStage;
+  private net.minecraft.client.gui.components.Button retiredDisclosure;
   private int beforeSaveWatches;
   private String beforeSaveBytes;
   private CommitReceipt<?> staleNativeReceipt;
@@ -419,18 +422,54 @@ final class NativeIntegratedPolicyControls {
       }
       case 9 -> {
         if (form.editorView().lastReceipt().isEmpty()) return false;
-        var receipt = form.editorView().lastReceipt().orElseThrow();
+        if (permissionInspectionStage == 0) {
+          var receipt = form.editorView().lastReceipt().orElseThrow();
+          check(
+              "saved file receipt confirms independent persistence and application",
+              receipt.persistence() == CommitReceipt.Persistence.SAVED
+                  && receipt.application() == CommitReceipt.Application.APPLIED
+                  && savedLevel() == 10
+                  && effectiveLevel() == 10
+                  && !form.editorView().dirty());
+          check(
+              "save readback retains issuing server owner",
+              receipt.observation().orElseThrow().context().equals(file.context().id()));
+          replace(form, input(form, "Level"), "14");
+          permissionInspectionStage++;
+          return false;
+        }
+        if (permissionInspectionStage == 1) {
+          if (!form.editorView().dirty() || !button(form, "Done").active) return false;
+          click(form, button(form, "i"));
+          permissionInspectionStage++;
+          return false;
+        }
+        if (form.inspectedField().isEmpty()) return false;
         check(
-            "saved file receipt confirms independent persistence and application",
-            receipt.persistence() == CommitReceipt.Persistence.SAVED
-                && receipt.application() == CommitReceipt.Application.APPLIED
-                && savedLevel() == 10
-                && effectiveLevel() == 10
-                && !form.editorView().dirty());
-        check(
-            "save readback retains issuing server owner",
-            receipt.observation().orElseThrow().context().equals(file.context().id()));
-        replace(form, input(form, "Level"), "14");
+            "native information observes the current server-backed field before permission loss",
+            form.inspectedField()
+                .orElseThrow()
+                .target()
+                .matches(form.editorView().snapshot().orElseThrow()));
+        if (permissionInspectionStage == 2) {
+          check(
+              "server-owned information initially keeps technical details collapsed",
+              widgets(form).stream()
+                  .noneMatch(widget -> widget.getMessage().getString().equals("Copy key")));
+          click(form, button(form, "Show technical details"));
+          permissionInspectionStage++;
+          return false;
+        }
+        if (permissionInspectionStage == 3) {
+          check(
+              "server-owned technical details expose the admitted source key",
+              widgets(form).stream()
+                  .anyMatch(widget -> widget.getMessage().getString().equals("Copy key")));
+          click(form, button(form, "Hide technical details"));
+          permissionInspectionStage++;
+          return false;
+        }
+        retiredDisclosure = button(form, "Show technical details");
         // Hold a stale positive client mirror while changing the real native op list.
         pending =
             server.submit(
@@ -468,11 +507,33 @@ final class NativeIntegratedPolicyControls {
       }
       case 12 -> {
         if (!done() || client.player.hasPermissions(2) || fileActions.isOpen()) return false;
+        var current = client.screen;
+        if (current != null
+            && widgets(current).stream()
+                .anyMatch(
+                    widget -> {
+                      var message = widget.getMessage().getString();
+                      return message.equals("Close information")
+                          || message.equals("Show technical details")
+                          || message.equals("Hide technical details")
+                          || message.equals("Copy key");
+                    })) return false;
         check(
             "permission refresh retires local context, retains real owner",
             file.context().isOpen()
                 && fileActions.view().snapshot().isEmpty()
                 && effectiveLevel() == 10);
+        check(
+            "retired native permission clears previously displayed field information",
+            form.inspectedField().isEmpty());
+        retiredDisclosure.onPress();
+        check(
+            "retired disclosure cannot reopen information after native permission retirement",
+            client.screen == current
+                && form.inspectedField().isEmpty()
+                && (current == null
+                    || widgets(current).stream()
+                        .noneMatch(widget -> widget.getMessage().getString().equals("Copy key"))));
         var revoked = fileActions;
         try {
           revoked.save(EntryPoint.GUI);
@@ -715,35 +776,34 @@ final class NativeIntegratedPolicyControls {
         workspaceStage++;
       }
       case 1 -> {
-        if (!ready()) return false;
+        if (!workspaceReady(fileRoute)) return false;
         check(
             "integrated workflow reaches its actual shared file editor",
-            form == workspace.editor(fileRoute).screen()
-                && input(form, "Level").getValue().equals("6"));
-        replace(form, input(form, "Level"), "7");
+            workspaceForm == workspace.editor(fileRoute).form()
+                && input(workspace.screen(), "Level").getValue().equals("6"));
+        replace(workspace.screen(), input(workspace.screen(), "Level"), "7");
         workspaceStage++;
       }
       case 2 -> {
-        if (!form.editorView().dirty() || !button(form, "Back to overview").active) return false;
-        click(form, button(form, "Back to overview"));
+        if (!workspaceForm.editorView().dirty() || !workspaceReady(fileRoute)) return false;
         workspace.show(registeredRoute);
         workspaceStage++;
       }
       case 3 -> {
-        if (!ready()) return false;
+        if (!workspaceReady(registeredRoute)) return false;
         check(
             "the registered member uses its own real integrated editor",
-            form == workspace.editor(registeredRoute).screen() && !form.editorView().dirty());
-        click(form, button(form, "Back to overview"));
+            workspaceForm == workspace.editor(registeredRoute).form()
+                && !workspaceForm.editorView().dirty());
         workspace.show(fileRoute);
         workspaceStage++;
       }
       case 4 -> {
-        if (!ready()) return false;
+        if (!workspaceReady(fileRoute)) return false;
         check(
             "returning to the integrated file retains its original draft and saved owner",
-            form == workspace.editor(fileRoute).screen()
-                && input(form, "Level").getValue().equals("7")
+            workspaceForm == workspace.editor(fileRoute).form()
+                && input(workspace.screen(), "Level").getValue().equals("7")
                 && savedLevel() == 6
                 && effectiveLevel() == 6);
         var original = workspace.editor(fileRoute);
@@ -756,6 +816,19 @@ final class NativeIntegratedPolicyControls {
       default -> throw new IllegalStateException("Integrated workspace controls already completed");
     }
     return false;
+  }
+
+  private boolean workspaceReady(DocumentId route) {
+    if (client.screen != workspace.screen()) return false;
+    if (workspace.documents().stream()
+        .filter(state -> state.document().equals(route))
+        .noneMatch(ClientEditingWorkflow.DocumentState::opened)) return false;
+    var editor = workspace.editor(route);
+    workspaceForm = editor.form();
+    return workspaceForm.editorView().availability() == EditorActor.Availability.READY
+        && workspaceForm.editorView().snapshot().isPresent()
+        && !editor.busy()
+        && button(workspace.screen(), "Done").active;
   }
 
   private void startSearch() {
@@ -822,7 +895,7 @@ final class NativeIntegratedPolicyControls {
                 && Files.readString(nativePath).equals(beforeSaveBytes)
                 && form.editorView().dirty()
                 && input(form, "Level").getValue().equals("11"));
-        click(form, button(form, "Reload saved"));
+        click(form, ownerAction(form, "Reload saved"));
         beforeSaveStage++;
       }
       case 3 -> {
@@ -869,6 +942,11 @@ final class NativeIntegratedPolicyControls {
         if (client.screen != form
             || form.editorView().review().isPresent()
             || !button(form, "Save and apply").active) return false;
+        if (widgets(form).stream()
+            .anyMatch(widget -> widget.getMessage().getString().equals("Settings"))) {
+          click(form, button(form, "Settings"));
+          return false;
+        }
         check(
             "explicit re-observation and review retain the typed change against the fresh source",
             form.editorView().dirty()

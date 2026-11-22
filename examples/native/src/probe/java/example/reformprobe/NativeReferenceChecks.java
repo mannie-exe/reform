@@ -5,7 +5,7 @@ import com.google.gson.JsonObject;
 import com.mojang.serialization.JsonOps;
 import com.mojang.serialization.Lifecycle;
 import design.inherent.reform.definition.DocumentId;
-import design.inherent.reform.neoforge.reference.NativeReferences;
+import design.inherent.reform.minecraft.reference.NativeReferences;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.OwnerContext;
@@ -265,6 +265,29 @@ final class NativeReferenceChecks {
                               }
                               check.accept(
                                   "native tag membership producer exhaustion is explicit", refused);
+                              for (var malformed :
+                                  List.of("bad namespace:item", "#minecraft:stone")) {
+                                refused = false;
+                                try {
+                                  NativeReferences.captureResources(
+                                      context, sourceStamp, List.of(malformed), limits);
+                                } catch (IllegalArgumentException expected) {
+                                  refused = true;
+                                }
+                                check.accept(
+                                    "malformed native resource name refuses complete capture: "
+                                        + malformed,
+                                    refused);
+                              }
+                              refused = false;
+                              try {
+                                NativeReferences.captureResources(
+                                    context, sourceStamp, List.of("a".repeat(513)), limits);
+                              } catch (IllegalArgumentException expected) {
+                                refused = true;
+                              }
+                              check.accept(
+                                  "oversized native resource name refuses before parsing", refused);
                               var storage = NativeReferences.type(id, true, 512);
                               check.accept(
                                   "native reference storage retains authored spelling",
@@ -361,7 +384,12 @@ final class NativeReferenceChecks {
                                       stamp -> {
                                         var captured =
                                             NativeReferences.captureResources(
-                                                context, stamp, names, limits);
+                                                context,
+                                                stamp,
+                                                names.stream()
+                                                    .map(ResourceLocation::toString)
+                                                    .toList(),
+                                                limits);
                                         return context.onWorker(captured::build);
                                       })
                                   .thenApply(stamp -> first);

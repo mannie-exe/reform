@@ -1,0 +1,149 @@
+buildscript {
+    if (providers.gradleProperty('withConnector').getOrElse('false').toBoolean()) {
+        repositories { maven { url = 'https://maven.sinytra.org/'; content { includeGroup 'org.sinytra.adapter' } } }
+        dependencies { classpath libs.connector.userdev }
+    }
+}
+
+plugins {
+    id 'java'
+    alias(libs.plugins.moddev) apply false
+    alias(libs.plugins.loom) apply false
+    alias(libs.plugins.loom.remap) apply false
+}
+
+def targetId = providers.gradleProperty('target').get()
+def input = new groovy.json.JsonSlurper().parse(file('../../gradle/minecraft-targets.json'))
+def target = input.targets.find { it.project == targetId }
+if (target == null) throw new GradleException('Select a checked native target')
+def pin = { key -> versionCatalogs.named('libs').findVersion(key).orElseThrow().requiredVersion }
+def game = pin(target.minecraftVersionRef)
+def loader = providers.gradleProperty('testedLoader').getOrElse('false').toBoolean() ?
+    pin(target.testedLoaderVersionRef ?: { throw new GradleException('No additional loader pin') }()) :
+    pin(target.loaderVersionRef)
+def libraryVersion = providers.gradleProperty('reformVersion').get()
+def bareLibrary = providers.gradleProperty('bareLibrary').getOrElse('false').toBoolean()
+def withConnector = providers.gradleProperty('withConnector').getOrElse('false').toBoolean()
+if (withConnector && !target.connectorVersionRef)
+    throw new GradleException('No qualified Connector input is declared for this target')
+def libraryModule = "reform-${target.loader}-${game}"
+group = 'example.reform.platform'
+version = '1.0.0'
+layout.buildDirectory = file("build/${targetId}${bareLibrary ? '-bare' : ''}")
+
+repositories {
+    maven { url = uri('../../build/repository'); content { includeGroup 'design.inherent' } }
+    mavenCentral()
+    maven { url = 'https://libraries.minecraft.net/'; content { includeGroup 'com.mojang' } }
+    maven {
+        url = 'https://api.modrinth.com/maven'
+        content {
+            ['modmenu', 'connector', 'forgified-fabric-api'].each { includeModule 'maven.modrinth', it }
+        }
+    }
+}
+
+java { toolchain.languageVersion = JavaLanguageVersion.of(target.java as int) }
+tasks.withType(JavaCompile).configureEach {
+    options.release = target.java as int
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+sourceSets.main.java.srcDir "src/${target.loader}/java"
+sourceSets.main.java.srcDir "src/minecraft-${game.replace('.', '_')}/java"
+sourceSets.main.java.srcDir "src/${target.loader}/minecraft-${game.replace('.', '_')}/java"
+sourceSets.main.resources.srcDir "src/${target.loader}/resources"
+sourceSets.main.resources.srcDir "src/minecraft-${game.replace('.', '_')}/resources"
+if (bareLibrary) {
+    sourceSets.main.java.setSrcDirs([])
+    sourceSets.main.resources.setSrcDirs([])
+}
+def fixtureDirectory = "runs/${targetId}${bareLibrary ? '-bare' : ''}${providers.gradleProperty('clientMode').getOrElse('false').toBoolean() ? '-client' : ''}"
+
+if (target.loader == 'neoforge') {
+    apply plugin: 'net.neoforged.moddev'
+    if (withConnector) apply plugin: 'org.sinytra.adapter.userdev'
+    if (!bareLibrary) {
+        def registeredOwnerProbe = objects.sourceDirectorySet('registeredOwnerProbe', 'Shared native owner controls')
+        registeredOwnerProbe.srcDir('../native/src/probe/java')
+        registeredOwnerProbe.include('**/RegisteredOwnerProbe.java')
+        registeredOwnerProbe.include('**/NativeDraftChecks.java')
+        sourceSets.main.java.source(registeredOwnerProbe)
+    }
+    dependencies {
+        implementation "design.inherent:${libraryModule}:${libraryVersion}"
+        if (withConnector) {
+            runtimeOnly "maven.modrinth:forgified-fabric-api:${pin(target.forgifiedFabricApiVersionRef)}"
+        }
+    }
+    neoForge {
+        version = loader
+        if (game == '1.21.1' && !bareLibrary)
+            accessTransformers.from file('src/minecraft-1_21_1/resources/META-INF/accesstransformer.cfg')
+        runs {
+            if (withConnector) configureEach {
+                additionalRuntimeClasspathConfiguration.dependencies.add(
+                    project.dependencies.create("maven.modrinth:connector:${pin(target.connectorVersionRef)}"))
+            }
+            server {
+                server(); gameDirectory = file(fixtureDirectory)
+                jvmArgument '-Xmx2G'; programArgument '--nogui'
+            }
+            client { client(); gameDirectory = file(fixtureDirectory); jvmArgument '-Xmx2G' }
+        }
+        if (!bareLibrary) mods { reform_platform_example { sourceSet sourceSets.main } }
+    }
+} else {
+    apply plugin: target.remapMinecraft ? 'net.fabricmc.fabric-loom-remap' : 'net.fabricmc.fabric-loom'
+    loom {
+        if (game == '1.21.1' && !bareLibrary)
+            accessWidenerPath = file('src/minecraft-1_21_1/resources/platform-probe.accesswidener')
+        if (!bareLibrary) mods { reform_platform_example { sourceSet sourceSets.main } }
+        runs {
+            server { server(); runDir fixtureDirectory; vmArg '-Xmx2G'; programArg '--nogui' }
+            client { client(); runDir fixtureDirectory; vmArg '-Xmx2G' }
+        }
+    }
+    dependencies {
+        minecraft "com.mojang:minecraft:${game}"
+        if (target.remapMinecraft) {
+            mappings loom.officialMojangMappings()
+            modImplementation "net.fabricmc:fabric-loader:${loader}"
+            modImplementation "net.fabricmc.fabric-api:fabric-api:${pin(target.fabricApiVersionRef)}"
+            modImplementation "design.inherent:${libraryModule}:${libraryVersion}"
+            modCompileOnly "maven.modrinth:modmenu:${pin(target.modMenuVersionRef)}"
+            if (providers.gradleProperty('withModMenu').getOrElse('false').toBoolean())
+                modRuntimeOnly "maven.modrinth:modmenu:${pin(target.modMenuVersionRef)}"
+        } else {
+            implementation "net.fabricmc:fabric-loader:${loader}"
+            implementation "net.fabricmc.fabric-api:fabric-api:${pin(target.fabricApiVersionRef)}"
+            implementation "design.inherent:${libraryModule}:${libraryVersion}"
+            compileOnly "maven.modrinth:modmenu:${pin(target.modMenuVersionRef)}"
+            if (providers.gradleProperty('withModMenu').getOrElse('false').toBoolean())
+                runtimeOnly "maven.modrinth:modmenu:${pin(target.modMenuVersionRef)}"
+        }
+    }
+}
+
+tasks.register('verifyLibrary') {
+    doLast {
+        // Inspect the original Maven input, independently of Loom's native remapping output.
+        def detached = configurations.detachedConfiguration(dependencies.create("design.inherent:${libraryModule}:${libraryVersion}"))
+        detached.transitive = false
+        def artifact = detached.singleFile
+        def actual = java.security.MessageDigest.getInstance('SHA-256').digest(artifact.bytes).encodeHex().toString()
+        if (actual != providers.gradleProperty('reformSha256').get())
+            throw new GradleException('Platform consumer resolved a different library JAR')
+        println "Native platform library SHA-256: ${actual}"
+    }
+}
+tasks.withType(JavaCompile).configureEach { dependsOn 'verifyLibrary' }
+tasks.matching { it.name in ['runClient', 'runServer'] }.configureEach { dependsOn 'verifyLibrary' }
+if (bareLibrary) tasks.named('runServer') { standardInput = System.in }
+tasks.named('processResources') {
+    inputs.properties([game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: ''])
+    filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json']) {
+        expand game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: '',
+            probeAccessWidener: game == '1.21.1' ? '"accessWidener": "platform-probe.accesswidener",' : ''
+    }
+}

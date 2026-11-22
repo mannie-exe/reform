@@ -48,6 +48,7 @@ public final class ReviewProfile {
   public static void main(String[] args) throws Exception {
     refuseGameClasspath("net.minecraft.world.level.Level");
     refuseGameClasspath("net.neoforged.fml.ModContainer");
+    refuseGameClasspath("net.fabricmc.loader.api.FabricLoader");
     var name = FieldKey.of("name", ValueTypes.text(64));
     var minimum = FieldKey.of("minimum", ValueTypes.integer(0, 512));
     var maximum = FieldKey.of("maximum", ValueTypes.integer(0, 512));
@@ -165,6 +166,7 @@ public final class ReviewProfile {
     TaggedEditing.verify();
     CompositionEditing.verify();
     UnitsEditing.verify();
+    NumericDomains.verify();
     RangeEditing.verify();
     DependentEditing.verify();
     PropertiesEditing.verify();

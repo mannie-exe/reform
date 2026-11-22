@@ -2,10 +2,11 @@ package example.reform;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import design.inherent.reform.definition.DocumentId;
-import design.inherent.reform.neoforge.client.ClientKeyBindings;
-import design.inherent.reform.neoforge.client.KeyBindingEditors;
-import design.inherent.reform.neoforge.client.KeyBindingOptions;
-import design.inherent.reform.neoforge.client.SettingsScreen;
+import design.inherent.reform.minecraft.client.ClientKeyBindings;
+import design.inherent.reform.minecraft.client.KeyBindingEditors;
+import design.inherent.reform.minecraft.client.KeyBindingOptions;
+import design.inherent.reform.minecraft.client.SettingsScreen;
+import design.inherent.reform.neoforge.client.NeoForgeClientRegistration;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.presentation.FormPresentation;
 import java.util.List;
@@ -53,8 +54,7 @@ public final class KeyExample {
         });
     bindings =
         ClientKeyBindings.clientKeys(
-            bus,
-            container,
+            NeoForgeClientRegistration.of(bus, container),
             DOCUMENT,
             () -> {
               selections++;

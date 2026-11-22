@@ -17,7 +17,7 @@ class NativeFixtureGuards(unittest.TestCase):
         self.root = Path(self.temporary.name)
 
     def test_existing_fixture_is_never_adopted_or_overwritten(self):
-        fixture = self.root / "neoforge/runs/native-config"
+        fixture = self.root / "neoforge-1_21_1/runs/native-config"
         fixture.mkdir(parents=True)
         marker = fixture / "personal-data"
         marker.write_text("retained")

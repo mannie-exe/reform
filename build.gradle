@@ -1,21 +1,31 @@
 plugins {
     id 'base'
     alias(libs.plugins.moddev) apply false
+    alias(libs.plugins.loom) apply false
+    alias(libs.plugins.loom.remap) apply false
     alias(libs.plugins.spotless)
 }
 
 repositories { mavenCentral() }
+
+def catalog = extensions.getByType(VersionCatalogsExtension).named('libs')
+ext.nativeTargets = new groovy.json.JsonSlurper().parse(file('gradle/minecraft-targets.json')).targets.collect { row ->
+    def resolved = new LinkedHashMap(row)
+    row.findAll { key, value -> key.endsWith('VersionRef') }.each { key, value ->
+        resolved[key.substring(0, key.length() - 'Ref'.length())] =
+            catalog.findVersion(value).orElseThrow { new GradleException("Unknown version reference: ${value}") }.requiredVersion
+    }
+    resolved
+}
 
 allprojects {
     group = 'design.inherent'
     version = providers.gradleProperty('mod_version').get()
 }
 
-def distributionPomName = "reform-${project.version}.pom"
-
 spotless {
     java {
-        target 'examples/**/src/**/*.java'
+        target 'examples/**/src/**/*.java', 'minecraft-*/src/**/*.java', 'platform/**/src/**/*.java'
         googleJavaFormat(libs.versions.google.java.format.get())
         removeUnusedImports()
         trimTrailingWhitespace()
@@ -27,12 +37,14 @@ subprojects {
     apply plugin: 'com.diffplug.spotless'
 
     plugins.withId('java') {
+        def nativeLane = rootProject.nativeTargets.find { it.project == project.name }
+        def release = nativeLane?.java ?: 21
         java {
-            toolchain.languageVersion = JavaLanguageVersion.of(21)
+            toolchain.languageVersion = JavaLanguageVersion.of(release)
             withSourcesJar()
         }
         tasks.withType(JavaCompile).configureEach {
-            options.release = 21
+            options.release = release
             options.encoding = 'UTF-8'
             options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
         }
@@ -73,8 +85,12 @@ tasks.register('checkDocs', Exec) {
 tasks.register('verifyDistribution', Exec) {
     group = 'verification'
     description = 'Check mod identity, Java baseline, bundled code and publication metadata.'
-    dependsOn ':core:jar', ':neoforge:jar', ':neoforge:sourcesJar'
-    dependsOn ':neoforge:generatePomFileForMavenJavaPublication'
+    dependsOn ':core:jar'
+    rootProject.nativeTargets.each { lane ->
+        dependsOn ":${lane.project}:${lane.installableTask ?: 'jar'}"
+        dependsOn ":${lane.project}:${lane.sourcesTask ?: 'sourcesJar'}"
+        dependsOn ":${lane.project}:generatePomFileForMavenJavaPublication"
+    }
     commandLine 'python3', 'tools/verify_distribution.py', project.version.toString()
 }
 
@@ -83,10 +99,12 @@ tasks.register('stageDistribution', Sync) {
     description = 'Stage the verified installable JAR, sources and Maven metadata.'
     dependsOn 'verifyDistribution'
     into layout.buildDirectory.dir('distributions')
-    from project(':neoforge').tasks.named('jar')
-    from project(':neoforge').tasks.named('sourcesJar')
-    from(project(':neoforge').layout.buildDirectory.file('publications/mavenJava/pom-default.xml')) {
-        rename { distributionPomName }
+    rootProject.nativeTargets.each { lane ->
+        from project(":${lane.project}").tasks.named(lane.installableTask ?: 'jar')
+        from project(":${lane.project}").tasks.named(lane.sourcesTask ?: 'sourcesJar')
+        from(project(":${lane.project}").layout.buildDirectory.file('publications/mavenJava/pom-default.xml')) {
+            rename { "reform-${project.version}-mc${lane.minecraftVersion}-${lane.loader}.pom" }
+        }
     }
 }
 
@@ -97,37 +115,98 @@ tasks.register('toolTests', Exec) {
     commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'tools/tests', '-v'
 }
 
-tasks.register('verifyPublicConsumer', GradleBuild) {
+tasks.register('verifyPublicConsumer') {
     group = 'verification'
-    description = 'Compile/run an independent headless consumer against published local artifacts.'
-    dependsOn ':neoforge:publishMavenJavaPublicationToStagingRepository'
-    dir = file('examples/headless')
-    tasks = ['run']
-    def artifact = project(':neoforge').tasks.named('jar').flatMap { it.archiveFile }
-    def releaseVersion = project.version.toString()
-    doFirst {
-        def digest = java.security.MessageDigest.getInstance('SHA-256')
-            .digest(artifact.get().asFile.bytes).encodeHex().toString()
-        startParameter.projectProperties = [reformVersion: releaseVersion, reformSha256: digest]
+    description = 'Run the independent headless consumer against every packaged native artifact.'
+}
+def publicConsumerAssets = tasks.register('stagePublicConsumerAssets', Sync) {
+    dependsOn 'stageDistribution'
+    from layout.buildDirectory.dir('distributions')
+    into layout.buildDirectory.dir("consumer-release-assets/v${project.version}")
+}
+rootProject.nativeTargets.each { lane ->
+    [false, true].each { releaseAssets ->
+        def taskName = "verifyPublicConsumer-${lane.project}${releaseAssets ? '-release-assets' : ''}"
+        tasks.register(taskName, GradleBuild) {
+            group = 'verification'
+            buildName = "headless-${lane.project}${releaseAssets ? '-release-assets' : ''}".toString()
+            if (releaseAssets) dependsOn publicConsumerAssets
+            else dependsOn ":${lane.project}:publishMavenJavaPublicationToStagingRepository"
+            dir = file('examples/headless')
+            tasks = ['run']
+            def artifact = project(":${lane.project}").tasks.named(lane.installableTask ?: 'jar').flatMap { it.archiveFile }
+            def releaseVersion = project.version.toString()
+            doFirst {
+                def digest = java.security.MessageDigest.getInstance('SHA-256')
+                    .digest(artifact.get().asFile.bytes).encodeHex().toString()
+                startParameter.projectProperties = [reformVersion: releaseVersion, reformSha256: digest,
+                    reformArtifact: "reform-${lane.loader}-${lane.minecraftVersion}".toString(), reformJavaVersion: lane.java.toString()]
+                if (releaseAssets) {
+                    startParameter.projectProperties += [
+                        reformAssetsRoot: layout.buildDirectory.dir('consumer-release-assets').get().asFile.absolutePath,
+                        reformAssetPattern: "v[revision]/reform-[revision]-mc${lane.minecraftVersion}-${lane.loader}.[ext]".toString(),
+                        reformDfuVersion: lane.dfuVersion,
+                        reformGsonVersion: lane.gsonVersion]
+                }
+            }
+        }
+        tasks.named('verifyPublicConsumer') { dependsOn taskName }
     }
 }
 
 tasks.register('verifyNativeConsumer', GradleBuild) {
     group = 'verification'
     description = 'Compile the independent native addon and opt-in probe against the exact local artifact.'
-    dependsOn ':neoforge:publishMavenJavaPublicationToStagingRepository'
+    dependsOn ':neoforge-1_21_1:publishMavenJavaPublicationToStagingRepository'
     dir = file('examples/native')
     tasks = ['jar', 'probeJar']
-    def artifact = project(':neoforge').tasks.named('jar').flatMap { it.archiveFile }
+    def artifact = project(':neoforge-1_21_1').tasks.named('jar').flatMap { it.archiveFile }
     def releaseVersion = project.version.toString()
     doFirst {
         def digest = java.security.MessageDigest.getInstance('SHA-256')
             .digest(artifact.get().asFile.bytes).encodeHex().toString()
-        startParameter.projectProperties = [reformVersion: releaseVersion, reformSha256: digest]
+        startParameter.projectProperties = [reformVersion: releaseVersion, reformSha256: digest,
+            reformArtifact: 'reform-neoforge-1.21.1']
     }
 }
 
-tasks.named('check') {
-    dependsOn ':core:check', ':neoforge:check', 'checkDocs', 'verifyDistribution', 'toolTests', 'verifyPublicConsumer', 'verifyNativeConsumer'
+tasks.register('verifyNativePlatformConsumers') {
+    group = 'verification'
+    description = 'Compile the independent public native consumer in all four loader/game classpaths.'
 }
-tasks.named('assemble') { dependsOn ':core:assemble', ':neoforge:assemble', 'stageDistribution' }
+def priorNativeConsumer
+rootProject.nativeTargets.each { lane ->
+    def taskName = "verifyNativePlatformConsumer-${lane.project}"
+    def previous = priorNativeConsumer
+    tasks.register(taskName, GradleBuild) {
+        group = 'verification'
+        buildName = "native-${lane.project}".toString()
+        dependsOn ":${lane.project}:publishMavenJavaPublicationToStagingRepository"
+        if (previous != null) mustRunAfter previous
+        dir = file('examples/platform')
+        tasks = ['jar']
+        def artifact = project(":${lane.project}").tasks.named(lane.installableTask ?: 'jar').flatMap { it.archiveFile }
+        def releaseVersion = project.version.toString()
+        doFirst {
+            def digest = java.security.MessageDigest.getInstance('SHA-256')
+                .digest(artifact.get().asFile.bytes).encodeHex().toString()
+            startParameter.projectProperties = [target: lane.project.toString(),
+                reformVersion: releaseVersion, reformSha256: digest]
+            if (lane.remapMinecraft && releaseVersion.endsWith('-SNAPSHOT')) {
+                // Loom's remapped dependency cache keys do not include mutable input bytes.
+                startParameter.projectCacheDir = file("examples/platform/.gradle/native-snapshots/${lane.project}/${digest}")
+            }
+        }
+    }
+    tasks.named('verifyNativePlatformConsumers') { dependsOn taskName }
+    priorNativeConsumer = taskName
+}
+
+tasks.named('check') {
+    dependsOn ':core:check', 'checkDocs', 'verifyDistribution', 'toolTests', 'verifyPublicConsumer', 'verifyNativeConsumer', 'verifyNativePlatformConsumers'
+    rootProject.nativeTargets.each { lane -> dependsOn ":${lane.project}:check" }
+}
+tasks.named('assemble') {
+    dependsOn ':core:assemble', 'stageDistribution'
+    rootProject.nativeTargets.each { lane -> dependsOn ":${lane.project}:assemble" }
+}

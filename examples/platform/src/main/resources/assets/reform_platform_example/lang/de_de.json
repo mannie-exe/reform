@@ -1,0 +1,7 @@
+{
+  "example.catalog.profiles": "Profile, Rollen und ihre unverändert gespeicherten Einstellungen",
+  "example.catalog.profiles.help": "Dieser längere Hinweis gehört zum ausgewählten Profil und bleibt auch bei verschachtelten Rollen sichtbar. Die Vorschau speichert keine Änderungen.",
+  "example.catalog.global": "Gemeinsame Unter- und Obergrenzen für sämtliche Profile",
+  "example.catalog.extra": "Zusätzliche, derzeit inaktive optionale Grenzen",
+  "reform.settings.catalog_search": "Profile und verschachtelte Rollen im vollständigen Katalog suchen"
+}

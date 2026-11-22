@@ -1,9 +1,24 @@
 plugins { id 'application' }
 
+def libraryArtifact = providers.gradleProperty('reformArtifact').get()
+def releaseAssets = providers.gradleProperty('reformAssetsRoot')
 repositories {
-    maven {
-        url = uri('../../build/repository')
-        content { includeGroup 'design.inherent' }
+    if (releaseAssets.isPresent()) {
+        exclusiveContent {
+            forRepository {
+                ivy {
+                    url = uri(releaseAssets.get())
+                    patternLayout { artifact providers.gradleProperty('reformAssetPattern').get() }
+                    metadataSources { artifact() }
+                }
+            }
+            filter { includeModule 'design.inherent', libraryArtifact }
+        }
+    } else {
+        maven {
+            url = uri('../../build/repository')
+            content { includeGroup 'design.inherent' }
+        }
     }
     mavenCentral()
     maven {
@@ -12,15 +27,27 @@ repositories {
     }
 }
 
-java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
+def runtimeJava = providers.gradleProperty('reformJavaVersion').map { it.toInteger() }.getOrElse(21)
+java { toolchain.languageVersion = JavaLanguageVersion.of(runtimeJava) }
 tasks.withType(JavaCompile).configureEach {
-    options.release = 21
+    options.release = runtimeJava
     options.encoding = 'UTF-8'
     options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
 }
 
 // This separate build has no source-set/project dependency on the library or either consumer.
-dependencies { implementation "design.inherent:reform:${providers.gradleProperty('reformVersion').get()}" }
+dependencies {
+    implementation("design.inherent:${libraryArtifact}:${providers.gradleProperty('reformVersion').get()}") {
+        if (releaseAssets.isPresent()) transitive = false
+        // This consumer deliberately selects only the neutral API in the combined product.
+        exclude group: 'net.fabricmc'
+        exclude group: 'net.fabricmc.fabric-api'
+    }
+    if (releaseAssets.isPresent()) {
+        implementation "com.mojang:datafixerupper:${providers.gradleProperty('reformDfuVersion').get()}"
+        implementation "com.google.code.gson:gson:${providers.gradleProperty('reformGsonVersion').get()}"
+    }
+}
 application { mainClass = 'example.ReviewProfile' }
 
 def expectedSha256 = providers.gradleProperty('reformSha256')
@@ -30,7 +57,7 @@ tasks.named('run', JavaExec) {
         def artifacts = consumerRuntime.incoming.artifacts.artifacts.findAll { artifact ->
             def id = artifact.id.componentIdentifier
             id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier &&
-                id.group == 'design.inherent' && id.module == 'reform'
+                id.group == 'design.inherent' && id.module == libraryArtifact
         }
         if (artifacts.size() != 1) throw new GradleException('Expected one packaged reform artifact')
         def actual = java.security.MessageDigest.getInstance('SHA-256')

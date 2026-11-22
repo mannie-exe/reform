@@ -9,6 +9,7 @@ import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.owner.SettingsHandle;
 import design.inherent.reform.owner.SourceInfo;
+import design.inherent.reform.presentation.NumericDisplay;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayList;
@@ -19,6 +20,21 @@ import java.util.UUID;
 
 /** Identified source/value inspection; neither a fresh source read nor permission to save. */
 public final class DocumentReview {
+  /** Optional meanings accompany raw observations; they never replace raw report or export data. */
+  public record NumericValues(
+      Optional<NumericDisplay.Caption> baseline,
+      Optional<NumericDisplay.Caption> draft,
+      Optional<NumericDisplay.Caption> effective) {
+    public static final NumericValues EMPTY =
+        new NumericValues(Optional.empty(), Optional.empty(), Optional.empty());
+
+    public NumericValues {
+      Objects.requireNonNull(baseline);
+      Objects.requireNonNull(draft);
+      Objects.requireNonNull(effective);
+    }
+  }
+
   /** Complete raw-value projection bounds, separate from owner work and transport/heap limits. */
   public record Limits(int maximumFields, int maximumNodes, int maximumCharacters) {
     public static final Limits STANDARD = new Limits(512, 65536, 524288);
@@ -37,7 +53,20 @@ public final class DocumentReview {
       String baseline,
       String draft,
       Optional<String> effective,
-      Optional<ApplicationEffects.Rule> application) {
+      Optional<ApplicationEffects.Rule> application,
+      NumericValues numericValues) {
+    public Entry(
+        FieldPath path,
+        String selector,
+        boolean wholeValue,
+        String baseline,
+        String draft,
+        Optional<String> effective,
+        Optional<ApplicationEffects.Rule> application) {
+      this(
+          path, selector, wholeValue, baseline, draft, effective, application, NumericValues.EMPTY);
+    }
+
     public Entry {
       Objects.requireNonNull(path);
       Objects.requireNonNull(selector);
@@ -45,6 +74,7 @@ public final class DocumentReview {
       Objects.requireNonNull(draft);
       Objects.requireNonNull(effective);
       Objects.requireNonNull(application);
+      Objects.requireNonNull(numericValues);
     }
   }
 
@@ -246,7 +276,13 @@ public final class DocumentReview {
               text.render(observed.baseline().at(field.path())),
               text.render(observed.snapshot().draft().at(field.path())),
               values == null ? Optional.empty() : Optional.of(text.render(values.at(field.path()))),
-              application));
+              application,
+              new NumericValues(
+                  text.caption(field.type(), observed.baseline().at(field.path())),
+                  text.caption(field.type(), observed.snapshot().draft().at(field.path())),
+                  values == null
+                      ? Optional.empty()
+                      : text.caption(field.type(), values.at(field.path())))));
     }
     return new DocumentReview(
         target,

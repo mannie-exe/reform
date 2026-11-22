@@ -868,6 +868,17 @@ public final class DocumentBatch implements AutoCloseable {
         text(entry.baseline());
         text(entry.draft());
         entry.effective().ifPresent(this::text);
+        java.util.stream.Stream.of(
+                entry.numericValues().baseline(),
+                entry.numericValues().draft(),
+                entry.numericValues().effective())
+            .flatMap(Optional::stream)
+            .forEach(
+                caption -> {
+                  text(caption.value().toString());
+                  text(caption.translationKey());
+                  text(caption.fallback());
+                });
         entry.application().ifPresent(rule -> text(rule.explanation()));
       }
       report(slot.preflight().report());

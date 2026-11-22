@@ -1,0 +1,33 @@
+plugins { alias(libs.plugins.moddev) }
+apply from: rootProject.file('gradle/neoforge-target.gradle')
+
+sourceSets {
+    nativeProbe {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+def nativeProbeEnabled = providers.gradleProperty('nativeProbe').map { it.toBoolean() }.getOrElse(false)
+
+neoForge {
+    if (nativeProbeEnabled) {
+        mods { reform_native_probe { sourceSet sourceSets.nativeProbe } }
+        runs {
+            nativeProbeServer {
+                server()
+                gameDirectory = file('runs/native-config')
+                programArgument '--nogui'
+                jvmArgument '-Xmx2G'
+            }
+        }
+    }
+}
+
+tasks.register('nativeProbeJar', Jar) {
+    group = 'verification'
+    description = 'Build the opt-in, non-distributed native settings fixture.'
+    archiveFileName = 'reform-native-probe.jar'
+    from sourceSets.nativeProbe.output
+}
+tasks.named('check') { dependsOn 'nativeProbeClasses' }

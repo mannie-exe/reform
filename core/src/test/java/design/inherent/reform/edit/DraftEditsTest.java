@@ -352,6 +352,70 @@ class DraftEditsTest {
   }
 
   @Test
+  void selectingDefaultedScalarUsesOneHistoryStepAndExactTarget() throws Exception {
+    var field = FieldPath.ROOT.field("count");
+    try (var s = source(LIMIT, new Limit(7), "{}")) {
+      var omitted = s.snapshot().draft();
+      var before = s.snapshot().target(field);
+      s.execute(new DraftEdit(before, new DraftEdit.SelectDefaultedScalar(Optional.of("3"))));
+      assertEquals(new Limit(3), s.snapshot().inspect().candidate().orElseThrow().value());
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              s.execute(
+                  new DraftEdit(before, new DraftEdit.SelectDefaultedScalar(Optional.empty()))));
+      s.undo();
+      assertEquals(omitted, s.snapshot().draft());
+      s.redo();
+      edit(s, field, new DraftEdit.SelectDefaultedScalar(Optional.empty()));
+      assertEquals(new Limit(7), s.snapshot().inspect().candidate().orElseThrow().value());
+      assertEquals(
+          "3",
+          ((DraftNode.Scalar) ((DraftNode.Defaulted) s.snapshot().draft().at(field)).value())
+              .raw());
+      s.undo();
+      assertEquals(new Limit(3), s.snapshot().inspect().candidate().orElseThrow().value());
+    }
+  }
+
+  @Test
+  void defaultedScalarSelectionRetainsInvalidInputAndRefusesStructuralOrTypingTargets()
+      throws Exception {
+    var field = FieldPath.ROOT.field("count");
+    try (var s = source(LIMIT, new Limit(7), "{}")) {
+      edit(s, field, new DraftEdit.SelectDefaultedScalar(Optional.of("-")));
+      assertFalse(s.snapshot().inspect().report().valid());
+      var invalid = s.snapshot().draft();
+      edit(s, field, new DraftEdit.SelectDefaultedScalar(Optional.empty()));
+      assertTrue(s.snapshot().inspect().report().valid());
+      s.undo();
+      assertEquals(invalid, s.snapshot().draft());
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              new DraftEdit(
+                  s.snapshot().target(field).typing(),
+                  new DraftEdit.SelectDefaultedScalar(Optional.of("1"))));
+    }
+    var defaultedRecord = ValueTypes.defaultedField(LIMIT, new Limit(7));
+    try (var s = session(defaultedRecord, new Limit(7))) {
+      var before = s.snapshot().draft();
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> edit(s, FieldPath.ROOT, new DraftEdit.SelectDefaultedScalar(Optional.of("1"))));
+      assertEquals(before, s.snapshot().draft());
+    }
+    try (var s = session(NUMBER, 2)) {
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> edit(s, FieldPath.ROOT, new DraftEdit.SelectDefaultedScalar(Optional.empty())));
+    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new DraftEdit.SelectDefaultedScalar(Optional.of("x".repeat(32769))));
+  }
+
+  @Test
   void selectingAndDiscardingBranchesIsExplicitAndRetainsInvalidInactiveFields() {
     try (var s = session(MODE, new Counter(2))) {
       var count = FieldPath.ROOT.variant("counter").field("count");
@@ -431,6 +495,8 @@ class DraftEditsTest {
             new DraftEdit.MoveRow(id, Optional.empty()),
             new DraftEdit.Presence(true),
             new DraftEdit.Override(false),
+            new DraftEdit.SelectDefaultedScalar(Optional.empty()),
+            new DraftEdit.SelectDefaultedScalar(Optional.of("-")),
             new DraftEdit.SelectVariant("named"),
             new DraftEdit.DiscardBranch("named"),
             new DraftEdit.RestoreOverride(id),
