@@ -1,6 +1,7 @@
 """A native chooser may escape the launcher group; cleanup must retain actual ownership."""
 
 import json
+from enum import IntEnum
 import os
 from pathlib import Path
 import shutil
@@ -14,6 +15,11 @@ from unittest.mock import patch
 from tools import native_config_probe as probe
 
 
+class FixtureSignals(IntEnum):
+    SIGTERM = 15
+    SIGKILL = 9
+
+
 class ChooserCleanupTests(unittest.TestCase):
     def test_only_observed_descendants_are_admitted(self):
         rows = {10: (1, "born", "S", "java"), 20: (10, "born", "S", "java"),
@@ -22,7 +28,8 @@ class ChooserCleanupTests(unittest.TestCase):
 
     def test_reused_pid_is_never_signalled(self):
         with patch.object(probe, "process_table", return_value={30: (1, "new", "S", "osascript")}), \
-                patch.object(probe.os, "kill") as kill:
+                patch.object(probe.os, "kill") as kill, \
+                patch.object(probe, "signal", FixtureSignals):
             self.assertEqual([], probe.retire_choosers({30: ("old", "osascript")}))
             kill.assert_not_called()
 
@@ -30,7 +37,8 @@ class ChooserCleanupTests(unittest.TestCase):
         before = {30: (1, "old", "S", "osascript")}
         after = {30: (1, "old", "Z", "osascript")}
         with patch.object(probe, "process_table", side_effect=[before, after]), \
-                patch.object(probe.os, "kill") as kill, patch.object(probe.time, "sleep"):
+                patch.object(probe.os, "kill") as kill, patch.object(probe.time, "sleep"), \
+                patch.object(probe, "signal", FixtureSignals):
             self.assertEqual([{"pid": 30, "signal": "SIGTERM"}],
                              probe.retire_choosers({30: ("old", "osascript")}))
             kill.assert_called_once_with(30, signal.SIGTERM)
