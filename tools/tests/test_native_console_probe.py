@@ -1,6 +1,7 @@
 """Console shutdown is actual input; clean process exit alone is not native qualification."""
 
 from pathlib import Path
+import os
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,8 @@ from tools.native_bare_probe import successful_boot, verify_fixture_network
 from tools.native_form_probe import create_fixture, cleanup_fixture
 
 
-class NativeConsoleProbeTests(unittest.TestCase):
+@unittest.skipUnless(os.name == "posix", "Native fixture execution requires POSIX process groups")
+class NativeConsoleExecutionTests(unittest.TestCase):
     def test_actual_child_receives_stop_only_after_readiness(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -42,6 +44,8 @@ class NativeConsoleProbeTests(unittest.TestCase):
             self.assertEqual(0, result["exitCode"])
             self.assertFalse(successful_boot(result, []))
 
+
+class NativeConsoleProbeTests(unittest.TestCase):
     def test_new_library_settings_fail_even_with_a_native_receipt(self):
         result = {"exitCode": 0, "termination": None, "nativeConsole": {"status": "PASS"}}
         self.assertTrue(successful_boot(result, []))

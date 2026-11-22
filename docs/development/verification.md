@@ -4,6 +4,8 @@
 
 The stable four-target build passes the required local `mise run check`. Every owned compiled class in each 0.2.0 JAR is byte-identical to its native-qualified dev.67 counterpart; only release identity and metadata change. Local dependency review passes with 31 explicitly classified supplied-runtime advisories and no source-secret findings. Hosted checks, reproducible release assets, and public dependency resolution have their own delivery evidence. Skyweave's actual 0.2 adoption remains deferred by its owner and, under the release authorization, is follow-up work rather than a publication gate. The actual Compat dev.67 binding is qualified below.
 
+Native fixture execution uses POSIX process groups and is not a Windows execution claim. Those child-process tests run on POSIX hosts; portable outcome, network-isolation, and ownership checks remain enabled on every build runner. The initial hosted Windows failure exposed a missing platform condition on the console execution tests; scoping that class preserves its original process assertions without changing the library or its native runner.
+
 This record distinguishes build checks, native behavior and consumer integration by the artifact exercised. The 0.1.0 records target Java 21, Minecraft 1.21.1 and NeoForge 21.1.265. Native UI and installed-pack observations for that release were made on Apple Silicon with Temurin 21.0.13+9.
 
 ## Platform development candidates
