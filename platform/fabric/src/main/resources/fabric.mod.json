@@ -4,7 +4,7 @@
   "version": "${version}",
   "name": "re:form",
   "description": "Native configuration editing and command services for Minecraft mods.",
-  "authors": ["mannie-exe"],
+  "authors": ["inherent.design contributors"],
   "license": "Apache-2.0",
   "environment": "*",
   "accessWidener": "reform.accesswidener",

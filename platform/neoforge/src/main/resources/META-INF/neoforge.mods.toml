@@ -7,7 +7,7 @@ issueTrackerURL="https://github.com/mannie-exe/reform/issues"
 modId="reform"
 version="${version}"
 displayName="re:form"
-authors="mannie-exe"
+authors="inherent.design contributors"
 displayURL="https://github.com/mannie-exe/reform"
 description='''Native configuration editing and command services for Minecraft mods.'''
 

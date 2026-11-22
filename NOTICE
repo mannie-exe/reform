@@ -1,11 +1,11 @@
 re:form
-Copyright (c) 2026 mannie-exe
+Copyright 2026 inherent.design contributors
 
 Current project code is licensed under the Apache License, Version 2.0 in LICENSE.
 Published re:form 0.1.0 retains its original MIT license and immutable artifacts.
 
 Measured form geometry, section navigation, the native form panel and control sizing are adapted
-from Skyweave: Compatibility Patches, Copyright (c) 2026 mannie-exe, originally
+from Skyweave: Compatibility Patches, Copyright 2026 inherent.design contributors, originally
 released under MIT. These owned source extractions are included here under
 Apache-2.0 by the copyright owner's authorization. Neither that mod nor the
 modpack is a runtime dependency. Third-party licenses remain with their owners.

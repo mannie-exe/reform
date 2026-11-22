@@ -67,7 +67,7 @@ publishing {
                 description = 'Native Minecraft configuration editing and command services for mods'
                 url = 'https://github.com/mannie-exe/reform'
                 licenses { license { name = 'Apache License, Version 2.0'; url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'; distribution = 'repo' } }
-                developers { developer { id = 'mannie-exe'; name = 'mannie-exe' } }
+                developers { developer { id = 'inherent-design'; name = 'inherent.design contributors'; organization = 'inherent.design' } }
                 scm {
                     url = 'https://github.com/mannie-exe/reform'
                     connection = 'scm:git:https://github.com/mannie-exe/reform.git'
