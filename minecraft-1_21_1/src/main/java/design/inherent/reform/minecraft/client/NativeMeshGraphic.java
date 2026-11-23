@@ -446,29 +446,43 @@ final class NativeMeshGraphic implements AutoCloseable {
     GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, buffer);
     GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTexture);
     var data = ByteBuffer.allocate(144).order(ByteOrder.nativeOrder());
-    float[] pose = new float[16], projection = new float[16];
+    float[] pose = new float[16], modelView = new float[16], projection = new float[16];
     canvas.graphics().pose().last().pose().get(pose);
+    RenderSystem.getModelViewMatrix().get(modelView);
     RenderSystem.getProjectionMatrix().get(projection);
-    vertex(data, x, y, 0, 1, pose, projection);
-    vertex(data, x, y + height, 0, 0, pose, projection);
-    vertex(data, x + width, y + height, 1, 0, pose, projection);
-    vertex(data, x, y, 0, 1, pose, projection);
-    vertex(data, x + width, y + height, 1, 0, pose, projection);
-    vertex(data, x + width, y, 1, 1, pose, projection);
+    vertex(data, x, y, 0, 1, pose, modelView, projection);
+    vertex(data, x, y + height, 0, 0, pose, modelView, projection);
+    vertex(data, x + width, y + height, 1, 0, pose, modelView, projection);
+    vertex(data, x, y, 0, 1, pose, modelView, projection);
+    vertex(data, x + width, y + height, 1, 0, pose, modelView, projection);
+    vertex(data, x + width, y, 1, 1, pose, modelView, projection);
     data.flip();
     upload(data);
     GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
   }
 
   private static void vertex(
-      ByteBuffer output, float x, float y, float u, float v, float[] pose, float[] projection) {
-    double[] point = {x, y, 0, 1}, transformed = new double[4], clip = new double[4];
+      ByteBuffer output,
+      float x,
+      float y,
+      float u,
+      float v,
+      float[] pose,
+      float[] modelView,
+      float[] projection) {
+    double[] point = {x, y, 0, 1},
+        transformed = new double[4],
+        view = new double[4],
+        clip = new double[4];
     for (int row = 0; row < 4; row++)
       for (int column = 0; column < 4; column++)
         transformed[row] += pose[column * 4 + row] * point[column];
     for (int row = 0; row < 4; row++)
       for (int column = 0; column < 4; column++)
-        clip[row] += projection[column * 4 + row] * transformed[column];
+        view[row] += modelView[column * 4 + row] * transformed[column];
+    for (int row = 0; row < 4; row++)
+      for (int column = 0; column < 4; column++)
+        clip[row] += projection[column * 4 + row] * view[column];
     if (clip[3] == 0 || !Double.isFinite(clip[3]))
       throw new PolicyRefusal(
           "presentation.invalid_declaration", "The native GUI pose cannot project this viewport");

@@ -3,13 +3,19 @@ package example.reform.platform;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.minecraft.client.ClientGraphicImages;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.graphics.GraphicLedger;
 import design.inherent.reform.presentation.graphics.GraphicLimits;
 import design.inherent.reform.presentation.graphics.GraphicTexture;
 import design.inherent.reform.serialization.JsonLimits;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import javax.imageio.ImageIO;
 
@@ -135,6 +141,120 @@ final class PlatformGraphicImageChecks {
         "admitted header alone does not pass actual PNG decoding",
         () -> ClientGraphicImages.decodeStill(texture(damaged, null), LIMITS, JSON),
         "preview.texture_invalid");
+  }
+
+  /** Runs on the real bounded worker; returns detached observations for client-thread reporting. */
+  static Map<String, Boolean> batchWorker() {
+    var observations = new LinkedHashMap<String, Boolean>();
+    BiConsumer<String, Boolean> check = observations::put;
+    check.accept(
+        "batch preparation executes off the client thread",
+        !net.minecraft.client.Minecraft.getInstance().isSameThread());
+    try {
+      var first = texture(png(true), "{\"animation\":{\"frames\":[1,0]}}");
+      var second =
+          new GraphicTexture(
+              LIMITS,
+              DocumentId.parse("fixture:other_frame"),
+              png(false),
+              Optional.of("{\"animation\":{}}".getBytes(StandardCharsets.UTF_8)));
+      var inputs = List.of(first, second);
+      var ledger = new GraphicLedger(new GraphicLimits(4096, 40, 1024, 4, 4096));
+      var pixels = ClientGraphicImages.decodeStills(inputs, ledger, JSON, 8, () -> {});
+      check.accept(
+          "batch preserves first declared frames beside reserved geometry",
+          pixels.size() == 2
+              && pixels.get(ID).pixel(0, 0) == SECOND
+              && pixels.get(second.id()).pixel(0, 0) == FIRST);
+      check.accept(
+          "batch closes native strip allocations before delivery",
+          ledger.state().bytes() == 0
+              && ledger.state().resources() == 0
+              && ledger.state().peakBytes() == 32);
+      try {
+        pixels.clear();
+        throw new AssertionError("Batch result was mutable");
+      } catch (UnsupportedOperationException expected) {
+        check.accept("batch result is immutable", true);
+      }
+      // Truncated but admissible PNG headers discriminate preflight from attempted decode.
+      var header1 = texture(java.util.Arrays.copyOf(png(true), 33), null);
+      var header2 =
+          new GraphicTexture(
+              LIMITS, second.id(), java.util.Arrays.copyOf(png(false), 33), Optional.empty());
+      for (var budget :
+          List.of(
+              new GraphicLimits(65, 4096, 1024, 4, 4096),
+              new GraphicLimits(4096, 4096, 15, 4, 4096))) {
+        var bounded = new GraphicLedger(budget);
+        refuses(
+            check,
+            "aggregate encoded/strip admission precedes decoding: " + budget,
+            () ->
+                ClientGraphicImages.decodeStills(
+                    List.of(header1, header2), bounded, JSON, 0, () -> {}),
+            "preview.budget");
+        check.accept(
+            "aggregate refusal allocates no native strip: " + budget,
+            bounded.state().peakResources() == 0);
+      }
+      refuses(
+          check,
+          "batch accumulates frame output with geometry reservation",
+          () -> ClientGraphicImages.decodeStills(inputs, ledger, JSON, 9, () -> {}),
+          "preview.budget");
+      check.accept("later frame refusal releases earlier strips", ledger.state().bytes() == 0);
+      var occupied = new GraphicLedger(new GraphicLimits(4096, 4096, 1024, 4, 32));
+      var old = occupied.reserve(1, 1);
+      try {
+        refuses(
+            check,
+            "batch includes native resources awaiting retirement",
+            () -> ClientGraphicImages.decodeStills(inputs, occupied, JSON, 0, () -> {}),
+            "preview.budget");
+        check.accept("refusal preserves the existing owner", occupied.state().bytes() == 1);
+      } finally {
+        old.close();
+      }
+      check.accept(
+          "batch retries after actual prior release",
+          ClientGraphicImages.decodeStills(inputs, occupied, JSON, 0, () -> {}).size() == 2
+              && occupied.state().bytes() == 0);
+      var checkpoints = new AtomicInteger();
+      try {
+        ClientGraphicImages.decodeStills(
+            inputs,
+            ledger,
+            JSON,
+            0,
+            () -> {
+              if (checkpoints.incrementAndGet() == 4)
+                throw new CancellationException("fixture checkpoint");
+            });
+        throw new AssertionError("Batch checkpoint did not cancel");
+      } catch (CancellationException expected) {
+        check.accept(
+            "cancel checkpoint returns no partial batch and releases entered image",
+            checkpoints.get() == 4 && ledger.state().bytes() == 0);
+      }
+      refuses(
+          check,
+          "invalid second PNG does not publish a partial result",
+          () ->
+              ClientGraphicImages.decodeStills(List.of(first, header2), ledger, JSON, 0, () -> {}),
+          "preview.texture_invalid");
+      check.accept(
+          "invalid later image releases entered reservations", ledger.state().bytes() == 0);
+      try {
+        ClientGraphicImages.decodeStills(List.of(first, first), ledger, JSON, 0, () -> {});
+        throw new AssertionError("Duplicate identity was accepted");
+      } catch (IllegalArgumentException expected) {
+        check.accept("batch refuses duplicate captured identity", ledger.state().bytes() == 0);
+      }
+      return java.util.Collections.unmodifiableMap(observations);
+    } catch (Exception failed) {
+      throw new java.util.concurrent.CompletionException(failed);
+    }
   }
 
   private PlatformGraphicImageChecks() {}

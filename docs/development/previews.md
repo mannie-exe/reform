@@ -1,6 +1,6 @@
 # Preview preparation
 
-The 0.4 development API supplies read-only input capture and bounded graphics data. Native viewport submission, provider hosting, and GPU retirement bindings remain under implementation. These foundations do not qualify an isolated rendered preview. The [presentation contract](../design/presentation-0.4-api.md) owns the complete selected behavior.
+The 0.4 development API supplies read-only input capture, bounded graphics data, and private native mesh adapters. The mesh adapters are undergoing native qualification; provider hosting and complete workflow integration remain under implementation. These foundations do not qualify an isolated consumer preview. The [presentation contract](../design/presentation-0.4-api.md) owns the complete selected behavior.
 
 ## Capture the actual draft
 
@@ -23,6 +23,16 @@ Call `ClientEditor.capturePreview(entryPoint, expectedDraftRevision)` on the cli
 `ClientGraphicImages.decodeStill(texture, limits, metadataLimits)` performs explicit CPU preparation through the game's PNG decoder and animation metadata parser. It validates the container before native allocation, checks native strip and output allowances, and closes the native image before returning copied `GraphicPixels`. No live resource manager, texture manager, or GPU upload participates. The selected still is the first declared animation frame; absent animation metadata preserves the full rectangular image. Frame dimensions, frame indices, ARGB channels, and alpha remain explicit. Animation playback is separate from still preparation.
 
 Keep decoding and compilation outside ordinary rendering and search. The preparation coordinator must dispatch this work appropriately and check cancellation, authority, and source freshness before mounting its result. Successful decoding alone does not admit a stale result.
+
+`ClientGraphicImages.decodeStills(textures, ledger, metadataLimits, reservedOutputBytes, checkpoint)` prepares a complete batch on the caller's worker. It checks aggregate encoded input and full-strip pixels before decoding, subtracts reserved geometry from the combined frame-output allowance, and charges temporary native images to the same `GraphicLedger` as graphics awaiting retirement. Duplicate texture identities refuse. Its checkpoint runs during admission and around each decode; cancellation or failure returns no partial map. The caller owns cancellation and job scheduling. The returned immutable map contains detached pixels, with each temporary native image closed. This method neither captures resources nor publishes textures.
+
+## Private mesh adapter
+
+`GraphicScene` binds a frozen mesh to explicit materials and already-decoded `GraphicPixels`. `ClientMeshGraphic.prepare` performs native preparation on the client thread; ordinary drawing receives only a camera and measured viewport. The default adapter supports explicit alpha, culling, sampling, emission, and studio directional lighting. Ambient occlusion requiring world context refuses rather than becoming a silent approximation. Empty geometry needs no native allocation.
+
+Minecraft 1.21.1 uses a private OpenGL program, buffers, textures, and framebuffer while restoring the borrowed native GUI state. Minecraft 26.3 uses its native rendering device, private pipelines, and deferred GUI extraction. Neither adapter registers textures or replaces a live resource manager. Changing the camera or viewport can wait for earlier native uses before rebuilding its private target; waiting is distinct from a missing or invalid subject.
+
+Use a ledger shared across the workflow's entered preparations and retiring graphics. Its counters describe known native image/buffer payload and owned object counts, not total process or graphics-driver memory. Closing the view revokes new submissions immediately. Actual completion controls release, and failures remain observable through the lifetime state. A supplied freshness guard must reflect the actual source, native input, and resource generation; it is checked before preparation and submission. A predicate that always returns true does not establish owner freshness.
 
 ## Native ownership
 

@@ -212,10 +212,21 @@ final class PlatformMeshChecks implements AutoCloseable {
         sample(name, 0.25, 0.75, 0xff0000ff);
         sample(name, 0.75, 0.75, 0xffffff00);
       } else {
+        // Native GUI fills can carry a game-owned color modulator. Compare transparent pixels
+        // against an independent, uncovered sample of the same native background, not its input.
+        var image =
+            ImageIO.read(client.gameDirectory.toPath().resolve("platform-" + name).toFile());
+        int background = image.getRGB(image.getWidth() - 20, image.getHeight() - 20);
+        int overBackground = 0xff000000;
+        for (int shift : new int[] {16, 8, 0}) {
+          int source = shift == 16 ? 255 : 0;
+          int destination = (background >>> shift) & 255;
+          overBackground |= ((source * 128 + destination * 127 + 127) / 255) << shift;
+        }
         sample(name, 0.2, 0.5, 0xff0000ff);
         sample(name, 0.4, 0.5, 0xff80007f);
-        sample(name, 0.7, 0.5, 0xff901010);
-        sample(name, 0.95, 0.5, 0xff202020);
+        sample(name, 0.7, 0.5, overBackground);
+        sample(name, 0.95, 0.5, background);
       }
       check.accept(
           pattern

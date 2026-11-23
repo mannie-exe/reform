@@ -295,8 +295,8 @@ final class NativeMeshGraphic implements AutoCloseable {
     var pipeline =
         RenderPipeline.builder()
             .withLocation(id)
-            .withVertexShader("reform:graphic_mesh")
-            .withFragmentShader("reform:graphic_mesh")
+            .withVertexShader(Identifier.parse("reform:graphic_mesh"))
+            .withFragmentShader(Identifier.parse("reform:graphic_mesh"))
             .withVertexBinding(0, DefaultVertexFormat.POSITION_TEX_COLOR)
             .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
             .withBindGroupLayout(

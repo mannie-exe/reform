@@ -32,6 +32,7 @@ final class PlatformPreviewChecks {
   private byte[] original;
   private DraftRevision initial;
   private CompletableFuture<? extends DraftPreviewInput<?>> captured;
+  private CompletableFuture<java.util.Map<String, Boolean>> images;
   private int stage;
 
   PlatformPreviewChecks(BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -79,7 +80,16 @@ final class PlatformPreviewChecks {
     switch (stage) {
       case 0 -> {
         if (!meshes.tick()) return false;
-        PlatformGraphicImageChecks.run(check);
+        if (images == null) {
+          PlatformGraphicImageChecks.run(check);
+          images =
+              CompletableFuture.supplyAsync(
+                  PlatformGraphicImageChecks::batchWorker,
+                  design.inherent.reform.minecraft.internal.ClientSettingsRuntime.workers());
+          return false;
+        }
+        if (!images.isDone()) return false;
+        images.join().forEach(check);
         parent = NativeScreens.current(client);
         original = bytes();
         workflow =
