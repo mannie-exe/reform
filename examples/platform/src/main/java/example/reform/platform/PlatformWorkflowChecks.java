@@ -8,12 +8,14 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.minecraft.client.ClientDestination;
 import design.inherent.reform.minecraft.client.ClientEditingWorkflow;
 import design.inherent.reform.minecraft.client.ClientEditor;
 import design.inherent.reform.minecraft.client.ClientRegistration;
 import design.inherent.reform.minecraft.client.ClientWorkflowLayout;
 import design.inherent.reform.minecraft.client.KeyBindingScreen;
 import design.inherent.reform.minecraft.client.NativeScreens;
+import design.inherent.reform.minecraft.client.NavigationAttempt;
 import design.inherent.reform.minecraft.client.SettingsForm;
 import design.inherent.reform.minecraft.client.UnsavedChangesScreen;
 import design.inherent.reform.operation.DocumentActions;
@@ -86,6 +88,9 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
   private ClientEditor<?> displayedEditor;
   private Screen host;
   private CompletableFuture<?> waiting;
+  private CompletableFuture<NavigationAttempt.Result> reveal, hierarchyReveal;
+  private ClientEditingWorkflow revealingContext;
+  private DocumentId revealingDocument;
   private byte[] initialJson, initialOptions, initialNative, initialDefaults;
   private String initialDistance;
   private final int[] windowWidth = new int[1], windowHeight = new int[1];
@@ -157,16 +162,30 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
   }
 
   private void show(ClientEditingWorkflow context, DocumentId document) {
-    context.show(document);
+    reveal =
+        context
+            .navigation()
+            .open(new ClientDestination.Document(document))
+            .completion()
+            .toCompletableFuture();
+    revealingContext = context;
+    revealingDocument = document;
     host = context.screen();
-    displayedEditor = context.editor(document);
-    form = displayedEditor.form();
     check(
         "document navigation retains the shared native screen",
         NativeScreens.current(client) == host);
   }
 
   private boolean ready() {
+    if (reveal != null) {
+      if (!reveal.isDone()) return false;
+      check(
+          "document view is actually mounted before native controls are inspected",
+          reveal.join().outcome() == NavigationAttempt.Outcome.REVEALED);
+      displayedEditor = revealingContext.editor(revealingDocument);
+      form = displayedEditor.form();
+      reveal = null;
+    }
     return NativeScreens.current(client) == host
         && form.editorView().availability() == EditorActor.Availability.READY
         && form.editorView().snapshot().isPresent()
@@ -265,7 +284,12 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
             "composed declaration keeps the actual native provider singular",
             PlatformWorkflowExample.selections() == 1);
         NativeScreens.open(client, workflow.screen());
-        workflow.show(preferences);
+        show(preferences);
+        stage = 90;
+      }
+      case 90 -> {
+        if (!ready()) return false;
+        var forms = PlatformWorkflowExample.forms();
         var search = input(workflow.screen(), "Search settings");
         replace(workflow.screen(), search, "Controls");
         check(
@@ -314,7 +338,8 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
                         .count()
                     == 1);
         geometry(workflow.screen());
-        next("composed ordinary owners enter native overview");
+        stage = 1;
+        progress.accept("composed ordinary owners enter native overview");
         capture.accept("form-workflow-wide.png", () -> show(preferences));
       }
       case 1 -> {
@@ -414,6 +439,10 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
             workflow.documents().stream().filter(ClientEditingWorkflow.DocumentState::dirty).count()
                 == 4);
         show(preferences);
+        stage = 80;
+      }
+      case 80 -> {
+        if (!ready()) return false;
         check(
             "returning uses identical form and actual actor",
             form == json.form() && workflow.editor(preferences) == json);
@@ -423,7 +452,8 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
                 .getValue()
                 .equals("broken"));
         press(host, "Undo");
-        next("retained undo history repairs invalid input");
+        stage = 9;
+        progress.accept("retained undo history repairs invalid input");
       }
       case 9 -> {
         if (!ready() || !raw(json, "distance").equals(initialDistance)) return false;
@@ -435,8 +465,12 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
         if (!ready() || !raw(json, "distance").equals("128")) return false;
         press(host, "Save and apply");
         show(PlatformWorkflowExample.KEYS);
-        retained();
-        check("entered save remains pending across native owner navigation", json.busy());
+        check(
+            "entered save remains pending across the native navigation request",
+            json.busy()
+                && json.isOpen()
+                && keys.isOpen()
+                && NativeScreens.current(client) == workflow.screen());
         workflow.screen().onClose();
         check(
             "normal workflow exit waits for actual pending save",
@@ -453,7 +487,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
         next("one owner save completes while overview remains active");
       }
       case 11 -> {
-        if (!settled(json)) return false;
+        if (!ready() || !settled(json)) return false;
         check(
             "JSON receipt records actual save",
             json.view().lastReceipt().orElseThrow().persistence()
@@ -469,7 +503,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
                     initialNative, Files.readAllBytes(PlatformWorkflowSources.clientPath()))
                 && Arrays.equals(
                     initialDefaults, Files.readAllBytes(PlatformWorkflowSources.defaultsPath())));
-        show(PlatformWorkflowExample.KEYS);
+        check("acknowledged target is the retained native Controls editor", form == keys.form());
         press(host, "Save and apply");
         retained();
         next("retained key save uses actual Options writer");
@@ -480,9 +514,14 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
             "key binding is actually applied",
             PlatformWorkflowExample.PRIMARY.saveString().equals("key.keyboard.4"));
         show(PlatformWorkflowSources.defaults().document());
+        stage = 120;
+      }
+      case 120 -> {
+        if (!ready()) return false;
         press(host, PlatformWorkflowSources.saveLabel());
         retained();
-        next("retained installation defaults use their actual source writer");
+        stage = 13;
+        progress.accept("retained installation defaults use their actual source writer");
       }
       case 13 -> {
         if (!settled(defaults)) return false;
@@ -498,8 +537,13 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
             "discard retires only selected actor",
             !nativeClient.isOpen() && json.isOpen() && keys.isOpen() && defaults.isOpen());
         show(preferences);
+        stage = 130;
+      }
+      case 130 -> {
+        if (!ready()) return false;
         edit("distance", "192");
-        next("independent workflow will compete with retained draft");
+        stage = 14;
+        progress.accept("independent workflow will compete with retained draft");
       }
       case 14 -> {
         if (!ready() || !raw(json, "distance").equals("192")) return false;
@@ -563,8 +607,13 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
             "closing another workflow leaves original actors alive",
             json.isOpen() && keys.isOpen());
         show(preferences);
+        stage = 170;
+      }
+      case 170 -> {
+        if (!ready()) return false;
         press(host, "Save and apply");
-        next("original actor retains native source conflict checks");
+        stage = 18;
+        progress.accept("original actor retains native source conflict checks");
       }
       case 18 -> {
         if (!ready() || json.view().operationReport().valid()) return false;
@@ -790,7 +839,22 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
                 new ClientWorkflowLayout(
                     List.of(new ClientWorkflowLayout.Group(path, rows, List.of())), List.of()));
         NativeScreens.open(client, hierarchy.screen());
-        hierarchy.showPlacement(hierarchyId("distance"));
+        hierarchyReveal =
+            hierarchy
+                .navigation()
+                .open(
+                    new ClientDestination.Placement(
+                        new design.inherent.reform.presentation.DestinationId(
+                            hierarchyId("distance"))))
+                .completion()
+                .toCompletableFuture();
+        hierarchyStage = 10;
+      }
+      case 10 -> {
+        if (!hierarchyReveal.isDone()) return false;
+        check(
+            "hierarchy placement is mounted before its tree is inspected",
+            hierarchyReveal.join().outcome() == NavigationAttempt.Outcome.REVEALED);
         check(
             "nested categories remain in one native tree over one actual owner",
             navigation(hierarchy.screen(), "Interface") != null
@@ -817,8 +881,8 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
         var destination = navigation(hierarchy.screen(), "Map distance");
         focus(hierarchy.screen(), destination);
         click(hierarchy.screen(), destination);
-        hierarchyForm = hierarchy.editor(form.route()).form();
-        hierarchyStage++;
+        hierarchyForm = hierarchy.editor(preferences).form();
+        hierarchyStage = 1;
       }
       case 1 -> {
         if (hierarchyForm.editorView().availability() != EditorActor.Availability.READY
