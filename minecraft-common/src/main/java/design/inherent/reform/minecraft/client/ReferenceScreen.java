@@ -3,6 +3,9 @@ package design.inherent.reform.minecraft.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationSnapshot;
+import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.TaskPresentation;
+import design.inherent.reform.presentation.ThemeValues;
 import design.inherent.reform.reference.ReferenceLimits;
 import design.inherent.reform.reference.ReferencePage;
 import design.inherent.reform.reference.ReferenceQuery;
@@ -29,6 +32,10 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   private final List<AbstractWidget> querying = new ArrayList<>();
   private EditBox filter, key;
   private FormPanel panel;
+  private TaskPanels panels;
+  private TaskPanels.State retained = TaskPanels.State.empty();
+  private int retainedFooter = -1;
+  private boolean technicalDetails;
   private FormChrome chrome;
   private Button use, back, nextPage;
   private ReferenceSelection.Search search;
@@ -57,8 +64,6 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
 
   @Override
   protected void init() {
-    float scroll = panel == null ? 0 : panel.scroll();
-    String focused = panel == null ? null : panel.focusKey();
     footer.clear();
     querying.clear();
     nextPage = null;
@@ -75,76 +80,147 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
     footer(text("refresh", "Refresh source"), this::refresh);
     back = footer(text("back", "Back"), this::onClose);
     chrome =
-        new FormChrome(minecraft, width, height, title, sourceLabel(), status(), footer, theme());
-    panel = chrome.panel();
+        new FormChrome(
+            minecraft,
+            width,
+            height,
+            title,
+            text("choose_help", "Browse choices, then inspect and use the selected value."),
+            status(),
+            footer,
+            theme());
+    var searchButton = queryButton(text("search", "Search"), () -> search(Optional.empty()));
+    var inspectButton = queryButton(text("inspect", "Inspect"), () -> resolve(key.getValue()));
+    int padding = 2 * theme().values().value(ThemeValues.Role.SPACE_CONTENT);
+    int inline = theme().values().value(ThemeValues.Role.SPACE_INLINE);
+    int primaryMinimum =
+        Math.addExact(
+            padding,
+            Math.addExact(
+                inline,
+                Math.addExact(ControlSizing.preferred(filter).width(), searchButton.getWidth())));
+    int detailMinimum =
+        Math.addExact(
+            padding,
+            Math.addExact(
+                inline,
+                Math.addExact(ControlSizing.preferred(key).width(), inspectButton.getWidth())));
+    int minimumHeight =
+        Math.addExact(
+            3 * font.lineHeight,
+            Math.addExact(theme().values().value(ThemeValues.Role.CONTROL_HEIGHT), padding));
+    int preferred = Math.max(primaryMinimum, chrome.contentBounds().width() / 2);
+    panels =
+        new TaskPanels(
+            chrome,
+            taskPresentation(),
+            TaskPresentation.Kind.CHOOSER,
+            new TaskPresentation.Offer(
+                new FormGeometry.Size(primaryMinimum, minimumHeight), preferred),
+            new TaskPresentation.Offer(
+                new FormGeometry.Size(detailMinimum, minimumHeight), detailMinimum),
+            theme(),
+            retained);
+    panel = panels.primary();
+    var details = panels.detail();
     chrome.mountActions(this::addRenderableWidget, panel);
+    panel.beginGroup("primary:search", text("filter", "Search"));
     panel.field(
-        "filter",
-        text("filter", "Search"),
+        "primary:filter",
+        Component.empty(),
         searchNotice == null
             ? text("search_help", "Search the admitted source; no files or terrain are loaded.")
             : searchNotice,
         filter,
-        queryButton(text("search", "Search"), () -> search(Optional.empty())));
-    panel.field(
-        "key",
-        text("key", "Reference ID"),
-        lookupNotice == null
-            ? text("lookup_help", "Inspect an ID before choosing it. Manual input is preserved.")
-            : lookupNotice,
-        key,
-        queryButton(text("inspect", "Inspect"), () -> resolve(key.getValue())));
+        searchButton);
+    panel.endGroup();
+    appendChoices(panel);
+    details.beginGroup("detail:selection", text("selection", "Selected value"));
     selection
         .resolution()
         .filter(ignored -> selection.current())
         .ifPresent(
             result -> {
-              if (selection
-                  .page()
-                  .filter(
-                      page ->
-                          page.reason().equals(result.reason())
-                              && (page.availability()
-                                          == ReferencePage.Availability.MISSING_DEPENDENCY
-                                      && result.status()
-                                          == ReferenceResolution.Status.MISSING_DEPENDENCY
-                                  || page.availability()
-                                          == ReferencePage.Availability.UNAVAILABLE_CONTEXT
-                                      && result.status()
-                                          == ReferenceResolution.Status.UNAVAILABLE_CONTEXT))
-                  .isPresent()) return;
               var label =
                   result.status() == ReferenceResolution.Status.RESOLVED
                       ? text("resolved", "Resolved")
                       : Component.literal(readable(result.status().name()));
-              panel.row(
-                  "resolution",
+              details.row(
+                  "detail:resolution",
                   label,
                   result.status() == ReferenceResolution.Status.RESOLVED
                       ? ReferencePreview.format(result.preview())
                       : Component.literal(clip(result.reason(), 512)));
             });
+    details.field(
+        "detail:key",
+        text("key", "Reference ID"),
+        lookupNotice == null
+            ? text("lookup_help", "Inspect an ID before choosing it. Manual input is preserved.")
+            : lookupNotice,
+        key,
+        inspectButton);
+    var technical =
+        queryButton(
+            technicalDetails
+                ? text("hide_source", "Hide source details")
+                : text("show_source", "Source details"),
+            () -> {
+              technicalDetails = !technicalDetails;
+              rebuildWidgets();
+            });
+    details.actions("detail:source_toggle", technical);
+    if (technicalDetails) {
+      var stamp = selection.stamp();
+      details.row(
+          "detail:source", text("source", "Source"), Component.literal(stamp.source().toString()));
+      details.row(
+          "detail:revision", text("revision", "Revision"), Component.literal(stamp.revision()));
+      details.row(
+          "detail:snapshot",
+          text("snapshot", "Snapshot"),
+          Component.literal(stamp.snapshot().toString()));
+      details.row(
+          "detail:context",
+          text("context", "Context"),
+          Component.literal(stamp.context().toString()));
+    }
+    details.endGroup();
+    addRenderableWidget(panel);
+    if (details != panel) addRenderableWidget(details);
+    panels.finish().ifPresent(this::setFocused);
+    if (retainedFooter >= 0 && retainedFooter < footer.size())
+      setFocused(footer.get(retainedFooter));
+    feedback();
+    if (!started) {
+      started = true;
+      search(Optional.empty());
+      resolve(key.getValue());
+    }
+  }
+
+  private void appendChoices(FormPanel target) {
+    target.beginGroup("primary:choices", text("choices", "Choices"));
     selection
         .page()
         .ifPresent(
             page -> {
               if (page.availability() != ReferencePage.Availability.READY) {
-                panel.row(
-                    "availability",
+                target.row(
+                    "primary:availability",
                     Component.literal(readable(page.availability().name())),
                     Component.literal(clip(page.reason(), 512)));
                 return;
               }
-              panel.row(
-                  "accounting",
-                  text("choices", "Choices"),
+              target.row(
+                  "primary:accounting",
+                  Component.empty(),
                   Component.translatableWithFallback(
                       "reform.reference.examined",
                       "%s shown; %s source entries examined on this page",
                       page.choices().size(),
                       page.examined()));
-              for (int i = 0; i < page.choices().size(); i++) {
-                var choice = page.choices().get(i);
+              for (var choice : page.choices()) {
                 var inspect =
                     queryButton(
                         text("inspect", "Inspect"),
@@ -157,57 +233,51 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
                         });
                 inspect.setTooltip(
                     net.minecraft.client.gui.components.Tooltip.create(
-                        Component.literal(clip(choice.key(), 512))));
-                var summary =
-                    choice.label().equals(choice.key())
-                        ? Component.empty()
-                        : Component.literal(clip(choice.key(), 256));
-                var details =
+                        Component.literal(choice.key())));
+                target.row(
+                    "primary:choice:" + choice.key(),
+                    Component.literal(clip(choice.label(), 160)),
                     selection.current()
                         ? ReferencePreview.format(choice.preview())
-                        : Component.empty();
-                if (!details.getString().isEmpty()) {
-                  if (!summary.getString().isEmpty()) summary.append("\n");
-                  summary.append(details);
-                }
-                panel.row(
-                    "choice:" + i, Component.literal(clip(choice.label(), 160)), summary, inspect);
+                        : Component.empty(),
+                    inspect);
               }
-              if (page.exhausted()) panel.row(text("end", "End of this search"), Component.empty());
+              if (page.exhausted())
+                target.row("primary:end", text("end", "End of this search"), Component.empty());
               else {
                 nextPage = queryButton(text("next", "Next page"), () -> search(page.next()));
-                panel.row(
+                target.row(
+                    "primary:continued",
                     text("continued", "More source entries remain"),
                     text("continued_help", "An empty page can still have further matches."),
                     nextPage);
               }
             });
-    addRenderableWidget(panel);
-    panel.finish(scroll);
-    panel.restoreFocus(focused);
-    if (focused != null) setFocused(panel);
-    feedback();
-    if (!started) {
-      started = true;
-      search(Optional.empty());
-      resolve(key.getValue());
-    }
+    target.endGroup();
+  }
+
+  private void rememberPresentation() {
+    if (panels != null) retained = panels.remember(getFocused());
+    retainedFooter = footer.indexOf(getFocused());
+  }
+
+  @Override
+  protected void beforeResize() {
+    rememberPresentation();
   }
 
   @Override
   protected void setInitialFocus() {
+    if (panels != null && (getFocused() == panels.primary() || getFocused() == panels.detail()))
+      return;
     setFocused(panel);
     panel.focusVisibleControl();
   }
 
   @Override
   protected void rebuildWidgets() {
-    var bookmark = panel == null ? null : panel.bookmark();
-    String focus = panel == null ? null : panel.focusKey();
+    rememberPresentation();
     super.rebuildWidgets();
-    if (bookmark != null) panel.restore(bookmark);
-    panel.restoreFocus(focus);
-    if (focus != null) setFocused(panel);
   }
 
   private Button footer(Component label, Runnable action) {

@@ -13,6 +13,9 @@ import net.minecraft.network.chat.Component;
 /** Native extraction boundary; forms use the game's retained GUI pipeline. */
 public abstract class NativeFormScreen extends Screen {
   private ClientTheme theme = ClientTheme.standard();
+  private design.inherent.reform.presentation.TaskPresentation tasks =
+      design.inherent.reform.presentation.TaskPresentation.standard();
+  private boolean tasksBound, parentTasks;
   private boolean themeBound, parentTheme;
 
   private record PointerDispatch(MouseButtonEvent event, boolean doubleClick) {}
@@ -28,12 +31,34 @@ public abstract class NativeFormScreen extends Screen {
     super(title);
     if (parent instanceof NativeFormScreen form) {
       theme = form.theme();
+      tasks = form.taskPresentation();
+      parentTasks = true;
       parentTheme = true;
     }
   }
 
   public final ClientTheme theme() {
     return theme;
+  }
+
+  public final design.inherent.reform.presentation.TaskPresentation taskPresentation() {
+    return tasks;
+  }
+
+  public final NativeFormScreen withTaskPresentation(
+      design.inherent.reform.presentation.TaskPresentation presentation) {
+    if (themeMounted())
+      throw new IllegalStateException("Declare task presentation before mounting");
+    tasks = java.util.Objects.requireNonNull(presentation);
+    tasksBound = true;
+    return this;
+  }
+
+  final void inheritFallbackTasks(NativeFormScreen parent) {
+    if (!tasksBound && !parentTasks && !themeMounted()) {
+      tasks = parent.taskPresentation();
+      parentTasks = true;
+    }
   }
 
   private boolean themeMounted() {

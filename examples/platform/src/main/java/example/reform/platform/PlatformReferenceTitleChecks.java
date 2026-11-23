@@ -41,7 +41,11 @@ final class PlatformReferenceTitleChecks {
   private ClientEditingWorkflow workflow;
   private ReferenceTitles titles;
   private Button originalChoice, retiredUse;
-  private EditBox retiredRaw;
+  private EditBox retiredRaw, chooserId;
+  private Object chooserLookup, chooserSearch;
+  private int chooserGuiScale;
+  private final int[] chooserWidth = new int[1], chooserHeight = new int[1];
+  private final JsonArray chooserLayouts = new JsonArray();
   private OperationHandle<?> save;
   private byte[] original;
   private int stage;
@@ -58,12 +62,53 @@ final class PlatformReferenceTitleChecks {
     result.addProperty("status", complete ? "PASS" : "RUNNING");
     result.add("checks", checks);
     result.add("observedHelp", observedHelp);
+    result.add("chooserLayouts", chooserLayouts);
     return result;
   }
 
   private void check(String label, boolean valid) {
     if (!valid) throw new AssertionError(label);
     checks.add(label);
+  }
+
+  private void checkChooser(String name, String expected) throws Exception {
+    var popup = NativeScreens.current(client);
+    var regions = observed(observed(popup, "panels"), "regions");
+    String actual = observed(regions, "arrangement").toString();
+    check("chooser " + name + " uses measured " + expected, actual.equals(expected));
+    check(
+        "chooser reflow keeps actual source operations and unchanged saved bytes",
+        observed(popup, "lookup") == chooserLookup
+            && observed(popup, "search") == chooserSearch
+            && Arrays.equals(original, savedBytes())
+            && raw("block").equals("stone"));
+    check(
+        "chooser inherits task policy from its retained workflow",
+        ((design.inherent.reform.minecraft.client.NativeFormScreen) popup)
+            .taskPresentation()
+            .equals(
+                ((design.inherent.reform.minecraft.client.NativeFormScreen) workflow.screen())
+                    .taskPresentation()));
+    geometry(popup);
+    var entry = new JsonObject();
+    entry.addProperty("scene", name);
+    entry.addProperty("arrangement", actual);
+    entry.addProperty("width", popup.width);
+    entry.addProperty("height", popup.height);
+    entry.add("geometry", measuredPanels(popup));
+    chooserLayouts.add(entry);
+  }
+
+  private void checkChooserInput() {
+    var popup = NativeScreens.current(client);
+    check(
+        "chooser A/B/A keeps native ID, query, focus and exact caret/selection",
+        input(popup, "Reference ID") == chooserId
+            && chooserId.getValue().equals("minecraft:oak_planks")
+            && chooserId.getCursorPosition() == 5
+            && chooserId.getHighlighted().equals("raft")
+            && chooserId.isFocused()
+            && input(popup, "Search").getValue().equals("unsubmitted query"));
   }
 
   private void next(String label) {
@@ -214,6 +259,12 @@ final class PlatformReferenceTitleChecks {
         workflow =
             ClientEditingWorkflow.open(
                 parent, Component.literal("Reference choices"), List.of(form));
+        ((design.inherent.reform.minecraft.client.NativeFormScreen) workflow.screen())
+            .withTaskPresentation(
+                design.inherent.reform.presentation.TaskPresentation.standard()
+                    .withPreference(
+                        design.inherent.reform.presentation.TaskPresentation.Kind.INSPECTION,
+                        design.inherent.reform.presentation.TaskPresentation.Preference.FOCUSED));
         NativeScreens.open(client, workflow.screen());
         pending =
             workflow
@@ -307,13 +358,74 @@ final class PlatformReferenceTitleChecks {
         next("inspect a real registry choice through the shared browser");
       }
       case 6 -> {
-        var use = button(NativeScreens.current(client), "Use selection");
-        if (!use.active) return false;
-        retiredUse = use;
+        var popup = NativeScreens.current(client);
+        if (!button(popup, "Use selection").active) return false;
+        chooserLookup = observed(popup, "lookup");
+        chooserSearch = observed(popup, "search");
+        NativeClientProbe.size(client, chooserWidth, chooserHeight);
+        chooserGuiScale = client.options.guiScale().get();
+        client.options.guiScale().set(1);
+        NativeClientProbe.resize(client, 1100, 760);
+        NativeClientProbe.reflow(client);
+        stage = 50;
+      }
+      case 50 -> {
+        var popup = NativeScreens.current(client);
+        if (popup.width < 1000) return false;
+        checkChooser("wide", "ADJACENT");
+        chooserId = input(popup, "Reference ID");
+        replace(popup, input(popup, "Search"), "unsubmitted query");
+        check("chooser ID focus uses the actual new panel tree", focus(popup, chooserId));
+        chooserId.setCursorPosition(5);
+        chooserId.setHighlightPos(9);
+        stage = 54;
+        capture.accept(
+            "form-workspace-chooser-adjacent.png",
+            () -> {
+              client.options.guiScale().set(3);
+              NativeClientProbe.resize(client, 480, 360);
+              NativeClientProbe.reflow(client);
+              stage = 51;
+            });
+      }
+      case 51 -> {
+        var popup = NativeScreens.current(client);
+        if (popup.width > 340) return false;
+        checkChooser("compact", "FOCUSED");
+        checkChooserInput();
+        stage = 54;
+        capture.accept(
+            "form-workspace-chooser-focused.png",
+            () -> {
+              client.options.guiScale().set(1);
+              NativeClientProbe.resize(client, 1100, 760);
+              NativeClientProbe.reflow(client);
+              stage = 52;
+            });
+      }
+      case 52 -> {
+        var popup = NativeScreens.current(client);
+        if (popup.width < 1000) return false;
+        checkChooser("wide-return", "ADJACENT");
+        checkChooserInput();
+        stage = 54;
+        capture.accept(
+            "form-workspace-chooser-return.png",
+            () -> {
+              client.options.guiScale().set(chooserGuiScale);
+              NativeClientProbe.resize(client, chooserWidth[0], chooserHeight[0]);
+              NativeClientProbe.reflow(client);
+              stage = 53;
+            });
+      }
+      case 53 -> {
+        retiredUse = button(NativeScreens.current(client), "Use selection");
         pending =
             PlatformReferenceExample.prepareSources("titled-reference-check").toCompletableFuture();
-        next("replace the actual source with an equal revision label");
+        stage = 7;
+        progress.accept("replace the actual source with an equal revision label");
       }
+      case 54 -> {}
       case 7 -> {
         if (!pending.isDone()) return false;
         pending.join();

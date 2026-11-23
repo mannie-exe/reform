@@ -14,7 +14,8 @@ public record ClientWorkspacePresentation(
     Optional<HomePage> home,
     ThemePatch theme,
     Optional<DestinationId> initial,
-    Map<ClientTheme.TextRole, net.minecraft.network.chat.Style> textStyles) {
+    Map<ClientTheme.TextRole, net.minecraft.network.chat.Style> textStyles,
+    TaskPresentation taskPresentation) {
   public ClientWorkspacePresentation {
     Objects.requireNonNull(identity);
     Objects.requireNonNull(header);
@@ -22,6 +23,7 @@ public record ClientWorkspacePresentation(
     Objects.requireNonNull(theme);
     Objects.requireNonNull(initial);
     textStyles = Map.copyOf(textStyles);
+    Objects.requireNonNull(taskPresentation);
   }
 
   public ClientWorkspacePresentation(
@@ -31,6 +33,21 @@ public record ClientWorkspacePresentation(
       ThemePatch theme,
       Optional<DestinationId> initial) {
     this(identity, header, home, theme, initial, Map.of());
+  }
+
+  public ClientWorkspacePresentation(
+      WorkspaceIdentity identity,
+      HeaderComposition header,
+      Optional<HomePage> home,
+      ThemePatch theme,
+      Optional<DestinationId> initial,
+      Map<ClientTheme.TextRole, net.minecraft.network.chat.Style> textStyles) {
+    this(identity, header, home, theme, initial, textStyles, TaskPresentation.standard());
+  }
+
+  public ClientWorkspacePresentation withTaskPresentation(TaskPresentation tasks) {
+    return new ClientWorkspacePresentation(
+        identity, header, home, theme, initial, textStyles, tasks);
   }
 
   public static ClientWorkspacePresentation standard(WorkspaceIdentity identity) {
@@ -43,26 +60,28 @@ public record ClientWorkspacePresentation(
   }
 
   public ClientWorkspacePresentation withHeader(HeaderComposition header) {
-    return new ClientWorkspacePresentation(identity, header, home, theme, initial, textStyles);
+    return new ClientWorkspacePresentation(
+        identity, header, home, theme, initial, textStyles, taskPresentation);
   }
 
   public ClientWorkspacePresentation withHome(HomePage home) {
     return new ClientWorkspacePresentation(
-        identity, header, Optional.of(home), theme, initial, textStyles);
+        identity, header, Optional.of(home), theme, initial, textStyles, taskPresentation);
   }
 
   public ClientWorkspacePresentation withoutHome() {
     return new ClientWorkspacePresentation(
-        identity, header, Optional.empty(), theme, initial, textStyles);
+        identity, header, Optional.empty(), theme, initial, textStyles, taskPresentation);
   }
 
   public ClientWorkspacePresentation withTheme(ThemePatch patch) {
-    return new ClientWorkspacePresentation(identity, header, home, patch, initial, textStyles);
+    return new ClientWorkspacePresentation(
+        identity, header, home, patch, initial, textStyles, taskPresentation);
   }
 
   public ClientWorkspacePresentation withInitialDestination(DestinationId id) {
     return new ClientWorkspacePresentation(
-        identity, header, home, theme, Optional.of(id), textStyles);
+        identity, header, home, theme, Optional.of(id), textStyles, taskPresentation);
   }
 
   public ClientWorkspacePresentation withTextStyle(
@@ -72,7 +91,8 @@ public record ClientWorkspacePresentation(
             ClientTheme.TextRole.class);
     next.putAll(textStyles);
     next.put(Objects.requireNonNull(role), Objects.requireNonNull(style));
-    return new ClientWorkspacePresentation(identity, header, home, theme, initial, next);
+    return new ClientWorkspacePresentation(
+        identity, header, home, theme, initial, next, taskPresentation);
   }
 
   public ClientTheme clientTheme() {

@@ -1171,6 +1171,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     Overview(Screen parent, Component title) {
       super(title);
       withTheme(presentation.clientTheme());
+      withTaskPresentation(presentation.taskPresentation());
       this.parent = parent;
       categoryPath = layout == null ? List.of() : layout.groups().getFirst().path();
       selectedKey =

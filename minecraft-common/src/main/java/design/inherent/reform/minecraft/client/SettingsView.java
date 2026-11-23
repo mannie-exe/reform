@@ -1412,6 +1412,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         && referenceTitles.containsKey(reference.source())) {
       titledReference(path, label, reference);
       if (!expandedEditors.contains(path)) return;
+      panel.beginGroup(key(path) + ":manual_id", text("manual_reference_id", "Manual ID"));
+      try {
+        scalarContents(field, label);
+      } finally {
+        panel.endGroup();
+      }
+      return;
     }
     if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>)
         && hasAvailability(path)) {
@@ -1583,6 +1590,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           structuralButton(
               path, text("repair_value", "Repair value"), label, new DraftEdit.Repair()));
     }
+    scalarContents(field, label);
+  }
+
+  private void scalarContents(FormModel.Node field, Component label) {
+    var path = field.path();
+    var node = field.input();
+    var shape = field.type().orElseThrow().shape();
     visibleFields.add(path);
     var control = controls.get(path);
     var raw = raw(node);
@@ -1681,8 +1695,14 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                       || loading
                       || pendingEdits > 0
                       || unsent()) return;
-                  if (!expandedEditors.remove(path)) expandedEditors.add(path);
+                  boolean expanding = !expandedEditors.remove(path);
+                  if (expanding) expandedEditors.add(path);
                   rebuildWidgets();
+                  if (expanding) focusField(path);
+                  else {
+                    setFocused(panel);
+                    panel.focusFirst(List.of(disclosureButtons.get(path)));
+                  }
                 })
             .bounds(0, 0, 80, 20)
             .createNarration(original -> label.copy().append(": ").append(original.get()))

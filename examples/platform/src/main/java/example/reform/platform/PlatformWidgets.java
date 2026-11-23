@@ -335,7 +335,7 @@ final class PlatformWidgets {
     return null;
   }
 
-  private static Object observed(Object instance, String field) {
+  static Object observed(Object instance, String field) {
     try {
       var declared = instance.getClass().getDeclaredField(field);
       declared.setAccessible(true);

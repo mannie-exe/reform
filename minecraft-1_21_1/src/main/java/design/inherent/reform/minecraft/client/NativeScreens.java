@@ -20,8 +20,10 @@ public final class NativeScreens {
 
   public static void open(Minecraft client, Screen screen) {
     if (screen instanceof NativeFormScreen next
-        && current(client) instanceof NativeFormScreen previous)
+        && current(client) instanceof NativeFormScreen previous) {
       next.inheritFallbackTheme(previous.theme());
+      next.inheritFallbackTasks(previous);
+    }
     if (screen == null || current(client) != screen) client.setScreen(screen);
   }
 

@@ -117,6 +117,15 @@ final class FormChrome {
     return panel;
   }
 
+  FormGeometry.Placement contentBounds() {
+    var at = frame.content();
+    return new FormGeometry.Placement(originX + at.x(), originY + at.y(), at.width(), at.height());
+  }
+
+  boolean unifiedContentRequired() {
+    return frame.headerInContent() || frame.statusInContent() || frame.actionsInContent();
+  }
+
   void mountActions(Consumer<AbstractWidget> mount, FormPanel panel) {
     if (frame.statusInContent()) panel.row(Component.empty(), status);
     if (frame.actionsInContent()) {
