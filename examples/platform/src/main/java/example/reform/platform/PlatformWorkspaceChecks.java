@@ -1181,8 +1181,20 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
                 Component.literal("Standalone navigation"),
                 new design.inherent.reform.minecraft.client.ClientFormOptions<
                         PlatformWorkflowExample.Preferences>(
-                        design.inherent.reform.presentation.FormPresentation.EMPTY.withCatalog(
-                            catalog),
+                        design.inherent.reform.presentation.FormPresentation.EMPTY
+                            .withCatalog(catalog)
+                            .withLayout(
+                                new design.inherent.reform.presentation.FormLayout(
+                                    List.of(),
+                                    List.of(
+                                        new design.inherent.reform.presentation.FormLayout.Group(
+                                            "standalone_values",
+                                            "fixture.standalone_values",
+                                            "Standalone values",
+                                            "Same retained source",
+                                            List.of(
+                                                FieldPath.ROOT.field("label"),
+                                                FieldPath.ROOT.field("distance")))))),
                         java.util.Map.of())
                     .withDefaults(
                         Component.literal(DEFAULTS_LABEL), Component.literal(DEFAULTS_HELP))));
@@ -1208,6 +1220,31 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         }
         check("active default-action presentation cannot be replaced", refused);
         returnToSettings(standalone);
+        var sameActions = standalone.editingActions();
+        click(standalone, button(standalone, "Standalone values"));
+        check(
+            "standalone typed layout target reveals the actual group without a new owner",
+            standalone.focusTarget(
+                    new design.inherent.reform.presentation.FormTarget.Section(
+                        "group:standalone_values"))
+                && standalone.editingActions() == sameActions);
+        var ordered =
+            widgets(standalone).stream()
+                .filter(widget -> widget.getClass().getSimpleName().equals("NavigationButton"))
+                .sorted(java.util.Comparator.comparingInt(widget -> widget.getY()))
+                .map(widget -> widget.getMessage().getString())
+                .toList();
+        check(
+            "standalone section hierarchy uses its rendered field order: " + ordered,
+            ordered.equals(
+                List.of("Standalone navigation", "Standalone values", "Label", "Distance")));
+        check(
+            "standalone grouped body uses the same label then distance order",
+            standalone.fieldControl(FieldPath.ROOT.field("label")).orElseThrow().getY()
+                < standalone.fieldControl(FieldPath.ROOT.field("distance")).orElseThrow().getY());
+        check(
+            "standalone group navigation leaves the source bytes untouched",
+            Arrays.equals(twinBefore, source("workspace_twin")));
         var row =
             widgets(standalone).stream()
                 .filter(Button.class::isInstance)

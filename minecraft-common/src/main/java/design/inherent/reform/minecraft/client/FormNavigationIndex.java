@@ -6,6 +6,7 @@ import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormComposition;
 import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.presentation.FormPresentation;
+import design.inherent.reform.presentation.FormTarget;
 import design.inherent.reform.value.ValueShape;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,11 +21,21 @@ import net.minecraft.network.chat.Component;
 final class FormNavigationIndex {
   record FieldMatch(FieldPath path, String label, String help, String search) {}
 
+  record Target(
+      FormTarget id,
+      Optional<FormTarget> parent,
+      FieldPath scope,
+      Component title,
+      Component help,
+      boolean searchOnly,
+      String search) {}
+
   private final FormCatalog definition;
   private final FormPresentation presentation;
   private final DocumentId document;
   private FormCatalog.Snapshot projection;
   private List<FieldMatch> fields = List.of();
+  private List<Target> targets = List.of();
   private boolean fieldsUnavailable, forceAll;
   private FieldPath selection;
   private FormModel model;
@@ -56,6 +67,7 @@ final class FormNavigationIndex {
     language = currentLanguage;
     projection = null;
     fields = List.of();
+    targets = List.of();
     fieldsUnavailable = false;
     failure = null;
     if (model != null) {
@@ -66,6 +78,7 @@ final class FormNavigationIndex {
         } catch (IllegalArgumentException unadmitted) {
           fieldsUnavailable = true;
         }
+        targets = indexTargets(model);
         if (selection == null)
           selection =
               definition.sections().stream()
@@ -75,6 +88,8 @@ final class FormNavigationIndex {
         selection = projection.nearest(selection).path();
       } catch (RuntimeException unavailable) {
         projection = null;
+        fields = List.of();
+        targets = List.of();
         failure =
             Component.literal(
                 visible(
@@ -94,12 +109,18 @@ final class FormNavigationIndex {
         : forceAll ? projection.entry(FieldPath.ROOT) : projection.entry(selection);
   }
 
-  List<FormCatalog.Entry> entries() {
-    return projection == null ? List.of() : projection.entries();
+  List<Target> targets() {
+    return targets;
   }
 
-  List<FieldMatch> fields() {
-    return fields;
+  int maximumTargets() {
+    return (int)
+        Math.min(
+            Integer.MAX_VALUE,
+            2L * definition.limits().maximumEntries()
+                + presentation.layout().groups().size()
+                + presentation.ranges().size()
+                + 1);
   }
 
   Optional<Component> searchProblem() {
@@ -187,6 +208,7 @@ final class FormNavigationIndex {
     selection = null;
     model = null;
     fields = List.of();
+    targets = List.of();
     fieldsUnavailable = false;
     failure = null;
   }
@@ -218,6 +240,64 @@ final class FormNavigationIndex {
           || characters > bounds.maximumTotalLabelCharacters())
         throw new IllegalArgumentException("Localized field search exceeds its admission");
       result.add(new FieldMatch(node.path(), label, help, search));
+    }
+    return List.copyOf(result);
+  }
+
+  private List<Target> indexTargets(FormModel model) {
+    var paths = new java.util.LinkedHashSet<FieldPath>();
+    projection.entries().forEach(entry -> paths.add(entry.path()));
+    fields.forEach(field -> paths.add(field.path()));
+    var matches = new java.util.HashMap<FieldPath, FieldMatch>();
+    fields.forEach(field -> matches.put(field.path(), field));
+    var graph =
+        FormComposition.navigation(model, presentation, List.copyOf(paths), maximumTargets());
+    var result = new ArrayList<Target>();
+    for (var entry : graph.nodes()) {
+      if (entry.id() instanceof FormTarget.Field field) {
+        var known = projection.entry(field.path());
+        var match = matches.get(field.path());
+        Component title =
+            Component.literal(known.isPresent() ? known.orElseThrow().label() : match.label());
+        Component help =
+            known.isPresent()
+                ? known.orElseThrow().section().map(CatalogHelp::describe).orElse(Component.empty())
+                : Component.literal(match.help());
+        result.add(
+            new Target(
+                field,
+                entry.parent(),
+                field.path(),
+                title,
+                help,
+                known.isEmpty(),
+                match == null ? title.getString() + " " + help.getString() : match.search()));
+      } else {
+        var box = (FormComposition.Box) entry.target().orElseThrow();
+        var title = Component.translatableWithFallback(box.translationKey(), box.label());
+        var help =
+            language.has(box.translationKey() + ".help") || !box.help().isBlank()
+                ? Component.translatableWithFallback(box.translationKey() + ".help", box.help())
+                : Component.empty();
+        var ancestors = graph.ancestry(entry.id());
+        var scope =
+            ancestors.stream()
+                .map(design.inherent.reform.presentation.DestinationGraph.Node::id)
+                .filter(FormTarget.Field.class::isInstance)
+                .map(FormTarget.Field.class::cast)
+                .map(FormTarget.Field::path)
+                .reduce((first, last) -> last)
+                .orElse(FieldPath.ROOT);
+        result.add(
+            new Target(
+                entry.id(),
+                entry.parent(),
+                scope,
+                title,
+                help,
+                false,
+                title.getString() + " " + help.getString()));
+      }
     }
     return List.copyOf(result);
   }

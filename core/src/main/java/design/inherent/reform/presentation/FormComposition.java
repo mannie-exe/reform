@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -138,6 +139,85 @@ public final class FormComposition {
         case Row row -> row.children().forEach(field -> result.add(field.node()));
       }
     return List.copyOf(result);
+  }
+
+  /**
+   * Project admitted field metadata and actual boxes in the same flow as the body. An absent field
+   * retains its typed identity with empty content, never another field at a similar index. This
+   * neither admits a source nor widens the caller's catalogue or draft limits.
+   */
+  public static DestinationGraph<FormTarget, Optional<Part>> navigation(
+      FormModel model,
+      FormPresentation presentation,
+      List<FieldPath> admittedFields,
+      int maximumEntries) {
+    Objects.requireNonNull(model);
+    Objects.requireNonNull(presentation);
+    var admitted = new java.util.LinkedHashSet<>(admittedFields);
+    var builder = new NavigationBuilder(presentation, admitted, maximumEntries);
+    var root = new FormTarget.Field(FieldPath.ROOT);
+    builder.add(root, Optional.empty(), Optional.of(new Field(model.root())));
+    builder.walk(resolve(model.root().children(), presentation), root);
+    for (var path : admittedFields) {
+      var target = new FormTarget.Field(path);
+      if (builder.nodes.containsKey(target)) continue;
+      FormTarget parent = root;
+      int depth = 0;
+      for (var known : builder.nodes.keySet())
+        if (known instanceof FormTarget.Field field
+            && path.startsWith(field.path())
+            && field.path().segments().size() > depth) {
+          parent = known;
+          depth = field.path().segments().size();
+        }
+      builder.add(target, Optional.of(parent), Optional.empty());
+    }
+    return new DestinationGraph<>(
+            List.copyOf(builder.nodes.values()),
+            new DestinationGraph.Limits(maximumEntries, maximumEntries))
+        .requireRoot(root);
+  }
+
+  private static final class NavigationBuilder {
+    private final FormPresentation presentation;
+    private final Set<FieldPath> admitted;
+    private final int maximum;
+    private final LinkedHashMap<FormTarget, DestinationGraph.Node<FormTarget, Optional<Part>>>
+        nodes = new LinkedHashMap<>();
+
+    private NavigationBuilder(FormPresentation presentation, Set<FieldPath> admitted, int maximum) {
+      if (maximum < 1) throw new IllegalArgumentException("Navigation admission must be positive");
+      this.presentation = presentation;
+      this.admitted = admitted;
+      this.maximum = maximum;
+    }
+
+    private void add(FormTarget id, Optional<FormTarget> parent, Optional<Part> part) {
+      if (nodes.size() >= maximum)
+        throw new IllegalArgumentException("Complete composed navigation exceeds its admission");
+      if (nodes.putIfAbsent(id, new DestinationGraph.Node<>(id, parent, part)) != null)
+        throw new IllegalArgumentException("Duplicate composed navigation identity");
+    }
+
+    private void walk(List<Part> parts, FormTarget parent) {
+      for (var part : parts)
+        switch (part) {
+          case Field field -> {
+            FormTarget next = parent;
+            if (admitted.contains(field.node().path())) {
+              next = new FormTarget.Field(field.node().path());
+              add(next, Optional.of(parent), Optional.of(field));
+            }
+            walk(resolve(field.node().children(), presentation), next);
+          }
+          case Box box -> {
+            var id = new FormTarget.Section(box.id());
+            add(id, Optional.of(parent), Optional.of(box));
+            walk(box.children(), id);
+          }
+          case Row row -> walk(new ArrayList<>(row.children()), parent);
+        }
+    }
   }
 
   private FormComposition() {}

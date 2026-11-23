@@ -136,4 +136,100 @@ class FormCompositionTest {
     assertSame(model.root().children().get(1).input(), actual.get(2).input());
     assertSame(model.root().children().getLast().input(), actual.getLast().input());
   }
+
+  @Test
+  void typedSectionTargetsShareBodyOrderAndNeverInventFieldPaths() {
+    var value = new Values(1, 2, 3, 4);
+    var encoded = TYPE.codec().encodeStart(JsonOps.COMPRESSED, value).getOrThrow();
+    var presentation =
+        FormPresentation.EMPTY.withLayout(
+            new FormLayout(
+                List.of(new FormLayout.Row("profiles", List.of(B, C))),
+                List.of(group("styling", List.of(A, D)), group("selection", List.of(B, C)))));
+    var graph = FormComposition.navigation(model(), presentation, List.of(A, B, C, D), 7);
+    var styling = new FormTarget.Section("group:styling");
+    var selection = new FormTarget.Section("group:selection");
+    assertEquals(
+        List.of(
+            new FormTarget.Field(FieldPath.ROOT),
+            styling,
+            new FormTarget.Field(A),
+            new FormTarget.Field(D),
+            selection,
+            new FormTarget.Field(B),
+            new FormTarget.Field(C)),
+        graph.nodes().stream().map(DestinationGraph.Node::id).toList());
+    assertEquals(
+        List.of(new FormTarget.Field(B), new FormTarget.Field(C)),
+        graph.children(selection).stream().map(DestinationGraph.Node::id).toList());
+    assertEquals(
+        java.util.Optional.of(styling), graph.node(new FormTarget.Field(A)).orElseThrow().parent());
+    assertInstanceOf(
+        FormComposition.Box.class, graph.node(styling).orElseThrow().target().orElseThrow());
+    assertEquals(encoded, TYPE.codec().encodeStart(JsonOps.COMPRESSED, value).getOrThrow());
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> FormComposition.navigation(model(), presentation, List.of(A, B, C, D), 6));
+    assertThrows(IllegalArgumentException.class, () -> new FormTarget.Section("styling"));
+    assertNotEquals(styling, new FormTarget.Field(FieldPath.ROOT.field("styling")));
+  }
+
+  @Test
+  void sparseAndMissingMetadataRetainsItsOwnIdentityUnderActualSectionAncestry() {
+    var absent = FieldPath.ROOT.field("absent");
+    var presentation =
+        new FormPresentation(
+                List.of(
+                    new FormPresentation.Range(
+                        "limits", "fixture.limits", "Bounds", "Owner validation", C, B)))
+            .withLayout(new FormLayout(List.of(), List.of(group("selection", List.of(B, C)))));
+    var graph = FormComposition.navigation(model(), presentation, List.of(B, absent, B), 5);
+    assertEquals(
+        List.of(
+            new FormTarget.Field(FieldPath.ROOT),
+            new FormTarget.Section("group:selection"),
+            new FormTarget.Section("range:limits"),
+            new FormTarget.Field(B),
+            new FormTarget.Field(absent)),
+        graph.nodes().stream().map(DestinationGraph.Node::id).toList());
+    assertTrue(graph.node(new FormTarget.Field(absent)).orElseThrow().target().isEmpty());
+    assertEquals(
+        new FormTarget.Field(FieldPath.ROOT),
+        graph.ancestry(new FormTarget.Field(absent)).getFirst().id());
+    assertEquals(
+        new FormTarget.Section("range:limits"),
+        graph.node(new FormTarget.Field(B)).orElseThrow().parent().orElseThrow());
+    assertTrue(graph.node(new FormTarget.Field(C)).isEmpty());
+    assertFalse(
+        graph.node(new FormTarget.Section("range:limits")).orElseThrow().target().isEmpty());
+  }
+
+  @Test
+  void removedStableRowTargetDoesNotBecomeTheSurvivingRowAtItsIndex() {
+    var type = ValueTypes.list(ValueTypes.integer(0, 100), 4);
+    var draft = DraftTree.from(type, List.of(10, 20), DraftLimits.CONFIGURATION);
+    var sequence = (design.inherent.reform.edit.DraftNode.Sequence) draft.root();
+    var first = FieldPath.ROOT.row(sequence.rows().getFirst().id());
+    var second = FieldPath.ROOT.row(sequence.rows().getLast().id());
+    var before =
+        FormComposition.navigation(
+            new FormModel(type, draft), FormPresentation.EMPTY, List.of(first, second), 3);
+    assertTrue(before.node(new FormTarget.Field(first)).orElseThrow().target().isPresent());
+    var removed =
+        draft.change(
+            FieldPath.ROOT,
+            node ->
+                ((design.inherent.reform.edit.DraftNode.Sequence) node)
+                    .remove(sequence.rows().getFirst().id()));
+    var after =
+        FormComposition.navigation(
+            new FormModel(type, removed), FormPresentation.EMPTY, List.of(first, second), 3);
+    assertTrue(after.node(new FormTarget.Field(first)).orElseThrow().target().isEmpty());
+    var surviving =
+        (FormComposition.Field)
+            after.node(new FormTarget.Field(second)).orElseThrow().target().orElseThrow();
+    assertEquals(second, surviving.node().path());
+    assertEquals(
+        "20", ((design.inherent.reform.edit.DraftNode.Scalar) surviving.node().input()).raw());
+  }
 }

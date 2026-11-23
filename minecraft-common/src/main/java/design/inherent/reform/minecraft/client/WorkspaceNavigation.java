@@ -5,6 +5,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.presentation.DestinationGraph;
 import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.FormTarget;
 import design.inherent.reform.presentation.NavigationHistory;
 import design.inherent.reform.presentation.SectionNavigation;
 import java.util.ArrayDeque;
@@ -33,16 +34,38 @@ final class WorkspaceNavigation {
     HOME,
     CATEGORY,
     DESTINATION,
+    SECTION,
     FIELD
   }
 
-  record Key(Kind kind, DocumentId placement, Optional<FieldPath> field) {
+  record Key(Kind kind, DocumentId placement, Optional<FieldPath> field, Optional<String> section) {
+    Key(Kind kind, DocumentId placement, Optional<FieldPath> field) {
+      this(kind, placement, field, Optional.empty());
+    }
+
     Key {
       Objects.requireNonNull(kind);
       Objects.requireNonNull(placement);
       Objects.requireNonNull(field);
+      Objects.requireNonNull(section);
       if ((kind == Kind.FIELD) != field.isPresent())
         throw new IllegalArgumentException("Only a field navigation key names a field");
+      if ((kind == Kind.SECTION) != section.isPresent())
+        throw new IllegalArgumentException("Only a section navigation key names a layout box");
+      section.ifPresent(FormTarget.Section::new);
+    }
+
+    static Key form(DocumentId placement, FormTarget target) {
+      return switch (target) {
+        case FormTarget.Field field -> new Key(Kind.FIELD, placement, Optional.of(field.path()));
+        case FormTarget.Section box ->
+            new Key(Kind.SECTION, placement, Optional.empty(), Optional.of(box.id()));
+      };
+    }
+
+    Optional<FormTarget> target() {
+      if (field.isPresent()) return Optional.of(new FormTarget.Field(field.orElseThrow()));
+      return section.map(FormTarget.Section::new).map(value -> (FormTarget) value);
     }
   }
 

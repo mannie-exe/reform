@@ -28,6 +28,7 @@ import design.inherent.reform.presentation.FormDependencies;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.presentation.FormPresentation;
+import design.inherent.reform.presentation.FormTarget;
 import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.presentation.NumericInput;
 import design.inherent.reform.reference.CollectionSelection;
@@ -244,7 +245,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private boolean returnAfterApply;
   private Component scopedSaveLabel;
   private Runnable scopedSave;
-  private FieldPath requestedFocus;
+  private FormTarget requestedFocus;
   private OperationHandle<EditorActor.Commit<T>> lastCommit;
   private Object widgetGeneration;
   private int pendingEdits;
@@ -261,6 +262,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private ImportCatalog<T> declaredImports;
   private Runnable discardDocument;
   private FieldPath workspaceSelection = FieldPath.ROOT;
+  private FormTarget.Section selectedBox;
   private design.inherent.reform.presentation.SectionNavigation.Bookmark retainedBodyScroll;
   private String retainedBodyFocus;
   private boolean retainedBodyFocused;
@@ -288,7 +290,23 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   void deferFocus(FieldPath path) {
     workspaceSelection = Objects.requireNonNull(path);
-    requestedFocus = path;
+    selectedBox = null;
+    requestedFocus = new FormTarget.Field(path);
+  }
+
+  void deferTarget(FormTarget target) {
+    if (target instanceof FormTarget.Field field) {
+      deferFocus(field.path());
+      return;
+    }
+    var declared =
+        catalog.targets().stream().filter(entry -> entry.id().equals(target)).findFirst();
+    if (declared.isEmpty())
+      throw new PolicyRefusal(
+          "navigation.target_missing", "That section is absent from the current form");
+    workspaceSelection = declared.orElseThrow().scope();
+    selectedBox = (FormTarget.Section) target;
+    requestedFocus = target;
   }
 
   private Composition composition;
@@ -467,31 +485,23 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     return contextLabel.copy();
   }
 
-  List<FormCatalog.Entry> navigationEntries() {
-    return catalog == null ? List.of() : catalog.entries();
-  }
-
   FormCatalog.Limits navigationLimits() {
     var limits = presentation.catalog().limits();
     // Section and scalar-search projections each retain their own complete admission budget.
     return new FormCatalog.Limits(
-        (int) Math.min(Integer.MAX_VALUE, 2L * limits.maximumEntries()),
+        catalog.maximumTargets(),
         limits.maximumLabelCharacters(),
         limits.maximumTotalLabelCharacters(),
         limits.maximumQueryCharacters(),
         limits.maximumHistoryEntries());
   }
 
-  List<FormNavigationIndex.FieldMatch> searchableFields() {
-    return catalog.fields();
+  List<FormNavigationIndex.Target> navigationTargets() {
+    return catalog.targets();
   }
 
   Optional<Component> searchProblem() {
     return catalog.searchProblem();
-  }
-
-  Optional<FieldPath> navigationParent(FieldPath path) {
-    return catalog.nearest(path).map(FormCatalog.Entry::path);
   }
 
   boolean hasNavigation() {
@@ -770,8 +780,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         : catalog.nearest(workspaceSelection).map(FormCatalog.Entry::path);
   }
 
-  FieldPath navigationTarget() {
-    return workspaceSelection;
+  FormTarget navigationFormTarget() {
+    return selectedBox == null ? new FormTarget.Field(workspaceSelection) : selectedBox;
   }
 
   /** Select an admitted section while preserving pending-input and lifetime checks. */
@@ -799,6 +809,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   /** Focus and reveal a currently rendered field, including related diagnostic destinations. */
   public boolean focusField(FieldPath path) {
+    selectedBox = null;
     boolean rebuild = composition == null && hasNavigation() && !workspaceSelection.equals(path);
     workspaceSelection = path;
     if (rebuild) rebuildWidgets();
@@ -855,8 +866,33 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     return true;
   }
 
+  @Override
+  public boolean focusTarget(FormTarget target) {
+    if (target instanceof FormTarget.Field field) return focusField(field.path());
+    var section = (FormTarget.Section) target;
+    if (closed || !isCurrent()) return false;
+    var declared =
+        catalog.targets().stream().filter(entry -> entry.id().equals(section)).findFirst();
+    if (declared.isEmpty()) return false;
+    if (composition == null
+        && hasNavigation()
+        && !workspaceSelection.equals(declared.orElseThrow().scope())) {
+      workspaceSelection = declared.orElseThrow().scope();
+      rebuildWidgets();
+    }
+    if (closed || !isCurrent() || panel == null || !bodyVisible) return false;
+    if (!panel.focusGroup(scoped(section.id()))) return false;
+    setFocused(panel);
+    selectedBox = section;
+    return true;
+  }
+
   void focusAfterLoad(FieldPath path) {
-    requestedFocus = Objects.requireNonNull(path);
+    focusAfterLoad(new FormTarget.Field(path));
+  }
+
+  void focusAfterLoad(FormTarget target) {
+    requestedFocus = Objects.requireNonNull(target);
     revealRequestedFocus();
   }
 
@@ -865,8 +901,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       return;
     var path = requestedFocus;
     requestedFocus = null;
-    if (!focusField(path))
-      notice = text("inspect_field_unavailable", "That field is unavailable in the current draft.");
+    if (!focusTarget(path))
+      notice =
+          text(
+              "inspect_target_unavailable",
+              "That destination is unavailable in the current draft.");
   }
 
   @Override

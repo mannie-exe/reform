@@ -158,12 +158,47 @@ final class PlatformShellChecks implements AutoCloseable {
         source = Files.readAllBytes(sourcePath());
         var forms = new java.util.ArrayList<>(PlatformWorkflowExample.forms());
         var themed =
-            FormPresentation.EMPTY.withTheme(
-                FormTheme.EMPTY
-                    .withRoot(ThemePatch.empty().set(ThemeValues.Role.SPACE_FIELD, 14))
-                    .withField(
-                        design.inherent.reform.definition.FieldPath.ROOT.field("distance"),
-                        ThemePatch.empty().set(ThemeValues.Role.CONTROL_NUMERIC_INPUT, 140)));
+            FormPresentation.EMPTY
+                .withLayout(
+                    new design.inherent.reform.presentation.FormLayout(
+                        List.of(),
+                        List.of(
+                            new design.inherent.reform.presentation.FormLayout.Group(
+                                "appearance",
+                                "fixture.shell.appearance",
+                                "Appearance",
+                                "Display choices",
+                                List.of(
+                                    design.inherent.reform.definition.FieldPath.ROOT.field(
+                                        "enabled"),
+                                    design.inherent.reform.definition.FieldPath.ROOT.field(
+                                        "label"))),
+                            new design.inherent.reform.presentation.FormLayout.Group(
+                                "distance",
+                                "fixture.shell.distance",
+                                "Distance tuning",
+                                "Distance choices",
+                                List.of(
+                                    design.inherent.reform.definition.FieldPath.ROOT.field(
+                                        "distance"))))))
+                .withCatalog(
+                    new design.inherent.reform.presentation.FormCatalog(
+                        List.of("enabled", "distance", "label").stream()
+                            .map(
+                                id ->
+                                    new design.inherent.reform.presentation.FormCatalog.Section(
+                                        design.inherent.reform.definition.FieldPath.ROOT.field(id),
+                                        "fixture.shell." + id,
+                                        id.substring(0, 1).toUpperCase(java.util.Locale.ROOT)
+                                            + id.substring(1),
+                                        ""))
+                            .toList()))
+                .withTheme(
+                    FormTheme.EMPTY
+                        .withRoot(ThemePatch.empty().set(ThemeValues.Role.SPACE_FIELD, 14))
+                        .withField(
+                            design.inherent.reform.definition.FieldPath.ROOT.field("distance"),
+                            ThemePatch.empty().set(ThemeValues.Role.CONTROL_NUMERIC_INPUT, 140)));
         forms.set(
             0,
             PlatformWorkflowExample.settings()
@@ -263,6 +298,53 @@ final class PlatformShellChecks implements AutoCloseable {
             "ordinary location changes retain header artwork bounds and instance",
             homeCanvas.equals(lastCanvas) && creates == 1);
         var distance = design.inherent.reform.definition.FieldPath.ROOT.field("distance");
+        click(workflow.screen(), button(workflow.screen(), "Appearance"));
+        click(workflow.screen(), button(workflow.screen(), "Distance tuning"));
+        var orderedNavigation =
+            widgets(workflow.screen()).stream()
+                .filter(widget -> widget.getClass().getSimpleName().equals("NavigationButton"))
+                .sorted(java.util.Comparator.comparingInt(widget -> widget.getY()))
+                .map(widget -> widget.getMessage().getString())
+                .toList();
+        check.accept(
+            "actual section navigation follows body groups and visual field order: "
+                + orderedNavigation,
+            orderedNavigation.size() >= 7
+                && orderedNavigation
+                    .subList(0, 7)
+                    .equals(
+                        List.of(
+                            "Home",
+                            "Client preferences",
+                            "Appearance",
+                            "Enabled",
+                            "Label",
+                            "Distance tuning",
+                            "Distance")));
+        var enabled = design.inherent.reform.definition.FieldPath.ROOT.field("enabled");
+        var label = design.inherent.reform.definition.FieldPath.ROOT.field("label");
+        check.accept(
+            "rendered body keeps grouped field order independently of schema order",
+            opened.form().fieldControl(enabled).orElseThrow().getY()
+                    < opened.form().fieldControl(label).orElseThrow().getY()
+                && opened.form().fieldControl(label).orElseThrow().getY()
+                    < opened.form().fieldControl(distance).orElseThrow().getY());
+        check.accept(
+            "typed section reveal retains the same clean owner and source bytes",
+            opened
+                    .form()
+                    .focusTarget(
+                        new design.inherent.reform.presentation.FormTarget.Section(
+                            "group:appearance"))
+                && workflow.editor(PlatformWorkflowExample.DEFINITION.id()) == opened
+                && !opened.dirty()
+                && Arrays.equals(source, Files.readAllBytes(sourcePath())));
+        check.accept(
+            "absent typed section refuses rather than selecting a similarly named field",
+            !opened
+                .form()
+                .focusTarget(
+                    new design.inherent.reform.presentation.FormTarget.Section("group:missing")));
         check.accept(
             "header navigation leaves the real input focusable",
             opened.form().focusField(distance));

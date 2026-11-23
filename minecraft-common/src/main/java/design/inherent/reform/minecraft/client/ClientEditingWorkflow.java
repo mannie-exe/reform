@@ -10,6 +10,7 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.DestinationId;
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.FormTarget;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -1321,6 +1322,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   node ->
                       node.key().kind() != WorkspaceNavigation.Kind.HOME
                           && node.key().kind() != WorkspaceNavigation.Kind.FIELD
+                          && node.key().kind() != WorkspaceNavigation.Kind.SECTION
                           && (featured.isEmpty()
                               ? node.parent().isEmpty()
                               : featured.contains(new DestinationId(node.key().placement()))))
@@ -1498,56 +1500,34 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         var bound = entry(placement.route());
         if (bound.editor == null || !bound.editor.isOpen()) continue;
         var anchor = placement.field().orElse(FieldPath.ROOT);
-        for (var node : bound.editor.presentation().navigationEntries()) {
-          if (node.path().equals(anchor) || !node.path().startsWith(anchor)) continue;
-          var field =
-              new WorkspaceNavigation.Key(
-                  WorkspaceNavigation.Kind.FIELD, placement.id(), Optional.of(node.path()));
-          var owner =
-              node.parent()
-                  .filter(path -> !path.equals(anchor) && path.startsWith(anchor))
-                  .map(
-                      path ->
-                          new WorkspaceNavigation.Key(
-                              WorkspaceNavigation.Kind.FIELD, placement.id(), Optional.of(path)))
-                  .orElse(key);
-          var help = node.section().map(CatalogHelp::describe).orElse(Component.empty());
-          result.put(
-              field,
-              new WorkspaceNavigation.Entry(
-                  field,
-                  Optional.of(owner),
-                  Component.literal(node.label()),
-                  help,
-                  () -> revealNavigation(field)));
+        var targets = bound.editor.presentation().navigationTargets();
+        var targetKeys = new LinkedHashMap<FormTarget, WorkspaceNavigation.Key>();
+        for (var node : targets) {
+          if (!node.scope().startsWith(anchor)
+              || node.id() instanceof FormTarget.Field field && field.path().equals(anchor))
+            continue;
+          targetKeys.put(node.id(), WorkspaceNavigation.Key.form(placement.id(), node.id()));
         }
-        for (var node : bound.editor.presentation().searchableFields()) {
-          if (node.path().equals(anchor) || !node.path().startsWith(anchor)) continue;
-          var field =
-              new WorkspaceNavigation.Key(
-                  WorkspaceNavigation.Kind.FIELD, placement.id(), Optional.of(node.path()));
-          if (result.containsKey(field)) continue;
-          var parentKey =
-              bound
-                  .editor
-                  .presentation()
-                  .navigationParent(node.path())
-                  .filter(path -> !path.equals(anchor) && path.startsWith(anchor))
-                  .map(
-                      path ->
-                          new WorkspaceNavigation.Key(
-                              WorkspaceNavigation.Kind.FIELD, placement.id(), Optional.of(path)))
-                  .filter(result::containsKey)
-                  .orElse(key);
+        var byTarget = new LinkedHashMap<FormTarget, FormNavigationIndex.Target>();
+        targets.forEach(node -> byTarget.put(node.id(), node));
+        for (var node : targets) {
+          var targetKey = targetKeys.get(node.id());
+          if (targetKey == null) continue;
+          var parentTarget = node.parent();
+          while (parentTarget.isPresent() && !targetKeys.containsKey(parentTarget.orElseThrow()))
+            parentTarget =
+                Optional.ofNullable(byTarget.get(parentTarget.orElseThrow()))
+                    .flatMap(FormNavigationIndex.Target::parent);
+          var owner = parentTarget.map(targetKeys::get).orElse(key);
           result.put(
-              field,
+              targetKey,
               new WorkspaceNavigation.Entry(
-                  field,
-                  Optional.of(parentKey),
-                  Component.literal(node.label()),
-                  Component.literal(node.help()),
-                  () -> revealNavigation(field),
-                  true,
+                  targetKey,
+                  Optional.of(owner),
+                  node.title(),
+                  node.help(),
+                  () -> revealNavigation(targetKey),
+                  node.searchOnly(),
                   node.search()));
         }
       }
@@ -1607,11 +1587,13 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             break;
           }
       selectedKey = key;
+      boolean restore = navigation.restoring() && navigation.position(key).isPresent();
       openDocument(
           item.route(),
-          navigation.restoring() && navigation.position(key).isPresent()
+          restore ? Optional.empty() : key.field().isPresent() ? key.field() : item.field(),
+          restore
               ? Optional.empty()
-              : key.field().isPresent() ? key.field() : item.field());
+              : key.target().or(() -> item.field().map(FormTarget.Field::new)));
     }
 
     private boolean accepts(ClientWorkflowLayout.Placement placement, DocumentState state) {
@@ -1754,6 +1736,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void openDocument(DocumentId id, Optional<FieldPath> field) {
+      openDocument(id, field, field.map(FormTarget.Field::new));
+    }
+
+    private void openDocument(
+        DocumentId id, Optional<FieldPath> field, Optional<FormTarget> focus) {
       information.clear();
       var request = new Object();
       navigationRequest = request;
@@ -1788,7 +1775,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       var bound = entry(id);
       if (!bound.form.asynchronous() || bound.editor != null) {
-        showEditor(editor(id), field);
+        showEditor(editor(id), focus);
         return;
       }
       var pending = openEditor(id);
@@ -1801,12 +1788,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                     if (!isOpen()
                         || NativeScreens.current(minecraft) != this
                         || navigationRequest != request) return;
-                    if (failed == null) showEditor(editor, field);
+                    if (failed == null) showEditor(editor, focus);
                     else showOpeningFailure(failed);
                   }));
     }
 
-    private void showEditor(ClientEditor<?> selected, Optional<FieldPath> field) {
+    private void showEditor(ClientEditor<?> selected, Optional<FormTarget> target) {
       notice = null;
       boolean restoreFocus =
           navigation.restoring()
@@ -1815,7 +1802,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   .map(position -> position.focus() != null)
                   .orElse(false);
       rebuildWidgets();
-      if (!restoreFocus) selected.presentation().focusAfterLoad(field.orElse(FieldPath.ROOT));
+      if (!restoreFocus)
+        selected.presentation().focusAfterLoad(target.orElse(new FormTarget.Field(FieldPath.ROOT)));
     }
 
     private void showOpeningFailure(Throwable failure) {

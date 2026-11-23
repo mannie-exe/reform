@@ -445,6 +445,28 @@ final class FormPanel extends ScrollFrame {
     position();
   }
 
+  boolean focusGroup(String id) {
+    int first = -1;
+    for (int index = 0; index < rows.size(); index++)
+      if (rows.get(index).boundary == 1 && java.util.Objects.equals(rows.get(index).key, id)) {
+        first = index;
+        break;
+      }
+    if (first < 0 || !finished) return false;
+    jump(id);
+    var owned = new ArrayList<AbstractWidget>();
+    int depth = 1;
+    for (int index = first + 1; index < rows.size(); index++) {
+      var row = rows.get(index);
+      depth += row.boundary;
+      if (depth == 0) break;
+      owned.addAll(row.controls);
+    }
+    focusFirst(owned);
+    highlight(id);
+    return true;
+  }
+
   String activeSection() {
     return sections.active(scrollDistance, maximumScroll());
   }

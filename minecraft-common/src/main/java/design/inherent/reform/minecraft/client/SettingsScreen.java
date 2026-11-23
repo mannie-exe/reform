@@ -10,6 +10,7 @@ import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormPresentation;
+import design.inherent.reform.presentation.FormTarget;
 import design.inherent.reform.reference.ReferenceActions;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,10 +80,10 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
       new WorkspaceNavigation(
           () -> minecraft != null && NativeScreens.current(minecraft) == this,
           this::rebuildWidgets,
-          key -> navigate(key.field().orElse(FieldPath.ROOT)));
+          key -> navigate(key.target().orElse(new FormTarget.Field(FieldPath.ROOT))));
   private WorkspaceNavigation.Widgets navigationWidgets;
   private boolean drawerOpen;
-  private FieldPath displayedSection = FieldPath.ROOT;
+  private FormTarget displayedSection = new FormTarget.Field(FieldPath.ROOT);
   private WorkspaceNavigation.Position returningBody;
 
   /** No implicit initialization, actor lookup or settings ownership is inferred by the screen. */
@@ -267,6 +268,10 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     return view.focusField(path);
   }
 
+  public boolean focusTarget(FormTarget target) {
+    return view.focusTarget(target);
+  }
+
   /** Displayed observation only; its revision identifies any earlier draft, and READ is current. */
   public Optional<design.inherent.reform.operation.FieldInformation> inspectedField() {
     return information.observation();
@@ -288,7 +293,7 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     if (!view.hasNavigation()) {
       navigationWidgets = null;
       drawerOpen = false;
-      displayedSection = view.navigationTarget();
+      displayedSection = view.navigationFormTarget();
       var columns =
           information.open()
               ? FormGeometry.columns(available, 180, 180, Math.max(180, available * 2 / 3), 8)
@@ -377,18 +382,13 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
       }
     }
     navigationWidgets = null;
-    displayedSection = view.navigationTarget();
+    displayedSection = view.navigationFormTarget();
     if (layout.navigation().isPresent()) {
       var bounds = layout.navigation().orElseThrow();
       var destination =
           new WorkspaceNavigation.Key(
               WorkspaceNavigation.Kind.DESTINATION, document(), Optional.empty());
-      var selected = view.navigationTarget();
-      var selectedKey =
-          selected.equals(FieldPath.ROOT)
-              ? destination
-              : new WorkspaceNavigation.Key(
-                  WorkspaceNavigation.Kind.FIELD, document(), Optional.of(selected));
+      var selectedKey = navigationKey(view.navigationFormTarget());
       var entries = new ArrayList<WorkspaceNavigation.Entry>();
       entries.add(
           new WorkspaceNavigation.Entry(
@@ -397,63 +397,19 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
               title,
               Component.empty(),
               () -> navigate(FieldPath.ROOT)));
-      for (var entry : view.navigationEntries()) {
-        if (entry.path().equals(FieldPath.ROOT)) continue;
-        var key =
-            new WorkspaceNavigation.Key(
-                WorkspaceNavigation.Kind.FIELD, document(), Optional.of(entry.path()));
-        var parent =
-            entry
-                .parent()
-                .filter(path -> !path.equals(FieldPath.ROOT))
-                .map(
-                    path ->
-                        new WorkspaceNavigation.Key(
-                            WorkspaceNavigation.Kind.FIELD, document(), Optional.of(path)))
-                .orElse(destination);
-        var help =
-            entry
-                .section()
-                .map(
-                    section ->
-                        Component.translatableWithFallback(
-                            section.translationKey() + ".help", section.help()))
-                .orElse(Component.empty());
+      for (var entry : view.navigationTargets()) {
+        if (entry.id().equals(new FormTarget.Field(FieldPath.ROOT))) continue;
+        var key = navigationKey(entry.id());
+        var parent = entry.parent().map(this::navigationKey).orElse(destination);
         entries.add(
             new WorkspaceNavigation.Entry(
                 key,
                 Optional.of(parent),
-                Component.literal(entry.label()),
-                help,
-                () -> navigate(entry.path())));
-      }
-      var known =
-          entries.stream()
-              .map(WorkspaceNavigation.Entry::key)
-              .collect(java.util.stream.Collectors.toSet());
-      for (var field : view.searchableFields()) {
-        var key =
-            new WorkspaceNavigation.Key(
-                WorkspaceNavigation.Kind.FIELD, document(), Optional.of(field.path()));
-        if (!known.add(key)) continue;
-        var parent =
-            view.navigationParent(field.path())
-                .filter(path -> !path.equals(FieldPath.ROOT))
-                .map(
-                    path ->
-                        new WorkspaceNavigation.Key(
-                            WorkspaceNavigation.Kind.FIELD, document(), Optional.of(path)))
-                .filter(known::contains)
-                .orElse(destination);
-        entries.add(
-            new WorkspaceNavigation.Entry(
-                key,
-                Optional.of(parent),
-                Component.literal(field.label()),
-                Component.literal(field.help()),
-                () -> navigate(field.path()),
-                true,
-                field.search()));
+                entry.title(),
+                entry.help(),
+                () -> navigate(entry.id()),
+                entry.searchOnly(),
+                entry.search()));
       }
       navigationWidgets =
           navigation.build(
@@ -476,21 +432,24 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
   }
 
   private void navigate(FieldPath field) {
-    drawerOpen = false;
-    returningBody =
-        navigation.restoring() ? navigation.position(navigationKey(field)).orElse(null) : null;
-    boolean returning = returningBody != null;
-    view.deferFocus(field);
-    rebuildWidgets();
-    if (!returning) view.focusAfterLoad(field);
+    navigate(new FormTarget.Field(field));
   }
 
-  private WorkspaceNavigation.Key navigationKey(FieldPath field) {
-    return field.equals(FieldPath.ROOT)
+  private void navigate(FormTarget target) {
+    drawerOpen = false;
+    returningBody =
+        navigation.restoring() ? navigation.position(navigationKey(target)).orElse(null) : null;
+    boolean returning = returningBody != null;
+    view.deferTarget(target);
+    rebuildWidgets();
+    if (!returning) view.focusAfterLoad(target);
+  }
+
+  private WorkspaceNavigation.Key navigationKey(FormTarget target) {
+    return target.equals(new FormTarget.Field(FieldPath.ROOT))
         ? new WorkspaceNavigation.Key(
             WorkspaceNavigation.Kind.DESTINATION, document(), Optional.empty())
-        : new WorkspaceNavigation.Key(
-            WorkspaceNavigation.Kind.FIELD, document(), Optional.of(field));
+        : WorkspaceNavigation.Key.form(document(), target);
   }
 
   private void mountInformation(FormGeometry.Placement at) {
@@ -564,7 +523,7 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
   public void tick() {
     super.tick();
     if (information.tick()) rebuildWidgets();
-    if (!drawerOpen && !displayedSection.equals(view.navigationTarget())) rebuildWidgets();
+    if (!drawerOpen && !displayedSection.equals(view.navigationFormTarget())) rebuildWidgets();
   }
 
   @Override

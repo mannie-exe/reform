@@ -4,6 +4,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.presentation.FormTarget;
 import java.util.Optional;
 import net.minecraft.client.gui.components.AbstractWidget;
 
@@ -29,4 +30,9 @@ public interface SettingsForm<T> {
   boolean selectSection(FieldPath path);
 
   boolean focusField(FieldPath path);
+
+  /** Reveal an existing field or presentation box without manufacturing a data path. */
+  default boolean focusTarget(FormTarget target) {
+    return target instanceof FormTarget.Field field && focusField(field.path());
+  }
 }
