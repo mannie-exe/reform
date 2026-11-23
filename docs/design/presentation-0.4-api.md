@@ -1,0 +1,109 @@
+# Presentation 0.4: construction and lifecycle contracts
+
+This specification completes the API responsibilities in the [presentation design](presentation-0.4.md). It is proposed behavior, not implemented or qualified Java. Method sketches define inputs, outputs, ownership, and refusal semantics; implementation may adjust overload syntax without changing those contracts. [Migration and acceptance](presentation-0.4-migration.md) owns the delivery map and checks.
+
+## Construction and admission
+
+Keep `ClientEditingWorkflow` as the owner of the native workspace and retained editors. Add an `open` overload accepting the existing `Screen parent`, forms, `ClientWorkflowLayout`, and a `ClientWorkspacePresentation`. Existing convenience factories resolve that same presentation with defaults; they do not keep a second renderer. A direct settings form accepts the same presentation through its options and opens its document directly. It does not first enter a manufactured Home page.
+
+Construct presentation declarations before opening the workflow. The following are intended immutable public operations, not runnable example code:
+
+| Operation                                               | Result and contract                                                                                                         |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `ClientWorkspacePresentation.standard(identity)`        | A header, shared navigation, default workflow Home, native theme, no expensive preview; no owner or native resource entered |
+| `withHeader(header)` / `withNavigation(navigation)`     | Copied composition declarations; one primary location representation required                                               |
+| `withHome(home)` / `withInitialDestination(id)`         | An explicit workflow Home body or initial route; standalone forms retain direct entry                                       |
+| `withTheme(patch)`                                      | Workflow-scoped immutable override; no global state or file write                                                           |
+| `withGraphic(key, provider)` / `withView(key, factory)` | Typed per-workflow registrations; duplicates refuse; no classpath scanning or eager factory invocation                      |
+| `validate(forms, layout)`                               | Structured declaration issues with offending IDs/paths; no source reads, editor creation, or native preparation             |
+| `ClientEditingWorkflow.open(..., presentation)`         | Repeats declaration admission before constructing managed lifetimes; existing owner admission remains lazy                  |
+
+`DestinationId` wraps the existing validated namespaced identity representation, retaining its syntax/length admission, but is a distinct type from a document route or definition identity. `GraphicKey<S>` and `ViewKey<S>` bind a stable ID to an explicitly supplied subject/state contract. Registration proves neither actual renderer support nor source authority. Keys are not class names to load or serialized plugin code.
+
+Declaration validation rejects missing routes/parents, duplicate or cyclic hierarchy, conflicting aliases, invalid slot multiplicity, incompatible subject/provider keys, invalid geometry/theme values, and missing declared initial destinations. It does not reject a valid destination merely because its optional dependency or owner is currently unavailable. Such conditions are runtime availability with reasons. A runtime factory failure cleans its partial view/resources while preserving the workflow and admitted editor; it cannot silently create another owner or change data defaults.
+
+The graph is projected from existing category paths, placements, and actions, plus Home. The 0.3 admission bounds remain the starting envelope: 1–32 forms, 128 groups, four category levels, 512 placements, and 32 contributed actions/reviews. Custom view destinations consume placement capacity; they are not an unbounded second registry. Document and field links are typed targets, not a requirement to register every field as a node. Result targets reference already bounded operation retention. Theme scope nesting follows the admitted content tree. New containers must not silently bypass these bounds; any later extension needs its own admission and evidence.
+
+Home uses declared top-level destinations only. Where a required combined-review scope makes writing from a default entry ambiguous, retain the existing explicit scope chooser before opening a writable member. Home neither opens every owner nor selects a review scope on the user's behalf. Its Close, Review changes, and pending-result actions are workflow actions; a prior document's Save never leaks onto Home.
+
+## Theme resolution and stable shell geometry
+
+Semantic token values and component variants resolve separately. First resolve library semantic defaults → workflow patch → nested scope patches. Then select the component variant, which maps those resolved roles into component-specific offers; its defaults fill only otherwise unspecified component roles. Finally apply an explicit component/instance patch. A variant must not unexpectedly reset an inherited semantic foreground, spacing role, or focus value. A deliberate component override remains local to that component.
+
+`ThemePatch` uses typed role operations: set a value, inherit the parent's resolved value, or use the library default for that role. It is not a map of arbitrary CSS strings. Duplicate operations for one role in one declaration refuse; there is no accidental last-write-wins configuration generator. Resolve a complete immutable value before measuring. Native color roles use declared ARGB values; the game adapter converts them to the actual native text/surface convention. This is not a new RGB/RGBA settings editor or persisted color-value family.
+
+At a fixed viewport, scale, language/font, identity, and theme, the standard header's allocated height and identity/artwork bounds remain stable during ordinary route changes. At admission/reflow, measure the declared static navigation labels and reserve the standard location offer for that hierarchy. Dynamic field/result titles must fit that offer through the shared ancestor overflow/current-location control; an unexpectedly long result title cannot enlarge the header after a click. Full text remains available in the location view and narration. A change to the graph, theme, identity, viewport, or language/font can remeasure explicitly and restore the current bookmark.
+
+An owner-authored header declares its intrinsic offer and compact fallback once per shell. Page-specific artwork belongs in the body unless the author explicitly chose a stable shell artwork provider. Empty or unavailable artwork cannot change the header's offer on each page; it leaves the reserved region or is omitted for that shell. Home may change the main content arrangement while preserving these header bounds. A separate workflow-level mode transition is explicit, rather than an incidental effect of page selection.
+
+Custom layout/control declarations may change visual arrangement, but must retain required information, status, control identity, feedback, and actions. `ClientControlAdapter` receives a shared field interaction binding, cached state, and resolved metrics; it does not receive a raw persistence function. A custom body factory returns a contribution mounted inside the retained workspace. An actual auxiliary `Screen` uses the existing explicit handoff contract, rather than replacing the root during construction.
+
+## Typed navigation and return state
+
+`ClientNavigation.inspect(target)` returns a cached `DestinationAvailability` with kind, reason, and admitted recovery options. It neither opens an owner nor treats cached readiness as authority. `open(target)` returns an identified navigation attempt with a completion stage; all native selection/mounting occurs on the client thread. The attempt identity is not a save operation or permission token.
+
+| Outcome       | Meaning                                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `REVEALED`    | The declared target is selected and its current view has mounted; no write or operation start is implied |
+| `HANDED_OFF`  | An admitted auxiliary/viewer entry was requested; it is not proof that the external view rendered        |
+| `UNAVAILABLE` | A known dependency, context, or capability is absent; retain the origin and actual reason                |
+| `MISSING`     | The declared dynamic target no longer exists, including a removed stable collection row                  |
+| `REFUSED`     | Actual admission or permission refused the request                                                       |
+| `SUPERSEDED`  | A newer navigation attempt won; this attempt cannot mount or steal focus                                 |
+| `CLOSED`      | The actual workflow/context lifetime ended                                                               |
+| `FAILED`      | View construction or reveal failed after admission; partial native work is released                      |
+
+A late owner result may enter the existing retained-owner cache only while its actual context remains current. Late view/preview results are disposed. Their completion cannot change the current location, header, focused field, or forward-history branch. Preserve the original refusal/cause; do not rewrite a backend source conflict as a generic missing destination.
+
+`NavigationBookmark` contains stable destination/field/control IDs, section-relative viewport, query/filter/disclosure, and native retained input state owned by the existing form. A consumer view can add a typed `ViewStateKey<S>` using the existing `ValueType<S>` snapshot policy and finite snapshot bounds. It cannot retain a live level, resource manager, native screen, editor capability, or rendering lease inside bookmark data. On return, restore the same admitted view/session; missing state falls back to the surviving destination, never to another row by index.
+
+Unsent/invalid native text remains owned by the form when it becomes hidden; capturing a bookmark is not a flush or edit. Keyboard focus returns only to a currently mounted control. If the original control is gone, focus the current destination heading or its nearest available shared control and explain any meaningful missing target. A handoff failure leaves the origin active. Unanticipated screen replacement still follows managed lifetime cleanup rather than retaining an invisible live workflow indefinitely.
+
+## Read-only draft capture
+
+Preview preparation needs an admitted immutable input, not a second copy of widget state. The existing `ClientEditor.canSubmit()` is a save guard: it can reject a required batch-review owner, and is not the authorization model for reading a preview. The proposed `ClientEditor.capturePreview(entryPoint, expectedDraftRevision)` is a read-only operation over the same actor.
+
+The capture request starts on the client thread. Its presentation preflight rejects unaccepted native input and pending native edits for that document, so an invalid widget plus a valid sibling edit cannot yield an apparently current preview. It also rejects an unresolved source conflict or an entered operation that can change this document's input/source/resource basis. Other owners' operations and read-only inspection do not block it. There is no implicit flush, save, reload, default substitution, or global resource publication.
+
+The owner stage rechecks actual `OwnerContext.Right.READ`, exact definition/session/context and `DraftRevision`, then reuses the actor's effect-free complete-candidate preflight. Existing source checks and complete domain validation remain authoritative. The GUI stage rechecks retained-input/draft identity before delivering the capture. A later native edit makes the request stale even if its rejected text never entered the actor. Capture does not require WRITE or a save-review grant and must not expose a prepared write capability.
+
+`PreviewInputStamp` pairs that exact `DraftRevision` with a form-owned monotonic input epoch. Value-changing native input, including rejected text, advances the epoch; caret-only movement and reflow do not. It is a freshness counter, not another widget-value store. Capture and preparation retain it, and the host compares it before mounting or labelling a preview current. Thus invalid new native text cannot leave a previous preview labelled current just because the actor's accepted draft revision did not change.
+
+The result is `OperationHandle<DraftPreviewInput<T>>` or the existing typed refusal/failure result. `DraftPreviewInput<T>` contains a snapshot-policy-frozen complete candidate, `PreviewInputStamp`, admitted provenance, and the current resource/reference stamp needed by that owner. It contains no live owner, widget, renderer, or filesystem handle. The source/definition retains its existing read policy; a preview cannot disclose data the owner refuses to expose. No complete valid candidate means no draft preview, with actionable retained issues. The library does not require every document in a workflow to validate for this one capture.
+
+Loaded-resource inspection uses a separate read-authorized owner capture labelled Loaded. It is not a synthetic draft capture with the current edited values attached. The capture and subsequent preparation are inspect/read operations; resource allocation for a preview does not imply a domain APPLY/PUBLISH effect. A provider needing a real global reload must instead expose that actual existing operation and cannot classify it as isolated preview preparation.
+
+## Preparation inputs and results
+
+`ClientGraphicProvider<S>` declares a typed subject contract, cached capabilities, finite `GraphicLimits`, and `prepare(request, scope)`. `prepare` returns a completion stage of `GraphicPreparation`, using the existing cancellation/operation accounting. It must identify whether CPU preparation is worker-safe and which native work must run on the client/render thread. The host dispatches those stages explicitly; providers cannot block rendering while waiting for their worker future.
+
+`GraphicRequest<S>` contains a frozen subject, provider ID, view/request identities, current context token, resource-generation token, optional exact `PreviewInputStamp`/`ReferenceStamp`, and the admitted budget. These are freshness checks, not authority: actual access remains bound to the scope/owner. Resource generations need identity as well as a display revision, following `ReferenceStamp`; a repeated human revision string is not enough.
+
+`GraphicPreparation` is a tagged result: Ready with one `PreparedGraphic`, Unavailable with capability reason, Refused with input/budget/domain issues, Failed with a structured cause, or Cancelled after entered work drains. It cannot carry a lease while claiming non-ready. A ready lease supplies copied descriptive facts, actual subject/source stamps, camera defaults/bounds, and the typed native contribution. Provider output claiming a different subject or stale generation is refused/disposed before mounting.
+
+`GraphicLimits` declares positive finite input bytes, output bytes, decoded-pixel count, resource count, and retained native allocation allowance with explicit accounting units. Native memory estimates are labelled estimates where an exact counter is unavailable. Reuse an owner's compiler limits and snapshot bounds rather than raising them through a view option. Standard built-in numeric limits must be measured and recorded during implementation; until supplied, no provider may interpret an omitted limit as unlimited. Changing a resource limit is a preparation-policy change, not permission to widen the accepted settings domain.
+
+The standard host admits one expensive preparation at a time per workflow and at most one superseding pending request per mounted viewport. New input replaces that pending request, not a growing keystroke queue. Cancelling active work does not free its resources or concurrent slot until it is actually terminal. Views hidden by navigation stop new preparation and request cancellation of obsolete work. Cheap already prepared header/icons do not create an entity/profile job per row. Existing workflow/context bounds and the declared finite resource ledger bound aggregate retention.
+
+A draft/source change marks the previous displayed result Stale immediately and cancels obsolete work. Stale output may retain its exact prior provenance for inspection, but cannot appear to represent the new draft. A resource/context generation change forbids submitting that old native lease even if a visual placeholder remains; retire it through the native-use protocol. Returning to a view does not silently save or globally reload to restore its preview.
+
+## Native use and retirement
+
+`PreparedGraphic.close()` releases the view's interest idempotently; it is not an assertion that submitted native/GPU work is already finished. The adapter owns a separate `RenderUse` for each admitted native use. Ownership proceeds as follows:
+
+1. The client validates the lease's subject/resource/context and acquires a use before drawing or extraction.
+2. The 1.21.1 adapter scopes drawing state and buffer use. The 26.3 adapter submits its typed retained state with clipping and owned resource references.
+3. The adapter signals retirement only after the actual native consumption boundary. Extraction return, a timer, or an assumed number of frames is not that boundary.
+4. Closing/replacing/reloading a view prevents new uses. Destruction waits for outstanding uses, runs on the correct native thread, and happens once.
+
+The implementation must bind that retirement observation to the actual native renderer lifecycle on each game version. If a custom adapter cannot establish safe retirement, its capability is unavailable before preparation/submission; the shared API must not guess a safe delay. Owned preview resources are released, while borrowed Minecraft levels, resource managers, models, and textures are never closed by the viewport. A provider cannot temporarily replace global model/texture managers to make an isolated draft render appear supported.
+
+Cancellation, timeout reporting, disconnect, workflow close, and shutdown all preserve this distinction between logically closed, entered work terminal, and native resources retired. A failed cleanup must not prevent sibling releases; retain a structured diagnostic and actual remaining ownership. No success/cleanup receipt may be inferred from an absent screen alone. This is a required implementation test boundary, not proof that a native fence/callback already exists in 0.3.
+
+The native adapter's retirement queue outlives an individual view/editor but not the actual renderer. It cannot require a still-open editor executor or renewed READ/WRITE permission to release already owned resources. Normal close revokes new uses first and transfers outstanding uses to that bounded queue. Renderer shutdown must drain or perform its actual native teardown before dropping the queue; it is not a reason to revive editor callbacks or start another client. Keep pending retirement visible in internal accounting even after ordinary UI closure.
+
+## Diagnostics and failure presentation
+
+New library issues use structured codes, affected destination/field/provider, outcome, and useful cause/recovery facts. Translation keys and human copy are projections of those facts, not inputs to state handling. The proposed code families are `presentation.invalid_declaration`, `navigation.target_missing`, `navigation.superseded`, `preview.input_unaccepted`, `preview.input_invalid`, `preview.stale`, `preview.provider_unavailable`, `preview.budget`, and `preview.prepare_failed`. Existing owner refusal and operation codes retain their meaning and are attached as causes rather than renamed.
+
+A refusal before an operation/navigation attempt is admitted has no invented running handle. Cancelled is reported only after the scope says the entered work drained. A useful preview error stays near the viewport; field issues remain linked to the same retained field. An unavailable artwork provider never removes a setting or action. None of these outcomes is a save receipt, and retry never repeats an earlier persistence/application effect.

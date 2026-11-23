@@ -31,7 +31,7 @@
 
 ## Proposed design
 
-[Presentation and navigation for 0.4](../design/presentation-0.4.md) defines the proposed theme, workspace, Home, navigation, and graphics contracts. Its [migration and acceptance plan](../design/presentation-0.4-migration.md) separates existing services from future APIs and consumer work. These specifications are not implemented features or an instruction to start candidate development. Current API and qualification documentation below remains authoritative for the released product.
+[Presentation and navigation for 0.4](../design/presentation-0.4.md) defines the proposed theme, workspace, Home, navigation, and graphics contracts. [Construction and lifecycle](../design/presentation-0.4-api.md) specifies admission, API inputs/results, read-only preview capture, and native resource retirement. The [migration and acceptance plan](../design/presentation-0.4-migration.md) separates existing services from future APIs and consumer work. These specifications are not implemented features or an instruction to start candidate development. Current API and qualification documentation below remains authoritative for the released product.
 
 Build with `./gradlew --no-daemon check build`. Gradle checks Java formatting, documentation links and distribution metadata as well as applicable tests. Pinned dprint and actionlint check Markdown and CI syntax; `mise run check` and CI combine these checks.
 

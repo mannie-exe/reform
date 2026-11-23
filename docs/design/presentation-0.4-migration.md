@@ -1,10 +1,10 @@
 # Presentation 0.4: migration and acceptance
 
-This document accompanies the proposed [presentation and navigation contract](presentation-0.4.md). It specifies later implementation and consumer migration; it does not activate either. Current product source, versions, examples, and qualified behavior remain 0.3. No prototype, candidate, screenshot, illustration, native run, consumer pin, or release is produced in the selected documentation stage.
+This document accompanies the proposed [presentation and navigation contract](presentation-0.4.md) and [construction/lifecycle API](presentation-0.4-api.md). It specifies later implementation and consumer migration; it does not activate either. Current product source, versions, examples, and qualified behavior remain 0.3. No prototype, candidate, screenshot, illustration, native run, consumer pin, or release is produced in the selected documentation stage.
 
 ## Public API responsibilities
 
-The following declarations are specification sketches, not Java code available to compile. Prefer evolving existing types where their ownership remains correct; avoid creating a second form framework under these names.
+The following is a type index, not Java code available to compile. The [construction contract](presentation-0.4-api.md#construction-and-admission) defines inputs, admission, and results. Prefer evolving existing types where their ownership remains correct; avoid creating a second form framework under these names.
 
 ```text
 core.presentation
@@ -26,6 +26,7 @@ minecraft.client
   ClientControlAdapter                native interaction contract for a real replacement
   ClientGraphic / ClientGraphicView   subject description and mounted viewport
   ClientGraphicProvider<S>            capability, explicit preparation, disposal
+  DraftPreviewInput<T>                actual read-authorized complete candidate
   PreparedGraphic                    generation-stamped owned lease
   RecipeLinkRequest                   view-only request with explicit capability
 
@@ -55,6 +56,10 @@ Native identifier spelling remains in the actual game adapter: 1.21.1 uses its `
 There is one supported rendering and navigation path after migration. Clean break does not mean deleting correct owner services or renaming every type. A replacement is justified only where the old contract conflicts with the new one. List actual source breaks in the eventual release notes; do not infer them solely from these proposed names or promise ABI compatibility before implementation.
 
 Consumers needing the new API require a stable minimum of 0.4.0 and an independently declared compatible upper bound. Exact development coordinates, if later selected, are separate admitted exceptions; they cannot be the stable range floor. Loader metadata, runtime checks, build pins, examples, and public resolution must agree. This document changes none of those inputs now.
+
+Migration must update construction, loader metadata, runtime admission, build pins, and release examples together. Class linkage alone does not prove owner behavior. Introduce the common shell without replacing the file/native/server/recipe bindings; then migrate presentation declarations and actual navigation paths. Remove a superseded path only after its replacement preserves that path's owner and interaction contracts. This includes read-only draft capture: consumers must not reach into a private actor or misuse `canSubmit()` to reproduce it.
+
+Retire every newly opened consumer view, preview lease, and callback if its migration fails. Preserve previous saves and drafts. Do not install an automatic fallback that loads public 0.3 after new API linkage fails. Consumers retaining an older released dependency stay on that version deliberately; the new implementation cannot claim their production migration from an independent fixture.
 
 ## Consumer declarations
 
@@ -128,6 +133,22 @@ The matrix below defines observable checks. They have not been executed against 
 | OWNER-1   | Invalid draft, defaults/undo, source conflict, pending effect      | Existing guarded save/review/default/reload/close semantics and complete document scope preserved                                                    |
 | COST-1    | Default/extreme input, repeated routes/reloads/close               | Measured preparation/paint/input and retained-resource costs; finite budgets and no unexplained growth                                               |
 
+The following cases close the construction and lifecycle gaps in the initial specification:
+
+| ID        | Case                                                                                 | Required observation                                                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DECL-1    | Invalid graph/theme/provider declarations and absent optional owner                  | Invalid declarations refuse before editor/resource entry; valid unavailable owners keep useful destinations and reasons; no leaked partial view        |
+| SHELL-3   | Short/long/static/dynamic location changes at one viewport/font/theme                | Header height and identity/artwork bounds remain fixed through ordinary navigation; overflow preserves full location and keyboard access               |
+| THEME-3   | Consumer semantic overrides plus standard/custom component variants                  | Variant defaults do not reset inherited semantic roles; deliberate instance patches remain local; duplicate patch operations refuse                    |
+| PREVIEW-1 | Unaccepted native text plus valid sibling edit                                       | Preview capture refuses without dropping either input, saving, reloading, or presenting the actor's older state as current                             |
+| PREVIEW-2 | Read-only permission and required save-review owner                                  | Valid complete capture uses READ and exact draft/source checks; missing write authority or a save-review requirement alone does not prevent inspection |
+| PREVIEW-3 | Source/draft/native-input edit during capture and resource reload during preparation | Structured stale/refusal result using the input epoch even for rejected text; no old lease mounts; draft/loaded provenance remains truthful            |
+| GRAPHIC-5 | Close/reload immediately after extraction or native submission                       | No new uses after close; resources remain owned through consumption, retire once, and leave borrowed game resources open                               |
+| GRAPHIC-6 | Temporarily ignored cancellation, rapid requests, budget refusal, cleanup exception  | Active slot/resources remain accounted until terminal; bounded superseding work; finite budget; sibling cleanup completes with retained diagnostic     |
+| MIGRATE-1 | New factory/admission wiring and deliberately older consumer baseline                | One renderer and owner path for migrated bindings; unsupported dependency refuses; unmigrated consumers identified explicitly                          |
+
+These are design obligations, not tests run in this documentation stage. Read-only capture must be exercised separately from write submission. Native retirement needs the actual adapter lifecycle; a timer or assumed frame delay is insufficient evidence. GRAPHIC-5/6 must include permission loss, a closed editor executor, and actual renderer shutdown, proving that owned cleanup can finish without restoring editing authority or dropping outstanding native uses.
+
 Qualify the baseline separately on Fabric/NeoForge for 1.21.1/Java 21 and 26.3/Java 25. Resolve optional providers per actual target; a provider's absent path is always required, and its present path only counts for tested versions. Use independent packaged consumers and actual entry points. Representative rendering is not universal modded-renderer support. Layout geometry is necessary but does not establish aesthetic acceptance.
 
 Screenshots, mockups, illustrative examples, and desktop work are excluded from the selected reification stage. Later implementation should agree the smallest useful native visual review with the owner; do not generate a gallery or require authored illustrations by default. Preserve exact artifacts and causal negative cases when that stage is selected.
@@ -136,4 +157,8 @@ Screenshots, mockups, illustrative examples, and desktop work are excluded from 
 
 The specification settles default A, stable ordinary-navigation headers, separate splash-like Home, shared customization/navigation/graphics responsibilities, truthful Lootr isolation, optional-provider behavior, migration ownership, and future acceptance. Reference/source observations establish feasibility and identify native seams; they do not establish product correctness or resource budgets.
 
-Remaining work belongs to implementation and qualification: final Java signatures, measured resource limits, native renderer/provider behavior, source-breaking API details, consumer-owned bindings, and owner visual approval. Material's JavaScript-only states page remains an uninspected reference; no design claim depends on having read it. A different consequential UX or delivery scope needs an explicit owner decision rather than being silently treated as this specification.
+The design is ready for a separately selected implementation of the specified contracts; no unresolved owner UX choice blocks that start. Implementation must settle source-compatible overload spelling and actual native hooks, measure resource limits, qualify renderer/provider behavior, and migrate selected consumers. These are required engineering gates, not permission to substitute a smaller preview or infer consumer adoption. Material's JavaScript-only states page remains an uninspected reference; no design claim depends on having read it.
+
+Before claiming Lootr draft-preview delivery, prove isolated native model/texture preparation and retirement on the selected targets. An unsupported provider keeps the form usable, but does not satisfy a selected preview requirement. If actual native constraints require dropping or changing that capability, return the scope decision to the owner. Final owner visual approval belongs to later authorized native review; no gallery or illustrative assets are implied now.
+
+Phase 2's expressions, settings inheritance/derived-value engine, automated merge, remote administration/sharing, ingredient/color value editors, and binding alternatives remain deferred. Theme inheritance and recipe ingredient requests here are presentation/link contracts, not activation of those broader settings families.
