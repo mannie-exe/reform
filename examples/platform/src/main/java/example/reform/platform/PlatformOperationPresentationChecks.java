@@ -189,7 +189,7 @@ final class PlatformOperationPresentationChecks {
         NativeClientProbe.size(client, windowWidth, windowHeight);
         stage = 19;
         capture.accept(
-            "platform-operation-wide.png",
+            "operation-wide.png",
             () -> {
               NativeClientProbe.resize(client, 320, 240);
               stage = 4;
@@ -207,7 +207,7 @@ final class PlatformOperationPresentationChecks {
         geometry(screen);
         stage = 19;
         capture.accept(
-            "platform-operation-small.png",
+            "operation-small.png",
             () -> {
               NativeClientProbe.resize(client, windowWidth[0], windowHeight[0]);
               stage = 5;
