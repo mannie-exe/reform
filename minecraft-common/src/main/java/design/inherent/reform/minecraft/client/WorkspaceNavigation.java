@@ -95,16 +95,20 @@ final class WorkspaceNavigation {
   private final BooleanSupplier active;
   private final Runnable rebuild;
   private final Consumer<Key> reveal;
+  private final Runnable queryChanged;
   private NavigationHistory<Key> history;
   private int maximumHistory;
   private Key observedSelection;
   private boolean restoring;
+  private Key historyOrigin, historyTarget, temporaryReveal;
+  private boolean historyForward, mounting;
   private final Map<Key, Position> positions = new LinkedHashMap<>();
   private final Set<Key> expanded = new HashSet<>();
   private final Map<Key, Long> rowIds = new HashMap<>();
   private long nextRowId;
   private FormEditBox search;
   private FormPanel panel;
+  private List<Button> historyWidgets = List.of();
   private String query = "", focusedRow;
   private int queryCursor, querySelection;
   private boolean searchFocused;
@@ -116,6 +120,12 @@ final class WorkspaceNavigation {
   record Position(SectionNavigation.Bookmark scroll, String focus, DocumentId owner) {}
 
   WorkspaceNavigation(BooleanSupplier active, Runnable rebuild, Consumer<Key> reveal) {
+    this(active, rebuild, reveal, () -> {});
+  }
+
+  WorkspaceNavigation(
+      BooleanSupplier active, Runnable rebuild, Consumer<Key> reveal, Runnable queryChanged) {
+    this.queryChanged = Objects.requireNonNull(queryChanged);
     this.active = Objects.requireNonNull(active);
     this.rebuild = Objects.requireNonNull(rebuild);
     this.reveal = Objects.requireNonNull(reveal);
@@ -138,7 +148,14 @@ final class WorkspaceNavigation {
   }
 
   void visit(Key selected, FormCatalog.Limits limits) {
-    if (selected == null) return;
+    if (selected == null || mounting) return;
+    if (historyTarget != null) {
+      if (selected.equals(historyOrigin)) return;
+      if (selected.equals(historyTarget)) {
+        observedSelection = selected;
+        historyOrigin = historyTarget = null;
+      } else cancelRestoration();
+    }
     if (history == null) {
       maximumHistory = limits.maximumHistoryEntries();
       history = new NavigationHistory<>(selected, maximumHistory);
@@ -146,6 +163,14 @@ final class WorkspaceNavigation {
       throw new IllegalArgumentException("A navigation lifetime retains its history admission");
     if (!selected.equals(observedSelection)) history.select(selected);
     observedSelection = selected;
+    refreshHistoryControls();
+  }
+
+  private void refreshHistoryControls() {
+    if (historyWidgets.size() == 2) {
+      historyWidgets.get(0).active = history != null && history.canBack();
+      historyWidgets.get(1).active = history != null && history.canForward();
+    }
   }
 
   List<Button> historyControls(net.minecraft.client.gui.Font font) {
@@ -171,15 +196,19 @@ final class WorkspaceNavigation {
       button.setTooltip(Tooltip.create(label));
       historyButtons.add(button);
     }
-    return historyButtons;
+    historyWidgets = List.copyOf(historyButtons);
+    return historyWidgets;
   }
 
   private void move(boolean forward) {
     if (history == null
         || !active.getAsBoolean()
         || (forward ? !history.canForward() : !history.canBack())) return;
+    cancelRestoration();
+    historyOrigin = history.selected();
+    historyForward = forward;
     var requested = forward ? history.forward() : history.back();
-    observedSelection = requested;
+    historyTarget = requested;
     searchFocused = false;
     focusedRow = null;
     restoring = true;
@@ -189,6 +218,34 @@ final class WorkspaceNavigation {
       restoring = false;
     }
     rebuild.run();
+  }
+
+  boolean canBack() {
+    return history != null && history.canBack();
+  }
+
+  void beginMount() {
+    mounting = true;
+  }
+
+  void endMount() {
+    mounting = false;
+  }
+
+  void cancelRestoration() {
+    if (historyTarget == null) return;
+    if (historyForward) history.back();
+    else history.forward();
+    historyOrigin = historyTarget = null;
+    refreshHistoryControls();
+  }
+
+  void temporaryReveal(Key key) {
+    temporaryReveal = key;
+  }
+
+  boolean filtered() {
+    return !query.isBlank();
   }
 
   void preserve(GuiEventListener focused) {
@@ -308,6 +365,8 @@ final class WorkspaceNavigation {
         value -> {
           if (!current(token) || query.equals(value)) return;
           query = value;
+          temporaryReveal = null;
+          queryChanged.run();
           queryCursor = search.getCursorPosition();
           querySelection = search.selection();
           searchFocused = true;
@@ -333,7 +392,12 @@ final class WorkspaceNavigation {
             .computeIfAbsent(entry.parent().orElseThrow(), ignored -> new ArrayList<>())
             .add(entry);
     }
-    var matches = matching(entries);
+    var matches = new HashSet<>(matching(entries));
+    if (temporaryReveal != null && !query.isBlank()) {
+      for (var reveal = entries.get(temporaryReveal);
+          reveal != null;
+          reveal = reveal.parent().map(entries::get).orElse(null)) matches.add(reveal.key());
+    }
     boolean filtering = !query.isBlank();
     var shownSelected = nearest(selected, entries);
     while (!filtering
@@ -342,6 +406,12 @@ final class WorkspaceNavigation {
         && entries.get(shownSelected).searchOnly())
       shownSelected = entries.get(shownSelected).parent().orElse(null);
     for (var notice : notices) panel.row(Component.empty(), notice);
+    if (temporaryReveal != null && filtering)
+      panel.row(
+          Component.empty(),
+          text(
+              "temporary_reveal",
+              "Temporarily showing the linked destination; your filter is unchanged."));
     record Item(Entry entry, int depth) {}
     var pending = new ArrayDeque<Item>();
     for (var root : roots.reversed()) pending.push(new Item(root, 0));
@@ -367,6 +437,9 @@ final class WorkspaceNavigation {
                   if (branch && !expanded.remove(entry.key())) expanded.add(entry.key());
                   searchFocused = false;
                   entry.select().run();
+                  // Disclosure is immediate even while the selected owner is admitted
+                  // asynchronously.
+                  if (branch && current(token)) rebuild.run();
                 } else {
                   if (!expanded.remove(entry.key())) expanded.add(entry.key());
                   searchFocused = false;

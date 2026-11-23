@@ -181,8 +181,21 @@ class DocumentActionsTest {
       assertEquals(java.util.Optional.of("\"1\""), information.declaredDefault().text());
       assertEquals(DraftRevision.of(snapshot), information.target());
       assertTrue(h.nativeCall(h.actions::mayInspect));
+      var beforeGuardOperations = h.nativeCall(() -> h.actions.operations().size());
+      h.nativeCall(
+          () -> {
+            h.actions.requireInspection();
+            return null;
+          });
+      assertEquals(beforeGuardOperations, h.nativeCall(() -> h.actions.operations().size()));
       h.read.set(false);
       assertFalse(h.nativeCall(h.actions::mayInspect));
+      h.nativeCall(
+          () -> {
+            var refused = assertThrows(PolicyRefusal.class, h.actions::requireInspection);
+            assertEquals("owner.permission", refused.report().issues().getFirst().code());
+            return null;
+          });
       h.nativeCall(
           () -> {
             assertThrows(

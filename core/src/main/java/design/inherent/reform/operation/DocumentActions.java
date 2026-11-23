@@ -760,6 +760,15 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   /** Current owner-thread disclosure check, without IO; never a transferable read grant. */
+  /**
+   * Recheck actual READ authority and baseline availability for cached presentation. This performs
+   * no source read, validation, draft flush, or operation submission, and grants no later effect.
+   * Call again at activation; permission and context refusals retain their actual report.
+   */
+  public void requireInspection() {
+    requireBatchRead();
+  }
+
   public boolean mayInspect() {
     if (!isOpen()) return false;
     try {

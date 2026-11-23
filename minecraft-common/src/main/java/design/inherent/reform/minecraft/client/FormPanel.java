@@ -445,6 +445,18 @@ final class FormPanel extends ScrollFrame {
     position();
   }
 
+  boolean focusRow(String id) {
+    if (!finished) return false;
+    for (var row : rows)
+      if (java.util.Objects.equals(row.key, id) && row.boundary == 0) {
+        jump(id);
+        focusFirst(row.controls);
+        highlight(id);
+        return true;
+      }
+    return false;
+  }
+
   boolean focusGroup(String id) {
     int first = -1;
     for (int index = 0; index < rows.size(); index++)

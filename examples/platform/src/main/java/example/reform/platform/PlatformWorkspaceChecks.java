@@ -625,6 +625,25 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
           rootSelectionStage++;
         }
         if (!checkDefaultControl(twinId)) return false;
+        var inactive =
+            new design.inherent.reform.minecraft.client.ClientDestination.Field(
+                twinId, FieldPath.ROOT.field("enabled").append(FieldPath.Part.VALUE));
+        var inactiveDraft = workflow.editor(twinId).view().snapshot().orElseThrow();
+        var inactiveAvailability = workflow.navigation().inspect(inactive);
+        check(
+            "retained inactive override is unavailable rather than missing",
+            inactiveDraft.draft().contains(inactive.path())
+                && !inactiveDraft.draft().activeAt(inactive.path())
+                && inactiveAvailability.kind()
+                    == design.inherent.reform.minecraft.client.DestinationAvailability.Kind
+                        .UNAVAILABLE
+                && inactiveAvailability.report().issues().stream()
+                    .anyMatch(issue -> issue.code().equals("navigation.target_inactive")));
+        check(
+            "inactive link preserves the same retained draft",
+            workflow.navigation().open(inactive).result().orElseThrow().outcome()
+                    == design.inherent.reform.minecraft.client.NavigationAttempt.Outcome.UNAVAILABLE
+                && workflow.editor(twinId).view().snapshot().orElseThrow() == inactiveDraft);
         check(
             "mixed page retains its native root",
             NativeScreens.current(client) == workflow.screen());

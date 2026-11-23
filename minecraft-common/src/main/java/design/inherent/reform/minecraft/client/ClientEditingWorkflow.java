@@ -3,7 +3,9 @@ package design.inherent.reform.minecraft.client;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.minecraft.internal.ClientSettingsRuntime;
+import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentBatch;
+import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
@@ -11,6 +13,7 @@ import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.DestinationId;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormTarget;
+import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -114,6 +117,351 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private BatchReviewScreen batchView;
   private boolean closed;
   private ClientGraphicHost graphics;
+  private final ClientNavigation navigation = new ClientNavigation(this);
+  private NavigationAttempt pendingNavigation;
+
+  /** Typed presentation links over this workflow's exact retained owners. */
+  public ClientNavigation navigation() {
+    ClientSettingsRuntime.requireClientThread();
+    return navigation;
+  }
+
+  private record NavigationSelection(
+      WorkspaceNavigation.Key key,
+      List<ClientWorkflowLayout.Category> category,
+      Optional<DocumentId> route,
+      Optional<FormTarget> target) {}
+
+  private static PolicyRefusal missingDestination() {
+    return new PolicyRefusal(
+        "navigation.target_missing", "That destination is absent from this workflow or draft.");
+  }
+
+  private NavigationSelection resolveDestination(ClientDestination target) {
+    if (target instanceof ClientDestination.Home) {
+      if (presentation.home().isEmpty()) throw missingDestination();
+      return new NavigationSelection(
+          overview.homeKey(), List.of(), Optional.empty(), Optional.empty());
+    }
+    if (target instanceof ClientDestination.Category category) {
+      if (layout == null) throw missingDestination();
+      for (int index = 0; index < layout.groups().size(); index++) {
+        var group = layout.groups().get(index);
+        if (group.path().isEmpty()
+            && overview.groupKey(index).placement().equals(category.id().value()))
+          return new NavigationSelection(
+              overview.groupKey(index), List.of(), Optional.empty(), Optional.empty());
+        for (int depth = 0; depth < group.path().size(); depth++)
+          if (group.path().get(depth).id().equals(category.id().value()))
+            return new NavigationSelection(
+                overview.category(category.id().value()),
+                List.copyOf(group.path().subList(0, depth + 1)),
+                Optional.empty(),
+                Optional.empty());
+      }
+      throw missingDestination();
+    }
+    DocumentId route;
+    Optional<DestinationId> alias = Optional.empty();
+    Optional<FormTarget> focus = Optional.empty();
+    if (target instanceof ClientDestination.Placement placement) {
+      var declared =
+          overview.allPlacements().stream()
+              .filter(item -> item.id().equals(placement.id().value()))
+              .findFirst()
+              .orElseThrow(ClientEditingWorkflow::missingDestination);
+      route = declared.route();
+      alias = Optional.of(placement.id());
+      focus = declared.field().map(FormTarget.Field::new);
+    } else if (target instanceof ClientDestination.Document document) route = document.route();
+    else if (target instanceof ClientDestination.Field field) {
+      route = field.route();
+      alias = field.placement();
+      focus = Optional.of(new FormTarget.Field(field.path()));
+    } else if (target instanceof ClientDestination.Section section) {
+      route = section.route();
+      alias = section.placement();
+      focus = Optional.of(section.section());
+    } else throw missingDestination();
+    if (!entries.containsKey(route)) throw missingDestination();
+    final var requestedAlias = alias;
+    final var requestedFocus = focus;
+    var placement =
+        overview.allPlacements().stream()
+            .filter(item -> item.route().equals(route))
+            .filter(
+                item ->
+                    requestedAlias.isEmpty()
+                        || item.id().equals(requestedAlias.orElseThrow().value()))
+            .filter(
+                item ->
+                    !(requestedFocus.orElse(null) instanceof FormTarget.Field field)
+                        || item.field().isEmpty()
+                        || field.path().startsWith(item.field().orElseThrow()))
+            .findFirst()
+            .orElseThrow(ClientEditingWorkflow::missingDestination);
+    List<ClientWorkflowLayout.Category> path = List.of();
+    if (layout != null)
+      for (var group : layout.groups())
+        if (group.placements().contains(placement)) {
+          path = group.path();
+          break;
+        }
+    var key =
+        focus.isPresent()
+            ? WorkspaceNavigation.Key.form(placement.id(), focus.orElseThrow())
+            : overview.destination(placement.id());
+    return new NavigationSelection(key, path, Optional.of(route), focus);
+  }
+
+  DestinationAvailability inspectDestination(ClientDestination target) {
+    ClientSettingsRuntime.requireClientThread();
+    if (!isOpen())
+      return availability(
+          DestinationAvailability.Kind.CLOSED, "navigation.closed", "This workflow is closed.");
+    if (target instanceof ClientDestination.Operation operation)
+      return contributions.containsKey(operation.id())
+          ? availability(DestinationAvailability.Kind.READY, null, null)
+          : availability(
+              DestinationAvailability.Kind.MISSING,
+              "navigation.target_missing",
+              "That operation is not declared here.");
+    if (target instanceof ClientDestination.OperationResult result) {
+      var entry = contributions.get(result.id());
+      if (entry == null
+          || entry.latest == null
+          || !entry.latest.snapshot().id().equals(result.handle()))
+        return availability(
+            DestinationAvailability.Kind.MISSING,
+            "navigation.result_missing",
+            "That operation result is no longer retained.");
+      return entry.action.mayObserve().getAsBoolean()
+          ? availability(DestinationAvailability.Kind.READY, null, null)
+          : availability(
+              DestinationAvailability.Kind.UNAVAILABLE,
+              "navigation.result_unavailable",
+              "This context cannot inspect that operation result.");
+    }
+    try {
+      var selected = resolveDestination(target);
+      if (selected.route().isEmpty())
+        return availability(DestinationAvailability.Kind.READY, null, null);
+      var entry = entry(selected.route().orElseThrow());
+      if (entry.editor == null) {
+        var cached = entry.form.availability();
+        if (!cached.ready())
+          return availability(
+              DestinationAvailability.Kind.UNAVAILABLE,
+              "client.document_unavailable",
+              cached.message().getString());
+        return availability(
+            entry.opening == null
+                ? DestinationAvailability.Kind.UNOPENED
+                : DestinationAvailability.Kind.PENDING,
+            null,
+            null);
+      }
+      if (!entry.editor.isOpen())
+        return availability(
+            DestinationAvailability.Kind.CLOSED, "editor.closed", "This editing context ended.");
+      var observed = entry.editor.view();
+      if (observed.availability() == EditorActor.Availability.LOADING)
+        return availability(DestinationAvailability.Kind.PENDING, null, null);
+      if (observed.availability() != EditorActor.Availability.READY)
+        return new DestinationAvailability(
+            DestinationAvailability.Kind.UNAVAILABLE,
+            observed.observationReport(),
+            navigationRecovery());
+      if (selected.target().orElse(null) instanceof FormTarget.Field field) {
+        if (observed
+            .snapshot()
+            .filter(snapshot -> snapshot.draft().contains(field.path()))
+            .isEmpty()) throw missingDestination();
+        if (!observed.snapshot().orElseThrow().draft().activeAt(field.path()))
+          return availability(
+              DestinationAvailability.Kind.UNAVAILABLE,
+              "navigation.target_inactive",
+              "That retained field is inactive in the current draft.");
+      }
+      // Layout-section existence is unknown until this actual form has projected its model.
+      if (selected.target().orElse(null) instanceof FormTarget.Section section) {
+        var known = entry.editor.presentation().navigationTargets();
+        if (known.isEmpty()) return availability(DestinationAvailability.Kind.UNOPENED, null, null);
+        if (known.stream().noneMatch(node -> node.id().equals(section))) throw missingDestination();
+      }
+      return availability(DestinationAvailability.Kind.READY, null, null);
+    } catch (PolicyRefusal missing) {
+      return new DestinationAvailability(
+          DestinationAvailability.Kind.MISSING, missing.report(), navigationRecovery());
+    }
+  }
+
+  private DestinationAvailability availability(
+      DestinationAvailability.Kind kind, String code, String message) {
+    var report = code == null ? ValidationReport.VALID : new PolicyRefusal(code, message).report();
+    return new DestinationAvailability(kind, report, navigationRecovery());
+  }
+
+  private java.util.Set<DestinationAvailability.Recovery> navigationRecovery() {
+    return overview.navigation.canBack()
+        ? java.util.Set.of(DestinationAvailability.Recovery.BACK)
+        : java.util.Set.of();
+  }
+
+  private void supersedeNavigation() {
+    if (pendingNavigation == null) return;
+    var old = pendingNavigation;
+    pendingNavigation = null;
+    old.finish(
+        isOpen() ? NavigationAttempt.Outcome.SUPERSEDED : NavigationAttempt.Outcome.CLOSED,
+        new PolicyRefusal(
+                isOpen() ? "navigation.superseded" : "navigation.closed",
+                isOpen() ? "A newer destination was selected." : "This workflow is closed.")
+            .report(),
+        null);
+  }
+
+  NavigationAttempt openDestination(ClientDestination target) {
+    ClientSettingsRuntime.requireClientThread();
+    var attempt = new NavigationAttempt(target);
+    attempt
+        .completion()
+        .thenAccept(
+            result -> {
+              if (!isOpen() || overview.navigationRequest != attempt.id()) return;
+              if (result.outcome() == NavigationAttempt.Outcome.REVEALED
+                  || result.outcome() == NavigationAttempt.Outcome.HANDED_OFF) return;
+              if (result.outcome() != NavigationAttempt.Outcome.SUPERSEDED) {
+                overview.notice =
+                    ClientStatusScreen.reason(
+                        result.report(), text("unavailable", "That destination is unavailable."));
+                if (NativeScreens.current(Minecraft.getInstance()) == overview)
+                  overview.rebuildWidgets();
+              }
+            });
+    boolean restoring = overview.navigation.restoring();
+    if (!restoring) overview.navigation.cancelRestoration();
+    overview.navigationRequest = attempt.id();
+    supersedeNavigation();
+    if (overview.navigationRequest != attempt.id()) {
+      attempt.finish(
+          NavigationAttempt.Outcome.SUPERSEDED,
+          new PolicyRefusal("navigation.superseded", "A newer destination was selected.").report(),
+          null);
+      return attempt;
+    }
+    try {
+      requireOverview();
+      var available = inspectDestination(target);
+      if (available.kind() == DestinationAvailability.Kind.MISSING
+          || available.kind() == DestinationAvailability.Kind.UNAVAILABLE
+          || available.kind() == DestinationAvailability.Kind.CLOSED) {
+        var outcome =
+            available.kind() == DestinationAvailability.Kind.MISSING
+                ? NavigationAttempt.Outcome.MISSING
+                : available.kind() == DestinationAvailability.Kind.CLOSED
+                    ? NavigationAttempt.Outcome.CLOSED
+                    : NavigationAttempt.Outcome.UNAVAILABLE;
+        overview.navigation.cancelRestoration();
+        attempt.finish(outcome, available.report(), null);
+        return attempt;
+      }
+      if (target instanceof ClientDestination.Operation operation) {
+        overview.revealOperation(contributions.get(operation.id()));
+        attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
+        return attempt;
+      }
+      if (target instanceof ClientDestination.OperationResult result) {
+        inspectOperation(contributions.get(result.id()));
+        attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
+        return attempt;
+      }
+      var selected = resolveDestination(target);
+      if (selected.route().isEmpty()) {
+        overview.mountDestination(selected, null, restoring);
+        attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
+      } else {
+        pendingNavigation = attempt;
+        var retained = entry(selected.route().orElseThrow()).editor;
+        if (retained != null
+            && retained.isOpen()
+            && retained.view().availability() == EditorActor.Availability.READY)
+          finishReveal(attempt, selected, retained, restoring, null);
+        else
+          openEditor(selected.route().orElseThrow())
+              .thenCompose(
+                  editor ->
+                      DocumentActions.result(editor.actions().ensureLoaded(EntryPoint.GUI))
+                          .thenApply(ignored -> editor))
+              .whenComplete(
+                  (editor, failure) ->
+                      Minecraft.getInstance()
+                          .execute(
+                              () -> finishReveal(attempt, selected, editor, restoring, failure)));
+      }
+    } catch (RuntimeException failed) {
+      if (pendingNavigation == attempt) pendingNavigation = null;
+      finishNavigationFailure(attempt, failed);
+    }
+    return attempt;
+  }
+
+  private void finishReveal(
+      NavigationAttempt attempt,
+      NavigationSelection selected,
+      ClientEditor<?> editor,
+      boolean restoring,
+      Throwable failure) {
+    if (pendingNavigation != attempt || overview.navigationRequest != attempt.id()) return;
+    pendingNavigation = null;
+    try {
+      requireOverview();
+      if (failure != null) throw new CompletionException(failure);
+      editor.actions().requireInspection();
+      var available = inspectDestination(attempt.target());
+      if (available.kind() == DestinationAvailability.Kind.MISSING
+          || available.kind() == DestinationAvailability.Kind.UNAVAILABLE) {
+        overview.navigation.cancelRestoration();
+        attempt.finish(
+            available.kind() == DestinationAvailability.Kind.MISSING
+                ? NavigationAttempt.Outcome.MISSING
+                : NavigationAttempt.Outcome.UNAVAILABLE,
+            available.report(),
+            null);
+        return;
+      }
+      if (selected.target().isPresent()
+          && !editor.presentation().navigationTargetExists(selected.target().orElseThrow()))
+        throw missingDestination();
+      overview.mountDestination(selected, editor, restoring);
+      attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
+    } catch (RuntimeException failed) {
+      finishNavigationFailure(attempt, failed);
+    }
+  }
+
+  private void finishNavigationFailure(NavigationAttempt attempt, Throwable failure) {
+    overview.navigation.cancelRestoration();
+    while (failure instanceof CompletionException && failure.getCause() != null)
+      failure = failure.getCause();
+    var outcome =
+        !isOpen()
+            ? NavigationAttempt.Outcome.CLOSED
+            : failure instanceof PolicyRefusal refused
+                ? refused.report().issues().stream()
+                        .anyMatch(issue -> issue.code().equals("navigation.target_missing"))
+                    ? NavigationAttempt.Outcome.MISSING
+                    : NavigationAttempt.Outcome.REFUSED
+                : NavigationAttempt.Outcome.FAILED;
+    var report =
+        failure instanceof PolicyRefusal refused
+            ? refused.report()
+            : new PolicyRefusal(
+                    "navigation.failed",
+                    "The destination could not be opened; the previous view is retained.")
+                .report();
+    attempt.finish(outcome, report, failure);
+  }
 
   /** One explicit aggregate graphics budget and preparation lane for this workflow. */
   public ClientGraphicHost graphics(
@@ -501,6 +849,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private void retire() {
     if (closed) return;
     closed = true;
+    supersedeNavigation();
     Throwable failure = null;
     try {
       if (graphics != null) graphics.close();
@@ -604,6 +953,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var client = Minecraft.getInstance();
       var request = new Object();
       overview.navigationRequest = request;
+      supersedeNavigation();
+      if (overview.navigationRequest != request) return;
       overview.notice =
           text("opening_scope", "Checking the actual policy contexts for this review…");
       if (from == overview) overview.rebuildWidgets();
@@ -689,6 +1040,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   private <O> void openOperation(Contributed<O> entry, boolean restart) {
     requireOverview();
+    overview.navigation.cancelRestoration();
+    overview.navigationRequest = new Object();
+    supersedeNavigation();
     var action = entry.action;
     if (entry.latest == null || restart) {
       if (entry.busy())
@@ -698,6 +1052,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         throw new PolicyRefusal("client.operation_unavailable", blocked.orElseThrow().getString());
       entry.latest = Objects.requireNonNull(action.start().get());
     }
+    inspectOperation(entry);
+  }
+
+  private <O> void inspectOperation(Contributed<O> entry) {
+    requireOverview();
+    var action = entry.action;
+    if (entry.latest == null) throw missingDestination();
+    if (!action.mayObserve().getAsBoolean())
+      throw new PolicyRefusal(
+          "navigation.result_unavailable", "This context cannot inspect that result.");
     overview.navigate(
         new OperationScreen<>(
             action.title(),
@@ -723,7 +1087,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         new WorkspaceNavigation(
             () -> isOpen() && minecraft != null && NativeScreens.current(minecraft) == this,
             this::rebuildWidgets,
-            this::revealNavigation);
+            this::revealNavigation,
+            this::clearTemporaryReveal);
     private WorkspaceNavigation.Widgets navigationWidgets;
     private final WorkspaceInformation information =
         new WorkspaceInformation(
@@ -740,13 +1105,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private DocumentId selectedRoute = entries.keySet().iterator().next();
     private WorkspaceNavigation.Key selectedKey;
     private WorkspaceNavigation.Key displayedKey;
+    private WorkspaceNavigation.Key temporaryReveal;
     private boolean editingVisible;
     private Filter selectedFilter = Filter.ALL;
     private final Map<DocumentId, Throwable> openingFailures = new LinkedHashMap<>();
     private Component notice;
     private Object generation;
     private Object navigationRequest;
-    private boolean drawerOpen, resetList;
+    private boolean drawerOpen, resetList, restoringDestination;
     private String retainedFocus;
     private design.inherent.reform.presentation.SectionNavigation.Bookmark retainedScroll;
     private DocumentId actionRoute;
@@ -1003,6 +1369,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       if (outerFrame.statusInContent()) panel.row(Component.empty(), scopeStatus());
       if (notice != null) panel.row(Component.empty(), notice);
+      if (temporaryReveal != null && selectedFilter != Filter.ALL)
+        panel.row(
+            Component.empty(),
+            text(
+                "temporary_reveal",
+                "Temporarily showing the linked destination; your filter is unchanged."));
       if (!geometry.navigationOverlay()) {
         if (isHome()) appendHome(token);
         if (information.open() && geometry.information().isEmpty()) information.append(panel);
@@ -1196,6 +1568,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                     (button, value) -> {
                       if (!current(token)) return;
                       selectedFilter = value;
+                      clearTemporaryReveal();
                       resetList = true;
                       rebuildWidgets();
                     });
@@ -1253,6 +1626,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (presentation.home().isEmpty())
         throw new PolicyRefusal(
             "navigation.target_missing", "This workspace does not declare Home");
+      navigation.cancelRestoration();
+      navigation.temporaryReveal(null);
+      temporaryReveal = null;
+      supersedeNavigation();
       navigationRequest = new Object();
       information.clear();
       selectedKey = homeKey();
@@ -1417,7 +1794,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       return (layout == null
               ? allPlacements().stream().filter(item -> item.route().equals(selectedRoute))
               : selectedGroups().stream().flatMap(group -> group.placements().stream()))
-          .filter(item -> accepts(item, states.get(item.route())))
+          .filter(
+              item ->
+                  accepts(item, states.get(item.route()))
+                      || temporaryReveal != null && temporaryReveal.placement().equals(item.id()))
           .toList();
     }
 
@@ -1470,7 +1850,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var states = new LinkedHashMap<DocumentId, DocumentState>();
       for (var state : documents()) states.put(state.document(), state);
       for (var placement : allPlacements()) {
-        if (!includeFiltered && !accepts(placement, states.get(placement.route()))) continue;
+        if (!includeFiltered
+            && !accepts(placement, states.get(placement.route()))
+            && (temporaryReveal == null || !temporaryReveal.placement().equals(placement.id())))
+          continue;
         var key = destination(placement.id());
         Optional<WorkspaceNavigation.Key> parent = Optional.empty();
         if (layout != null)
@@ -1534,7 +1917,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       return List.copyOf(result.values());
     }
 
+    private void clearTemporaryReveal() {
+      temporaryReveal = null;
+      navigation.temporaryReveal(null);
+      navigation.cancelRestoration();
+      navigationRequest = new Object();
+      supersedeNavigation();
+    }
+
     private void selectPage(List<ClientWorkflowLayout.Category> path, WorkspaceNavigation.Key key) {
+      navigation.cancelRestoration();
+      navigation.temporaryReveal(null);
+      temporaryReveal = null;
+      supersedeNavigation();
       navigationRequest = new Object();
       information.clear();
       categoryPath = List.copyOf(path);
@@ -1546,54 +1941,32 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void selectPlacement(ClientWorkflowLayout.Placement placement) {
-      if (layout != null)
-        for (var group : layout.groups())
-          if (group.placements().contains(placement)) {
-            categoryPath = group.path();
-            break;
-          }
-      selectedKey = destination(placement.id());
-      openDocument(placement.route(), placement.field());
+      openDestination(new ClientDestination.Placement(new DestinationId(placement.id())));
     }
 
     private void revealNavigation(WorkspaceNavigation.Key key) {
       if (key.kind() == WorkspaceNavigation.Kind.HOME) {
-        selectHome();
+        openDestination(new ClientDestination.Home());
         return;
       }
       if (key.kind() == WorkspaceNavigation.Kind.CATEGORY && layout != null) {
-        for (int i = 0; i < layout.groups().size(); i++) {
-          var group = layout.groups().get(i);
-          if (group.path().isEmpty() && groupKey(i).equals(key)) {
-            selectPage(List.of(), key);
-            return;
-          }
-          for (int depth = 0; depth < group.path().size(); depth++)
-            if (category(group.path().get(depth).id()).equals(key)) {
-              selectPage(group.path().subList(0, depth + 1), key);
-              return;
-            }
-        }
+        openDestination(new ClientDestination.Category(new DestinationId(key.placement())));
         return;
       }
       var placement =
           allPlacements().stream().filter(item -> item.id().equals(key.placement())).findFirst();
       if (placement.isEmpty()) return;
       var item = placement.orElseThrow();
-      if (layout != null)
-        for (var group : layout.groups())
-          if (group.placements().contains(item)) {
-            categoryPath = group.path();
-            break;
-          }
-      selectedKey = key;
-      boolean restore = navigation.restoring() && navigation.position(key).isPresent();
-      openDocument(
-          item.route(),
-          restore ? Optional.empty() : key.field().isPresent() ? key.field() : item.field(),
-          restore
-              ? Optional.empty()
-              : key.target().or(() -> item.field().map(FormTarget.Field::new)));
+      var target = key.target().or(() -> item.field().map(FormTarget.Field::new));
+      ClientDestination requested =
+          target.orElse(null) instanceof FormTarget.Field field
+              ? new ClientDestination.Field(
+                  item.route(), field.path(), Optional.of(new DestinationId(item.id())))
+              : target.orElse(null) instanceof FormTarget.Section section
+                  ? new ClientDestination.Section(
+                      item.route(), section, Optional.of(new DestinationId(item.id())))
+                  : new ClientDestination.Placement(new DestinationId(item.id()));
+      openDestination(requested);
     }
 
     private boolean accepts(ClientWorkflowLayout.Placement placement, DocumentState state) {
@@ -1670,10 +2043,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 action.title(),
                 () -> openOperation(entry, true));
         retry.active = !entry.busy() && blocked.isEmpty();
-        panel.row(
+        panel.anchorRow(
             action.id().toString(), action.title(), blocked.orElse(action.context()), open, retry);
       } else
-        panel.row(action.id().toString(), action.title(), blocked.orElse(action.context()), open);
+        panel.anchorRow(
+            action.id().toString(), action.title(), blocked.orElse(action.context()), open);
     }
 
     private Button button(Object token, Component label, Component document, Runnable action) {
@@ -1741,66 +2115,109 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void openDocument(
         DocumentId id, Optional<FieldPath> field, Optional<FormTarget> focus) {
+      Optional<DestinationId> alias = Optional.empty();
+      if (selectedKey != null
+          && allPlacements().stream()
+              .anyMatch(
+                  item -> item.id().equals(selectedKey.placement()) && item.route().equals(id)))
+        alias = Optional.of(new DestinationId(selectedKey.placement()));
+      ClientDestination target =
+          focus.orElse(null) instanceof FormTarget.Section section
+              ? new ClientDestination.Section(id, section, alias)
+              : focus.orElse(null) instanceof FormTarget.Field selected
+                  ? new ClientDestination.Field(id, selected.path(), alias)
+                  : alias.isPresent()
+                      ? new ClientDestination.Placement(alias.orElseThrow())
+                      : new ClientDestination.Document(id);
+      openDestination(target);
+    }
+
+    private void mountDestination(NavigationSelection selected, ClientEditor<?> editor) {
+      mountDestination(selected, editor, false);
+    }
+
+    private void mountDestination(
+        NavigationSelection selected, ClientEditor<?> editor, boolean restoring) {
+      // Retain the old page before assigning new identity, including a focusless viewport.
+      beforeRebuild();
+      var previousKey = selectedKey;
+      var previousCategory = categoryPath;
+      var previousRoute = selectedRoute;
+      var previousAction = actionRoute;
+      var previousReveal = temporaryReveal;
+      var previousNotice = notice;
       information.clear();
-      var request = new Object();
-      navigationRequest = request;
-      selectedRoute = id;
-      actionRoute = id;
+      selectedKey = selected.key();
+      temporaryReveal =
+          selected.route().isPresent() && (selectedFilter != Filter.ALL || navigation.filtered())
+              ? selected.key()
+              : null;
+      navigation.temporaryReveal(temporaryReveal);
+      categoryPath = selected.category();
+      selected
+          .route()
+          .ifPresent(
+              route -> {
+                selectedRoute = route;
+                actionRoute = route;
+              });
+      if (selected.route().isEmpty()) actionRoute = null;
       drawerOpen = false;
       resetList = true;
-      if (layout == null) {
-        if (selectedKey == null
-            || selectedKey.kind() == WorkspaceNavigation.Kind.CATEGORY
-            || !selectedKey.placement().equals(id)) selectedKey = destination(id);
-      } else if (selectedKey == null
-          || selectedKey.kind() == WorkspaceNavigation.Kind.CATEGORY
-          || placements.get(selectedKey.placement()) == null
-          || !placements.get(selectedKey.placement()).route().equals(id)) {
-        for (var group : layout.groups()) {
-          var placement =
-              group.placements().stream()
-                  .filter(
-                      item ->
-                          item.route().equals(id)
-                              && (field.isEmpty()
-                                  || item.field().isEmpty()
-                                  || field.orElseThrow().startsWith(item.field().orElseThrow())))
-                  .findFirst();
-          if (placement.isPresent()) {
-            categoryPath = group.path();
-            selectedKey = destination(placement.orElseThrow().id());
-            break;
-          }
+      notice = null;
+      restoringDestination = restoring;
+      navigation.beginMount();
+      try {
+        if (editor == null) rebuildWidgets();
+        else showEditor(editor, selected.target());
+        navigation.endMount();
+        navigation.visit(
+            selectedKey, design.inherent.reform.presentation.FormCatalog.Limits.STANDARD);
+      } catch (RuntimeException | Error failed) {
+        selectedKey = previousKey;
+        categoryPath = previousCategory;
+        selectedRoute = previousRoute;
+        actionRoute = previousAction;
+        temporaryReveal = previousReveal;
+        navigation.temporaryReveal(previousReveal);
+        notice = previousNotice;
+        navigation.endMount();
+        navigation.cancelRestoration();
+        try {
+          rebuildWidgets();
+        } catch (RuntimeException | Error recovery) {
+          if (recovery != failed) failed.addSuppressed(recovery);
         }
+        throw failed;
+      } finally {
+        navigation.endMount();
+        restoringDestination = false;
       }
-      var bound = entry(id);
-      if (!bound.form.asynchronous() || bound.editor != null) {
-        showEditor(editor(id), focus);
+    }
+
+    private void revealOperation(Contributed<?> entry) {
+      if (layout == null || entry == null) throw missingDestination();
+      for (int index = 0; index < layout.groups().size(); index++) {
+        var group = layout.groups().get(index);
+        if (!group.actions().contains(entry.action)) continue;
+        var key = group.path().isEmpty() ? groupKey(index) : category(group.path().getLast().id());
+        mountDestination(
+            new NavigationSelection(key, group.path(), Optional.empty(), Optional.empty()), null);
+        if (panel == null || !panel.focusRow(entry.action.id().toString()))
+          throw new PolicyRefusal(
+              "navigation.operation_hidden",
+              "This operation is hidden by the current view filter.");
+        setFocused(panel);
         return;
       }
-      var pending = openEditor(id);
-      notice = text("opening", "Checking the actual editing context…");
-      rebuildWidgets();
-      pending.whenComplete(
-          (editor, failed) ->
-              minecraft.execute(
-                  () -> {
-                    if (!isOpen()
-                        || NativeScreens.current(minecraft) != this
-                        || navigationRequest != request) return;
-                    if (failed == null) showEditor(editor, focus);
-                    else showOpeningFailure(failed);
-                  }));
+      throw missingDestination();
     }
 
     private void showEditor(ClientEditor<?> selected, Optional<FormTarget> target) {
       notice = null;
       boolean restoreFocus =
-          navigation.restoring()
-              && navigation
-                  .position(selectedKey)
-                  .map(position -> position.focus() != null)
-                  .orElse(false);
+          (restoringDestination || navigation.restoring())
+              && navigation.position(selectedKey).isPresent();
       rebuildWidgets();
       if (!restoreFocus)
         selected.presentation().focusAfterLoad(target.orElse(new FormTarget.Field(FieldPath.ROOT)));

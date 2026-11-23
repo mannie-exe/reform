@@ -41,6 +41,7 @@ final class PlatformShellChecks implements AutoCloseable {
   private FormGeometry.Placement lastCanvas, homeCanvas;
   private byte[] source;
   private ClientEditor<?> opened;
+  private PlatformNavigationChecks navigationChecks;
 
   private ClientWorkflowLayout maximumHierarchy(DocumentId route) {
     var groups = new java.util.ArrayList<ClientWorkflowLayout.Group>();
@@ -487,7 +488,8 @@ final class PlatformShellChecks implements AutoCloseable {
             });
       }
       case 7 -> {
-        return true;
+        if (navigationChecks == null) navigationChecks = new PlatformNavigationChecks(check);
+        return navigationChecks.tick();
       }
       default -> throw new AssertionError("Unknown shell scene");
     }
@@ -496,6 +498,7 @@ final class PlatformShellChecks implements AutoCloseable {
 
   @Override
   public void close() {
+    if (navigationChecks != null) navigationChecks.close();
     if (workflow != null) workflow.close();
   }
 }

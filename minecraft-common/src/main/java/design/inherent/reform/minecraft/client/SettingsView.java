@@ -500,6 +500,17 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     return catalog.targets();
   }
 
+  /** Explicit navigation admission may project the current model; cached inspection never does. */
+  boolean navigationTargetExists(FormTarget target) {
+    var snapshot = actions.view().snapshot();
+    if (closed || snapshot.isEmpty()) return false;
+    var value = snapshot.orElseThrow();
+    if (target instanceof FormTarget.Field field)
+      return value.draft().contains(field.path()) && value.draft().activeAt(field.path());
+    catalog.project(model(value.draft()), value.session(), value.generation());
+    return catalog.targets().stream().anyMatch(entry -> entry.id().equals(target));
+  }
+
   Optional<Component> searchProblem() {
     return catalog.searchProblem();
   }
