@@ -300,6 +300,11 @@ final class PlatformShellChecks implements AutoCloseable {
             "ordinary location changes retain header artwork bounds and instance",
             homeCanvas.equals(lastCanvas) && creates == 1);
         var distance = design.inherent.reform.definition.FieldPath.ROOT.field("distance");
+        // Home's native button starts async navigation. Actor READY does not acknowledge the
+        // selected view; wait for its real control in the current screen before inspecting it.
+        var distanceControl = opened.form().fieldControl(distance);
+        if (distanceControl.isEmpty()
+            || !widgets(workflow.screen()).contains(distanceControl.orElseThrow())) return false;
         click(workflow.screen(), button(workflow.screen(), "Appearance"));
         click(workflow.screen(), button(workflow.screen(), "Distance tuning"));
         var orderedNavigation =
