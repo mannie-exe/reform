@@ -296,6 +296,33 @@ final class PlatformWidgets {
     return result;
   }
 
+  /** Count real measured outlines enclosing this control, in their common content coordinates. */
+  static int enclosingGroups(ContainerEventHandler root, AbstractWidget target) {
+    for (var child : root.children()) {
+      if (!(child instanceof ContainerEventHandler container)) continue;
+      if (!child.getClass().getSimpleName().equals("FormPanel")) {
+        int found = enclosingGroups(container, target);
+        if (found > 0) return found;
+        continue;
+      }
+      for (var position : (List<?>) observed(child, "positions")) {
+        if (observed(position, "widget") != target) continue;
+        int x = (int) observed(position, "x"), y = (int) observed(position, "y");
+        int result = 0;
+        for (var outline : (List<?>) observed(child, "outlines")) {
+          int left = (int) observed(outline, "left"), width = (int) observed(outline, "width");
+          int top = (int) observed(outline, "top"), bottom = (int) observed(outline, "bottom");
+          if (x >= left
+              && (long) x + target.getWidth() < (long) left + width
+              && y >= top
+              && (long) y + target.getHeight() <= bottom) result++;
+        }
+        return result;
+      }
+    }
+    return 0;
+  }
+
   static String relationshipFor(ContainerEventHandler root, AbstractWidget field) {
     for (var child : root.children()) {
       if (!(child instanceof ContainerEventHandler container)) continue;

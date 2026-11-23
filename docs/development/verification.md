@@ -1,5 +1,15 @@
 # Verification
 
+## 0.4 development: responsive reference tasks
+
+The unpublished `0.4.0-dev.26` candidate passes the four-target build and packaged consumer compiles, with 649 core tests on each codec runtime. The build's 104 tooling checks pass; two added raw-report preservation controls bring the separately executed tooling suite to 106. This candidate adds measured `TaskPresentation` preferences, actual chooser list/details regions, and contained title-first manual-ID repair over the same reference and owner services.
+
+NeoForge 1.21.1 and Fabric 26.3 pass initial and saved-file reopen pairs, four normal exits, and fixture removal. Their first boots contain 343 and 345 workspace checks respectively; each reopen contains 141. Both native first-boot chooser scenes exercise adjacent → focused → adjacent reflow with the same query/ID widget, caret/selection, source-operation handles, and saved bytes. Actual measured fields report no text/control or control/control intersections. The Fabric 26.3 extension observes the manual field inside its nested measured outline and focus on the current disclosure after collapse. The NeoForge scenes use 2,200 → 320 → 2,200 native widths; Fabric uses 1,100 → 320 → 2,200. They do not claim a matched-width return or duplicate chooser execution during reopen.
+
+The first attempt failed in the capture harness because new chooser filenames were not yet admitted. Its raw native payload was not retained, so it provides no native pass evidence. The harness now saves the bounded original native report before parsing or capture validation. Positive retries, malformed-payload retention, and foreign-capture refusals pass. The original failed receipt remains separate.
+
+The other two dev.26 native runtime targets, custom task policy execution, and final combined task/consumer qualification remain open. Inspection and operation preferences are declarations; their arranged surfaces and production Profile/preview slots are not implemented yet. The last complete four-target navigation matrix below remains attributed to dev.25.
+
 ## 0.4 development: typed navigation and preview cleanup
 
 The unpublished `0.4.0-dev.25` candidate passes `spotlessApply check build`, with 647 core tests on each game's codec runtime, 104 tooling cases, four packaged native consumer compiles, and eight public consumer inputs. Formatting, local links, distribution metadata, and missing-adapter refusal checks pass. These results qualify the foundations below, not the complete 0.4 design or a public release.

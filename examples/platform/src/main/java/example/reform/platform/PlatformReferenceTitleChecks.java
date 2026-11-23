@@ -364,7 +364,7 @@ final class PlatformReferenceTitleChecks {
         chooserSearch = observed(popup, "search");
         NativeClientProbe.size(client, chooserWidth, chooserHeight);
         chooserGuiScale = client.options.guiScale().get();
-        client.options.guiScale().set(1);
+        client.options.guiScale().set(2);
         NativeClientProbe.resize(client, 1100, 760);
         NativeClientProbe.reflow(client);
         stage = 50;
@@ -450,9 +450,20 @@ final class PlatformReferenceTitleChecks {
             field("block").getMessage().getString().equals("Oak plank profile")
                 && Arrays.equals(original, savedBytes()));
         press(action("Block", "Edit ID"));
-        edit("block", "??");
-        next("retain malformed native ID input for explicit repair");
+        check(
+            "manual ID control stays inside its own nested measured containment",
+            field("block") instanceof EditBox
+                && enclosingGroups(workflow.screen(), field("block")) >= 2);
+        stage = 90;
+        capture.accept(
+            "form-workspace-reference-manual-id.png",
+            () -> {
+              edit("block", "??");
+              stage = 10;
+              progress.accept("retain malformed native ID input for explicit repair");
+            });
       }
+      case 90 -> {}
       case 10 -> {
         if (!ready() || !raw("block").equals("??")) return false;
         check(
@@ -512,6 +523,9 @@ final class PlatformReferenceTitleChecks {
             field("block") instanceof Button
                 && field("block") != retiredRaw
                 && field("block").getMessage().getString().equals("ID: minecraft:missing"));
+        check(
+            "collapsing manual ID returns focus to its current disclosure control",
+            action("Block", "Edit ID").isFocused());
         retiredRaw.setValue("minecraft:dirt");
         check(
             "a retired raw callback cannot alter the collapsed reference",

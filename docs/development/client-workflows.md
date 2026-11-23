@@ -22,7 +22,15 @@ Minecraft.getInstance().setScreen(workflow.screen());
 
 The [ordinary addon](../../examples/native/src/main/java/example/reform/WorkflowExample.java) supplies four owners through this path. No addon executor, codec, shadow file or custom transport is needed. A consumer can use this entry in an explicitly registered native configuration factory; re:form never replaces an existing menu implicitly.
 
-### Workspace shell in 0.4 development
+### Responsive task presentation
+
+`ClientWorkspacePresentation.withTaskPresentation(TaskPresentation)` declares immutable task preferences separately from theme tokens. `TaskPresentation` lives in `core.presentation`; chooser, inspection, and operation preferences are independent. The standard preference is adjacent when measured content fits, with a complete focused flow otherwise. A preference cannot force clipped adjacent panes. A direct `NativeFormScreen` can bind the same policy before mounting; managed handoffs and parent-based screens inherit it without global state.
+
+The reference chooser uses that policy for separate search/results and selected-value/source-detail regions. Width and usable height are measured from native control offers after chrome; narrow or short bodies use one scrolling flow. Reflow retains query and manual-ID controls, caret/selection, stable choice IDs, source handles, and region-relative viewport anchors. It does not query, inspect, stage, or save. Exact source revision, snapshot, and context are available under Source details rather than repeated in ordinary candidate rows. Title-first fields keep expanded manual-ID repair inside their own contained area.
+
+These development preferences and chooser projection do not yet establish the selected inspection/operation task projections or consumer-authored production Profile/preview slots. Those remain part of the full 0.4 implementation.
+
+## Workspace shell in 0.4 development
 
 The development workflow defaults to Home. Mounting Home lists declared top-level destinations without opening their owners. Select a destination, call `show(route)` or `showPlacement(id)`, or declare an explicit initial destination before expecting that document's controls to be mounted. `openEditor(route)` admits an editor; it does not navigate the body. Standalone settings screens continue to open their document directly.
 

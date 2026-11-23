@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from tools import native_platform_probe as platform
-from tools.native_platform_probe import retain_captures, successful_boot
+from tools.native_platform_probe import retain_captures, retain_native_report, successful_boot
 
 
 class OptionalAdmissionTests(unittest.TestCase):
@@ -68,6 +68,30 @@ class CaptureRetentionTests(unittest.TestCase):
                 self.assertEqual([{"file": prefix + name,
                                    "sha256": hashlib.sha256(content).hexdigest()}], kept)
                 self.assertEqual(content, (reports / (prefix + name)).read_bytes())
+
+    def test_actual_report_survives_later_capture_refusal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture, reports = root / "fixture", root / "reports"
+            fixture.mkdir()
+            reports.mkdir()
+            raw = fixture / "platform-report.json"
+            raw.write_bytes(b'{"status":"PASS","workspace":{"captures":["unknown.png"]}}')
+            saved = retain_native_report(raw, reports, False)
+            with self.assertRaisesRegex(ValueError, "Unrecognized native capture"):
+                retain_captures(fixture, reports, ["unknown.png"], {"expected.png"}, False)
+            self.assertEqual(raw.read_bytes(), (reports / saved["file"]).read_bytes())
+            self.assertEqual(hashlib.sha256(raw.read_bytes()).hexdigest(), saved["sha256"])
+
+    def test_raw_retention_preserves_malformed_payload_without_qualifying_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw.json"
+            raw.write_bytes(b'{malformed')
+            saved = retain_native_report(raw, root, True)
+            self.assertEqual("reopen-native.json", saved["file"])
+            self.assertEqual(raw.read_bytes(), (root / saved["file"]).read_bytes())
+            self.assertIsNone(retain_native_report(root / "absent.json", root, False))
 
     def test_foreign_or_unbounded_capture_list_is_refused(self):
         for names in [None, "preview.png", ["preview.png"] * 65,

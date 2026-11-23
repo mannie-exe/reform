@@ -56,6 +56,17 @@ AUTHORING_CAPTURES = {
 }
 
 
+def retain_native_report(source, reports, reopen):
+    """Preserve the actual payload before capture admission or later interpretation can fail."""
+    if not source.exists():
+        return None
+    if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("Native report is not a bounded regular file")
+    saved = reports / ("reopen-native.json" if reopen else "first-native.json")
+    shutil.copy2(source, saved)
+    return {"file": saved.name, "sha256": hashlib.sha256(saved.read_bytes()).hexdigest()}
+
+
 def retain_captures(fixture, reports, names, allowed, reopen):
     if not isinstance(names, list) or len(names) > 64:
         raise ValueError("Native capture list exceeds its bound")
@@ -224,6 +235,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             log = reports / ("reopen.log" if reopen else "first.log")
             result = execute(command, example, log, timeout,
                              chooser_report=output if chooser_client else None)
+            raw_report = retain_native_report(output, reports, reopen)
+            if raw_report is not None:
+                report.setdefault("rawNativeReports", []).append(raw_report)
             native = json.loads(output.read_text()) if output.is_file() else {}
             failed_scene = fixture / "platform-scene-failure.json"
             if failed_scene.is_file() and not failed_scene.is_symlink() and failed_scene.stat().st_size <= 131072:
@@ -239,11 +253,11 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             if workspace_client and isinstance(native.get("workspace"), dict):
                 native["workspace"]["captures"] = retain_captures(
                     fixture, reports, native["workspace"].get("captures", []),
-                    {"platform-theme-input-alpha-128.png", "platform-theme-input-native-alpha-3.png", "platform-theme-input-alpha-0.png", "platform-theme-input-alpha-3.png", "platform-theme-input-alpha-255.png", "platform-shell-home.png", "platform-shell-document.png", "platform-shell-canvas-failure.png", "platform-shell-maximum-hierarchy.png", "platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png"}, reopen)
+                    {"platform-theme-input-alpha-128.png", "platform-theme-input-native-alpha-3.png", "platform-theme-input-alpha-0.png", "platform-theme-input-alpha-3.png", "platform-theme-input-alpha-255.png", "platform-shell-home.png", "platform-shell-document.png", "platform-shell-canvas-failure.png", "platform-shell-maximum-hierarchy.png", "platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png", "platform-form-workspace-chooser-adjacent.png", "platform-form-workspace-chooser-focused.png", "platform-form-workspace-chooser-return.png", "platform-form-workspace-reference-manual-id.png"}, reopen)
             if workspace_client and isinstance(native.get("sceneFailure"), dict):
                 native["sceneFailure"]["captures"] = retain_captures(
                     fixture, reports, native["sceneFailure"].get("captures", []),
-                    {"platform-theme-input-alpha-128.png", "platform-theme-input-native-alpha-3.png", "platform-theme-input-alpha-0.png", "platform-theme-input-alpha-3.png", "platform-theme-input-alpha-255.png", "platform-shell-home.png", "platform-shell-document.png", "platform-shell-canvas-failure.png", "platform-shell-maximum-hierarchy.png", "platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png"}, reopen)
+                    {"platform-theme-input-alpha-128.png", "platform-theme-input-native-alpha-3.png", "platform-theme-input-alpha-0.png", "platform-theme-input-alpha-3.png", "platform-theme-input-alpha-255.png", "platform-shell-home.png", "platform-shell-document.png", "platform-shell-canvas-failure.png", "platform-shell-maximum-hierarchy.png", "platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png", "platform-form-workspace-chooser-adjacent.png", "platform-form-workspace-chooser-focused.png", "platform-form-workspace-chooser-return.png", "platform-form-workspace-reference-manual-id.png"}, reopen)
             if workflow_client and isinstance(native.get("workflow"), dict):
                 native["workflow"]["captures"] = retain_captures(
                     fixture, reports, native["workflow"].get("captures", []),
