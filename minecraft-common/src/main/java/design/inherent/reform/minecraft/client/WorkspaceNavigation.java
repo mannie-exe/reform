@@ -29,6 +29,7 @@ import net.minecraft.network.chat.Component;
 /** One persistent native tree over real workflow destinations and admitted field identities. */
 final class WorkspaceNavigation {
   enum Kind {
+    HOME,
     CATEGORY,
     DESTINATION,
     FIELD
@@ -122,6 +123,31 @@ final class WorkspaceNavigation {
     observedSelection = selected;
   }
 
+  List<Button> historyControls(net.minecraft.client.gui.Font font) {
+    var token = new Object();
+    generation = token;
+    return historyControls(font, token);
+  }
+
+  private List<Button> historyControls(net.minecraft.client.gui.Font font, Object token) {
+    var historyButtons = new ArrayList<Button>();
+    for (boolean forward : List.of(false, true)) {
+      var label = forward ? text("forward", "Forward") : text("back", "Back");
+      var button =
+          Button.builder(
+                  label,
+                  ignored -> {
+                    if (current(token)) move(forward);
+                  })
+              .bounds(0, 0, Math.max(40, font.width(label) + 16), 20)
+              .build();
+      button.active = history != null && (forward ? history.canForward() : history.canBack());
+      button.setTooltip(Tooltip.create(label));
+      historyButtons.add(button);
+    }
+    return historyButtons;
+  }
+
   private void move(boolean forward) {
     if (history == null
         || !active.getAsBoolean()
@@ -189,6 +215,17 @@ final class WorkspaceNavigation {
       Key selected,
       FormCatalog.Limits limits,
       List<Component> notices) {
+    return build(client, bounds, declared, selected, limits, notices, ignored -> {});
+  }
+
+  Widgets build(
+      Minecraft client,
+      FormGeometry.Placement bounds,
+      List<Entry> declared,
+      Key selected,
+      FormCatalog.Limits limits,
+      List<Component> notices,
+      Consumer<FormPanel> prefix) {
     Objects.requireNonNull(limits);
     var entries = admit(declared, limits.maximumEntries());
     visit(selected, limits);
@@ -202,21 +239,7 @@ final class WorkspaceNavigation {
     }
     var token = new Object();
     generation = token;
-    var historyButtons = new ArrayList<Button>();
-    for (boolean forward : List.of(false, true)) {
-      var label = forward ? text("forward", "Forward") : text("back", "Back");
-      var button =
-          Button.builder(
-                  label,
-                  ignored -> {
-                    if (current(token)) move(forward);
-                  })
-              .bounds(0, 0, Math.max(40, client.font.width(label) + 16), 20)
-              .build();
-      button.active = history != null && (forward ? history.canForward() : history.canBack());
-      button.setTooltip(Tooltip.create(label));
-      historyButtons.add(button);
-    }
+    var historyButtons = historyControls(client.font, token);
     var historyGeometry =
         FormGeometry.controls(
             historyButtons.stream()
@@ -258,6 +281,7 @@ final class WorkspaceNavigation {
             bounds.width(),
             Math.max(1, bounds.height() - (searchTop - bounds.y()) - 26),
             true);
+    Objects.requireNonNull(prefix).accept(panel);
     var children = new LinkedHashMap<Key, List<Entry>>();
     var roots = new ArrayList<Entry>();
     for (var entry : entries.values()) {

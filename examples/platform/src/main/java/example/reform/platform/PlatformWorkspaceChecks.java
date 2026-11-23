@@ -203,6 +203,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private int guardedSubmissions;
   private int rootSelectionStage;
   private PlatformReferenceTitleChecks referenceTitleChecks;
+  private PlatformShellChecks shellChecks;
   private List<design.inherent.reform.minecraft.client.ClientEditor<?>> abandonedEditors =
       List.of();
 
@@ -537,9 +538,10 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
             .filter(widget -> widget.getClass().getSimpleName().equals("NavigationButton"))
             .sorted(java.util.Comparator.comparingInt(widget -> widget.getY()))
             .toList();
-    check("long nested labels keep all three navigation rows", rows.size() == 3);
+    check("Home and all three nested navigation rows remain mounted", rows.size() == 4);
     var titles =
         List.of(
+            "Home",
             "Interface, accessibility and Einstellungen",
             "Compatibility settings with a long localized navigation name",
             "Independent preferences with a long translated name");
@@ -548,7 +550,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
       check(
           "navigation labels retain content without layout spaces or disclosure glyphs",
           row.getMessage().getString().equals(titles.get(i)));
-      if (i < 2)
+      if (i > 0 && i < 3)
         check(
             "expanded navigation branches retain native state narration",
             NativeNarrationProbe.read(row).contains("Expanded"));
@@ -577,6 +579,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
             || PlatformWorkflowExample.keys().definition().isEmpty()
             || !PlatformWorkflowSources.ready()) return false;
         if (!choicesQualified && !entryChoices()) return false;
+        if (shellChecks == null) shellChecks = new PlatformShellChecks(this::check, capture);
+        if (!shellChecks.tick()) return false;
         jsonBefore = source("workflow_preferences");
         twinBefore = source("workspace_twin");
         nativeBefore = Files.readAllBytes(PlatformWorkflowSources.clientPath());
@@ -585,6 +589,10 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
             "declaring a workspace does not open sources",
             workflow.documents().stream().noneMatch(ClientEditingWorkflow.DocumentState::opened));
         NativeScreens.open(client, workflow.screen());
+        check(
+            "default Home initially opens no mixed-page owners",
+            workflow.documents().stream().noneMatch(ClientEditingWorkflow.DocumentState::opened));
+        click(workflow.screen(), button(workflow.screen(), "General"));
         next("mixed page mounts actual owners");
       }
       case 1 -> {
@@ -1287,6 +1295,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
                 Component.literal("Single-owner workflow"),
                 List.of(twin.form(Component.literal("Independent preferences"))));
         NativeScreens.open(client, workflow.screen());
+        workflow.show(twinId);
         next("default workflow retains field history without a custom layout");
       }
       case 17 -> {
@@ -1494,6 +1503,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         checks.addAll(referenceTitleChecks.report().getAsJsonArray("checks"));
         workflow = open();
         NativeScreens.open(client, workflow.screen());
+        click(workflow.screen(), button(workflow.screen(), "General"));
         stage = 221;
       }
       case 221 -> {

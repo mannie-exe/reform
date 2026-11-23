@@ -583,7 +583,9 @@ final class FormPanel extends ScrollFrame {
       layout.add(new Layout(row, left, y + 6, height, wrap, 0, 0, false));
       return height;
     }
-    if (navigation && row.controls.size() == 1) {
+    if (navigation
+        && row.controls.size() == 1
+        && !(row.controls.getFirst() instanceof NativeGraphicWidget)) {
       var button = row.controls.getFirst();
       button.setWidth(wrap);
       button.setHeight(

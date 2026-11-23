@@ -37,6 +37,9 @@ public sealed interface FormCanvas permits NativeCanvas {
 
   void drawWordWrap(Font font, FormattedText text, int x, int y, int width, int color);
 
+  /** Explicit ARGB, including transparent text; legacy RGB normalization does not apply. */
+  void drawArgb(Font font, FormattedCharSequence text, int x, int y, int argb, boolean shadow);
+
   /** Preserve the existing native form palette, whose text colors may omit an alpha byte. */
   static int textColor(int color) {
     return (color & 0xfc000000) == 0 ? color | 0xff000000 : color;

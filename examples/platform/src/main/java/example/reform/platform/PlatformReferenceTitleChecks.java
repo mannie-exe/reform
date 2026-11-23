@@ -215,6 +215,7 @@ final class PlatformReferenceTitleChecks {
             ClientEditingWorkflow.open(
                 parent, Component.literal("Reference choices"), List.of(form));
         NativeScreens.open(client, workflow.screen());
+        workflow.show(form.route());
         pending = workflow.openEditor(form.route()).toCompletableFuture();
         next("open owner-titled reference controls");
       }

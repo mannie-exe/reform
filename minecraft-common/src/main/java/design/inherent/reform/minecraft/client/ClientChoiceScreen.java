@@ -72,16 +72,28 @@ public final class ClientChoiceScreen extends NativeFormScreen {
       Component explanation,
       List<Choice> choices,
       Component backLabel) {
+    this(parent, title, explanation, choices, backLabel, 64);
+  }
+
+  ClientChoiceScreen(
+      Screen parent,
+      Component title,
+      Component explanation,
+      List<Choice> choices,
+      Component backLabel,
+      int maximumChoices) {
     super(Objects.requireNonNull(title).copy());
+    if (maximumChoices < 1 || maximumChoices > 256)
+      throw new IllegalArgumentException("Choice admission is bounded to256");
     this.parent = parent;
     this.explanation = Objects.requireNonNull(explanation).copy();
     this.choices = List.copyOf(choices);
     this.backLabel = Objects.requireNonNull(backLabel).copy();
     var ids = new HashSet<String>();
     if (choices.isEmpty()
-        || choices.size() > 64
+        || choices.size() > maximumChoices
         || choices.stream().anyMatch(choice -> !ids.add(choice.id())))
-      throw new IllegalArgumentException("Choices require one to 64 distinct identities");
+      throw new IllegalArgumentException("Choices require bounded distinct identities");
   }
 
   private Map<String, Optional<Component>> readiness() {

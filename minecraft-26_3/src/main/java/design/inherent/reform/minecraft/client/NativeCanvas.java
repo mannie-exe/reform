@@ -8,6 +8,12 @@ import net.minecraft.util.FormattedCharSequence;
 
 record NativeCanvas(GuiGraphicsExtractor graphics) implements FormCanvas {
   @Override
+  public void drawArgb(
+      Font font, FormattedCharSequence text, int x, int y, int argb, boolean shadow) {
+    graphics.text(font, text, x, y, argb, shadow);
+  }
+
+  @Override
   public void enableScissor(int left, int top, int right, int bottom) {
     graphics.enableScissor(left, top, right, bottom);
   }

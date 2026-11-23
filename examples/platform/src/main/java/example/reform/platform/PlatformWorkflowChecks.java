@@ -225,7 +225,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
           try {
             ClientEditingWorkflow.open(parent, Component.literal("Rejected workflow"), invalid);
             throw new AssertionError("Invalid workflow declaration admitted");
-          } catch (IllegalArgumentException expected) {
+          } catch (IllegalArgumentException | PolicyRefusal expected) {
             check("empty/duplicate/over-budget workflows refuse before opening sources", true);
           }
         }
@@ -265,6 +265,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
             "composed declaration keeps the actual native provider singular",
             PlatformWorkflowExample.selections() == 1);
         NativeScreens.open(client, workflow.screen());
+        workflow.show(preferences);
         var search = input(workflow.screen(), "Search settings");
         replace(workflow.screen(), search, "Controls");
         check(
@@ -789,6 +790,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
                 new ClientWorkflowLayout(
                     List.of(new ClientWorkflowLayout.Group(path, rows, List.of())), List.of()));
         NativeScreens.open(client, hierarchy.screen());
+        hierarchy.showPlacement(hierarchyId("distance"));
         check(
             "nested categories remain in one native tree over one actual owner",
             navigation(hierarchy.screen(), "Interface") != null

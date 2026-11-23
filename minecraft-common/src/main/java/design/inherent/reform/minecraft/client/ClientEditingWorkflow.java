@@ -8,8 +8,10 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.DestinationId;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormTokens;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -103,6 +105,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private final Map<DocumentId, ClientWorkflowLayout.ReviewScope> guarded = new LinkedHashMap<>();
   private final Map<DocumentId, Contributed<?>> contributions = new LinkedHashMap<>();
   private final ClientWorkflowLayout layout;
+  private final ClientWorkspacePresentation presentation;
   private final OwnerContext lifetime;
   private final OwnerContext.Access batchAccess;
   private final Overview overview;
@@ -133,11 +136,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       Component title,
       List<ClientForm> forms,
       DocumentBatch.Validator validator,
-      ClientWorkflowLayout layout) {
+      ClientWorkflowLayout layout,
+      ClientWorkspacePresentation presentation) {
     ClientSettingsRuntime.requireClientThread();
     Objects.requireNonNull(title);
     this.validator = Objects.requireNonNull(validator);
     this.layout = layout;
+    this.presentation = Objects.requireNonNull(presentation);
+    var declaration = presentation.validate(forms, layout);
+    if (!declaration.valid()) throw new PolicyRefusal(declaration);
     var declared = List.copyOf(forms);
     if (declared.isEmpty() || declared.size() > MAXIMUM_DOCUMENTS)
       throw new IllegalArgumentException("A client workflow requires between 1 and 32 documents");
@@ -176,13 +183,50 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   public static ClientEditingWorkflow open(
       Screen parent, Component title, List<ClientForm> forms, DocumentBatch.Validator validator) {
-    return new ClientEditingWorkflow(parent, title, forms, validator, null);
+    return new ClientEditingWorkflow(
+        parent,
+        title,
+        forms,
+        validator,
+        null,
+        ClientWorkspacePresentation.standard(
+            new WorkspaceIdentity(DocumentId.parse("reform:workspace"), title)));
   }
 
   public static ClientEditingWorkflow open(
       Screen parent, Component title, List<ClientForm> forms, ClientWorkflowLayout layout) {
     return new ClientEditingWorkflow(
-        parent, title, forms, ignored -> DocumentBatch.Check.VALID, Objects.requireNonNull(layout));
+        parent,
+        title,
+        forms,
+        ignored -> DocumentBatch.Check.VALID,
+        Objects.requireNonNull(layout),
+        ClientWorkspacePresentation.standard(
+            new WorkspaceIdentity(DocumentId.parse("reform:workspace"), title)));
+  }
+
+  public static ClientEditingWorkflow open(
+      Screen parent, List<ClientForm> forms, ClientWorkspacePresentation presentation) {
+    return open(parent, forms, null, presentation);
+  }
+
+  public static ClientEditingWorkflow open(
+      Screen parent,
+      List<ClientForm> forms,
+      ClientWorkflowLayout layout,
+      ClientWorkspacePresentation presentation) {
+    return new ClientEditingWorkflow(
+        parent,
+        presentation.identity().title(),
+        forms,
+        ignored -> DocumentBatch.Check.VALID,
+        layout,
+        presentation);
+  }
+
+  public void showHome() {
+    requireOverview();
+    overview.selectHome();
   }
 
   private void admitLayout(ClientWorkflowLayout layout) {
@@ -464,6 +508,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       failure = failed;
     }
     try {
+      overview.header.close();
+    } catch (RuntimeException | Error failed) {
+      if (failure == null) failure = failed;
+      else if (failure != failed) failure.addSuppressed(failed);
+    }
+    try {
       if (batch != null) batch.close();
     } catch (RuntimeException | Error failed) {
       if (failure == null) failure = failed;
@@ -702,8 +752,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private DocumentId actionRoute;
     private int statusTop, statusWidth;
     private FormGeometry.ScreenFrame outerFrame;
-    private int titleLeft, titleWidth;
-    private List<net.minecraft.util.FormattedCharSequence> titleLines = List.of();
+    private final WorkspaceHeader header = new WorkspaceHeader(presentation);
 
     Overview(Screen parent, Component title) {
       super(title);
@@ -713,6 +762,36 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           layout == null
               ? destination(selectedRoute)
               : categoryPath.isEmpty() ? groupKey(0) : category(categoryPath.getLast().id());
+      if (presentation.home().isPresent()) selectedKey = homeKey();
+      presentation
+          .initial()
+          .ifPresent(
+              id -> {
+                if (presentation.home().filter(home -> home.id().equals(id)).isPresent())
+                  selectedKey = homeKey();
+                else if (layout == null) {
+                  selectedRoute = id.value();
+                  selectedKey = destination(id.value());
+                } else
+                  for (int index = 0; index < layout.groups().size(); index++) {
+                    var group = layout.groups().get(index);
+                    if (group.path().isEmpty() && groupKey(index).placement().equals(id.value())) {
+                      selectedKey = groupKey(index);
+                      categoryPath = List.of();
+                    }
+                    for (var placement : group.placements())
+                      if (placement.id().equals(id.value())) {
+                        selectedKey = destination(placement.id());
+                        selectedRoute = placement.route();
+                        categoryPath = group.path();
+                      }
+                    for (int depth = 0; depth < group.path().size(); depth++)
+                      if (group.path().get(depth).id().equals(id.value())) {
+                        selectedKey = category(id.value());
+                        categoryPath = group.path().subList(0, depth + 1);
+                      }
+                  }
+              });
     }
 
     @Override
@@ -758,7 +837,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               Math.max(112, Math.min(200, available / 4)),
               FormTokens.Measure.INFORMATION_PREFERRED,
               FormTokens.Space.CONTENT);
-      int bodyTop = padding + 26;
+      int headerHeight = header.measure(font, available);
+      int bodyTop = padding + headerHeight + FormTokens.Space.CONTENT;
       var preliminary =
           FormGeometry.workspace(
               available,
@@ -782,14 +862,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         toggle.setWidth(Math.min(100, available));
         navigationToggle = toggle;
       }
-      titleLeft =
-          padding
-              + (preliminary.compactNavigation()
-                  ? Math.min(100, available) + 8
-                  : preliminary.navigation().map(at -> at.width() + 8).orElse(0));
-      titleWidth = Math.max(1, width - padding - titleLeft);
-      var wrappedTitle = font.split(title, titleWidth);
-      titleLines = List.copyOf(wrappedTitle);
+      final var categoriesToggle = navigationToggle;
+      int navigationHeight =
+          preliminary.compactNavigation()
+              ? FormTokens.Control.HEIGHT + FormTokens.Space.CONTENT
+              : 0;
       // Measure once with the same labels before mounting, rather than reserving a fixed row count.
       var actionView =
           actionEntry == null || actionEntry.editor == null || !actionEntry.editor.isOpen()
@@ -803,8 +880,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           FormGeometry.screenFrame(
               width,
               height,
-              Math.max(
-                  FormTokens.Measure.TITLE_MINIMUM_HEIGHT, titleLines.size() * font.lineHeight),
+              Math.max(FormTokens.Measure.TITLE_MINIMUM_HEIGHT, headerHeight + navigationHeight),
               0,
               FormTokens.Measure.STATUS_MINIMUM_HEIGHT,
               actionSizes);
@@ -812,23 +888,51 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       statusTop = outerFrame.status().map(FormGeometry.Placement::y).orElse(bodyTop);
       statusWidth = outerFrame.content().width();
       int editorBottom = bodyTop + outerFrame.content().height();
-      if (navigationToggle != null && !outerFrame.headerInContent())
+      if (navigationToggle != null && !outerFrame.headerInContent()) {
+        navigationToggle.setPosition(padding, padding + headerHeight + FormTokens.Space.TEXT);
         addRenderableWidget(navigationToggle);
+      }
+      var headerBounds =
+          outerFrame
+              .title()
+              .map(at -> new FormGeometry.Placement(at.x(), at.y(), at.width(), headerHeight))
+              .orElse(new FormGeometry.Placement(padding, bodyTop, available, headerHeight));
+      if (!outerFrame.headerInContent())
+        for (var widget :
+            header.mount(
+                font, headerBounds, locationTrail(), () -> current(token), this::locationMenu))
+          addRenderableWidget(widget);
       var geometry =
-          FormGeometry.workspace(
-              available, bodyTop, editorBottom, metrics, drawerOpen, information.open());
+          isHome() && !drawerOpen
+              ? new FormGeometry.Workspace(
+                  Optional.empty(),
+                  new FormGeometry.Placement(
+                      0, bodyTop, available, Math.max(1, editorBottom - bodyTop)),
+                  Optional.empty(),
+                  preliminary.compactNavigation(),
+                  false)
+              : FormGeometry.workspace(
+                  available, bodyTop, editorBottom, metrics, drawerOpen, information.open());
       var bounds = geometry.editor();
+      if (isHome() && !drawerOpen)
+        bounds =
+            FormGeometry.centeredWidth(
+                bounds,
+                Math.addExact(
+                    Math.multiplyExact(font.width("M"), FormTokens.Measure.READING_COLUMNS),
+                    2 * FormTokens.Space.SCREEN));
       editingVisible = !geometry.navigationOverlay();
       panel =
           new FormPanel(
               minecraft, padding + bounds.x(), bounds.y(), bounds.width(), bounds.height(), false);
       if (outerFrame.headerInContent()) {
-        panel.heading(title);
+        header.appendTo(panel, font, locationTrail(), () -> current(token), this::locationMenu);
         if (navigationToggle != null) panel.actions("workspace:categories", navigationToggle);
       }
       if (outerFrame.statusInContent()) panel.row(Component.empty(), scopeStatus());
       if (notice != null) panel.row(Component.empty(), notice);
       if (!geometry.navigationOverlay()) {
+        if (isHome()) appendHome(token);
         if (information.open() && geometry.information().isEmpty()) information.append(panel);
         for (var item : selected.entrySet()) {
           var bound = entry(item.getKey());
@@ -862,7 +966,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 retry);
           }
         }
-        if (layout != null) {
+        if (layout != null && !isHome()) {
           for (var group : selectedGroups())
             for (var action : group.actions()) operationRow(token, contributions.get(action.id()));
           for (var scope : reviews.values())
@@ -876,7 +980,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               review.active = batch == null || !batch.hasActiveOperations();
               panel.row(scope.id().toString(), scope.title(), Component.empty(), review);
             }
-        } else {
+        } else if (!isHome()) {
           var review =
               button(
                   token,
@@ -902,7 +1006,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   text("batch_result", "Last batch review/result"),
                   title,
                   () -> navigate(batchView)));
-        if (selected.isEmpty())
+        if (selected.isEmpty() && !isHome())
           panel.row(text("no_matches", "No matching settings or operations."), Component.empty());
         if (actionView != null) actions.addAll(actionView.ownerActions());
         if (outerFrame.actionsInContent())
@@ -956,7 +1060,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (geometry.navigation().isPresent()) {
         var at = geometry.navigation().orElseThrow();
         var nodes = navigationEntries();
-        int maximum = ClientWorkflowLayout.MAXIMUM_PLACEMENTS + ClientWorkflowLayout.MAXIMUM_GROUPS;
+        int maximum =
+            ClientWorkflowLayout.MAXIMUM_PLACEMENTS + ClientWorkflowLayout.MAXIMUM_GROUPS + 1;
         for (var placement : allPlacements()) {
           var bound = entry(placement.route());
           if (bound.editor != null && bound.editor.isOpen())
@@ -972,10 +1077,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             navigation.build(
                 minecraft,
                 new FormGeometry.Placement(
-                    padding + at.x(),
-                    at.y() + (geometry.compactNavigation() ? 26 : 0),
-                    at.width(),
-                    Math.max(1, at.height() - (geometry.compactNavigation() ? 26 : 0))),
+                    padding + at.x(), at.y() + 26, at.width(), Math.max(1, at.height() - 26)),
                 nodes,
                 selectedKey,
                 new design.inherent.reform.presentation.FormCatalog.Limits(
@@ -993,7 +1095,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                                     problem ->
                                         bound.form.title().copy().append(": ").append(problem)))
                     .map(component -> (Component) component)
-                    .toList());
+                    .toList(),
+                prefix -> {
+                  if (geometry.navigationOverlay() && outerFrame.headerInContent()) {
+                    header.appendTo(
+                        prefix, font, locationTrail(), () -> current(token), this::locationMenu);
+                    if (categoriesToggle != null)
+                      prefix.actions("workspace:categories", categoriesToggle);
+                  }
+                });
         addRenderableWidget(navigationWidgets.search());
         addRenderableWidget(navigationWidgets.panel());
         for (var control : navigationWidgets.history()) addRenderableWidget(control);
@@ -1006,7 +1116,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             NativeCycles.<Filter>builder(Overview::filterLabel, selectedFilter, Filter.values())
                 .create(
                     padding + at.x(),
-                    geometry.compactNavigation() ? at.y() : padding,
+                    at.y(),
                     Math.min(at.width(), 140),
                     20,
                     text("view", "Show"),
@@ -1055,6 +1165,141 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       };
     }
 
+    private WorkspaceNavigation.Key homeKey() {
+      return new WorkspaceNavigation.Key(
+          WorkspaceNavigation.Kind.HOME,
+          presentation.home().orElseThrow().id().value(),
+          Optional.empty());
+    }
+
+    private boolean isHome() {
+      return selectedKey != null && selectedKey.kind() == WorkspaceNavigation.Kind.HOME;
+    }
+
+    private void selectHome() {
+      if (presentation.home().isEmpty())
+        throw new PolicyRefusal(
+            "navigation.target_missing", "This workspace does not declare Home");
+      navigationRequest = new Object();
+      information.clear();
+      selectedKey = homeKey();
+      actionRoute = null;
+      drawerOpen = false;
+      resetList = true;
+      notice = null;
+      rebuildWidgets();
+    }
+
+    private List<WorkspaceHeader.Crumb> locationTrail() {
+      var declared = navigationEntries(true);
+      var byKey = new LinkedHashMap<WorkspaceNavigation.Key, WorkspaceNavigation.Entry>();
+      declared.forEach(node -> byKey.put(node.key(), node));
+      var chain = new ArrayDeque<WorkspaceHeader.Crumb>();
+      var seen = new java.util.HashSet<WorkspaceNavigation.Key>();
+      var node = byKey.get(selectedKey);
+      while (node != null && seen.add(node.key())) {
+        var selected = node;
+        chain.addFirst(
+            new WorkspaceHeader.Crumb(node.title(), () -> revealNavigation(selected.key())));
+        node = node.parent().map(byKey::get).orElse(null);
+      }
+      if (presentation.home().isPresent() && (chain.isEmpty() || !isHome()))
+        chain.addFirst(
+            new WorkspaceHeader.Crumb(presentation.home().orElseThrow().title(), this::selectHome));
+      if (chain.isEmpty())
+        chain.add(
+            new WorkspaceHeader.Crumb(text("location_missing", "Unavailable location"), () -> {}));
+      return List.copyOf(chain);
+    }
+
+    private void locationMenu(List<WorkspaceHeader.Crumb> trail) {
+      var choices = new ArrayList<ClientChoiceScreen.Choice>();
+      for (int index = 0; index < trail.size(); index++) {
+        var crumb = trail.get(index);
+        choices.add(
+            new ClientChoiceScreen.Choice(
+                "ancestor/" + index,
+                crumb.title(),
+                Component.empty(),
+                Optional::<Component>empty,
+                () -> {
+                  NativeScreens.open(minecraft, this);
+                  crumb.selected().run();
+                }));
+      }
+      navigate(
+          new ClientChoiceScreen(
+              this,
+              text("location", "Location"),
+              text("location_help", "Choose an ancestor or the current destination."),
+              choices,
+              text("back", "Back"),
+              256));
+    }
+
+    private void appendHome(Object token) {
+      var home = presentation.home().orElseThrow();
+      panel.heading(home.title());
+      panel.row(Component.empty(), home.introduction());
+      var declared = navigationEntries(true);
+      var featured = home.featured();
+      var choices =
+          declared.stream()
+              .filter(
+                  node ->
+                      node.key().kind() != WorkspaceNavigation.Kind.HOME
+                          && node.key().kind() != WorkspaceNavigation.Kind.FIELD
+                          && (featured.isEmpty()
+                              ? node.parent().isEmpty()
+                              : featured.contains(new DestinationId(node.key().placement()))))
+              .toList();
+      for (var node : choices) {
+        var open =
+            button(
+                token,
+                node.title(),
+                presentation.identity().title(),
+                () -> revealNavigation(node.key()));
+        panel.row("home:" + node.key(), Component.empty(), node.help(), open);
+      }
+      var history = navigation.historyControls(font);
+      panel.actions(
+          "home:history",
+          history.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
+      if (documents().stream().anyMatch(DocumentState::dirty)) {
+        if (layout == null)
+          panel.actions(
+              "home:review",
+              button(
+                  token,
+                  text("review_all", "Review all documents"),
+                  presentation.identity().title(),
+                  ClientEditingWorkflow.this::reviewAll));
+        else
+          for (var scope : reviews.values())
+            if (scope.writable().stream().anyMatch(id -> state(entry(id)).dirty()))
+              panel.actions(
+                  "home:review:" + scope.id(),
+                  button(
+                      token,
+                      scope.title().copy().append(": ").append(text("review", "Review changes")),
+                      presentation.identity().title(),
+                      () -> review(scope.id())));
+      }
+      for (var contribution : contributions.values())
+        if (contribution.latest != null)
+          panel.actions(
+              "home:operation:" + contribution.action.id(),
+              button(
+                  token,
+                  text("open_result", "Open result")
+                      .copy()
+                      .append(": ")
+                      .append(contribution.action.title()),
+                  presentation.identity().title(),
+                  () -> openOperation(contribution, false)));
+    }
+
     private WorkspaceNavigation.Key category(DocumentId id) {
       return new WorkspaceNavigation.Key(WorkspaceNavigation.Kind.CATEGORY, id, Optional.empty());
     }
@@ -1092,6 +1337,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private List<ClientWorkflowLayout.Placement> pagePlacements() {
+      if (isHome()) return List.of();
       var states = new LinkedHashMap<DocumentId, DocumentState>();
       for (var state : documents()) states.put(state.document(), state);
       return (layout == null
@@ -1102,7 +1348,23 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private List<WorkspaceNavigation.Entry> navigationEntries() {
+      return navigationEntries(false);
+    }
+
+    private List<WorkspaceNavigation.Entry> navigationEntries(boolean includeFiltered) {
       var result = new LinkedHashMap<WorkspaceNavigation.Key, WorkspaceNavigation.Entry>();
+      presentation
+          .home()
+          .ifPresent(
+              home ->
+                  result.put(
+                      homeKey(),
+                      new WorkspaceNavigation.Entry(
+                          homeKey(),
+                          Optional.empty(),
+                          home.title(),
+                          home.introduction(),
+                          this::selectHome)));
       if (layout != null)
         for (int index = 0; index < layout.groups().size(); index++) {
           var group = layout.groups().get(index);
@@ -1134,7 +1396,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var states = new LinkedHashMap<DocumentId, DocumentState>();
       for (var state : documents()) states.put(state.document(), state);
       for (var placement : allPlacements()) {
-        if (!accepts(placement, states.get(placement.route()))) continue;
+        if (!includeFiltered && !accepts(placement, states.get(placement.route()))) continue;
         var key = destination(placement.id());
         Optional<WorkspaceNavigation.Key> parent = Optional.empty();
         if (layout != null)
@@ -1243,6 +1505,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void revealNavigation(WorkspaceNavigation.Key key) {
+      if (key.kind() == WorkspaceNavigation.Kind.HOME) {
+        selectHome();
+        return;
+      }
       if (key.kind() == WorkspaceNavigation.Kind.CATEGORY && layout != null) {
         for (int i = 0; i < layout.groups().size(); i++) {
           var group = layout.groups().get(i);
@@ -1691,6 +1957,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private Component scopeStatus() {
+      if (isHome())
+        return Component.translatableWithFallback(
+            "reform.workspace.home_status",
+            "%s opened · %s with unsaved edits",
+            documents().stream().filter(DocumentState::opened).count(),
+            documents().stream().filter(DocumentState::dirty).count());
       if (!isOpen()) return text("context_ended", "This editing context ended.");
       if (actionRoute == null
           || entry(actionRoute).editor == null
@@ -1709,15 +1981,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (!isOpen()) return;
       if (information.guard()) rebuildWidgets();
       super.render(graphics, x, y, delta);
-      for (int i = 0; outerFrame.title().isPresent() && i < titleLines.size(); i++) {
-        var line = titleLines.get(i);
-        graphics.drawString(
-            font,
-            line,
-            titleLeft + (titleWidth - font.width(line)) / 2,
-            outerFrame.title().orElseThrow().y() + i * font.lineHeight,
-            FormPanel.TITLE_TEXT);
-      }
+      if (outerFrame.title().isPresent()) header.render(graphics, font);
       var lines = font.split(scopeStatus(), Math.max(1, statusWidth));
       for (int i = 0; outerFrame.status().isPresent() && i < Math.min(2, lines.size()); i++)
         graphics.drawString(
