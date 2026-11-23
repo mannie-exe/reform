@@ -18,6 +18,7 @@ import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueType;
@@ -157,6 +158,7 @@ public final class DocumentActions<T> implements AutoCloseable {
   private final OperationDescriptor<Empty, DocumentReview> review;
   private final OperationDescriptor<DraftTarget, FieldInformation> information;
   private final OperationDescriptor<Empty, EditorActor.Preflight<T>> preflight;
+  private final OperationDescriptor<DraftRevision, EditorActor.Preflight<T>> previewCapture;
 
   public DocumentActions(
       OwnerContext context,
@@ -411,6 +413,42 @@ public final class DocumentActions<T> implements AutoCloseable {
                                   execution.checkpoint();
                                   return result;
                                 })));
+    previewCapture =
+        descriptor(
+            "capture_preview",
+            DraftRevision.type(),
+            OwnerContext.Right.READ,
+            Set.of(OperationDescriptor.Effect.INSPECT));
+    scope.register(
+        previewCapture,
+        (execution, expected) -> {
+          requirePreviewRevision(expected);
+          execution.checkpoint();
+          return actor
+              .preflight()
+              .thenCompose(
+                  captured ->
+                      context.onOwner(
+                          () -> {
+                            execution.checkpoint();
+                            requirePreviewRevision(expected);
+                            if (!expected.equals(captured.target()))
+                              throw new PolicyRefusal(
+                                  "preview.stale",
+                                  "The draft changed while preview input was captured");
+                            if (!captured.report().valid())
+                              throw new PolicyRefusal(
+                                  new ValidationReport(
+                                          List.of(
+                                              Issue.error(
+                                                  "preview.input_invalid",
+                                                  FieldPath.ROOT,
+                                                  "Repair the draft before preparing a preview")),
+                                          true)
+                                      .and(captured.report()));
+                            return captured;
+                          }));
+        });
     scope.freeze();
   }
 
@@ -735,6 +773,24 @@ public final class DocumentActions<T> implements AutoCloseable {
   /** Complete identified candidate/backend checks, without marking a submission or writing. */
   public OperationHandle<EditorActor.Preflight<T>> preflight(OperationDescriptor.EntryPoint entry) {
     return scope.submit(preflight, entry, Empty.VALUE, readiness(entry));
+  }
+
+  /**
+   * Read-authorized complete preview input at exactly the requested revision. No submission,
+   * persistence or application capability is retained. Native clients must additionally guard
+   * unaccepted widget input before requesting and before displaying this result.
+   */
+  public OperationHandle<EditorActor.Preflight<T>> capturePreview(
+      OperationDescriptor.EntryPoint entry, DraftRevision expected) {
+    return scope.submit(
+        previewCapture, entry, java.util.Objects.requireNonNull(expected), readiness(entry));
+  }
+
+  private void requirePreviewRevision(DraftRevision expected) {
+    requireBatch(OwnerContext.Right.READ, Optional.empty());
+    if (!expected.matches(actor.view().snapshot().orElseThrow()))
+      throw new PolicyRefusal(
+          "preview.stale", "The requested preview no longer matches this draft and source");
   }
 
   /** Package orchestration is confined to this actual owner thread, not just a context UUID. */

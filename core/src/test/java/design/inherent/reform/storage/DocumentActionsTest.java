@@ -76,6 +76,97 @@ class DocumentActionsTest {
   }
 
   @Test
+  void previewCaptureUsesReadAuthorityAndDoesNotSaveOrApply() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "3", EntryPoint.GUI);
+      h.write.set(false);
+      var before = Files.readAllBytes(h.path);
+      var revision = DraftRevision.of(h.actions.view().snapshot().orElseThrow());
+      var captured = h.run(() -> h.actions.capturePreview(EntryPoint.GUI, revision));
+      assertEquals(revision, captured.target());
+      assertEquals(3, captured.candidate().orElseThrow().value().count());
+      assertTrue(captured.report().valid());
+      assertTrue(h.actions.view().dirty());
+      assertArrayEquals(before, Files.readAllBytes(h.path));
+      assertEquals(1, h.writes.get());
+      h.read.set(false);
+      h.nativeCall(
+          () -> {
+            assertThrows(
+                PolicyRefusal.class, () -> h.actions.capturePreview(EntryPoint.GUI, revision));
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void previewCaptureRefusesInvalidInputAndAnOlderRequestedRevision() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      var old = DraftRevision.of(h.actions.view().snapshot().orElseThrow());
+      h.edit("count", "-", EntryPoint.GUI);
+      var current = DraftRevision.of(h.actions.view().snapshot().orElseThrow());
+      var invalid = h.nativeCall(() -> h.actions.capturePreview(EntryPoint.GUI, current));
+      var invalidResult = await(invalid.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, invalidResult.state());
+      assertEquals("preview.input_invalid", invalidResult.report().issues().getFirst().code());
+      assertTrue(invalidResult.report().issues().size() > 1);
+      assertTrue(invalidResult.result().isEmpty());
+      var stale = h.nativeCall(() -> h.actions.capturePreview(EntryPoint.GUI, old));
+      var staleResult = await(stale.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, staleResult.state());
+      assertEquals("preview.stale", staleResult.report().issues().getFirst().code());
+      assertTrue(staleResult.result().isEmpty());
+      assertEquals(current, DraftRevision.of(h.actions.view().snapshot().orElseThrow()));
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
+  void previewCaptureRefusesReadRevocationWhileBackendValidationIsPending() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "3", EntryPoint.GUI);
+      var revision = DraftRevision.of(h.actions.view().snapshot().orElseThrow());
+      h.pauseValidation.set(true);
+      var capture = h.nativeCall(() -> h.actions.capturePreview(EntryPoint.GUI, revision));
+      waitFor(h.reached);
+      h.read.set(false);
+      h.release.countDown();
+      var result = await(capture.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, result.state());
+      assertTrue(result.result().isEmpty());
+      assertEquals("owner.permission", result.report().issues().getFirst().code());
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
+  void previewCaptureDoesNotReturnAnEarlierDraftAfterEditingDuringValidation() throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.load(EntryPoint.GUI));
+      h.edit("count", "3", EntryPoint.GUI);
+      var revision = DraftRevision.of(h.actions.view().snapshot().orElseThrow());
+      // Let the serialized draft inspection finish, then hold backend preparation. Holding
+      // inspection itself would correctly serialize the edit behind it rather than test a race.
+      h.pauseValidationAt.set(h.validationCalls.get() + 2);
+      h.pauseValidation.set(true);
+      var capture = h.nativeCall(() -> h.actions.capturePreview(EntryPoint.GUI, revision));
+      waitFor(h.reached);
+      h.edit("count", "4", EntryPoint.GUI);
+      h.release.countDown();
+      var result = await(capture.completion());
+      assertEquals(OperationSnapshot.State.REFUSED, result.state());
+      assertEquals("preview.stale", result.report().issues().getFirst().code());
+      assertTrue(result.result().isEmpty());
+      assertTrue(h.actions.view().dirty());
+      assertNotEquals(revision, DraftRevision.of(h.actions.view().snapshot().orElseThrow()));
+      assertEquals(1, h.writes.get());
+    }
+  }
+
+  @Test
   void fieldInformationSharesActualReadPolicyAndRetainsInvalidDraftWithoutSaving()
       throws Exception {
     try (var h = new Harness()) {
@@ -768,7 +859,8 @@ class DocumentActionsTest {
         pauseValidation = new AtomicBoolean();
     final AtomicInteger writes = new AtomicInteger(),
         nativeValidators = new AtomicInteger(),
-        validationCalls = new AtomicInteger();
+        validationCalls = new AtomicInteger(),
+        pauseValidationAt = new AtomicInteger();
     final CountDownLatch reached = new CountDownLatch(1), release = new CountDownLatch(1);
     final Path path = root.resolve("actions.json");
     final OwnerContext context;
@@ -795,10 +887,12 @@ class DocumentActionsTest {
               rootType,
               () -> new Profile(1, 1.0, "original"),
               profile -> {
-                validationCalls.incrementAndGet();
+                int call = validationCalls.incrementAndGet();
                 if (Thread.currentThread().threadId() == nativeThread)
                   nativeValidators.incrementAndGet();
-                if (pauseValidation.get() && profile.count() == 3) {
+                if (pauseValidation.get()
+                    && profile.count() == 3
+                    && call >= pauseValidationAt.get()) {
                   reached.countDown();
                   waitFor(release);
                 }
