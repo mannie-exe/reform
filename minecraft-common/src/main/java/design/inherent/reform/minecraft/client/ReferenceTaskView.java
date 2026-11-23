@@ -604,7 +604,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                       }));
               int size = theme().values().value(ThemeValues.Role.MEASURE_GRAPHIC_PREFERRED);
               ControlSizing.offer(widget, size, Math.min(size, target.visibleRowHeight()));
-              target.row("detail:graphic", Component.empty(), Component.empty(), widget);
+              target.anchorRow("detail:graphic", Component.empty(), Component.empty(), widget);
               target.actions(
                   "detail:camera",
                   button(text("rotate_left", "Rotate left"), () -> view.orbit(-15, 0)),
