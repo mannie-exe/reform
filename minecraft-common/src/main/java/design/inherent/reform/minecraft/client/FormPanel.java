@@ -195,6 +195,7 @@ final class FormPanel extends ScrollFrame {
   private final Minecraft client;
   private final boolean navigation;
   private int extent;
+  private boolean finished;
   private String highlighted;
   private SectionNavigation sections = new SectionNavigation();
 
@@ -311,6 +312,9 @@ final class FormPanel extends ScrollFrame {
                 row.boundary,
                 row.relationship,
                 row.preferred));
+        // Initial reference/dependency summaries can change while groups are still appended.
+        // finish() measures the complete tree and retains its group-balance checks.
+        if (!finished) return;
         var bookmark = bookmark();
         measure();
         restore(bookmark);
@@ -321,6 +325,7 @@ final class FormPanel extends ScrollFrame {
 
   void finish(float scroll) {
     measure();
+    finished = true;
     scrollDistance = Math.clamp(scroll, 0, Math.max(0, extent - height + border));
     position();
   }

@@ -134,6 +134,17 @@ tasks.register('verifyLibrary') {
         def actual = java.security.MessageDigest.getInstance('SHA-256').digest(artifact.bytes).encodeHex().toString()
         if (actual != providers.gradleProperty('reformSha256').get())
             throw new GradleException('Platform consumer resolved a different library JAR')
+        // A changed original can leave Loom's same-coordinate remap cached. Refuse reuse.
+        def coordinate = "design.inherent:${libraryModule}:${libraryVersion}"
+        def identity = java.security.MessageDigest.getInstance('SHA-256').digest(coordinate.getBytes('UTF-8')).encodeHex().toString()
+        def seal = layout.projectDirectory.file(".gradle/reform-library-inputs/${identity}.sha256").asFile.toPath()
+        java.nio.file.Files.createDirectories(seal.parent)
+        try {
+            java.nio.file.Files.writeString(seal, actual + "\n", java.nio.file.StandardOpenOption.CREATE_NEW)
+        } catch (java.nio.file.FileAlreadyExistsException existing) {
+            if (java.nio.file.Files.readString(seal).trim() != actual)
+                throw new GradleException("Library coordinates already used with different bytes: ${coordinate}; select a new immutable version before compiling or launching")
+        }
         println "Native platform library SHA-256: ${actual}"
     }
 }

@@ -296,6 +296,23 @@ final class PlatformWidgets {
     return result;
   }
 
+  static String relationshipFor(ContainerEventHandler root, AbstractWidget field) {
+    for (var child : root.children()) {
+      if (!(child instanceof ContainerEventHandler container)) continue;
+      if (child.getClass().getSimpleName().equals("FormPanel")) {
+        for (var layout : (List<?>) observed(child, "layout")) {
+          var row = observed(layout, "row");
+          if (((List<?>) observed(row, "controls")).contains(field))
+            return (String) observed(row, "relationship");
+        }
+      } else {
+        var found = relationshipFor(container, field);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
   static AbstractWidget informationFor(ContainerEventHandler root, AbstractWidget field) {
     for (var child : root.children()) {
       if (!(child instanceof ContainerEventHandler container)) continue;

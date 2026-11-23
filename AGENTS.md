@@ -54,7 +54,7 @@ Keep exact reviewed host dependency findings visible as nonblocking advisories u
 
 Run meaningful negative cases at serialization, authority, context, file and artifact boundaries. Use native fixtures for native claims. Report exact tested versions/artifacts, outcomes and material omissions. A bootstrap build is not a working settings-library release.
 
-Qualify changed bindings through actual entry points, serializers, callbacks, and consumers. Cover relevant inactive, missing, invalid, unavailable, external-edit, failed-application, retry, and shutdown cases. Check keyboard operation, narration, text scaling, and narrow layouts separately from compilation and schema inventories. Independent fixtures use the exact packaged library; preserve historical artifact identities when carrying evidence forward.
+Qualify changed bindings through actual entry points, serializers, callbacks, and consumers. Cover relevant inactive, missing, invalid, unavailable, external-edit, failed-application, retry, and shutdown cases. Check keyboard operation, narration, text scaling, and narrow layouts separately from compilation and schema inventories. Independent fixtures use the exact packaged library; preserve historical artifact identities when carrying evidence forward. Treat coordinates as immutable from their first local Maven publication, including internal check builds: change the candidate version before changing product bytes. Original Maven verification alone does not prove that a cached game-remapped runtime consumed those bytes.
 
 Run root verification and native fixture launches sequentially when they compile the same consumer. Rebuilding a source-container consumer's classes while its client is running can invalidate the fixture.
 

@@ -13,6 +13,8 @@ import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.CommitReceipt;
 import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.presentation.FormCatalog;
+import design.inherent.reform.presentation.FormLayout;
 import design.inherent.reform.presentation.FormPresentation;
 import java.nio.file.Files;
 import java.util.Arrays;
@@ -44,6 +46,7 @@ final class PlatformReferenceTitleChecks {
   private byte[] original;
   private int stage;
   private boolean complete;
+  private final JsonArray observedHelp = new JsonArray();
 
   PlatformReferenceTitleChecks(Consumer<String> progress, BiConsumer<String, Runnable> capture) {
     this.progress = progress;
@@ -54,6 +57,7 @@ final class PlatformReferenceTitleChecks {
     var result = new JsonObject();
     result.addProperty("status", complete ? "PASS" : "RUNNING");
     result.add("checks", checks);
+    result.add("observedHelp", observedHelp);
     return result;
   }
 
@@ -157,8 +161,49 @@ final class PlatformReferenceTitleChecks {
         title.append(" mutated by caller");
         var options =
             new ClientFormOptions<PlatformReferenceExample.Profile>(
-                    FormPresentation.EMPTY, PlatformReferenceExample.sources())
+                    FormPresentation.EMPTY
+                        .withCatalog(
+                            new FormCatalog(
+                                List.of(
+                                    new FormCatalog.Section(
+                                            FieldPath.ROOT.field("block"),
+                                            "example.profile.purpose",
+                                            "Block",
+                                            "Owner-supplied reference purpose.")
+                                        .withSupplementalHelp(
+                                            "Owner-supplied reference context."))))
+                        .withLayout(
+                            new FormLayout(
+                                List.of(
+                                    new FormLayout.Row(
+                                        "profile-row",
+                                        List.of(
+                                            FieldPath.ROOT.field("block"),
+                                            FieldPath.ROOT.field("resource")))),
+                                List.of(
+                                    new FormLayout.Group(
+                                        "profiles",
+                                        "example.profiles",
+                                        "Profiles",
+                                        "",
+                                        List.of(
+                                            FieldPath.ROOT.field("block"),
+                                            FieldPath.ROOT.field("resource"))),
+                                    new FormLayout.Group(
+                                        "other",
+                                        "example.other",
+                                        "Other references",
+                                        "",
+                                        List.of(
+                                            FieldPath.ROOT.field("optional"),
+                                            FieldPath.ROOT.field("unbound")))))),
+                    PlatformReferenceExample.sources())
                 .withReferenceTitles(PlatformReferenceExample.BLOCKS, titles)
+                .withReferenceTitles(
+                    PlatformReferenceExample.RESOURCES,
+                    new ReferenceTitles(
+                        Map.of(
+                            "minecraft:missing_resource", Component.literal("Resource profile"))))
                 .withReferenceTitles(
                     PlatformReferenceExample.UNBOUND,
                     new ReferenceTitles(
@@ -176,6 +221,21 @@ final class PlatformReferenceTitleChecks {
       case 1 -> {
         if (!ready()) return false;
         originalChoice = (Button) field("block");
+        measuredText(workflow.screen()).forEach(observedHelp::add);
+        var relationship = relationshipFor(workflow.screen(), originalChoice);
+        check(
+            "two titled selectors retain the authored related-row identity",
+            relationship != null
+                && relationship.equals(relationshipFor(workflow.screen(), field("resource"))));
+        measuredPanels(workflow.screen());
+        check(
+            "grouped titled reference retains owner purpose and context beside chooser guidance",
+            measuredText(workflow.screen()).stream()
+                .anyMatch(
+                    value ->
+                        value.contains("Owner-supplied reference purpose.")
+                            && value.contains("Owner-supplied reference context.")
+                            && value.contains("Choose from the source")));
         check(
             "titled reference hides its raw ID and copies caller components",
             originalChoice.getMessage().getString().equals("Default stone")
@@ -278,6 +338,20 @@ final class PlatformReferenceTitleChecks {
       }
       case 100 -> {}
       case 101 -> {
+        check(
+            "grouped invalid titled reference survives a complete rebuild without saving",
+            ready()
+                && raw("block").equals("??")
+                && field("block") instanceof Button
+                && !workflow.editor(PlatformReferenceExample.DEFINITION.id()).canSubmit()
+                && Arrays.equals(original, savedBytes()));
+        check(
+            "invalid titled-reference rebuild retains owner help and actionable diagnostic",
+            measuredText(workflow.screen()).stream()
+                .anyMatch(
+                    value ->
+                        value.contains("Invalid")
+                            && value.contains("Owner-supplied reference purpose.")));
         press(action("Block", "Edit ID"));
         edit("block", "minecraft:missing");
         stage = 102;

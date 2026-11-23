@@ -1536,17 +1536,27 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             .build();
     editorButtons.put(path, choose);
     disclosureButtons.put(path, raw);
-    var help =
+    var guidance =
         source == null
             ? text(
                 "reference_source_missing",
                 "Source unavailable. Edit the ID to retain or repair its value.")
             : text("reference_title_help", "Choose from the source, or edit the ID directly.");
+    var purpose = fieldHelp(path);
+    var help =
+        purpose.getString().isEmpty() ? guidance : purpose.copy().append("\n").append(guidance);
     var titled =
         new TitledReference(
             path, reference.source(), choose, referenceTitles.get(reference.source()), help);
     titledReferences.put(path, titled);
-    panel.field(key(path) + ":editor", label, help, choose, raw, informationButton(path, label));
+    panel.relatedField(
+        key(path) + ":editor",
+        expandedEditors.contains(path) ? null : relationship(path),
+        label,
+        help,
+        choose,
+        raw,
+        informationButton(path, label));
     titled.refresh();
   }
 
@@ -1613,20 +1623,18 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     row.add(informationButton(path, label));
     if (hasAvailability(path)) row.add(availabilityButton(path, label));
     panel.relatedField(
-        key(path),
-        presentation
-            .range(path)
-            .map(range -> scoped("range:" + range.id()))
-            .or(
-                () ->
-                    presentation.layout().row(path).map(rowGroup -> scoped("row:" + rowGroup.id())))
-            .orElse(null),
-        label,
-        fieldHelp(path),
-        row.toArray(AbstractWidget[]::new));
+        key(path), relationship(path), label, fieldHelp(path), row.toArray(AbstractWidget[]::new));
     var control = controls.get(path);
     if (control != null && control.quantity() != null)
       panel.keepTogether(control.quantity().less, control.quantity().more);
+  }
+
+  private String relationship(FieldPath path) {
+    return presentation
+        .range(path)
+        .map(range -> scoped("range:" + range.id()))
+        .or(() -> presentation.layout().row(path).map(row -> scoped("row:" + row.id())))
+        .orElse(null);
   }
 
   private Component fieldHelp(FieldPath path) {
