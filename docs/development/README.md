@@ -29,6 +29,10 @@
 - [Verification](verification.md) owns current evidence and material gaps.
 - [Publishing](../publishing.md) owns artifact/version/update procedures.
 
+## Proposed design
+
+[Presentation and navigation for 0.4](../design/presentation-0.4.md) defines the proposed theme, workspace, Home, navigation, and graphics contracts. Its [migration and acceptance plan](../design/presentation-0.4-migration.md) separates existing services from future APIs and consumer work. These specifications are not implemented features or an instruction to start candidate development. Current API and qualification documentation below remains authoritative for the released product.
+
 Build with `./gradlew --no-daemon check build`. Gradle checks Java formatting, documentation links and distribution metadata as well as applicable tests. Pinned dprint and actionlint check Markdown and CI syntax; `mise run check` and CI combine these checks.
 
 `core` uses Java 21 without game classes and tests both games' pinned DFU/Gson runtimes. The [target matrix](platform-targets.md) selects native game/loader projects, Java toolchains, mappings and artifacts. The version catalog owns dependency pins; `gradle.properties` owns the library version. Launch the checksum-pinned Gradle wrapper with JDK 25.

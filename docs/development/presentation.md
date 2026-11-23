@@ -2,6 +2,8 @@
 
 Presentation supplies native-free geometry, form and catalog models, client-only measured panels and the public recursive `SettingsScreen<T>` over an admitted owner-backed actor. Generated forms, [composed workflows](client-workflows.md), native keybindings and registered settings share editing, review and operation services while retaining their actual owners. [Coverage](coverage.md) records the supported baseline.
 
+The proposed [0.4 presentation contract](../design/presentation-0.4.md) is separate from this implemented baseline. It specifies a compact identity/location header, stable shell, separate Home body, scoped themes, typed links, and prepared native graphics; none of those additions is established by the current API or qualification described here.
+
 The extracted measurement foundations derive from the owned Skyweave: Compatibility Patches implementation, originally released under MIT and identified in `NOTICE`. The copyright owner licenses this project's current source under Apache-2.0. Library workflows share those controls and the admitted owner services. Consumer adoption and exact native qualification are recorded in [verification](verification.md). Neither consumer nor the modpack is a library dependency.
 
 ## Keep one measurement model

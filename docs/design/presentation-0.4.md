@@ -1,0 +1,224 @@
+# Presentation and navigation for 0.4
+
+This is the proposed 0.4 contract, reified from the released 0.3 implementation and current consumer requirements. It is not an implemented API, a candidate, or native qualification. Names and signatures below define the intended API responsibilities; they are not imports available in 0.3. [The migration contract](presentation-0.4-migration.md) owns changes to existing declarations and future implementation acceptance.
+
+The selected work is documentation and specification only. Do not build prototypes, candidates, consumer bindings, screenshots, mockups, illustrative assets, or preview scenes from this selection. Implementation, native checks, consumer adoption, publication, and rollout require later selection. Earlier layout images remain historical exploration, not the selected specification or a request for more captures.
+
+## Decisions
+
+| Concern                         | Decision                                                                                                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Default workspace               | A compact header with identity beside a hierarchical breadcrumb, above navigation and body                            |
+| Ordinary navigation             | Keep the shell, header policy, identity, and header artwork stable; change the location and body                      |
+| Custom header                   | Support identity/logo, subtitle/version, and optional author canvas as composition slots; a larger header is not Home |
+| Sidebar breadcrumb              | Consumers can compose it from shared primitives; no separate built-in C preset is required                            |
+| Home                            | A routable, splash-like landing body, separate from the header; useful without artwork or opening document owners     |
+| Strong consumer candidate       | Lootr's searchable profile/detail view and truthful container preview                                                 |
+| Other candidates                | Retain Compat feature entries and diagrams as optional ideas; Wayfinder is not an initial delivery requirement        |
+| Resource-pack option comparison | RespackOpts is parked; no investigation, dependency, implementation, or acceptance work is selected                   |
+
+The default change concerns identity and location placement. Keep the native palette, Minecraft typography, information actions, grouped body, measured related rows, and retained actors. A new presentation capability must not turn every setting into a card or replace source-aware information with decorative content.
+
+## Existing foundation and additions
+
+| Capability                                                                   | Status at 0.3                         | Intended 0.4 change                                                                       |
+| ---------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `FormTokens`, geometry, rows, groups, and sections                           | Implemented                           | Resolve semantic values through immutable theme scopes and preserve one measurement model |
+| Workflow forms, aliases, retained editors, and document actions              | Implemented                           | Reuse owners; add an explicit shell, Home, and typed destinations                         |
+| Search, navigation history, bookmarks, and field focus                       | Implemented                           | Add hierarchy-derived location and structured return points                               |
+| Title-first reference browser and cached titles                              | Implemented                           | Permit a richer profile/detail composition over the same selection and admission services |
+| Operation scopes and asynchronous owner outcomes                             | Implemented                           | Reuse for preparation and existing operation/result links                                 |
+| Icons, texture/item/block/entity viewports                                   | Not a portable public preview service | Add bounded typed subjects and version-specific preparation/render adapters               |
+| JEI/EMI and native recipe links                                              | Not implemented                       | Add optional capability adapters, never mandatory dependencies                            |
+| Remote generic forms, expressions, theme files, guides, and scene simulation | Outside this increment                | Remain deferred                                                                           |
+
+## Ownership and processing model
+
+Keep six kinds of state distinct: document data, declared relationships, theme values, navigation state, native controls, and prepared renderer resources. Presentation holds references to existing services; it is not another settings store. The core stays free of game types. Native subjects, Components, widgets, and resource access stay in the game-facing modules. Game-version extraction/drawing belongs in the existing version seams, and loader discovery belongs in loader adapters.
+
+The shared pipeline is **declare → resolve → measure → arrange → prepare → draw/extract**. Input invokes existing editor or operation services. It does not invoke domain compilation while measuring or drawing. Theme, language, GUI-scale, source, and resource changes invalidate the relevant projections, rather than rebuilding unrelated owners. A stale callback cannot submit through a replaced control, route, or source generation.
+
+Use owned disposal scopes and explicit invalidation, not a JavaScript reactive engine. Disposal detaches callbacks and attempts all resource cleanups even if one fails; report failures after cleanup without inventing rollback. Cached presentation may survive a temporary auxiliary view, but cannot revive a closed owner or retired renderer generation.
+
+## Workspace composition
+
+The proposed `ClientWorkspacePresentation` is a client-only immutable declaration attached to a workflow or standalone form host. It contains `WorkspaceIdentity`, `HeaderComposition`, `NavigationComposition`, an optional `HomePage`, and a root `ThemeScope`. The host still owns its screen, retained documents, operation results, and closure policy. A standalone form uses a minimal hierarchy with its actual document destination; it does not manufacture unrelated category pages.
+
+`WorkspaceIdentity` contains a stable presentation ID, title, optional subtitle/version, and optional resource-backed logo. A display title is not a document ID. Consumers supply meaningful versions; re:form does not infer a modpack version from a library dependency. Components are defensively copied. Identity does not change when an ordinary page changes.
+
+The measured regions are:
+
+```text
+identity and optional subtitle | current location
+navigation                    | current body
+owner/status                  | admitted actions
+```
+
+These are roles, not fixed percentages. Measure the actual font and intrinsic offers. Place identity and location on one line when they fit; otherwise use two measured lines with the same semantic order. Long identity text wraps in its own gutter. Breadcrumb overflow follows the navigation contract below. Optional logo/artwork yields before required text, controls, status, or actions. If the screen cannot contain ordinary chrome and usable content, mount the affected regions in scrolling content using the existing containment contract. Do not make actions disappear.
+
+`HeaderComposition` names `identity`, `subtitle`, `location`, and optional `artwork` slots. Identity and a current-location representation are required in an editing workspace. The standard composition is A. An owner may author a larger header with a canvas beside identity, but that choice applies to the workflow shell, not automatically to each destination. Canvas emptiness does not cause page-to-page resizing: reserve the declared offer or omit the canvas for that shell. Resource or language changes and genuine available-space changes may remeasure it. An explicit workflow-level mode transition may change the shell and must retain focus and drafts; ordinary navigation must not choose a different header preset.
+
+`NavigationComposition` controls placement of the shared location, search/filter controls, and tree. The same breadcrumb primitive can be placed above the tree for a consumer-authored C arrangement. Admit one primary location trail; consumers must not accidentally duplicate every ancestor in two focusable trails. The library need not ship C as an extra named mode. Preserve wrapped navigation indentation and disclosure hit areas.
+
+Body content may change from a form to a profile list or Home without rebuilding the shell or editor actors. A screen-specific toolbar belongs to that body's region, not to identity. Document action labels always identify the affected document or review scope, including unshown edits. Layout sections and preview panes do not become save scopes.
+
+### Home
+
+`HomePage` is an actual workflow destination with its own stable ID and return state. Its default is a splash-like introduction spanning the main content area: a short purpose and clearly named destinations, centered within the same measured reading offer as shared entry screens. Home may replace the normal navigation/body split with this landing composition; it does not replace the stable header with B. Entering a normal destination restores the navigation/body split and retained navigation state. Artwork is optional. Do not add a full-height promotional hero, a timed loading splash, a forced onboarding step, or a second identity/header.
+
+The default Home lists already declared top-level destinations and relevant cached status, without opening files, entering server contexts, discovering resources, or preparing previews. The default initial destination is Home; owners may explicitly select an admitted destination as the initial route. Returning to Home retains every editor, dirty draft, operation result, search state, and source guard. Home never means Revert, Reload, or Close.
+
+Home shows workflow-level Close and, when relevant, Review changes or pending-result destinations. It must not leave a last-viewed document's Save button ambiguously active for the whole landing page. Standalone forms still open their actual document directly with a minimal location; installing Home support does not force a new landing step into every single-form screen.
+
+Owners may compose a richer landing body from the same headings, destination choices, status, and optional content providers. A Home body can be visually distinct while the header remains stable. A missing optional illustration leaves the destinations and their explanations usable.
+
+## Themes, component variants, and slots
+
+The proposed neutral `ThemeValues` contains typed spacing, text roles, color roles, and component offers derived from current `FormTokens`. `ThemePatch` is a partial immutable override, and `ThemeScope` resolves a patch against its parent. Native `ClientTheme` binds game-facing text styles and resource-backed decoration without changing Minecraft's GUI scaling or font ownership. There is no process-global mutable theme, CSS evaluator, downloaded theme, environment provider, or new configuration file.
+
+Resolve values in this order: library defaults → workflow scope → subtree scope → component variant → explicit instance patch. Omitted values inherit. `inherit(role)` removes that scope's override; `libraryDefault(role)` explicitly ignores intervening overrides for that role. Neither action edits persisted settings. Resolve once per relevant revision and use the same immutable result for measurement, drawing, hit testing, and narration-related geometry.
+
+Keep reference values, semantic roles, component geometry, and interaction state separate. Equal spacing values do not establish the same role. Preserve the existing spacing/control/measure roles; add only roles needed by the selected header, location, Home, and viewport. Colors distinguish supporting text, focus, selection, pending, error, warning, and unavailable presentation; color cannot be their only explanation. Native control height and focus offers cannot shrink below their actual usable minima through a theme patch. Nonfinite or invalid geometry refuses the declaration with an actionable path, rather than silently clamping it into an apparently supported theme.
+
+Native Components retain formatting and translation. Text roles choose native style and emphasis, not an arbitrary font-size system or a bundled web font. Measure the active language/font after reload. The Unicode information glyph retains its local font choice; changing the overall theme must not make it disappear. Reflow retains the same raw input, caret, selection, field path, and focus target.
+
+The initial component variants are ordinary row, grouped section, title-first reference, destination choice, and optional illustrated entry. A compact text-link treatment is appropriate for breadcrumb ancestors; it still has a measured focusable native target. Boolean and numeric variants keep their exact omission/domain/unit/sentinel semantics. A styled switch cannot turn Default/On/Off into a two-state value or remove exact numeric entry.
+
+Entry slots are `leading`, `title`, optional `eyebrow`, `purpose`, `control`, `information`, `feedback`, and optional `background`. Required field slots cannot be removed by styling. `leading` accepts one bounded graphic; `control` accepts the shared control cluster or one admitted custom-control adapter; `feedback` may contain multiple retained issues. Group order and whole-relationship stacking follow `FormLayout`. A background is clipped and never consumes input. Interactive graphics expose their own named controls; decoration adds no focus stop.
+
+Owner purpose, supplemental timing/dependency facts, and validation errors remain separately available. Compact presentation may disclose long purpose, but cannot hide a current error or the only explanation of a disabled control. Information inspection retains configured, saved, effective, default, source, scope, and dependency facts. Search indexes the same declared text and admitted metadata; it does not search by rendering or open unselected owners.
+
+### Custom controls and interaction
+
+Most customization wraps or restyles the existing native control. The proposed `ClientControlAdapter` is needed only when an owner actually replaces interaction. It must supply intrinsic measurement, stable focus identity, native input/narration, value projection, retained invalid text, and disposal. It receives a restricted field interaction binding, not a raw writer or unguarded domain callback.
+
+The shared binding checks current lifetime and cached availability before dispatching one existing typed edit/action. Owner admission remains authoritative afterward. Cosmetic hooks cannot override disabled state or replace validation. Do not compose arbitrary child and parent effect callbacks: one activation dispatches one semantic command. Pointer capture, consumed keys, and Escape must not also activate a parent row. Decorative handlers cannot veto a required owner check.
+
+Tab order follows the arranged reading order: identity links if present, location, navigation, body, status actions, and document actions. Noninteractive identity and status text add no stops. Breadcrumbs support arrows within their ancestor group, with Tab entering/leaving the group; Enter/Space activates only actionable ancestors. Text editing retains native caret keys. Escape closes an overflow/auxiliary view before attempting workflow exit. No global shortcuts or new modpack keybindings are introduced.
+
+Narration names the field/action, current value or location, meaningful disabled/error state, and relevant operation outcome. A current breadcrumb is not narrated as an enabled ancestor. Preview dragging has keyboard equivalents. Native narration is not a claim of full operating-system accessibility integration. No decorative motion is required; the default preview is still and rotation is explicit. An owner-supplied reduced-motion policy overrides optional animation without removing controls or content.
+
+## Navigation and shared links
+
+The proposed neutral `DestinationId` is a namespaced stable presentation identity. `DestinationGraph` is a bounded immutable rooted workflow tree with one Home node, one parent per nonroot node, stable labels, and typed targets. Use the existing workflow admission limits for groups, placements, reviews, and operations; do not make optional Home entries multiply those underlying owners. Construction rejects duplicate IDs, missing parents, cycles, and conflicting alias declarations before any owner opens.
+
+The client `ClientDestination` target family is:
+
+| Target                      | Resolution                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| Home or category            | Select declared body content; no owner admission                                      |
+| Document route or placement | Enter/reveal the existing retained owner and declared placement                       |
+| Field                       | The actual owner route plus `FieldPath`; stable collection-row identity when relevant |
+| Operation                   | Reveal the admitted operation and its effects; a link does not start it               |
+| Operation result            | Inspect the existing handle/result identity; never rerun it                           |
+| Consumer view               | Open an explicitly registered bounded view with a declared return/lifetime contract   |
+| Recipe request              | Delegate to the optional recipe-link resolver after user activation                   |
+
+A document definition ID, route ID, placement ID, and destination ID remain distinct even when their strings match. A target cannot discover an arbitrary document by guessed filename. Dynamic collection fields use stable row IDs; a removed row becomes unavailable instead of selecting its replacement by index. An alias has its own contextual location but resolves to one canonical owner/field. Breadcrumb ancestry is the declared navigation tree, not that canonical owner, a split display string, or visit history.
+
+`ClientNavigation` supplies `inspect(target)` and `open(target)` over the existing workflow. Inspection is a cheap cached capability projection. Opening may asynchronously request actual owner admission; record Pending without blocking the client. Only the latest selection request may mount its result. A late admitted editor may remain borrowed by the workflow if still valid, but cannot replace a newer destination. Loading, unavailable, stale, and missing are different results with typed reasons and safe Retry/Back where admitted.
+
+Navigation to a filtered-out field reveals it through an explicit temporary reveal state, identifies that state, and restores the prior filter on return. It does not silently clear the user's filter. Source/permission failure preserves the previous body, draft, and return point. Cross-context links do not silently reuse a local owner as a running-server policy or open a second workflow with authority inferred from the link; they explain and enter an explicitly admitted context.
+
+`NavigationBookmark` stores destination, actual focused field/control identity, caret/selection where owned, viewport anchor, disclosure, query/filter, and consumer-view state token. Back/Forward changes the visit branch only. Up selects an ancestor without dropping edit history. Browser-like history is bounded and owned by the workflow; it is not persisted to a new file. Auxiliary native views borrow the same owner and return token. Context loss invalidates only the fields of a bookmark that depended on that context, with a visible fallback to the surviving destination.
+
+The breadcrumb keeps Home, the current location, and the nearest meaningful parent visible when possible. Middle ancestors move to a keyboard-operable overflow menu in order. At extreme widths, use two measured lines or a compact location button that opens the full ancestor list; never substitute an unreadable string or silently navigate on truncation. Current-location text remains available in narration. Resource/font reload remeasures the same path. Ordinary navigation changes its content within the stable header policy, not the shell preset.
+
+Leaving the workflow retains the existing pending-effect, invalid-input, review, and dirty-close checks. A recipe viewer or admitted auxiliary screen is a temporary handoff, not automatic workflow disposal. Unexpected screen replacement and actual client shutdown still release managed lifetimes. A return token cannot resurrect an owner after disconnect or context closure.
+
+## Graphics and previews
+
+The proposed game-facing `ClientGraphic` describes an immutable subject and purpose, not a renderer or a live world object. Built-in descriptors cover local texture/sprite identity, copied item stack, immutable block state, and curated entity subject. Their display IDs, accessible description, and provenance remain available without the image. Arbitrary NBT, remote URLs, filesystem image browsing, scene scripting, and a general animation engine are not admitted inputs.
+
+`ClientGraphicProvider<S>` exposes cached capabilities, explicit preparation, and a prepared lease. A `ClientGraphicView` owns measured bounds, camera/framing, focusable preview controls, and the current lease. Preparation receives the subject, requested source/draft revision, actual resource generation, context token, and cancellation scope. A provider cannot publish settings or resources as an incidental preparation effect.
+
+A prepared contribution is either a built-in subject with admitted inputs, an owned texture lease, or a subject served by an explicitly registered game-version `NativeGraphicAdapter<S>`. The last path permits real custom model/resource integration without exposing an untyped `Object` renderer or pretending immediate and extracted rendering share one raw context. The adapter supplies native preparation/submission/retirement for that game version; the shared host retains clipping, viewport controls, state reporting, and lifetime checks. A missing adapter is an unavailable capability, not a reflective search for a foreign renderer. Consumers need not copy the panel or navigation to add a supported subject.
+
+| Subject                         | Intended baseline                                                                                 | Explicit limit                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Texture/sprite or semantic icon | Current loaded local client resources, aspect-preserving fit, role tint or preserved artwork      | Missing resource keeps text/action; no remote fetch or assumed SVG/font support                                      |
+| Item                            | Defensive stack copy, native item appearance; decorations/tooltips explicitly opted in            | Renderer-dependent/world-sensitive properties report capability limits; do not alter inventory or invoke use actions |
+| Block                           | Static state/model plus an explicit provider for block-entity rendering                           | An item rendering is labelled as an item fallback, not a faithful block/entity preview                               |
+| Curated entity                  | Detached, explicitly supported vanilla subject and immutable display state in an admitted context | No insertion, gameplay ticking, AI, sounds, or mutation of a live entity; no universal modded-entity promise         |
+| Owner-prepared subject          | Typed provider such as Lootr's isolated profile output                                            | Owner validates/prepares domain resources; shared viewport supplies placement/lifetime/input, not domain compilation |
+
+Title-screen textures and context-independent items can use the loaded client resource environment. A subject needing a level/registry context reports Unavailable without one; the library must not silently load a world or synthesize a gameplay context. Entity and block-entity support is provider-specific. A curated entity test does not qualify player skins, equipment, EMF rigs, or arbitrary modded renderers. Add a new subject capability only with its actual rendering boundary and tests.
+
+`PreviewCamera` contains finite framing/rotation values; automatic fit preserves aspect ratio. Reset view restores the provider's declared camera. Rotate/zoom have visible named keyboard controls and bounded domain values. A still subject is the default. Optional animation uses an owned presentation clock, stops when not visible, obeys reduced motion, and never calls world/entity gameplay tick. No Ponder world or timeline is introduced.
+
+### Preparation and disposal
+
+The lifecycle is **Unprepared → Preparing → Ready**, with explicit Unavailable, Refused, Failed, Cancelled, Stale, and Closed outcomes. Refused means a known admission/budget/domain requirement failed; Failed means preparation could not complete. Neither destroys the draft. Retry is explicit and uses current input. Cancellation stops new work and drains already entered native work before releasing its resources; it is not rollback. Late results are disposed if their request, draft, context, resource generation, or view no longer matches.
+
+Separate worker-safe parsing/CPU preparation from client/render-thread native preparation. `PreparedGraphic` is an owned, generation-stamped lease, closed idempotently on replacement, destination removal, reload, context loss, or workflow closure. Shared immutable inputs may be cached by the provider under an explicit resource budget; view-owned cameras and controls are not cache keys for domain compilation. Only mounted visible viewports prepare; list rows use cheap already prepared thumbnails or text until a subject is selected. Do not allocate one entity or compile one profile for every result row.
+
+The default host serializes expensive preview preparation and replaces obsolete requests rather than queuing every intermediate keystroke. A provider declares finite input/output and cache budgets, using existing domain compiler limits where applicable. Report exhaustion with the affected subject and next action. Do not invent truncation that appears equivalent to the requested model, silently clamp a valid domain, or claim a resource/performance envelope from source inspection. Native implementation must measure defaults and accepted extremes before selecting shared byte/cache limits.
+
+Repainting may read immutable/native prepared state and update the presentation clock. It may not enumerate registries, discover profiles, read files, decode images, compile configuration, fetch a skin, or allocate an entity per frame. Reload retires the old generation and triggers explicit preparation for the current subject; stale output is never labelled current. Resource and provider failures remain visible near the viewport and in structured diagnostics.
+
+### Native adapter boundary
+
+Minecraft 1.21.1 draws through `GuiGraphics`; 26.3 uses `GuiGraphicsExtractor` and retained render state. The existing `FormCanvas` and `NativeCanvas` seam already separates those models. Add typed graphic submission at that seam rather than exposing a universally assumed raw drawing context in public shared APIs.
+
+The inspected 1.21.1 native source provides `renderItem`, `renderFakeItem`, `renderItemDecorations`, sprites, and scissoring. The inspected 26.3 class provides `item`, `fakeItem`, `itemDecorations`, sprite/texture submission, and entity render-state submission. These signatures establish different integration points, not a tested preview implementation. The 26.3 entity helper extracts state from an entity; this does not establish that arbitrary entities are safe or complete without context. Version-specific block and block-entity render support needs its own prepared native adapter.
+
+On 1.21.1, preserve pose, buffer/flush order, lighting, scissor, depth, and later-widget rendering on both success and exceptions. On 26.3, submit generation-valid prepared state with explicit clipping and a resource lifetime long enough for extraction and eventual consumption. Do not close a GPU resource just because extraction returned; release after the adapter's actual retirement boundary. No direct port of immediate GL-state operations into the extraction model is permitted. Consumer providers declare what they own and retain, with no direct mutation of global renderer settings.
+
+### Iconography
+
+Icons use the same local resource and lease rules as other graphics. `IconRole` defines meaning, accessible fallback, directional behavior, tint policy, and an intrinsic optical offer. Initial built-in roles cover Home, ancestor overflow, disclosure/navigation, information, and reset view only where a component needs them. Existing text/native glyphs are valid fallbacks; a large bundled icon library is not selected.
+
+Keep authored artwork colors separate from semantic tint. Directional back/forward/disclosure icons mirror with layout direction where appropriate; invariant symbols and item artwork do not. A missing image cannot remove an action, accessible name, focus target, or status. Use consistent pixel-scale detail, alignment, and visual weight alongside native text. Asset selection, licenses, and final aesthetic review belong to later implementation; this specification introduces no copied icon assets or illustration work.
+
+## Lootr's preview and profile boundary
+
+Lootr already owns a reload-scoped catalogue, friendly profile titles, independent Models and Artwork selections, guarded save/reload/export operations, and bounded immutable compilation. Reuse those services. A richer profile list is a view over the same source stamp and selection admission, not new discovery, parsing, or persistence.
+
+Browsing retains the highlighted profile independently from each selected model/artwork ID. A choice explicitly targets Models or Artwork; it does not change both. Show title, exact ID/source in inspection, contribution role, requested/effective fallback, and current source generation. Preserve missing requested IDs and manual repair. An empty catalogue, unavailable source, invalid ID, and valid missing selection are different states.
+
+A loaded preview may use already published native resources and must say Loaded appearance. A draft preview requires an owner-prepared isolated resource/model view for the full proposed model/artwork combination. Label its draft revision and resource generation. The library does not implement preview by temporarily saving preferences, globally installing a pack, toggling Fresh, or calling a real resource reload. Reusing a compiler is not enough: its compiled output still needs isolated native texture/model preparation. Design and qualify that adapter before claiming draft fidelity.
+
+Use an explicit Prepare preview action for expensive compilation; retain valid input and identify stale output after edits. Cheap camera changes reuse the same prepared lease. If the selected renderer needs unsupported isolation, show a useful Unavailable reason while keeping profile selection and loaded inspection usable; do not substitute a texture swatch and call it a composed-container preview. The later implementation must either deliver the declared preview capability or explicitly revise that delivery scope with the owner.
+
+Save, Reload resources, Save and reload resources, Retry reload, and Export retain their current distinct effects. A confirmed save remains saved if reload fails. Export artwork still exports active textures/bindings; Export barrel model still exports Default geometry. Highlighting or preparing a draft does not silently retarget those exports. Container variants, lid state, and Fresh/EMF rendering require explicit owner-provided subject states and capability tests; no entity animation zoo or new authoring platform is included.
+
+This is the strongest prospective consumer exemplar, not authorization to implement it now. Compat Wayfinder, glass diagrams, terrain illustrations, and encounter illustrations remain optional future candidates; they are not substitutes for required generic library behavior or mandatory screenshot tasks.
+
+## Optional recipe links
+
+`RecipeLinkRequest` supports producing recipes, ingredient uses, exact recipe identity, and a declared category/workstation capability where the provider actually supports it. Use an item/recipe identity or owner-prepared ingredient descriptor, not arbitrary serialized API objects. A provider reports supported request kinds and readiness for the current screen/player/resource generation.
+
+The default resolver uses an explicitly configured provider first; otherwise it selects a ready matching provider in deterministic order, JEI then EMI. If the configured provider is absent or lacks that request capability, show the reason and offer an explicit alternate rather than silently changing the choice. No configuration file is created by installing re:form. A consumer may restrict admitted providers. Do not open both viewers from one activation. Runtime loss or no matching recipe is a useful non-success outcome, not permission to run an unrelated command.
+
+JEI/EMI adapters use their public client APIs behind optional loader admission and version seams. Public shared classes and dedicated-server class loading must not resolve their types. Recipe links are view-only: no transfer, crafting, giving, unlocks, or arbitrary commands. The origin bookmark remains retained through the viewer's actual parent-return contract; a viewer that cannot preserve a return path needs an explicit unavailable capability or a separately qualified native wrapper.
+
+The native recipe book is an explicit limited request to an actual compatible crafting/inventory screen with a player and its native unlocked recipes. It is not the default fallback for a generic producing/uses request, and cannot open a fictitious screen or grant unlocks to imitate a viewer. Expose native-book capability only where an owner supplies that real context. It is valid for all generic links to remain unavailable when no viewer is installed.
+
+The following is a platform-listing observation on 2026-11-22, not a selected dependency pin or native qualification:
+
+| Target          | JEI listing      | EMI listing                           | Native book                        |
+| --------------- | ---------------- | ------------------------------------- | ---------------------------------- |
+| Fabric 1.21.1   | 19.76.1.478 beta | 1.1.24+1.21.1+fabric release          | Context-specific native capability |
+| NeoForge 1.21.1 | 19.76.1.478 beta | 1.1.24+1.21.1+neoforge release        | Context-specific native capability |
+| Fabric 26.3     | 31.23.0.129 beta | No matching Modrinth listing observed | Context-specific native capability |
+| NeoForge 26.3   | 31.23.0.129 beta | No matching Modrinth listing observed | Context-specific native capability |
+
+Before implementation selects pins, refresh the [JEI](https://modrinth.com/mod/jei/versions) and [EMI](https://modrinth.com/mod/emi/versions) project listings and resolve the actual loader/game artifacts. The absence observation is limited to that query, not proof that no build exists anywhere. JEI and EMI requests need separate actual runtime tests for the supported combinations; absence is always part of the baseline matrix. No EMI 26.3 adapter is promised from the 1.21 source.
+
+## Design references and adaptation decisions
+
+References inform these contracts; none becomes a required runtime dependency. Keep applicable attribution if code/assets are later reused. This documentation copies no source implementation or icon set.
+
+| Reference                                                                                                                                                                                                                                                                                                                                                 | Inspected mechanism                                                                                           | Adaptation or rejection                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Playground](https://github.com/mannie-exe/playground), `Theme.hpp`, `UITypes.hpp`, `Navigation.hpp`                                                                                                                                                                                                                                                      | Typed semantic roles, distinct measurement/arrangement/preparation/input phases, stable navigation identities | Adapt separation and ownership; keep Minecraft's font, native controls, and game-version renderer. Do not port its dimensions or renderer.                                               |
+| [Solid owner lifecycle](https://github.com/solidjs/solid/blob/a406a5d7b25a1595df5f10652535b5e435a7cb41/packages/signals/src/core/owner.ts)                                                                                                                                                                                                                | Disposed owners cannot reawaken; one failing cleanup does not prevent sibling cleanup                         | Use explicit Java lifetimes/invalidation. Do not import signals, dependency tracking, or the scheduler.                                                                                  |
+| [React Router hierarchy metadata](https://reactrouter.com/how-to/using-handle)                                                                                                                                                                                                                                                                            | Matched hierarchy contributes location metadata                                                               | Derive breadcrumbs from declared parentage. Keep navigation and editing histories separate; no browser loader/URL machinery.                                                             |
+| [Base UI composition](https://base-ui.com/react/handbook/composition) and [Radix Slot](https://github.com/radix-ui/primitives/blob/eb3a2b7091293e27df8f9ba906632d8daa3d81a3/packages/react/slot/src/slot.tsx)                                                                                                                                             | Custom presentation must retain the underlying interaction; event merge rules affect behavior                 | Retain one shared activation and native focus binding. Do not copy generic prop/event merging: it could dispatch two effects or override admission.                                      |
+| [Apple layout](https://developer.apple.com/design/human-interface-guidelines/layout) and [accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)                                                                                                                                                                     | Consistent structure, measured adaptation, meaningful grouping, readable state, and alternatives to gestures  | Prefer these interaction and design semantics, adapted to native Minecraft; do not import Apple platform dimensions, materials, or claim VoiceOver integration.                          |
+| [Material states](https://m3.material.io/foundations/interaction/states/overview) and [Symbols](https://github.com/google/material-design-icons)                                                                                                                                                                                                          | Breadth/state/icon vocabulary is the intended comparison                                                      | The interactive states page was not readable through the retrieved non-JavaScript response. Do not claim it was inspected or select assets from the link alone.                          |
+| [owo BlockComponent](https://github.com/wisp-forest/owo-lib/blob/1fb7971326ba945b5a2a9cf7985c451136dfdbbc/src/main/java/io/wispforest/owo/ui/component/BlockComponent.java) and [EntityComponent](https://github.com/wisp-forest/owo-lib/blob/1fb7971326ba945b5a2a9cf7985c451136dfdbbc/src/main/java/io/wispforest/owo/ui/component/EntityComponent.java) | Picture-in-picture/extracted state and context-dependent native subjects                                      | Reuse the architectural lesson, not its dependency or arbitrary NBT/world assumptions. The block helper uses the current world for native data; that is not title-screen-safe by itself. |
+| [Ponder scene](https://github.com/Creators-of-Create/Ponder/blob/43a97d70d04de90896d42939a4306aab88c3a185/common/src/main/java/net/createmod/ponder/foundation/PonderScene.java)                                                                                                                                                                          | Prior scene inspection identified world ticking                                                               | Keep framing inspiration only. Reject scene simulation, timelines, guides, and a Ponder dependency.                                                                                      |
+| [JEI recipes](https://github.com/mezz/JustEnoughItems/blob/5e2db9b0f4ede69a6ab0a52ae0aae8bc3b8da87e/Common/src/api/java/mezz/jei/api/runtime/IRecipesGui.java), [EMI API](https://github.com/emilyploszaj/emi/blob/bb8caa4c6fc113df70a53717fd520c09786d2234/xplat/src/main/java/dev/emi/emi/api/EmiApi.java)                                              | Public view-only entry points and parent/context differences                                                  | Optional capability adapters with actual per-target admission; no universal native-book fallback or gameplay effects.                                                                    |
+
+Existing Atlas, inherent.design, and cfgate semantic-token relationships remain the basis of current `FormTokens`; their branding, fonts, and web rendering are not imported. No further Mobbin or screenshot work is required for this documentation stage.

@@ -40,6 +40,8 @@ Record API, consumer schema, runtime context and wire identities separately. Kee
 
 Use the host task store for adopted personal intents and one current checkpoint. Keep private store identifiers and absolute host paths out of tracked docs. Maintained architecture and verification stay in this repository. Do not duplicate active plans into `.git` or accumulate transient review narration.
 
+Keep proposed public contracts in clearly labelled design documents, separate from implemented API and qualification docs. Record replacements, ownership, and observable acceptance before changing code; a reification-only selection does not authorize prototypes, candidates, consumer bindings, or graphical examples.
+
 Coordinate only sustained desktop focus for GUI work. Headless builds/tests need no reservations. Use native agent messaging when available; when using tmux, send literal text, send Enter separately and verify delivery. Do not use Tab to queue it. Do not send unrelated status messages.
 
 ## Checks and artifacts
