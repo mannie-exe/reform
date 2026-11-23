@@ -274,6 +274,129 @@ class ReferenceSelectionTest {
   }
 
   @Test
+  void oneReadOnlyBrowserStagesTwoIndependentFieldsWithoutSavingOrChangingItsSelection()
+      throws Exception {
+    try (var h = new Harness()) {
+      String bytes = Files.readString(h.file);
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var lookup = h.nativeCall(() -> browser.resolve(EntryPoint.GUI, "fixture:empty"));
+      await(lookup.operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(lookup)));
+      assertFalse(h.actions.view().dirty());
+      var first = h.first();
+      var second = FieldPath.ROOT.field("mode").variant("primary").field("donor");
+      h.run(() -> ReferenceSelection.chooseFromBrowser(EntryPoint.GUI, h.actions, first, browser));
+      h.run(() -> ReferenceSelection.chooseFromBrowser(EntryPoint.GUI, h.actions, second, browser));
+      for (var path : List.of(first, second))
+        assertEquals(
+            "fixture:empty",
+            ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path)).raw());
+      assertTrue(h.nativeCall(browser::current));
+      assertEquals("fixture:empty", h.nativeCall(() -> browser.selectedKey().orElseThrow()));
+      assertTrue(h.actions.view().dirty());
+      assertEquals(bytes, Files.readString(h.file));
+      assertEquals(
+          "fixture:missing", h.owner.handle().view().value().orElseThrow().donors().getFirst());
+    }
+  }
+
+  @Test
+  void browserStagingRechecksSourceAuthorityAndDoesNotInterpretOtherFieldsAsReferences()
+      throws Exception {
+    try (var h = new Harness()) {
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var lookup = h.nativeCall(() -> browser.resolve(EntryPoint.GUI, "fixture:b"));
+      await(lookup.operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(lookup)));
+      String bytes = Files.readString(h.file);
+      h.sourceRead.set(false);
+      var refused =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () ->
+                  h.nativeCall(
+                      () ->
+                          ReferenceSelection.chooseFromBrowser(
+                              EntryPoint.GUI, h.actions, h.first(), browser)));
+      assertInstanceOf(PolicyRefusal.class, refused.getCause());
+      assertFalse(h.actions.view().dirty());
+      assertEquals(bytes, Files.readString(h.file));
+      h.sourceRead.set(true);
+      var wrongType =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () ->
+                  h.nativeCall(
+                      () ->
+                          ReferenceSelection.chooseFromBrowser(
+                              EntryPoint.GUI, h.actions, FieldPath.ROOT.field("donors"), browser)));
+      assertInstanceOf(IllegalArgumentException.class, wrongType.getCause());
+      assertFalse(h.actions.view().dirty());
+      assertTrue(h.nativeCall(browser::current));
+    }
+  }
+
+  @Test
+  void browserChoiceCannotReplaceAFieldChangedDuringSourceAdmission() throws Exception {
+    try (var h = new Harness()) {
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var lookup = h.nativeCall(() -> browser.resolve(EntryPoint.GUI, "fixture:b"));
+      await(lookup.operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(lookup)));
+      var path = h.first();
+      var nested = new AtomicReference<OperationHandle<EditorActor.View<Profile>>>();
+      h.beforeSourceRead.set(
+          () ->
+              nested.set(
+                  h.actions.edit(
+                      EntryPoint.GUI,
+                      new DraftEdit(
+                          h.actions.view().snapshot().orElseThrow().target(path),
+                          new DraftEdit.SetRaw("fixture:a")))));
+      var operation =
+          h.nativeCall(
+              () -> ReferenceSelection.chooseFromBrowser(EntryPoint.GUI, h.actions, path, browser));
+      await(DocumentActions.result(nested.get()));
+      var refused =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () -> await(DocumentActions.result(operation)));
+      assertInstanceOf(PolicyRefusal.class, refused.getCause());
+      assertEquals(
+          "fixture:a",
+          ((DraftNode.Scalar) h.actions.view().snapshot().orElseThrow().draft().at(path)).raw());
+      assertEquals(
+          "fixture:missing", h.owner.handle().view().value().orElseThrow().donors().getFirst());
+      assertTrue(h.nativeCall(browser::current));
+    }
+  }
+
+  @Test
+  void browserChoiceDoesNotFollowAReentrantHighlightToAnotherValue() throws Exception {
+    try (var h = new Harness()) {
+      var browser = h.nativeCall(() -> new ReferenceBrowser<>(h.references));
+      var lookup = h.nativeCall(() -> browser.resolve(EntryPoint.GUI, "fixture:a"));
+      await(lookup.operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(lookup)));
+      var replacement = new AtomicReference<ReferenceBrowser.Lookup<List<String>>>();
+      h.beforeSourceRead.set(() -> replacement.set(browser.resolve(EntryPoint.GUI, "fixture:b")));
+      var refused =
+          assertThrows(
+              java.util.concurrent.ExecutionException.class,
+              () ->
+                  h.nativeCall(
+                      () ->
+                          ReferenceSelection.chooseFromBrowser(
+                              EntryPoint.GUI, h.actions, h.first(), browser)));
+      assertInstanceOf(PolicyRefusal.class, refused.getCause());
+      assertFalse(h.actions.view().dirty());
+      await(replacement.get().operation().completion());
+      assertTrue(h.nativeCall(() -> browser.accept(replacement.get())));
+      assertEquals("fixture:b", h.nativeCall(() -> browser.selectedKey().orElseThrow()));
+    }
+  }
+
+  @Test
   void collectionSelectionRetainsUnknownMembersAndAdvancesOnlyItsIssuedEdit() throws Exception {
     try (var h = new Harness()) {
       var path = FieldPath.ROOT.field("donors");

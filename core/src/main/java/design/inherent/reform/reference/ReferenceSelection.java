@@ -38,20 +38,61 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
       DocumentActions<T> document, FieldPath path, ReferenceActions<String, V> source) {
     this.document = Objects.requireNonNull(document);
     Objects.requireNonNull(source);
+    var field = field(document, path, source.source());
+    raw = field.raw();
+    target = field.target();
+    browser = new ReferenceBrowser<>(source);
+  }
+
+  private record Field(DraftTarget target, String raw) {}
+
+  private static <T> Field field(
+      DocumentActions<T> document,
+      FieldPath path,
+      design.inherent.reform.definition.DocumentId source) {
     var view = document.view();
     if (view.availability() != EditorActor.Availability.READY || view.snapshot().isEmpty())
       throw new PolicyRefusal("reference.draft", "The editing context is not ready");
     var snapshot = view.snapshot().orElseThrow();
     var type = DraftTypes.at(document.definition().type(), snapshot.draft(), path);
     if (!(type.shape() instanceof ValueShape.Reference<?> reference)
-        || !reference.source().equals(source.source()))
+        || !reference.source().equals(source))
       throw new IllegalArgumentException(
           "Selection requires the field's declared reference source");
     if (!(snapshot.draft().at(path) instanceof DraftNode.Scalar scalar))
       throw new PolicyRefusal("reference.draft", "Repair this field before selecting a reference");
-    raw = scalar.raw();
-    target = snapshot.target(path);
-    browser = new ReferenceBrowser<>(source);
+    return new Field(snapshot.target(path), scalar.raw());
+  }
+
+  /**
+   * Explicitly stage a browser's inspected choice into one current field. Browsing does not bind or
+   * mutate that field; activation captures its exact current target and rechecks source READ. The
+   * borrowed browser stays open, so another independent field can use the same catalogue.
+   */
+  public static <T, V> OperationHandle<EditorActor.View<T>> chooseFromBrowser(
+      EntryPoint entry, DocumentActions<T> document, FieldPath path, ReferenceBrowser<V> browser) {
+    Objects.requireNonNull(entry);
+    Objects.requireNonNull(document);
+    Objects.requireNonNull(path);
+    Objects.requireNonNull(browser);
+    if (!browser.current()) browser.requireCurrent();
+    String selected =
+        browser
+            .selectedKey()
+            .orElseThrow(
+                () ->
+                    new PolicyRefusal("reference.unresolved", "Select a resolved reference first"));
+    var target = field(document, path, browser.stamp().source()).target();
+    browser.requireCurrent();
+    if (browser.selectedKey().filter(selected::equals).isEmpty())
+      throw new PolicyRefusal(
+          "reference.selection_stale", "The inspected choice changed; inspect it again");
+    return stage(entry, document, target, selected);
+  }
+
+  private static <T> OperationHandle<EditorActor.View<T>> stage(
+      EntryPoint entry, DocumentActions<T> document, DraftTarget target, String selected) {
+    return document.edit(entry, new DraftEdit(target, new DraftEdit.SetRaw(selected)));
   }
 
   public DraftTarget target() {
@@ -157,7 +198,7 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
             .orElseThrow(
                 () ->
                     new PolicyRefusal("reference.unresolved", "Select a resolved reference first"));
-    return document.edit(entry, new DraftEdit(target, new DraftEdit.SetRaw(selected)));
+    return stage(entry, document, target, selected);
   }
 
   private void thread() {
