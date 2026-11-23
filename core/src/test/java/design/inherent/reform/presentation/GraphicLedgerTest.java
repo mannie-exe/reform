@@ -70,4 +70,54 @@ class GraphicLedgerTest {
     assertThrows(IllegalArgumentException.class, () -> ledger.reserve(0, 0));
     assertEquals(0, ledger.state().bytes());
   }
+
+  @Test
+  void siblingProvidersShareAtomicParentAdmissionAndRelease() throws Exception {
+    var root = new GraphicLedger(new GraphicLimits(1024, 1024, 256, 4, 8));
+    var childLimit = new GraphicLimits(512, 512, 128, 2, 6);
+    var first = root.child(childLimit);
+    var second = root.child(childLimit);
+    var ready = new java.util.concurrent.CountDownLatch(2);
+    var start = new java.util.concurrent.CountDownLatch(1);
+    var kept = new java.util.concurrent.atomic.AtomicReference<GraphicLedger.Allocation>();
+    try (var workers = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+      var jobs =
+          java.util.stream.Stream.of(first, second)
+              .map(
+                  ledger ->
+                      workers.submit(
+                          () -> {
+                            ready.countDown();
+                            start.await();
+                            try {
+                              var owned = ledger.reserve(6, 1);
+                              assertTrue(kept.compareAndSet(null, owned));
+                              return true;
+                            } catch (PolicyRefusal refused) {
+                              return false;
+                            }
+                          }))
+              .toList();
+      assertTrue(ready.await(5, java.util.concurrent.TimeUnit.SECONDS));
+      start.countDown();
+      int admitted = 0;
+      for (var job : jobs) if (job.get(5, java.util.concurrent.TimeUnit.SECONDS)) admitted++;
+      assertEquals(1, admitted);
+      assertEquals(6, root.state().bytes());
+      assertEquals(1, root.state().resources());
+      assertEquals(6, first.state().bytes() + second.state().bytes());
+      kept.get().close();
+      kept.get().close();
+      assertEquals(0, root.state().bytes());
+      assertEquals(0, first.state().bytes());
+      assertEquals(0, second.state().bytes());
+    } finally {
+      start.countDown();
+      if (kept.get() != null) kept.get().close();
+    }
+    assertThrows(
+        IllegalArgumentException.class, () -> root.child(new GraphicLimits(1025, 512, 128, 2, 6)));
+    assertThrows(
+        IllegalArgumentException.class, () -> first.child(new GraphicLimits(512, 512, 128, 2, 7)));
+  }
 }

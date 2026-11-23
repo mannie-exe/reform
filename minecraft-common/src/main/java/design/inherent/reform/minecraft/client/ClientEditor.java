@@ -131,6 +131,20 @@ public final class ClientEditor<T> implements AutoCloseable {
     return capture;
   }
 
+  /** Cached client-thread freshness and actual READ checks, without IO, capture, or validation. */
+  public boolean isPreviewCurrent(DraftPreviewInput<?> input) {
+    ClientSettingsRuntime.requireClientThread();
+    Objects.requireNonNull(input);
+    if (!isOpen()) return false;
+    try {
+      var view = presentation();
+      return input.stamp().equals(view.previewInputStamp(input.stamp().draft()))
+          && input.observedReferences().equals(view.previewReferenceStamps());
+    } catch (PolicyRefusal unavailable) {
+      return false;
+    }
+  }
+
   void onAbandoned(Runnable owner) {
     ClientSettingsRuntime.requireClientThread();
     if (closed || abandoned != null)

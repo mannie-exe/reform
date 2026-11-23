@@ -38,13 +38,22 @@ public final class ClientMeshGraphic implements AutoCloseable {
   /** Explicit native-thread stage after worker-safe domain preparation and input capture. */
   public static ClientMeshGraphic prepare(
       GraphicScene scene, GraphicLedger ledger, int maximumNativeUses, BooleanSupplier current) {
+    return prepare(scene, ledger, maximumNativeUses, current, ignored -> {});
+  }
+
+  static ClientMeshGraphic prepare(
+      GraphicScene scene,
+      GraphicLedger ledger,
+      int maximumNativeUses,
+      BooleanSupplier current,
+      java.util.function.Consumer<RenderLifetime> observation) {
     ClientSettingsRuntime.requireClientThread();
     Objects.requireNonNull(scene).requireBudget(Objects.requireNonNull(ledger).limits());
     design.inherent.reform.presentation.graphics.GraphicProjection.requireSupported(scene);
     Objects.requireNonNull(current);
     if (!current.getAsBoolean())
       throw new PolicyRefusal("preview.stale", "The graphic input is no longer current");
-    var nativeGraphic = new NativeMeshGraphic(scene, ledger, maximumNativeUses);
+    var nativeGraphic = new NativeMeshGraphic(scene, ledger, maximumNativeUses, observation);
     try {
       if (!current.getAsBoolean())
         throw new PolicyRefusal(
@@ -63,6 +72,11 @@ public final class ClientMeshGraphic implements AutoCloseable {
   private ClientMeshGraphic(NativeMeshGraphic nativeGraphic, BooleanSupplier current) {
     this.nativeGraphic = nativeGraphic;
     this.current = current;
+  }
+
+  /** Actual native release observation, independent of a still-open editor executor. */
+  public java.util.concurrent.CompletionStage<RenderLifetime.State> releaseCompletion() {
+    return nativeGraphic.releaseCompletion();
   }
 
   public RenderLifetime.State state() {

@@ -143,17 +143,22 @@ final class NativeMeshGraphic implements AutoCloseable {
   private int frameWidth, frameHeight;
   private GraphicCamera renderedCamera;
 
-  NativeMeshGraphic(GraphicScene scene, GraphicLedger ledger, int maximumUses) {
+  NativeMeshGraphic(
+      GraphicScene scene,
+      GraphicLedger ledger,
+      int maximumUses,
+      java.util.function.Consumer<RenderLifetime> observation) {
     RenderSystem.assertOnRenderThread();
     this.scene = scene;
     this.ledger = ledger;
     this.maximumUses = maximumUses;
     lifetime = new RenderLifetime(maximumUses, RenderSystem::assertOnRenderThread, this::release);
-    if (RenderSystem.tryGetDevice() == null)
-      throw new PolicyRefusal(
-          "preview.provider_unavailable", "The native graphics device is unavailable");
-    NativeMeshGraphicRuntime.register(this);
     try {
+      observation.accept(lifetime);
+      if (RenderSystem.tryGetDevice() == null)
+        throw new PolicyRefusal(
+            "preview.provider_unavailable", "The native graphics device is unavailable");
+      NativeMeshGraphicRuntime.register(this);
       if (scene.mesh().isEmpty()) return;
       var ticket = NativeMeshGraphicRuntime.acquire(lifetime);
       try {
@@ -343,6 +348,10 @@ final class NativeMeshGraphic implements AutoCloseable {
       if (direct != null) MemoryUtil.memFree(direct);
       allocation.close();
     }
+  }
+
+  java.util.concurrent.CompletionStage<RenderLifetime.State> releaseCompletion() {
+    return lifetime.releaseCompletion();
   }
 
   RenderLifetime.State state() {

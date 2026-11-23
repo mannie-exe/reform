@@ -102,23 +102,28 @@ final class NativeMeshGraphic implements AutoCloseable {
   private int framebuffer, colorTexture, frameWidth, frameHeight;
   private GraphicCamera renderedCamera;
 
-  NativeMeshGraphic(GraphicScene scene, GraphicLedger ledger, int maximumUses) {
+  NativeMeshGraphic(
+      GraphicScene scene,
+      GraphicLedger ledger,
+      int maximumUses,
+      java.util.function.Consumer<RenderLifetime> observation) {
     RenderSystem.assertOnRenderThread();
     this.scene = scene;
     this.ledger = ledger;
     this.maximumUses = maximumUses;
     lifetime = new RenderLifetime(maximumUses, RenderSystem::assertOnRenderThread, this::release);
-    if (!GL.getCapabilities().OpenGL32)
-      throw new PolicyRefusal(
-          "preview.provider_unavailable",
-          "This adapter requires Minecraft's OpenGL 3.2 graphics baseline");
-    if (org.lwjgl.glfw.GLFW.glfwGetCurrentContext()
-        != net.minecraft.client.Minecraft.getInstance().getWindow().getWindow())
-      throw new PolicyRefusal(
-          "preview.provider_unavailable",
-          "The current OpenGL context is not Minecraft's native window");
-    NativeMeshGraphicRuntime.register(this);
     try {
+      observation.accept(lifetime);
+      if (!GL.getCapabilities().OpenGL32)
+        throw new PolicyRefusal(
+            "preview.provider_unavailable",
+            "This adapter requires Minecraft's OpenGL 3.2 graphics baseline");
+      if (org.lwjgl.glfw.GLFW.glfwGetCurrentContext()
+          != net.minecraft.client.Minecraft.getInstance().getWindow().getWindow())
+        throw new PolicyRefusal(
+            "preview.provider_unavailable",
+            "The current OpenGL context is not Minecraft's native window");
+      NativeMeshGraphicRuntime.register(this);
       if (scene.mesh().isEmpty()) return;
       var use = NativeMeshGraphicRuntime.acquire(lifetime);
       NativeMeshGraphicRuntime.submit(
@@ -254,6 +259,10 @@ final class NativeMeshGraphic implements AutoCloseable {
       }
       textures.put(entry.getKey(), texture);
     }
+  }
+
+  java.util.concurrent.CompletionStage<RenderLifetime.State> releaseCompletion() {
+    return lifetime.releaseCompletion();
   }
 
   RenderLifetime.State state() {

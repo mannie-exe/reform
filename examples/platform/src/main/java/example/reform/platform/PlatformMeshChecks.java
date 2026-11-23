@@ -81,7 +81,7 @@ final class PlatformMeshChecks implements AutoCloseable {
     triangles.add(new GraphicMesh.Triangle(start, start + 2, start + 3, material, UNLIT));
   }
 
-  private static GraphicScene pattern() {
+  static GraphicScene pattern() {
     var vertices = new ArrayList<GraphicMesh.Vertex>();
     var triangles = new ArrayList<GraphicMesh.Triangle>();
     quad(vertices, triangles, -1, -1, 1, 1, 0, -1, SOLID);

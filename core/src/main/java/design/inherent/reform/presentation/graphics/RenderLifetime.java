@@ -42,6 +42,13 @@ public final class RenderLifetime implements AutoCloseable {
   private int outstanding;
   private boolean closing, releaseAttempted, releaseCompleted;
   private Throwable releaseFailure;
+  private final java.util.concurrent.CompletableFuture<State> releaseResult =
+      new java.util.concurrent.CompletableFuture<>();
+
+  /** Settles after actual release entry completes or fails; inspect the returned state. */
+  public java.util.concurrent.CompletionStage<State> releaseCompletion() {
+    return releaseResult.minimalCompletionStage();
+  }
 
   public RenderLifetime(int maximumUses, Runnable requireNativeThread, Runnable release) {
     if (maximumUses < 1) throw new IllegalArgumentException("Native-use retention must be bounded");
@@ -90,6 +97,8 @@ public final class RenderLifetime implements AutoCloseable {
     } catch (RuntimeException | Error failed) {
       releaseFailure = failed;
       throw failed;
+    } finally {
+      releaseResult.complete(state());
     }
   }
 }

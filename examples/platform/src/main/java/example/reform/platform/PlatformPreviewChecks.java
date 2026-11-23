@@ -32,6 +32,8 @@ final class PlatformPreviewChecks {
   private byte[] original;
   private DraftRevision initial;
   private CompletableFuture<? extends DraftPreviewInput<?>> captured;
+  private DraftPreviewInput<?> initialInput;
+  private PlatformGraphicHostChecks host;
   private CompletableFuture<java.util.Map<String, Boolean>> images;
   private int stage;
 
@@ -112,12 +114,18 @@ final class PlatformPreviewChecks {
       case 2 -> {
         if (!captured.isDone()) return false;
         var input = captured.join();
+        initialInput = input;
         check.accept(
             "native preview captures complete actual candidate",
             input.candidate().value() instanceof PlatformWorkflowExample.Preferences
                 && input.stamp().draft().equals(initial));
         check.accept("native preview does not persist", Arrays.equals(original, bytes()));
+        check.accept(
+            "captured native preview is current before editing", editor.isPreviewCurrent(input));
         edit("broken");
+        check.accept(
+            "unaccepted native text immediately makes the prior capture stale",
+            !editor.isPreviewCurrent(input));
         refuses(initial, "preview.input_unaccepted");
         stage++;
       }
@@ -147,11 +155,23 @@ final class PlatformPreviewChecks {
                 && value.distance() == 128
                 && editor.view().dirty());
         check.accept("repaired preview leaves source unchanged", Arrays.equals(original, bytes()));
-        workflow.close();
+        check.accept(
+            "old native epoch cannot become current after valid repair",
+            !editor.isPreviewCurrent(initialInput) && editor.isPreviewCurrent(input));
+        host =
+            new PlatformGraphicHostChecks(
+                workflow, workflow.editor(PlatformWorkflowExample.DEFINITION), check);
+        stage++;
+      }
+      case 6 -> {
+        if (!host.tick()) return false;
         NativeScreens.open(client, parent);
         check.accept(
             "preview lifetime closes without a save",
             !editor.isOpen() && Arrays.equals(original, bytes()));
+        check.accept(
+            "closed native editor cannot admit a captured preview",
+            !editor.isPreviewCurrent(initialInput));
         stage++;
         return true;
       }
@@ -168,6 +188,7 @@ final class PlatformPreviewChecks {
 
   void close() {
     meshes.close();
+    if (host != null) host.close();
     if (workflow != null) workflow.close();
   }
 }

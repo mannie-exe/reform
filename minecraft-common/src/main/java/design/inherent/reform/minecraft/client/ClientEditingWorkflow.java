@@ -110,6 +110,23 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private DocumentBatch batch;
   private BatchReviewScreen batchView;
   private boolean closed;
+  private ClientGraphicHost graphics;
+
+  /** One explicit aggregate graphics budget and preparation lane for this workflow. */
+  public ClientGraphicHost graphics(
+      design.inherent.reform.presentation.graphics.GraphicLimits limits, int maximumViews) {
+    requireOpen();
+    if (graphics == null)
+      graphics =
+          new ClientGraphicHost(
+              lifetime,
+              editor -> ownerEntries.values().stream().anyMatch(entry -> entry.editor == editor),
+              limits,
+              maximumViews);
+    else if (!graphics.limits().equals(limits) || graphics.maximumViews() != maximumViews)
+      throw new IllegalArgumentException("A workflow's graphics budget cannot change after entry");
+    return graphics;
+  }
 
   private ClientEditingWorkflow(
       Screen parent,
@@ -226,6 +243,18 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (placement == null)
       throw new IllegalArgumentException("This placement is not in this workflow");
     overview.selectPlacement(placement);
+  }
+
+  /** Typed access checks the exact registered definition, rather than trusting only its ID. */
+  public <T> ClientEditor<T> editor(
+      design.inherent.reform.definition.DocumentDefinition<T> definition) {
+    var editor = editor(Objects.requireNonNull(definition).id());
+    if (editor.actions().definition() != definition)
+      throw new IllegalArgumentException(
+          "Use the exact definition registered by this workflow owner");
+    @SuppressWarnings("unchecked") // Exact definition identity binds the actor's value type.
+    var typed = (ClientEditor<T>) editor;
+    return typed;
   }
 
   /** Open at most one real editor per document. Independent workflows keep independent actors. */
@@ -430,9 +459,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     closed = true;
     Throwable failure = null;
     try {
-      if (batch != null) batch.close();
+      if (graphics != null) graphics.close();
     } catch (RuntimeException | Error failed) {
       failure = failed;
+    }
+    try {
+      if (batch != null) batch.close();
+    } catch (RuntimeException | Error failed) {
+      if (failure == null) failure = failed;
+      else if (failure != failed) failure.addSuppressed(failed);
     }
     for (var entry : entries.values()) {
       try {

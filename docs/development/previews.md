@@ -24,6 +24,8 @@ Call `ClientEditor.capturePreview(entryPoint, expectedDraftRevision)` on the cli
 
 Keep decoding and compilation outside ordinary rendering and search. The preparation coordinator must dispatch this work appropriately and check cancellation, authority, and source freshness before mounting its result. Successful decoding alone does not admit a stale result.
 
+`ClientEditor.isPreviewCurrent(input)` checks an earlier capture against the same actual editor, native input epoch, cached reference observations, and current READ permission. It performs no IO or new capture. Invalid new text invalidates the earlier capture even before an accepted actor revision changes. Repairing a field does not restore the earlier epoch.
+
 `ClientGraphicImages.decodeStills(textures, ledger, metadataLimits, reservedOutputBytes, checkpoint)` prepares a complete batch on the caller's worker. It checks aggregate encoded input and full-strip pixels before decoding, subtracts reserved geometry from the combined frame-output allowance, and charges temporary native images to the same `GraphicLedger` as graphics awaiting retirement. Duplicate texture identities refuse. Its checkpoint runs during admission and around each decode; cancellation or failure returns no partial map. The caller owns cancellation and job scheduling. The returned immutable map contains detached pixels, with each temporary native image closed. This method neither captures resources nor publishes textures.
 
 ## Private mesh adapter
@@ -33,6 +35,22 @@ Keep decoding and compilation outside ordinary rendering and search. The prepara
 Minecraft 1.21.1 uses a private OpenGL program, buffers, textures, and framebuffer while restoring the borrowed native GUI state. Minecraft 26.3 uses its native rendering device, private pipelines, and deferred GUI extraction. Neither adapter registers textures or replaces a live resource manager. Changing the camera or viewport can wait for earlier native uses before rebuilding its private target; waiting is distinct from a missing or invalid subject.
 
 Use a ledger shared across the workflow's entered preparations and retiring graphics. Its counters describe known native image/buffer payload and owned object counts, not total process or graphics-driver memory. Closing the view revokes new submissions immediately. Actual completion controls release, and failures remain observable through the lifetime state. A supplied freshness guard must reflect the actual source, native input, and resource generation; it is checked before preparation and submission. A predicate that always returns true does not establish owner freshness.
+
+## Hosted preparation
+
+The development host is obtained through `workflow.graphics(limits, maximumViews)`. The workflow fixes this aggregate budget and view bound once. Open a typed view with `host.open(workflow.editor(definition), provider)`, using the exact owner definition. This does not load another editor, prepare a subject, or grant READ permission.
+
+`ClientGraphicProvider<T, S>` supplies a stable provider ID, a `ValueType<S>` for bounded selection parameters, explicit limits, a cheap actual `ReferenceStamp` for its resources, and a preparation function. Its request contains the complete separately captured `DraftPreviewInput<T>`; do not serialize the full document or texture payload into `S`. Selection parameters use the existing operation input admission. The provider composes `ClientGraphicWork.onWorker` and `onClient` stages rather than waiting for a worker result on the client thread. Native stages prepare detached model data; private GPU allocation stays with the host. Each stage must close its own transient resources before returning detached data.
+
+`GraphicScenePreparation` is the provider's CPU/native-data outcome. Ready contains frozen `GraphicSceneData`: exact request stamps, mesh/texture bindings, default camera, and bounded descriptive facts. It has no GPU lease. The host checks the complete identity and provider allowance again before native preparation. Known UTF-8 fact payload counts with geometry and pixels against output admission.
+
+`view.request(subject)` explicitly requests preparation. One expensive request enters at a time per workflow; each viewport retains only its latest pending request. A replaced pending attempt has no invented operation handle. Once entered, its `Attempt.operation()` is the actual `OperationScope` handle. Cancellation does not release the lane until entered work is terminal. Provider child ledgers narrow their limits while sharing atomic reservations with the workflow parent, including native work still retiring. Retained scene output has a separate aggregate payload counter.
+
+The operation receipt and `Attempt.completion()` retain only bounded result metadata. They do not retain decoded scene payload or a GPU lease. `view.preparation()` separately exposes the current native `GraphicPreparation`; only Ready contains a `PreparedGraphic` lease. Its `close()` revokes new drawing, while `releaseCompletion()` reports actual release success or failure later. Cleanup does not depend on an open editor executor. Inspect the returned state rather than treating future completion alone as proof of successful release.
+
+Draft, native-input, permission, or resource-identity changes prevent old native submission and cancel obsolete preparation. Hiding or closing a view does the same. Showing it again does not silently prepare, save, or reload anything. The prior result's bounded facts and provenance can remain available as historical information while its status is Stale. No result with another view/request/source stamp can mount.
+
+The host and provider APIs remain under native qualification and are not yet integrated into the complete 0.4 shell. Consumers should adopt the shared composition when available rather than creating a private production screen or coordinator around the development viewport widget.
 
 ## Native ownership
 

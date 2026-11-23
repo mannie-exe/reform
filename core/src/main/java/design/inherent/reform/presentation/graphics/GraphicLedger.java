@@ -22,44 +22,73 @@ public final class GraphicLedger {
      */
     @Override
     public void close() {
-      synchronized (GraphicLedger.this) {
+      synchronized (gate) {
         if (released) return;
         released = true;
-        retainedBytes -= bytes;
-        retainedResources -= resources;
+        for (var ledger = GraphicLedger.this; ledger != null; ledger = ledger.parent) {
+          ledger.retainedBytes -= bytes;
+          ledger.retainedResources -= resources;
+        }
       }
     }
   }
 
   private final GraphicLimits limits;
+  private final Object gate;
+  private final GraphicLedger parent;
   private long retainedBytes, peakBytes;
   private int retainedResources, peakResources;
 
   public GraphicLedger(GraphicLimits limits) {
+    this(limits, null);
+  }
+
+  private GraphicLedger(GraphicLimits limits, GraphicLedger parent) {
     this.limits = Objects.requireNonNull(limits);
+    this.parent = parent;
+    gate = parent == null ? new Object() : parent.gate;
+  }
+
+  /** A provider's narrower allowances share atomic ownership with the enclosing workflow. */
+  public GraphicLedger child(GraphicLimits limits) {
+    Objects.requireNonNull(limits);
+    if (limits.inputBytes() > this.limits.inputBytes()
+        || limits.outputBytes() > this.limits.outputBytes()
+        || limits.decodedPixels() > this.limits.decodedPixels()
+        || limits.resources() > this.limits.resources()
+        || limits.nativeBytes() > this.limits.nativeBytes())
+      throw new IllegalArgumentException("A child graphic allowance cannot widen its parent");
+    return new GraphicLedger(limits, this);
   }
 
   public GraphicLimits limits() {
     return limits;
   }
 
-  public synchronized Allocation reserve(long bytes, int resources) {
+  public Allocation reserve(long bytes, int resources) {
     if (bytes < 0 || resources < 1)
       throw new IllegalArgumentException(
           "A native allocation needs nonnegative payload and positive object accounting");
-    if (bytes > limits.nativeBytes() - retainedBytes
-        || resources > limits.resources() - retainedResources)
-      throw new PolicyRefusal(
-          "preview.budget",
-          "Outstanding graphic allocations exceed the native payload or object allowance");
-    retainedBytes += bytes;
-    retainedResources += resources;
-    peakBytes = Math.max(peakBytes, retainedBytes);
-    peakResources = Math.max(peakResources, retainedResources);
-    return new Allocation(bytes, resources);
+    synchronized (gate) {
+      for (var ledger = this; ledger != null; ledger = ledger.parent)
+        if (bytes > ledger.limits.nativeBytes() - ledger.retainedBytes
+            || resources > ledger.limits.resources() - ledger.retainedResources)
+          throw new PolicyRefusal(
+              "preview.budget",
+              "Outstanding graphic allocations exceed the native payload or object allowance");
+      for (var ledger = this; ledger != null; ledger = ledger.parent) {
+        ledger.retainedBytes += bytes;
+        ledger.retainedResources += resources;
+        ledger.peakBytes = Math.max(ledger.peakBytes, ledger.retainedBytes);
+        ledger.peakResources = Math.max(ledger.peakResources, ledger.retainedResources);
+      }
+      return new Allocation(bytes, resources);
+    }
   }
 
-  public synchronized State state() {
-    return new State(retainedBytes, retainedResources, peakBytes, peakResources);
+  public State state() {
+    synchronized (gate) {
+      return new State(retainedBytes, retainedResources, peakBytes, peakResources);
+    }
   }
 }

@@ -15,7 +15,9 @@ class RenderLifetimeTest {
     var lifetime = new RenderLifetime(2, () -> {}, released::incrementAndGet);
     var first = lifetime.acquire();
     var second = lifetime.acquire();
+    var completion = lifetime.releaseCompletion().toCompletableFuture();
     lifetime.close();
+    assertFalse(completion.isDone());
     assertThrows(PolicyRefusal.class, lifetime::acquire);
     assertEquals(0, released.get());
     first.retire();
@@ -23,6 +25,7 @@ class RenderLifetimeTest {
     assertEquals(1, lifetime.state().outstandingUses());
     second.retire();
     assertTrue(lifetime.state().released());
+    assertTrue(completion.join().released());
     first.retire();
     second.retire();
     lifetime.close();
@@ -85,11 +88,16 @@ class RenderLifetimeTest {
               throw failed;
             });
     var use = lifetime.acquire();
+    var completion = lifetime.releaseCompletion().toCompletableFuture();
+    completion.cancel(false); // A caller's cancelled copy cannot cancel native retirement.
     lifetime.close();
     assertSame(failed, assertThrows(IllegalStateException.class, use::retire));
     assertTrue(lifetime.state().releaseAttempted());
     assertFalse(lifetime.state().released());
     assertSame(failed, lifetime.state().releaseFailure().orElseThrow());
+    var observed = lifetime.releaseCompletion().toCompletableFuture().join();
+    assertFalse(observed.released());
+    assertSame(failed, observed.releaseFailure().orElseThrow());
     use.retire();
     lifetime.close();
     assertEquals(1, attempts.get());
