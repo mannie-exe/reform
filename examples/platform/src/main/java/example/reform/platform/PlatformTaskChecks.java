@@ -455,6 +455,10 @@ public final class PlatformTaskChecks {
             "preview camera controls belong to actual native tree",
             focus(workflow.screen(), button(workflow.screen(), "Show preview")));
         click(workflow.screen(), button(workflow.screen(), "Show preview"));
+        stage = 22;
+      }
+      case 22 -> {
+        if (!previewFocused()) return false;
         assertViewportVisible();
         var viewport =
             widgets(workflow.screen()).stream()
@@ -673,6 +677,10 @@ public final class PlatformTaskChecks {
             "prepared narrow preview navigation remains keyboard revealable",
             focus(workflow.screen(), show));
         click(workflow.screen(), show);
+        stage = 23;
+      }
+      case 23 -> {
+        if (!previewFocused()) return false;
         assertViewportVisible();
         check.accept(
             "narrow preview reflow retains the exact prepared scene without compilation",
@@ -696,6 +704,10 @@ public final class PlatformTaskChecks {
             "returned preview navigation remains keyboard revealable",
             focus(workflow.screen(), show));
         click(workflow.screen(), show);
+        stage = 24;
+      }
+      case 24 -> {
+        if (!previewFocused()) return false;
         assertViewportVisible();
         check.accept(
             "return from narrow preserves image focus and one complete unsaved preparation",
@@ -721,6 +733,13 @@ public final class PlatformTaskChecks {
       default -> throw new AssertionError("Unknown registered task stage " + stage);
     }
     return false;
+  }
+
+  private boolean previewFocused() {
+    return widgets(workflow.screen()).stream()
+        .anyMatch(
+            widget ->
+                widget.getMessage().getString().equals("Draft preview") && widget.isFocused());
   }
 
   private void assertPreviewPixels() {

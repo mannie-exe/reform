@@ -42,7 +42,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
   private Preview preview;
   private Object observedOwner, observedGraphic;
   private ClientGraphicHost.View<?, ?> graphicView;
-  private boolean sourceWasCurrent;
+  private boolean sourceWasCurrent, showPreviewPending;
 
   private interface Preview extends AutoCloseable {
     void append(FormPanel target);
@@ -129,6 +129,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
     visible = value;
     if (preview != null) preview.visible(value);
     if (!value) {
+      showPreviewPending = false;
       cancel(search == null ? null : search.operation());
       cancel(lookup == null ? null : lookup.operation());
     }
@@ -505,6 +506,14 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
       sourceWasCurrent = current;
       rebuildWidgets();
     }
+    // Native pointer dispatch focuses the pressed button after its callback returns.
+    // Resolve the current panel after that dispatch and any intervening reflow.
+    if (showPreviewPending) {
+      showPreviewPending = false;
+      var target = panels.detail();
+      setFocused(target);
+      target.focusRow("detail:graphic");
+    }
     for (int i = 0; i < choosing.size(); i++)
       choosing.get(i).active = canChoose(declaration.selections().get(i).field());
   }
@@ -612,11 +621,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                   button(text("zoom_in", "Zoom in"), () -> view.zoom(1.2)),
                   button(text("zoom_out", "Zoom out"), () -> view.zoom(1 / 1.2)),
                   button(text("reset_camera", "Reset view"), view::resetCamera),
-                  button(
-                      text("show_preview", "Show preview"),
-                      () -> {
-                        if (target.focusRow("detail:graphic")) setFocused(target);
-                      }));
+                  button(text("show_preview", "Show preview"), () -> showPreviewPending = true));
               target.actions(
                   "detail:preview_details",
                   button(
@@ -675,6 +680,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
   public void close() {
     if (ended) return;
     ended = true;
+    showPreviewPending = false;
     Throwable failure = null;
     try {
       closeSource();
