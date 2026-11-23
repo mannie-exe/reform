@@ -1,23 +1,27 @@
 # Verification
 
-## 0.4 development: Home, headers, and cached view lifetimes
+## 0.4 development: scoped native themes and retained workspace
 
-The unpublished `0.4.0-dev.13` candidate passes `spotlessApply check build`, with 635 core tests on each game's codec runtime, four packaged native consumer compiles, eight public consumer inputs, and tooling/artifact checks. The maintained Markdown passes formatting and local-link checks. This qualifies the implemented foundations below, not the complete 0.4 design or a public release.
+The unpublished `0.4.0-dev.16` candidate passes `spotlessApply check build`, with 639 core tests on each game's codec runtime, 104 tooling cases, four packaged native consumer compiles, and eight public consumer inputs. Its source implementation is commit `e87d7cb`. Formatting, local links, distribution metadata, and missing-adapter refusal checks pass. These results qualify the foundations below, not the complete 0.4 design or a public release.
 
-The independent workspace fixture passes initial and saved-file reopen boots on all four minimum targets, with 247 first-boot and 63 reopen checks per target, including nested reference controls. All eight clients exit normally, close their managed workflows, and remove their disposable runtime. Actual execution is on macOS Apple Silicon; this is not Windows/Linux native graphics, physical IME, or spoken narration qualification.
+The independent workspace passes initial and saved-file reopen boots on all four minimum targets: 289 first-boot and 105 reopen checks per target. All eight clients exit normally, close their managed workflows, and remove their disposable runtime. Actual execution is on macOS Apple Silicon; this is not Windows/Linux rendering, physical IME, or spoken narration qualification.
 
 | Target            | Candidate SHA-256                                                  |
 | ----------------- | ------------------------------------------------------------------ |
-| Fabric / 1.21.1   | `499a1470df9b5b68e2672a38d21a36009cd93f8d0d6c4dd3345a067155ce5614` |
-| NeoForge / 1.21.1 | `b0ccd7295a5e0780196e9fec6eff4bb7f7eaaa5276c77c6964ed7284527c375b` |
-| Fabric / 26.3     | `0749428793e80e81537536a168ea12e2fc0b9239c0751b27fb364d76012143cb` |
-| NeoForge / 26.3   | `4d08c0bc1e7f8f101e63e2b8c53c26f467c69150ece07363a2b0a06bad0cc8e8` |
+| Fabric / 1.21.1   | `fffd86e42bec757392e4d264de7056fb004a54406ab809d9f63df3bb7fabfc8d` |
+| NeoForge / 1.21.1 | `34adf05037ab7544db46e66c693703265c96442c0be2572ca67d3c9e32ccfde9` |
+| Fabric / 26.3     | `00975afcc061875e918aee5217a2566bc7ec635b6db074d88f96ce45e2c199d0` |
+| NeoForge / 26.3   | `d191da6a432f10f6a9006d9670795e435500651cd6e190055f9b74052ffc0243` |
 
-New controls exercise metadata admission without entering owners or canvas factories; lazy default Home; actual destination selection; stable cached header bounds during Home/document navigation; an unsaved native field retained on Home without a document Save action; and unchanged source bytes. A scoped factory registers cleanup before construction, checks the actual native thread during release, closes the returned canvas before resource hooks, attempts later hooks after a cleanup failure, preserves that failure on the original construction cause, and refuses new ownership after retirement. Optional failed artwork leaves settings usable. Neutral destination identities preserve the existing namespaced syntax without becoming document identities.
+Native controls exercise workflow and field scopes, control height, a scoped numeric-input width, inherited text styles, the local Unicode information glyph, and actual bold caret measurement. Pointer placement and native arrow events use the same glyph widths without changing text or the retained owner draft. A mounted screen refuses replacement theme declarations. Both input draw-call families on 1.21.1 retain their actual shadow policy; aggregate injection requirements reject a missing supported family.
 
-The same pairs retain mixed-owner source-specific saves, aliases, field history, invalid native input, inspection, document actions, titled references, long-label wrapping, narrow/high-scale geometry, and saved reopen. Earlier dev.12 failures remain separately attributed fixture evidence: automatic first-document assumptions and the old exact three-row count needed explicit entry and the additional Home row. No source guard, wrapping assertion, or original navigation node was removed.
+Pixel controls compare transparent, alpha-3, half-opacity, and opaque owned inputs against a genuinely unbound native EditBox. Minecraft 1.21.1's supplied text shader clips glyph alpha below 0.1, while its raw font normalizes alpha 0–3 to opaque. The adapter prevents that normalization for explicit ARGB and preserves native clipping. The independent raw reference distinguishes the two paths. Half-opacity and opaque positive controls remain visible. The 26.3 comparison retains that game's native alpha behavior.
 
-Complete theme and variant propagation, ARGB edge cases, typed navigation/group destinations, responsive task/meta surfaces, production Lootr preview layout, optional recipe links, and the full lifecycle/extreme/performance matrix remain development work. Header role colors and these cached-canvas checks do not certify those features. The [presentation contract](../design/presentation-0.4-api.md) remains the full selected scope.
+The same pairs retain lazy Home without owner entry, stable cached header bounds, dirty Home return without a document Save action, and source-byte guards. Scoped canvas construction and retirement preserve cleanup order, sibling cleanup after failure, suppressed causes, and rejection of late ownership. Mixed-owner saves, aliases, field history, invalid input, inspection, document actions, titled references, long labels, narrow/high-scale geometry, and saved reopen remain covered.
+
+Two native adapter regressions have separate retained negatives: a constructor-populated client field was mistaken for mounted state on 26.3, and NeoForge 1.21.1's explicit-shadow draw calls differed from Fabric's calls. The successor uses the real native initialization state and both required call families. Earlier fixture visibility and raw-reference assumptions were corrected using shader source and independent native controls; no source, input, or ownership guard was removed.
+
+Complete graphic slots, custom-control interaction bindings, theme extremes and declaration diagnostics, typed navigation/group destinations, responsive task/meta surfaces, production Lootr preview layout, optional recipe links, and the full lifecycle/performance matrix remain development work. Consumer provider/lifetime evidence retains its own exact older artifacts; this workspace result does not relabel it as a candidate-16 run. The [presentation contract](../design/presentation-0.4-api.md) remains the full selected scope.
 
 ## Stable 0.3.0 release qualification
 
