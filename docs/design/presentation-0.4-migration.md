@@ -1,6 +1,6 @@
 # Presentation 0.4: migration and acceptance
 
-This document accompanies the proposed [presentation and navigation contract](presentation-0.4.md) and [construction/lifecycle API](presentation-0.4-api.md). It specifies later implementation and consumer migration; it does not activate either. Current product source, versions, examples, and qualified behavior remain 0.3. No prototype, candidate, screenshot, illustration, native run, consumer pin, or release is produced in the selected documentation stage.
+This document accompanies the proposed [presentation and navigation contract](presentation-0.4.md) and [construction/lifecycle API](presentation-0.4-api.md). It specifies later implementation and consumer migration; it does not activate either. Current product source, versions, examples, and qualified behavior remain 0.3. The selected design extension produced reviewed static A/B proposals; the owner chose automatic A-preferred responsive task layouts. No prototype, candidate, native run, consumer pin, or release follows from that design review.
 
 ## Public API responsibilities
 
@@ -15,7 +15,8 @@ core.presentation
   DestinationGraph                    rooted bounded hierarchy, alias validation
 
 minecraft.client
-  ClientWorkspacePresentation        identity, header, navigation, Home, theme
+  ClientWorkspacePresentation        identity, header, navigation, Home, theme, task preferences
+  TaskPresentation.standard()        shared A-preferred responsive chooser/inspection/operations
   WorkspaceIdentity                   title, optional subtitle/version/logo
   HeaderComposition                   required identity/location and optional art
   NavigationComposition               shared trail/search/filter/tree placement
@@ -65,13 +66,15 @@ Retire every newly opened consumer view, preview lease, and callback if its migr
 
 ### Default library use
 
-A consumer supplies its actual forms/layout and identity, then accepts `ClientWorkspacePresentation` defaults: compact A header, hierarchy-derived location, native rows/groups, default Home, and no preview preparation. A single-document form gets a coherent minimal location without a fabricated owner. A workflow lacking artwork remains complete. No new runtime settings file or environment/JVM override is created.
+A consumer supplies its actual forms/layout and identity, then accepts `ClientWorkspacePresentation` defaults: compact A header, hierarchy-derived location, native rows/groups, default Home, A-preferred responsive task views, and no preview preparation. A single-document form gets a coherent minimal location without a fabricated owner. A workflow lacking artwork remains complete. No new runtime settings file or environment/JVM override is created.
 
 An explicitly selected initial route is allowed. It does not erase Home from the hierarchy or bypass its owner's admission. Opening the workflow still does not eagerly read every source.
 
 ### Lootr: Styled
 
 The prospective declaration adds a profile/details body and graphic provider to the existing workflow. Models and Artwork remain independent field bindings. The catalogue, title cache, compiler, resource publication, application results, and exports retain their current owner.
+
+The shared chooser supplies adjacent list/details on wide offers and focused/vertical selection/repair when they cannot fit. The owner supplies title/purpose/catalogue facts and actual action labels, not a private browser or a schema reorder. Models/Artwork and contained manual input retain their independent values through either arrangement. Operations retain named immediate effects and distinct actual-result links; no fabricated result is needed to populate an inspector.
 
 ```text
 workflow identity: Lootr: Styled
@@ -100,7 +103,7 @@ Skyweave's existing public 0.1 production baseline and separately deferred actua
 ## Later implementation order
 
 1. Add immutable semantic theme resolution, scoped measurement, slot invariants, and the default A host. Preserve the existing body and owner state rather than building a new editor.
-2. Add the rooted destination graph, Home body, breadcrumb overflow, typed links, asynchronous navigation admission, and return-state retention. Keep the header stable through ordinary navigation.
+2. Add the rooted destination graph, Home body, breadcrumb overflow, typed links, asynchronous navigation admission, and return-state retention. Add the shared A-preferred responsive chooser/inspection/operation host and meta-workflow projections over the existing actors, including contained repair, truthful actions, and layout-preserving bookmarks. Keep the header stable through ordinary navigation and task-body reflow.
 3. Add local resource/icon/item preparation and version-specific submission/disposal. Add supported block/block-entity and curated entity providers under explicit capability contracts. No generic scene engine.
 4. Design and implement the isolated native resource boundary needed by the selected Lootr preview, with the Lootr owner. Distinguish baseline library preparation from domain compilation and resource publication.
 5. Add optional view-only JEI/EMI adapters on actually available targets, and limited native-book context handling. Keep baseline absence usable.
@@ -152,11 +155,30 @@ These are design obligations, not tests run in this documentation stage. Read-on
 
 Qualify the baseline separately on Fabric/NeoForge for 1.21.1/Java 21 and 26.3/Java 25. Resolve optional providers per actual target; a provider's absent path is always required, and its present path only counts for tested versions. Use independent packaged consumers and actual entry points. Representative rendering is not universal modded-renderer support. Layout geometry is necessary but does not establish aesthetic acceptance.
 
-Screenshots, mockups, illustrative examples, and desktop work are excluded from the selected reification stage. Later implementation should agree the smallest useful native visual review with the owner; do not generate a gallery or require authored illustrations by default. Preserve exact artifacts and causal negative cases when that stage is selected.
+The design extension's static A/B proposals are historical review evidence, not native acceptance. No further captures, illustrative examples, or desktop work are selected. Later implementation should agree the smallest useful native visual review with the owner; do not require authored illustrations by default. Preserve exact artifacts and causal negative cases when that stage is selected.
+
+### Shared configuration-workflow acceptance
+
+These additional cases qualify the owner-selected responsive task contract and [common workflow requirements](configuration-workflows-0.4.md#common-workflow-requirements). They are design obligations, not executed 0.4 tests.
+
+| ID     | Case                                                                                                                         | Required observation                                                                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TASK-1 | Chooser, inspection, and operations at wide, narrow/tall, short, high-scale, and long-text offers                            | Prefer A when measured regions fit; B otherwise; both usable without hidden actions, clipped focus, horizontal escape, or a page-driven header replacement                             |
+| TASK-2 | A→B→A with selected/missing candidate, invalid manual text, query/filter, disclosure, caret, scroll, and active operation    | Same task/actors/source bytes/capture/result identity; native input and region anchors retained; focused target mounted/revealed; no new visit-history entry or effect                 |
+| TASK-3 | Default, custom preference/theme/control offers, and invalid declarations                                                    | One shared host and both arrangements; custom preference cannot force unusable A or remove required feedback; invalid ownership/geometry refuses before owner/effect entry             |
+| META-1 | Information and inspection with equal/different values, unavailable effective source, stale capture, empty/missing reference | All ordinary facts and exact technical IDs/revisions/accounting available; snapshot freshness and distinct absence states truthful; no implicit refresh or write                       |
+| META-2 | Defaults/Undo/Redo/Reload saved/Import/Discard from a partial document view                                                  | Correct owner label and whole-document scope including unshown edits; no duplicated actor, omitted-value substitution, or hidden write                                                 |
+| META-3 | Single/batch review with invalid input, stale source, later refusal, or unknown write                                        | Same current submission guards and ordered per-owner receipts; earlier saves retained; unknown effects reconciled before retry; no invented transaction                                |
+| META-4 | Conflict across fields and whole collections, then context changes                                                           | Every required alternative/choice retained; resolving changes only the draft and resets Undo as declared; stale review refuses; saving remains separate                                |
+| META-5 | Import from actual admitted format/source, invalid repairable input, or stale target                                         | Complete source/schema/diagnostic facts; preview/Stage remain distinct; invalid draft can be retained only under existing policy; no implicit save                                     |
+| META-6 | Dirty-close/Escape, context or authority loss, pending save/application/cancellation                                         | Keep-editing and actual guarded choices remain usable; drafts survive refusal; Back/cancel/close/effects remain distinct; no unauthorized save or revived owner                        |
+| META-7 | Named immediate operation versus inspect/result, failed application, cancellation, or unknown outcome in both arrangements   | One explicitly invoked effect; navigation never starts it; real handle identity and reported progress only; confirmed save survives failed apply; safe retry never repeats persistence |
+
+Run these through actual packaged entry points on each supported target, with keyboard/narration, translation/font/scale reload, actual inactive/absent owner states, and before/after source assertions. Include reflow while focused and pending, not only separate wide and narrow screenshots. Static geometry alone does not prove state retention or truthful effects.
 
 ## Documentation-stage completion
 
-The specification settles default A, stable ordinary-navigation headers, separate splash-like Home, shared customization/navigation/graphics responsibilities, truthful Lootr isolation, optional-provider behavior, migration ownership, and future acceptance. Reference/source observations establish feasibility and identify native seams; they do not establish product correctness or resource budgets.
+The specification settles default A, stable ordinary-navigation headers, separate splash-like Home, A-preferred responsive task views, shared customization/navigation/graphics responsibilities, truthful Lootr isolation, optional-provider behavior, migration ownership, and future acceptance. The owner reviewed and selected both task arrangements responsively. Reference/source observations establish feasibility and identify native seams; they do not establish product correctness or resource budgets.
 
 The design is ready for a separately selected implementation of the specified contracts; no unresolved owner UX choice blocks that start. Implementation must settle source-compatible overload spelling and actual native hooks, measure resource limits, qualify renderer/provider behavior, and migrate selected consumers. These are required engineering gates, not permission to substitute a smaller preview or infer consumer adoption. Material's JavaScript-only states page remains an uninspected reference; no design claim depends on having read it.
 

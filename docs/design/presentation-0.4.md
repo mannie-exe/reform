@@ -2,7 +2,7 @@
 
 This is the proposed 0.4 contract, reified from the released 0.3 implementation and current consumer requirements. It is not an implemented API, a candidate, or native qualification. Names and signatures below define the intended API responsibilities; they are not imports available in 0.3. [Construction and lifecycle](presentation-0.4-api.md) owns API inputs/results, admission, read-only preview capture, and native retirement. [Migration and acceptance](presentation-0.4-migration.md) owns changes to existing declarations and future implementation checks.
 
-The original selection was documentation and specification only. The owner has since selected a [shared configuration-workflow design review](configuration-workflows-0.4.md), including Mobbin references and static A/B UI proposals before owner review. This permits those design artifacts, not product prototypes, candidates, consumer bindings, native client launches, illustrative feature assets, or preview scenes. Implementation, native checks, adoption, publication, and rollout require later selection. Earlier shell images remain historical exploration; the selected default A and stable-header decisions still hold.
+The selected documentation/design review is complete, including [shared configuration workflows](configuration-workflows-0.4.md), Mobbin references, static A/B proposals, and owner review. Chooser, inspection, and operations prefer adjacent A when it fits and use B responsively in narrower/taller contexts. This is the selected design, not product implementation, a candidate, consumer binding, or native qualification. Implementation, native checks, adoption, publication, and rollout require later selection. Earlier shell images remain historical exploration; the default A header and stable-header decisions still hold independently of task reflow.
 
 ## Decisions
 
@@ -10,6 +10,7 @@ The original selection was documentation and specification only. The owner has s
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Default workspace               | A compact header with identity beside a hierarchical breadcrumb, above navigation and body                            |
 | Ordinary navigation             | Keep the shell, header policy, identity, and header artwork stable; change the location and body                      |
+| Shared task views               | Prefer adjacent A for chooser, inspection, and operations; use B when measured body space cannot support A            |
 | Custom header                   | Support identity/logo, subtitle/version, and optional author canvas as composition slots; a larger header is not Home |
 | Sidebar breadcrumb              | Consumers can compose it from shared primitives; no separate built-in C preset is required                            |
 | Home                            | A routable, splash-like landing body, separate from the header; useful without artwork or opening document owners     |
@@ -42,7 +43,7 @@ Use owned disposal scopes and explicit invalidation, not a JavaScript reactive e
 
 ## Workspace composition
 
-The proposed `ClientWorkspacePresentation` is a client-only immutable declaration attached to a workflow or standalone form host. It contains `WorkspaceIdentity`, `HeaderComposition`, `NavigationComposition`, an optional `HomePage`, and a root `ThemeScope`. The host still owns its screen, retained documents, operation results, and closure policy. A standalone form uses a minimal hierarchy with its actual document destination; it does not manufacture unrelated category pages.
+The proposed `ClientWorkspacePresentation` is a client-only immutable declaration attached to a workflow or standalone form host. It contains `WorkspaceIdentity`, `HeaderComposition`, `NavigationComposition`, an optional `HomePage`, a root `ThemeScope`, and shared task-presentation preferences. The host still owns its screen, retained documents, operation results, and closure policy. A standalone form uses a minimal hierarchy with its actual document destination; it does not manufacture unrelated category pages.
 
 `WorkspaceIdentity` contains a stable presentation ID, title, optional subtitle/version, and optional resource-backed logo. A display title is not a document ID. Consumers supply meaningful versions; re:form does not infer a modpack version from a library dependency. Components are defensively copied. Identity does not change when an ordinary page changes.
 
@@ -61,6 +62,8 @@ These are roles, not fixed percentages. Measure the actual font and intrinsic of
 `NavigationComposition` controls placement of the shared location, search/filter controls, and tree. The same breadcrumb primitive can be placed above the tree for a consumer-authored C arrangement. Admit one primary location trail; consumers must not accidentally duplicate every ancestor in two focusable trails. The library need not ship C as an extra named mode. Preserve wrapped navigation indentation and disclosure hit areas.
 
 Body content may change from a form to a profile list or Home without rebuilding the shell or editor actors. A screen-specific toolbar belongs to that body's region, not to identity. Document action labels always identify the affected document or review scope, including unshown edits. Layout sections and preview panes do not become save scopes.
+
+[Shared configuration workflows](configuration-workflows-0.4.md#selected-responsive-arrangement) owns the selected A-preferred task arrangements and complete meta-workflow behavior. Task-body reflow does not select a new header, create a new history entry, or grant an effect. Both arrangements use the same retained editor, comparison/selection services, and operation results. Consumer customization remains available through shared semantic declarations and native interaction contracts.
 
 ### Home
 

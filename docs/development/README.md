@@ -31,7 +31,7 @@
 
 ## Proposed design
 
-[Configuration workflows for 0.4](../design/configuration-workflows-0.4.md) tracks the selected shared-menu UX review and A/B decision stage. Its layouts await owner review; current implementation remains unchanged.
+[Configuration workflows for 0.4](../design/configuration-workflows-0.4.md) defines the owner-selected shared-menu contract: adjacent A preferred with responsive focused/vertical B, retained task/input state, and truthful meta-workflow effects. Current implementation remains unchanged.
 
 [Presentation and navigation for 0.4](../design/presentation-0.4.md) defines the proposed theme, workspace, Home, navigation, and graphics contracts. [Construction and lifecycle](../design/presentation-0.4-api.md) specifies admission, API inputs/results, read-only preview capture, and native resource retirement. The [migration and acceptance plan](../design/presentation-0.4-migration.md) separates existing services from future APIs and consumer work. These specifications are not implemented features or an instruction to start candidate development. Current API and qualification documentation below remains authoritative for the released product.
 

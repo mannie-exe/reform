@@ -1,6 +1,6 @@
 # Configuration workflows for 0.4
 
-This is the owner-selected design extension to [presentation 0.4](presentation-0.4.md). It is under review, not an implemented interface or an approved final layout. The selected sequence is intent update, bounded source/Mobbin review, static A/B proposals, owner review, and then the final specification/intent upgrade. Stop before that last step until the owner selects or revises the proposals.
+This is the owner-selected shared configuration-workflow contract for [presentation 0.4](presentation-0.4.md). The intent, source/Mobbin review, static A/B proposals, and owner review are complete. The owner selected both arrangements responsively: A is preferred when adjacent content fits; B serves narrower/taller contexts. This document records that final design decision, not an implemented or natively qualified interface.
 
 Static UI mockups and existing native evidence are permitted for this review. They do not authorize product code, candidates, consumer migration, native client launches, publication, or personal rollout. Illustrated feature content, a Wayfinder demonstration, RespackOpts, and Phase 2 remain outside the selected work.
 
@@ -10,7 +10,7 @@ re:form owns selector/manual-ID containment, chooser layout, form and metadata n
 
 The Lootr handoff selects four shared concerns for design: separate searching/choosing/inspecting, contain manual-ID expansion, name immediate actions by their actual effect while keeping result navigation separate, and project navigation from actual visual groups/rows. Native 0.3 evidence confirms its navigation/body order mismatch. Do not fix presentation by changing order-sensitive schema/codec declarations.
 
-The first three concerns were previously proposals awaiting selection; they are now selected problems to solve in 0.4. Their exact layouts remain subject to the owner review below. Navigation/content order is already a settled requirement. Redundant IDs and source revision/UUID details in ordinary selection flow are part of the chooser review; exact identities and diagnostics must remain available in inspection.
+The chooser hierarchy, contained repair, truthful actions, and visual navigation order are selected requirements. Redundant IDs and source revision/UUID details leave the ordinary selection path; exact identities and diagnostics remain available in inspection.
 
 ## Review families
 
@@ -37,11 +37,31 @@ Progress and terminal results come from existing typed operation facts. A confir
 
 Mobbin supplies structural precedents only. Retain this product's colors, native font/control semantics, source data, and real ownership. Each A/B direction must explain where displaced information goes, its narrow fallback, and any judgment unsupported by a reference. Mockup labels must describe real effects or be marked proposed; do not fabricate successful runtime results.
 
-Before finalizing, obtain the owner's choice for the shared inspection/review arrangement and the chooser/action presentation where alternatives remain. A hybrid is possible only with an explicit account of its navigation, focus, source, and save boundaries. Then update the owning API/migration/acceptance contracts and canonical intent, preserving historical proposals as evidence. No final UI selection or implementation readiness is claimed from this initial brief.
+The owner selected the same responsive policy for chooser, inspection, and operations. Preserve the historical A/B proposals as design evidence. Native visual approval, measurement, and behavior qualification belong to later implementation; the static boards do not establish them.
 
-## A/B proposals awaiting owner review
+## Selected responsive arrangement
 
-These letters identify workflow alternatives, not replacements for the already selected default header A. The static proposals cover a profile chooser, captured source/value inspection, and operations. Their shared header, native palette, title-first choices, contained manual repair, and effect-named buttons are common constraints. The remaining views below have behavioral/layout proposals, not new native captures or implementation.
+The following A/B letters concern task layout, independently of the already selected default header A. They are two arrangements of the same task and state, not separate modes, editors, or user settings.
+
+| Task       | Preferred A when adjacent regions fit                                                      | B when available space favors a focused/vertical arrangement                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Chooser    | Search and candidate list beside selected-profile facts and contained manual repair        | A wider list with contained selection/repair below it; bounded scrolling or an explicitly opened detail destination when necessary |
+| Inspection | Selected field/task context beside captured comparison, application, and source details    | A focused comparison body with vertically arranged facts when its columns cannot fit                                               |
+| Operations | Named immediate effects beside the selected operation inspector and retained-result access | Named effects and local descriptions in a vertical flow, with explicit retained-result destinations                                |
+
+Choose A whenever the actual content offer can comfortably contain its regions. Choose B when narrow/tall windows, GUI scale, translated text, native controls, or required status/actions leave insufficient room. Aspect ratio alone is not a breakpoint: a tall window that still fits A may retain it. Measure usable body width and height after shell/chrome allocation, using resolved semantic metrics and the actual language/font/control minima. Do not hardcode a screenshot width, shrink native targets, hide errors, or clip details to keep A.
+
+Both arrangements are mandatory shared implementations over one semantic composition. Consumers receive the automatic A-preferred policy by default. Custom presentation can change slot offers, theme, or the preferred arrangement within the same measured containment rules; it cannot force an unusable layout or omit the fallback. No second consumer renderer or settings file is needed.
+
+Reflow preserves the selected candidate/field/operation by stable identity, search/filter, disclosure, exact manual input, diagnostics, draft/source/capture/operation identity, and focused control/caret. Retain region-relative scroll anchors and restore the focused content in the newly mounted tree; do not reuse a stale absolute offset or old widget. Reflow changes neither the task's logical destination nor visit history. An explicitly opened result/detail destination still has its ordinary Back behavior. Returning to A restores the same task context rather than opening another owner.
+
+Resizing, scale/font changes, and showing a disclosure do not stage, validate, resolve, save, refresh a source, start/retry/cancel an operation, or prepare a preview. They only rearrange cached state. Required errors and unavailable reasons remain visible near their controls in either arrangement; long content scrolls within measured containment. Keep arrangement selection stable between actual measurement invalidations rather than letting scrollbar or hover changes oscillate it. The stable-header contract remains independent of task-body reflow.
+
+Related metadata/review views use the same shared composition and detail primitives where applicable. Full comparisons, conflict/import decisions, and batch owner outcomes retain their task-specific information and effects. A bounded dirty-close decision remains a decision, not a mandatory multi-pane dashboard or an extra review gate.
+
+## Reference directions
+
+The reviewed static proposals cover a profile chooser, captured source/value inspection, and operations. Their shared header, native palette, title-first choices, contained manual repair, and effect-named buttons are common constraints. Their arrangements now serve the responsive policy above. The remaining views below have behavioral/layout contracts, not new native captures or implementation.
 
 **A: Details beside the current task.** A chooser keeps search and candidate rows in one region and selected-profile facts/manual repair in a separate inspector. Field inspection retains the selected field and shows baseline, captured draft, effective observation, and application requirements beside it. Operations use named immediate buttons with a separately selected inspector and result destination. This costs body width; the inspector becomes an explicit focused destination when measured content cannot fit. Do not squeeze three columns into every window or overlay the focused editor.
 
@@ -55,7 +75,7 @@ Exact dimensions, narrow fallback, disclosure behavior, and the proposed wording
 
 ## Common workflow requirements
 
-These requirements constrain both proposals. They do not select a final screen layout or add a new backend.
+These requirements constrain both responsive arrangements without adding a new backend.
 
 | View or transition                             | Proposed presentation                                                                                                                         | Existing effect and retained state                                                                                                                                                                           |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -74,8 +94,8 @@ These requirements constrain both proposals. They do not select a final screen l
 
 Both directions must retain information access from every supported control, local persistent errors, useful narration, keyboard reading order, and the selected visual navigation hierarchy. Richer grouping must not require schema/codec reordering. Displaced technical facts remain fully inspectable and copyable within existing privacy/capability boundaries.
 
-## Owner decision and later specification work
+## Construction and later implementation
 
-The owner can select A, B, or an explicit split by task. One possible split is adjacent selection/field details with focused conflict/import/batch review; this is a recommendation to review, not an adopted default. Operations still need one consistent distinction between immediate effect and result inspection in either direction.
+The owner selected A-preferred automatic adaptation for all three task families, rather than one permanently fixed arrangement or the earlier proposed split by task. Operations retain one consistent distinction between immediate effect and result inspection in either arrangement.
 
-After selection, evolve the presentation declarations and shared destination layouts over existing editors, reference selections, reviews, and operations. Specify declaration defaults/customization, admission failures, measured reflow, disclosure focus, technical-detail projection, and source/context freshness in the owning API and migration documents. Add observable acceptance cases for the selected routes and negative states; do not relabel static mockups as executed tests. Consumer authoring should supply semantic groups, title/help, and effects, not renderer coordinates or private replacement screens.
+[Construction and lifecycle](presentation-0.4-api.md#responsive-task-presentation) defines the proposed declaration and retained-state boundary. [Migration and acceptance](presentation-0.4-migration.md#shared-configuration-workflow-acceptance) defines later observable checks. Consumer authoring supplies semantic groups, title/help, and effects, not renderer coordinates or private replacement screens. The API names remain design sketches, and none of the acceptance cases has run against 0.4. Implementing, qualifying, or adopting this contract requires a later selection.
