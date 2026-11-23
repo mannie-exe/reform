@@ -50,6 +50,8 @@ Opening an unopened document or field requests the existing owner's admission an
 
 An operation link reveals the declared effect without invoking it. An operation-result link must name the UUID of a currently retained handle and satisfy its observation policy. It never starts or repeats that effect; a successful external screen request is `HANDED_OFF`, not proof that the result rendered. Explicit effect buttons continue through the existing operation scope.
 
+A request made during mounted view ticks is coalesced until their queued rebuilds settle. Actual admission and target existence are rechecked before selection; `REVEALED` completes only after the target has mounted. A newer selection supersedes the earlier one, and context closure clears deferred selection.
+
 These development links do not yet implement all selected 0.4 consumer-view, optional-viewer, bookmark, and responsive task contracts. Native evidence and exact candidate identities belong in [verification](verification.md).
 
 Declarations require one to 32 distinct document identities. Admission occurs before creating a managed workflow lifetime or opening any editor. A document opens lazily when its destination or a page containing its fields is selected. Search combines declared titles and identities with admitted field metadata from already opened owners, without opening or reading unselected sources. Unopened rows say that saved/effective values have not been inspected. Unavailable bindings expose their actual diagnostics and explicitly admitted Retry action.
