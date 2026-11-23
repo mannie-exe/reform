@@ -925,8 +925,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void revealRequestedFocus() {
-    if (requestedFocus == null || !isCurrent() || loading || actions.view().snapshot().isEmpty())
-      return;
+    if (requestedFocus == null
+        || !bodyVisible
+        || !isCurrent()
+        || loading
+        || actions.view().snapshot().isEmpty()) return;
     var path = requestedFocus;
     requestedFocus = null;
     if (!focusTarget(path))

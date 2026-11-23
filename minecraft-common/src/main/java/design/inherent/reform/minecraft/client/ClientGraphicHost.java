@@ -336,11 +336,20 @@ public final class ClientGraphicHost implements AutoCloseable {
       }
     }
 
-    private void invalidate() {
+    /**
+     * Retire the current subject or input without requesting another preparation. Entered work
+     * still drains before its resources can be reused.
+     */
+    public void invalidate() {
+      ClientSettingsRuntime.requireClientThread();
+      if (ended) return;
       state = State.STALE;
+      displayed = null;
+      if (latest != null) latest.invalidated = true;
       var waiting = pending.remove(id);
       if (waiting != null) waiting.superseded();
       if (latest != null && active == latest) latest.cancel();
+      closeGraphic();
     }
 
     public GraphicCamera camera() {
@@ -505,7 +514,7 @@ public final class ClientGraphicHost implements AutoCloseable {
     private DraftPreviewInput<T> captured;
     private ClientPreviewCapture<T> capturing;
     private PreparedGraphic enteredGraphic;
-    private boolean finished;
+    private boolean finished, invalidated;
     private Throwable failure;
 
     Request(View<T, S> view, PreviewInputStamp initial, ReferenceStamp resources, S subject) {
@@ -523,8 +532,12 @@ public final class ClientGraphicHost implements AutoCloseable {
 
     @Override
     public boolean current() {
-      if (closed || view.ended || !view.visible || view.latest != this || !view.editor.isOpen())
-        return false;
+      if (closed
+          || invalidated
+          || view.ended
+          || !view.visible
+          || view.latest != this
+          || !view.editor.isOpen()) return false;
       try {
         return resources.equals(view.provider.resourceStamp())
             && (captured == null

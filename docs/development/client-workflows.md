@@ -28,7 +28,29 @@ The [ordinary addon](../../examples/native/src/main/java/example/reform/Workflow
 
 The reference chooser uses that policy for separate search/results and selected-value/source-detail regions. Width and usable height are measured from native control offers after chrome; narrow or short bodies use one scrolling flow. Reflow retains query and manual-ID controls, caret/selection, stable choice IDs, source handles, and region-relative viewport anchors. It does not query, inspect, stage, or save. Exact source revision, snapshot, and context are available under Source details rather than repeated in ordinary candidate rows. Title-first fields keep expanded manual-ID repair inside their own contained area.
 
-These development preferences and chooser projection do not yet establish the selected inspection/operation task projections or consumer-authored production Profile/preview slots. Those remain part of the full 0.4 implementation.
+These preferences do not by themselves implement inspection or operation task bodies. Those bodies and their native qualification remain separate from the chooser projection.
+
+### Registered catalogue tasks
+
+`ClientWorkspacePresentation.withReferenceTask(category, task)` gives a declared category a shared catalogue body. `ClientReferenceTask<T,V>` names one existing form route and its exact `DocumentDefinition<T>`, one admitted reference source, explicit `ReferenceLimits`, and ordered `Selection` actions. A selection has its actual `FieldPath`, a field title, and an effect-named action such as **Use for Models**. Registering the same category twice refuses instead of silently replacing it. Missing categories, mismatched owner definitions, and incompatible aggregate preview policies refuse admission.
+
+```java
+var profiles = new ClientReferenceTask<>(
+    preferencesRoute, definition, profileSource, referenceLimits,
+    List.of(
+        new ClientReferenceTask.Selection(modelsPath,
+            Component.literal("Models"), Component.literal("Use for Models")),
+        new ClientReferenceTask.Selection(artworkPath,
+            Component.literal("Artwork"), Component.literal("Use for Artwork"))),
+    (scope, editor) -> existingProfileReferences);
+var presentation = workspace.withReferenceTask(profilesCategory, profiles);
+```
+
+The task borrows the existing `ReferenceActions`; it does not close that source or create another catalogue, actor, writer, or serializer. Source construction is lazy at actual visible entry. The factory may register cleanup for its own partial work with `ClientViewContext`. Querying and inspection use the existing bounded reference services. Candidate rows show titles; selected-value inspection retains preview facts and exact IDs. Highlighting and inspecting never stage a field. Each explicit selection rechecks the current resolved choice, source READ admission, actual field target, and editor state before staging that field through the same document actions. Resolved-empty contributions remain selectable. Unknown or unavailable results remain distinct from resolved choices.
+
+`ClientDestination.View(category)` requests that registered body through the ordinary acknowledged navigation service. The owner is admitted lazily, and the task retains the same editor through Home, other destinations, reflow, and auxiliary operations. Its footer identifies the real document scope; Save, defaults, review, and discard retain that owner's existing semantics and unshown edits. `ClientEditor.canStage(path)` is only cached native-input preflight, not permission or complete validation. Actual document and reference services still enforce their authority and context.
+
+`ClientTaskGraphic<T,S>` optionally adds the shared draft-preview slot. Declare bounded, stable subject choices with their actual `ValueType<S>`, a lightweight `ClientGraphicProvider<T,S>` factory, and explicit aggregate limits and view capacity. The slot captures the complete retained draft only on **Prepare draft preview**. An inspected catalogue value is never silently substituted for either field. Changing the subject invalidates the old interest and retires its image without starting another preparation. Hiding the task cancels obsolete work and retires graphics; returning alone does not compile. Closing the workflow releases every entered task scope, including partial factory construction, while entered work and native uses retain the host's drain and accounting guarantees. Shared [preview preparation](previews.md) owns those resource contracts.
 
 ## Workspace shell in 0.4 development
 

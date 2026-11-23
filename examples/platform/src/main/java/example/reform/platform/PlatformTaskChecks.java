@@ -148,9 +148,13 @@ public final class PlatformTaskChecks {
                     ReferenceLimits.STANDARD,
                     List.of(
                         new ClientReferenceTask.Selection(
-                            FieldPath.ROOT.field("models"), Component.literal("Use for Models")),
+                            FieldPath.ROOT.field("models"),
+                            Component.literal("Models"),
+                            Component.literal("Use for Models")),
                         new ClientReferenceTask.Selection(
-                            FieldPath.ROOT.field("artwork"), Component.literal("Use for Artwork"))),
+                            FieldPath.ROOT.field("artwork"),
+                            Component.literal("Artwork"),
+                            Component.literal("Use for Artwork"))),
                     (ClientViewContext scope, ClientEditor<Config> editor) -> {
                       sources.incrementAndGet();
                       scope.onClose(sourceCloses::incrementAndGet);
@@ -302,6 +306,10 @@ public final class PlatformTaskChecks {
                 .toList();
         if (choices.isEmpty()) return false;
         actual = workflow.editor(DEFINITION.id());
+        var ownerNotice = (Component) observed(actual.form(), "notice");
+        check.accept(
+            "task owner scope does not attempt to focus hidden settings",
+            ownerNotice == null || !ownerNotice.getString().contains("That destination is unavailable"));
         check.accept(
             "task entry keeps one actual editor and prepares nothing implicitly",
             workflow.documents().stream()

@@ -2344,7 +2344,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           (restoringDestination || navigation.restoring())
               && navigation.position(selectedKey).isPresent();
       rebuildWidgets();
-      if (!restoreFocus)
+      if (!restoreFocus && declaredTask() == null)
         selected.presentation().focusAfterLoad(target.orElse(new FormTarget.Field(FieldPath.ROOT)));
     }
 

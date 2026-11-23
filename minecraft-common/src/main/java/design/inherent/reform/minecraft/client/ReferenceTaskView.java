@@ -271,7 +271,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
               .orElse("—");
       detail.row(
           "detail:requested:" + selection.field(),
-          selection.label(),
+          selection.title(),
           text("draft_value", "Draft value").copy().append(": ").append(value));
       var pick = button(selection.label(), () -> choose(selection));
       pick.active = canChoose(selection.field());
@@ -326,6 +326,10 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
     return browser != null
         && browser.current()
         && browser.selectedKey().isPresent()
+        && browser
+            .resolution()
+            .filter(value -> value.status() == ReferenceResolution.Status.RESOLVED)
+            .isPresent()
         && (edit == null || edit.snapshot().terminal())
         && editor.canStage(field);
   }
@@ -508,6 +512,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
 
             public void append(FormPanel target) {
               target.beginGroup("detail:preview", spec.title());
+              var token = generation;
               var choice =
                   NativeCycles.<String>builder(
                           id ->
@@ -525,7 +530,14 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                           20,
                           text("subject", "Preview subject"),
                           (button, value) -> {
+                            if (ended
+                                || !visible
+                                || token != generation
+                                || !isCurrent()
+                                || chosen.equals(value)) return;
                             chosen = value;
+                            view.invalidate();
+                            rebuildWidgets();
                           });
               target.row(
                   "detail:subject",

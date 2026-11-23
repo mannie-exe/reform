@@ -19,10 +19,20 @@ public final class ClientReferenceTask<T, V> {
     ReferenceActions<String, V> open(ClientViewContext scope, ClientEditor<T> editor);
   }
 
-  public record Selection(FieldPath field, Component label) {
+  public record Selection(FieldPath field, Component title, Component label) {
+    public Selection(FieldPath field, Component label) {
+      this(field, label, label);
+    }
+
     public Selection {
       Objects.requireNonNull(field);
+      title = caption(title, 1024, false);
       label = caption(label, 1024, false);
+    }
+
+    @Override
+    public Component title() {
+      return title.copy();
     }
 
     @Override
