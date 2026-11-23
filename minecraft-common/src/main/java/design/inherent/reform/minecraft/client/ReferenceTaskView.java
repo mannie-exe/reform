@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 /** Shared retained catalogue task. It borrows one editor and never owns a second settings draft. */
@@ -157,6 +158,13 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
         Math.max(
             theme().values().value(ThemeValues.Role.MEASURE_INFORMATION_MINIMUM),
             Math.addExact(ControlSizing.preferred(filter).width(), 2 * gap));
+    int detailMinimum =
+        Math.max(
+            minimum,
+            declaration
+                .graphic()
+                .map(spec -> FormPanel.widthForContent(subjectWidth(spec), theme(), 1))
+                .orElse(0));
     panels =
         new TaskPanels(
             new FormGeometry.Placement(left, top, width, height),
@@ -167,7 +175,8 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                 new FormGeometry.Size(minimum, 3 * font.lineHeight + control + gap),
                 Math.max(minimum, width / 2)),
             new TaskPresentation.Offer(
-                new FormGeometry.Size(minimum, 3 * font.lineHeight + control + gap), minimum),
+                new FormGeometry.Size(detailMinimum, 3 * font.lineHeight + control + gap),
+                detailMinimum),
             theme(),
             retained);
     var list = panels.primary();
@@ -550,8 +559,8 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                       .create(
                           0,
                           0,
-                          180,
-                          20,
+                          subjectWidth(spec),
+                          theme().values().value(ThemeValues.Role.CONTROL_HEIGHT),
                           text("subject", "Preview subject"),
                           (button, value) -> {
                             if (ended
@@ -635,6 +644,21 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
           failed.addSuppressed(cleanup);
         }
     }
+  }
+
+  private int subjectWidth(ClientTaskGraphic<?, ?> spec) {
+    int widest =
+        spec.labels().stream()
+            .map(
+                label ->
+                    CommonComponents.optionNameValue(text("subject", "Preview subject"), label))
+            .map(caption -> theme().text(ClientTheme.TextRole.VALUE, caption))
+            .mapToInt(font::width)
+            .max()
+            .orElseThrow();
+    return Math.max(
+        theme().values().value(ThemeValues.Role.CONTROL_MINIMUM_WIDTH),
+        Math.addExact(widest, theme().values().value(ThemeValues.Role.CONTROL_CAPTION_PADDING)));
   }
 
   @Override

@@ -67,6 +67,11 @@ public record ClientTaskGraphic<T, S>(
     return title.copy();
   }
 
+  /** Layout reads copied captions without repeatedly snapshotting domain subjects. */
+  List<Component> labels() {
+    return choices.stream().map(Choice::label).toList();
+  }
+
   @Override
   public List<Choice<S>> choices() {
     var snapshot = new SnapshotContext(SnapshotContext.Limits.CONFIGURATION);

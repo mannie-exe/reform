@@ -16,6 +16,7 @@ import net.minecraft.network.chat.Component;
 
 /** Measured configuration rows; native widgets retain their own keyboard and narration behavior. */
 final class FormPanel extends ScrollFrame {
+  private static final int VIEWPORT_BORDER = 6, SCROLLBAR_GUTTER = 8;
   static final int ACTIVE_TEXT = FormTokens.Color.TEXT_ACTIVE;
   static final int TITLE_TEXT = FormTokens.Color.TEXT;
   static final int ERROR_TEXT = FormTokens.Color.TEXT_ERROR;
@@ -273,7 +274,7 @@ final class FormPanel extends ScrollFrame {
       int height,
       boolean navigation,
       ClientTheme theme) {
-    super(width, height, y, x, 6);
+    super(width, height, y, x, VIEWPORT_BORDER);
     baseTheme = currentTheme = java.util.Objects.requireNonNull(theme);
     this.client = client;
     this.navigation = navigation;
@@ -573,7 +574,19 @@ final class FormPanel extends ScrollFrame {
   }
 
   private int usableWidth() {
-    return Math.max(1, width - 2 * border - 8);
+    return Math.max(1, width - 2 * border - SCROLLBAR_GUTTER);
+  }
+
+  /** Outer offer for content inside this viewport's actual framing and declared group depth. */
+  static int widthForContent(int contentWidth, ClientTheme theme, int groupDepth) {
+    if (contentWidth < 1 || groupDepth < 0 || groupDepth > 8)
+      throw new IllegalArgumentException("Invalid measured form content offer");
+    return Math.addExact(
+        contentWidth,
+        Math.addExact(
+            2 * VIEWPORT_BORDER + SCROLLBAR_GUTTER,
+            Math.multiplyExact(
+                2 * groupDepth, theme.values().value(ThemeValues.Role.SPACE_CONTENT))));
   }
 
   private void measure() {

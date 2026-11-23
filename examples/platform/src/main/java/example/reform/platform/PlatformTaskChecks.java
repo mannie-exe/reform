@@ -220,7 +220,9 @@ public final class PlatformTaskChecks {
                             new ClientTaskGraphic.Choice<>(
                                 "first", Component.literal("First subject"), 1),
                             new ClientTaskGraphic.Choice<>(
-                                "second", Component.literal("Second subject"), 2)),
+                                "second",
+                                Component.literal("Second subject, unlooted, closed"),
+                                2)),
                         (scope, editor) -> {
                           providers.incrementAndGet();
                           scope.onClose(providerCloses::incrementAndGet);
@@ -352,6 +354,7 @@ public final class PlatformTaskChecks {
                 .filter(w -> w.getMessage().getString().equals("Blue"))
                 .toList();
         if (choices.isEmpty()) return false;
+        geometry(workflow.screen());
         actual = workflow.editor(DEFINITION.id());
         var ownerNotice = (Component) observed(actual.form(), "notice");
         check.accept(
@@ -460,6 +463,7 @@ public final class PlatformTaskChecks {
       }
       case 8 -> {
         if (draws == 0) return false;
+        geometry(workflow.screen());
         check.accept(
             "registered preview widget actually submits its own prepared graphic",
             draws > 0 && actual == workflow.editor(DEFINITION.id()));
@@ -541,6 +545,23 @@ public final class PlatformTaskChecks {
         return true;
       }
       case 13 -> {
+        var subject =
+            widgets(workflow.screen()).stream()
+                .filter(
+                    widget ->
+                        widget
+                            .getMessage()
+                            .getString()
+                            .contains("Second subject, unlooted, closed"))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "wide task offers the complete actual long subject caption",
+            subject.getWidth() >= client.font.width(subject.getMessage()) + 4);
+        check.accept(
+            "long subject retains its complete native narration",
+            NativeClientProbe.narration(subject::updateNarration)
+                .contains("Second subject, unlooted, closed"));
         check.accept(
             "changing subject invalidates old preview without preparing another",
             graphic().snapshot().state() == ClientGraphicHost.State.STALE
@@ -551,6 +572,7 @@ public final class PlatformTaskChecks {
       }
       case 14 -> {
         if (workflow.screen().width > 400 || workflow.screen().width >= oldWidth) return false;
+        geometry(workflow.screen());
         var task =
             observed(
                 ((Map<?, ?>) observed(workflow, "taskViews")).values().iterator().next(), "view");
@@ -569,6 +591,7 @@ public final class PlatformTaskChecks {
       case 15 -> {
         if (workflow.screen().width != oldWidth || workflow.screen().height != oldHeight)
           return false;
+        geometry(workflow.screen());
         check.accept(
             "task return reflow preserves source owner and no implicit preparation",
             input(workflow.screen(), "Search") == retainedQuery
@@ -608,6 +631,7 @@ public final class PlatformTaskChecks {
       }
       case 17 -> {
         if (workflow.inspectedField().isEmpty()) return false;
+        geometry(workflow.screen());
         check.accept(
             "task field information uses actual owner without staging or preparing",
             workflow.inspectedField().orElseThrow().path().equals(FieldPath.ROOT.field("models"))
