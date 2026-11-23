@@ -624,6 +624,23 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     return saving || loading || pendingEdits > 0;
   }
 
+  boolean canStage(FieldPath path) {
+    var current = actions.view();
+    return !closed
+        && !formUnavailable
+        && !pendingWork()
+        && !retainedInput()
+        && !unsent()
+        && current.availability() == EditorActor.Availability.READY
+        && current
+            .snapshot()
+            .filter(snapshot -> snapshot.draft().contains(path) && snapshot.draft().activeAt(path))
+            .isPresent()
+        && current.pending().isEmpty()
+        && current.review().isEmpty()
+        && locallyAvailable(path);
+  }
+
   boolean canSubmit() {
     var current = actions.view();
     return !closed
@@ -1129,6 +1146,17 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   private void appendComposedRows(EditorActor.View<T> current) {
     panel = composition.panel();
+    if (composition.selections().isEmpty()) {
+      visibleFields.clear();
+      bodyVisible = false;
+      displayed = current;
+      feedback();
+      if (!requested) {
+        requested = true;
+        if (current.availability() == EditorActor.Availability.LOADING) requestReload();
+      }
+      return;
+    }
     panel.scoped(theme(), () -> appendScopedRows(current));
   }
 

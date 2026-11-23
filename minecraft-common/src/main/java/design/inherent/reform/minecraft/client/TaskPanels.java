@@ -36,22 +36,71 @@ final class TaskPanels {
       TaskPresentation.Offer detailOffer,
       ClientTheme theme,
       State state) {
+    this(
+        chrome.contentBounds(),
+        chrome.unifiedContentRequired(),
+        chrome::panel,
+        policy,
+        kind,
+        primaryOffer,
+        detailOffer,
+        theme,
+        state);
+  }
+
+  TaskPanels(
+      design.inherent.reform.presentation.FormGeometry.Placement bounds,
+      boolean unified,
+      TaskPresentation policy,
+      TaskPresentation.Kind kind,
+      TaskPresentation.Offer primaryOffer,
+      TaskPresentation.Offer detailOffer,
+      ClientTheme theme,
+      State state) {
+    this(
+        bounds,
+        unified,
+        () ->
+            new FormPanel(
+                Minecraft.getInstance(),
+                bounds.x(),
+                bounds.y(),
+                bounds.width(),
+                bounds.height(),
+                false,
+                theme),
+        policy,
+        kind,
+        primaryOffer,
+        detailOffer,
+        theme,
+        state);
+  }
+
+  private TaskPanels(
+      design.inherent.reform.presentation.FormGeometry.Placement bounds,
+      boolean unified,
+      java.util.function.Supplier<FormPanel> focused,
+      TaskPresentation policy,
+      TaskPresentation.Kind kind,
+      TaskPresentation.Offer primaryOffer,
+      TaskPresentation.Offer detailOffer,
+      ClientTheme theme,
+      State state) {
     this.state = state;
     var effective =
-        chrome.unifiedContentRequired()
-            ? policy.withPreference(kind, TaskPresentation.Preference.FOCUSED)
-            : policy;
+        unified ? policy.withPreference(kind, TaskPresentation.Preference.FOCUSED) : policy;
     regions =
         effective.arrange(
             kind,
-            chrome.contentBounds(),
+            bounds,
             primaryOffer,
             Optional.of(detailOffer),
             theme
                 .values()
                 .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_CONTENT));
     if (regions.arrangement() == TaskPresentation.Arrangement.FOCUSED) {
-      primary = detail = chrome.panel();
+      primary = detail = focused.get();
     } else {
       var first = regions.primary();
       var second = regions.detail().orElseThrow();

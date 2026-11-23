@@ -123,6 +123,7 @@ public final class PlatformClient {
       if (workspaceScenario || workflowScenario) PlatformWorkflowExample.register(registration);
       if (workspaceScenario) {
         PlatformWorkspaceChecks.register(registration);
+        PlatformTaskChecks.register(registration);
         PlatformReferenceExample.register(registration);
       }
       if (chooserScenario) PlatformImportExample.register(registration);

@@ -32,6 +32,13 @@ public sealed interface ClientDestination {
     }
   }
 
+  /** A registered shared task body, distinct from an ordinary category. */
+  record View(DestinationId id) implements ClientDestination {
+    public View {
+      Objects.requireNonNull(id);
+    }
+  }
+
   /** A route and optional contextual alias; collection paths retain their actual stable row IDs. */
   record Field(DocumentId route, FieldPath path, Optional<DestinationId> placement)
       implements ClientDestination {

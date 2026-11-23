@@ -104,6 +104,12 @@ public final class ClientEditor<T> implements AutoCloseable {
     return isOpen() && !busy() && screen.canSubmit();
   }
 
+  /** Cached native-input preflight for an explicit field edit; actual owner checks still apply. */
+  public boolean canStage(design.inherent.reform.definition.FieldPath path) {
+    ClientSettingsRuntime.requireClientThread();
+    return isOpen() && !busy() && presentation().canStage(path);
+  }
+
   /** Capture one complete READ-authorized draft, independent of required save-review scope. */
   public ClientPreviewCapture<T> capturePreview(EntryPoint entry, DraftRevision expected) {
     ClientSettingsRuntime.requireClientThread();

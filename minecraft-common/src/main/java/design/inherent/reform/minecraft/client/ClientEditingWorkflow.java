@@ -101,6 +101,44 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
   }
 
+  private record TaskEntry(OwnerContext lifetime, ReferenceTaskView<?, ?> view) {}
+
+  private final Map<DestinationId, TaskEntry> taskViews = new LinkedHashMap<>();
+
+  private ReferenceTaskView<?, ?> taskView(DestinationId id) {
+    var existing = taskViews.get(id);
+    if (existing != null) return existing.view();
+    var declaration = presentation.referenceTasks().get(id);
+    if (declaration == null) throw missingDestination();
+    var actual = entry(declaration.route()).editor;
+    if (actual == null || !actual.isOpen())
+      throw new PolicyRefusal("client.editor_unavailable", "Open this task's owner first");
+    var client = Minecraft.getInstance();
+    var owner =
+        new OwnerContext(
+            client::execute,
+            ClientSettingsRuntime.workers(),
+            ClientSettingsRuntime::requireClientThread,
+            OwnerContext.Limits.STANDARD);
+    var closing = lifetime.onClose(owner::close);
+    try {
+      var view = declaration.open(actual, new ClientViewContext(owner), this);
+      requireOpen();
+      owner.requireOwner();
+      taskViews.put(id, new TaskEntry(owner, view));
+      owner.onClose(closing::close);
+      return view;
+    } catch (RuntimeException | Error failure) {
+      try {
+        owner.close();
+      } catch (RuntimeException | Error cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+      closing.close();
+      throw failure;
+    }
+  }
+
   private final LinkedHashMap<DocumentId, Entry> entries = new LinkedHashMap<>();
   private final Map<DocumentId, Entry> ownerEntries = new LinkedHashMap<>();
   private final Map<DocumentId, ClientWorkflowLayout.Placement> placements = new LinkedHashMap<>();
@@ -138,6 +176,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   }
 
   private NavigationSelection resolveDestination(ClientDestination target) {
+    if (target instanceof ClientDestination.View view) {
+      if (!presentation.referenceTasks().containsKey(view.id())) throw missingDestination();
+      target = new ClientDestination.Category(view.id());
+    }
     if (target instanceof ClientDestination.Home) {
       if (presentation.home().isEmpty()) throw missingDestination();
       return new NavigationSelection(
@@ -156,7 +198,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             return new NavigationSelection(
                 overview.category(category.id().value()),
                 List.copyOf(group.path().subList(0, depth + 1)),
-                Optional.empty(),
+                Optional.ofNullable(presentation.referenceTasks().get(category.id()))
+                    .map(ClientReferenceTask::route),
                 Optional.empty());
       }
       throw missingDestination();
@@ -889,10 +932,20 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     overview.cancelDeferredNavigation();
     supersedeNavigation();
     Throwable failure = null;
+    for (var task : List.copyOf(taskViews.values())) {
+      try {
+        task.lifetime().close();
+      } catch (RuntimeException | Error failed) {
+        if (failure == null) failure = failed;
+        else if (failure != failed) failure.addSuppressed(failed);
+      }
+    }
+    taskViews.clear();
     try {
       if (graphics != null) graphics.close();
     } catch (RuntimeException | Error failed) {
-      failure = failed;
+      if (failure == null) failure = failed;
+      else if (failure != failed) failure.addSuppressed(failed);
     }
     try {
       overview.header.close();
@@ -1230,6 +1283,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         selections.removeIf(before -> before.path().startsWith(path));
         selections.add(new SettingsView.Selection(path, item.title(), item.help(), item.section()));
       }
+      var taskDeclaration = declaredTask();
+      if (taskDeclaration != null) selected.put(taskDeclaration.route(), List.of());
       for (var route : selected.keySet()) ensureOwner(route);
       var returned = resetList ? navigation.position(selectedKey).orElse(null) : null;
       if (returned != null && selected.containsKey(returned.owner()))
@@ -1402,27 +1457,58 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                                 design.inherent.reform.presentation.ThemeValues.Role
                                     .SPACE_SCREEN)));
       editingVisible = !geometry.navigationOverlay();
-      panel =
-          new FormPanel(
-              minecraft,
-              padding + bounds.x(),
-              bounds.y(),
-              bounds.width(),
-              bounds.height(),
-              false,
-              theme());
-      if (outerFrame.headerInContent()) {
-        header.appendTo(panel, font, locationTrail(), () -> current(token), this::locationMenu);
-        if (navigationToggle != null) panel.actions("workspace:categories", navigationToggle);
+      final java.util.function.Consumer<FormPanel> beforeContent =
+          target -> {
+            if (outerFrame.headerInContent()) {
+              header.appendTo(
+                  target, font, locationTrail(), () -> current(token), this::locationMenu);
+              if (categoriesToggle != null)
+                target.actions("workspace:categories", categoriesToggle);
+            }
+            if (outerFrame.statusInContent()) target.row(Component.empty(), scopeStatus());
+            if (notice != null) target.row(Component.empty(), notice);
+            if (temporaryReveal != null && selectedFilter != Filter.ALL)
+              target.row(
+                  Component.empty(),
+                  text(
+                      "temporary_reveal",
+                      "Temporarily showing the linked destination; your filter is unchanged."));
+          };
+      ReferenceTaskView<?, ?> taskBody = null;
+      if (!geometry.navigationOverlay() && taskDeclaration != null) {
+        var taskOwner = entry(taskDeclaration.route()).editor;
+        if (taskOwner != null
+            && taskOwner.isOpen()
+            && taskOwner.view().availability() == EditorActor.Availability.READY)
+          taskBody = taskView(new DestinationId(selectedKey.placement()));
       }
-      if (outerFrame.statusInContent()) panel.row(Component.empty(), scopeStatus());
-      if (notice != null) panel.row(Component.empty(), notice);
-      if (temporaryReveal != null && selectedFilter != Filter.ALL)
-        panel.row(
-            Component.empty(),
-            text(
-                "temporary_reveal",
-                "Temporarily showing the linked destination; your filter is unchanged."));
+      if (activeTask != null && activeTask != taskBody) activeTask.visible(false);
+      activeTask = taskBody;
+      if (taskBody != null) {
+        taskBody.visible(true);
+        taskBody.compose(
+            outerFrame.headerInContent()
+                || outerFrame.statusInContent()
+                || outerFrame.actionsInContent()
+                || information.open(),
+            beforeContent);
+        mount(
+            taskBody,
+            new FormGeometry.Placement(
+                padding + bounds.x(), bounds.y(), bounds.width(), bounds.height()));
+        panel = taskBody.primary();
+      } else {
+        panel =
+            new FormPanel(
+                minecraft,
+                padding + bounds.x(),
+                bounds.y(),
+                bounds.width(),
+                bounds.height(),
+                false,
+                theme());
+        beforeContent.accept(panel);
+      }
       if (!geometry.navigationOverlay()) {
         if (isHome()) appendHome(token);
         if (information.open() && geometry.information().isEmpty()) information.append(panel);
@@ -1498,18 +1584,24 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   text("batch_result", "Last batch review/result"),
                   title,
                   () -> navigate(batchView)));
-        if (selected.isEmpty() && !isHome())
+        if (selected.isEmpty() && !isHome() && taskBody == null)
           panel.row(text("no_matches", "No matching settings or operations."), Component.empty());
         if (actionView != null) actions.addAll(actionView.ownerActions());
         if (outerFrame.actionsInContent())
           panel.actions(
               "workspace:actions",
               actions.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
-        panel.finish(0);
-        if (returned != null) panel.restore(returned.scroll());
-        else if (!resetList && retainedScroll != null) panel.restore(retainedScroll);
         addRenderableWidget(panel);
-        String focus = returned != null ? returned.focus() : !resetList ? retainedFocus : null;
+        if (taskBody != null) taskBody.finish();
+        else {
+          panel.finish(0);
+          if (returned != null) panel.restore(returned.scroll());
+          else if (!resetList && retainedScroll != null) panel.restore(retainedScroll);
+        }
+        String focus =
+            taskBody != null
+                ? null
+                : returned != null ? returned.focus() : !resetList ? retainedFocus : null;
         if (focus != null) {
           setFocused(panel);
           panel.restoreFocus(focus);
@@ -1822,8 +1914,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           .toList();
     }
 
+    private ClientReferenceTask<?, ?> declaredTask() {
+      return selectedKey != null && selectedKey.kind() == WorkspaceNavigation.Kind.CATEGORY
+          ? presentation.referenceTasks().get(new DestinationId(selectedKey.placement()))
+          : null;
+    }
+
+    private ReferenceTaskView<?, ?> activeTask;
+
     private List<ClientWorkflowLayout.Placement> pagePlacements() {
-      if (isHome()) return List.of();
+      if (isHome() || declaredTask() != null) return List.of();
       var states = new LinkedHashMap<DocumentId, DocumentState>();
       for (var state : documents()) states.put(state.document(), state);
       return (layout == null
@@ -2096,6 +2196,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     protected void beforeRebuild() {
+      if (activeTask != null) activeTask.preserve();
       navigation.preserve(getFocused());
       information.preserve(getFocused());
       if (panel != null) {
