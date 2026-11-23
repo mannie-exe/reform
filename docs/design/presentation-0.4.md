@@ -2,7 +2,7 @@
 
 This is the proposed 0.4 contract, reified from the released 0.3 implementation and current consumer requirements. It is not an implemented API, a candidate, or native qualification. Names and signatures below define the intended API responsibilities; they are not imports available in 0.3. [Construction and lifecycle](presentation-0.4-api.md) owns API inputs/results, admission, read-only preview capture, and native retirement. [Migration and acceptance](presentation-0.4-migration.md) owns changes to existing declarations and future implementation checks.
 
-The selected work is documentation and specification only. Do not build prototypes, candidates, consumer bindings, screenshots, mockups, illustrative assets, or preview scenes from this selection. Implementation, native checks, consumer adoption, publication, and rollout require later selection. Earlier layout images remain historical exploration, not the selected specification or a request for more captures.
+The original selection was documentation and specification only. The owner has since selected a [shared configuration-workflow design review](configuration-workflows-0.4.md), including Mobbin references and static A/B UI proposals before owner review. This permits those design artifacts, not product prototypes, candidates, consumer bindings, native client launches, illustrative feature assets, or preview scenes. Implementation, native checks, adoption, publication, and rollout require later selection. Earlier shell images remain historical exploration; the selected default A and stable-header decisions still hold.
 
 ## Decisions
 

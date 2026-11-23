@@ -1,0 +1,81 @@
+# Configuration workflows for 0.4
+
+This is the owner-selected design extension to [presentation 0.4](presentation-0.4.md). It is under review, not an implemented interface or an approved final layout. The selected sequence is intent update, bounded source/Mobbin review, static A/B proposals, owner review, and then the final specification/intent upgrade. Stop before that last step until the owner selects or revises the proposals.
+
+Static UI mockups and existing native evidence are permitted for this review. They do not authorize product code, candidates, consumer migration, native client launches, publication, or personal rollout. Illustrated feature content, a Wayfinder demonstration, RespackOpts, and Phase 2 remain outside the selected work.
+
+## Shared scope and ownership
+
+re:form owns selector/manual-ID containment, chooser layout, form and metadata navigation, draft/inspection/review views, document actions, source/conflict/import/close decisions, and operation/result presentation. Consumers still own field purpose, profile titles and source metadata, grouping, actual effects, persistence/application policy, and authority. A visual redesign cannot create a second editor, resolver, comparison backend, or writer.
+
+The Lootr handoff selects four shared concerns for design: separate searching/choosing/inspecting, contain manual-ID expansion, name immediate actions by their actual effect while keeping result navigation separate, and project navigation from actual visual groups/rows. Native 0.3 evidence confirms its navigation/body order mismatch. Do not fix presentation by changing order-sensitive schema/codec declarations.
+
+The first three concerns were previously proposals awaiting selection; they are now selected problems to solve in 0.4. Their exact layouts remain subject to the owner review below. Navigation/content order is already a settled requirement. Redundant IDs and source revision/UUID details in ordinary selection flow are part of the chooser review; exact identities and diagnostics must remain available in inspection.
+
+## Review families
+
+| Family                       | Existing views to inspect                                          | Job                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Choose or repair a value     | Titled reference, manual ID, reference/collection picker           | Find a value, understand the selection, stage or repair it without saving                                                    |
+| Understand a draft or source | Form information, source/effective inspection, document actions    | Identify the current value, draft, saved/effective state, origin, and actual action scope                                    |
+| Review and resolve changes   | Single/batch review, conflict, import review, dirty-close decision | Compare captured values, repair/resolve/stage explicitly, and save only through the actual owner                             |
+| Run and inspect an operation | Workflow actions, progress, retained result/status and retry       | Start the named effect, understand pending/partial/failed/unknown outcomes, and inspect or recover without replaying a write |
+
+Use a small number of shared layout directions across these families, rather than inventing unrelated styles for every screen. Existing source-only behavior is evidence; a screenshot proves only its captured state. Inventory unsupported or uncaptured states honestly. Review wide, narrow, and high-scale behavior as design constraints; static proposals do not qualify native behavior.
+
+## Preserve
+
+Keep default A and its stable ordinary-navigation header, separate splash-like Home, native Minecraft styling/typography, useful multi-column groups, information access, and visual/navigation reading order. Body and auxiliary layout may change while retaining the same editor and bookmark. Do not replace the selected shell with another unrelated redesign.
+
+Preserve invalid/unaccepted input, caret/focus/viewport, omission versus explicit values, and requested versus effective fallback. Keep draft, saved, loaded, effective, and captured-review values distinct. IDs, paths, revisions, and technical causes remain inspectable; their placement may be less prominent in ordinary flow.
+
+Keep Defaults, Revert, Reload saved, Import as draft, Compare, Resolve in draft, Save, Apply, Export, Start, Inspect result, Retry application, and Cancel distinct. Whole-document/review-scope effects include unshown values. Inspection and navigation do not perform writes. A source conflict or stale review cannot become an apparently current confirmation after relayout.
+
+Progress and terminal results come from existing typed operation facts. A confirmed save survives application failure. Cancel is a request, Back does not mean cancellation, unknown outcomes retain reconciliation, and no restyled retry repeats an entered write. An operation destination reveals the operation; a named immediate-action button starts it explicitly.
+
+## Review boundary
+
+Mobbin supplies structural precedents only. Retain this product's colors, native font/control semantics, source data, and real ownership. Each A/B direction must explain where displaced information goes, its narrow fallback, and any judgment unsupported by a reference. Mockup labels must describe real effects or be marked proposed; do not fabricate successful runtime results.
+
+Before finalizing, obtain the owner's choice for the shared inspection/review arrangement and the chooser/action presentation where alternatives remain. A hybrid is possible only with an explicit account of its navigation, focus, source, and save boundaries. Then update the owning API/migration/acceptance contracts and canonical intent, preserving historical proposals as evidence. No final UI selection or implementation readiness is claimed from this initial brief.
+
+## A/B proposals awaiting owner review
+
+These letters identify workflow alternatives, not replacements for the already selected default header A. The static proposals cover a profile chooser, captured source/value inspection, and operations. Their shared header, native palette, title-first choices, contained manual repair, and effect-named buttons are common constraints. The remaining views below have behavioral/layout proposals, not new native captures or implementation.
+
+**A: Details beside the current task.** A chooser keeps search and candidate rows in one region and selected-profile facts/manual repair in a separate inspector. Field inspection retains the selected field and shows baseline, captured draft, effective observation, and application requirements beside it. Operations use named immediate buttons with a separately selected inspector and result destination. This costs body width; the inspector becomes an explicit focused destination when measured content cannot fit. Do not squeeze three columns into every window or overlay the focused editor.
+
+The structural precedents are [Productboard's selected setting pane](https://mobbin.com/screens/83b29d19-ddcf-46c6-a28e-eae4d23eb180), [Plain's selected-item details](https://mobbin.com/screens/9ff39f43-bdf9-4ae4-8c9f-b736cfacdcde), and [Databricks' operation/history and details separation](https://mobbin.com/screens/1bd9f80c-3c2d-46ba-bd06-b6177a78ebdb). They support adjacent context, not Minecraft-specific input, permission, or persistence behavior.
+
+**B: Focused task views.** A chooser gives the list the available body width, with a contained selection/repair area below it. Inspection and review use the body for comparison and application/source facts, returning to the same field/editor bookmark. Operations keep a short effect description beside each immediate button; retained results open a dedicated destination. This costs vertical space and more transitions between editing and inspecting. It does not insert a mandatory review step into a permitted direct save.
+
+The structural precedents are [Klaviyo's search/list/confirmation picker](https://mobbin.com/screens/dd3938ef-dd50-42f9-8766-e0d1d2b7ea5d), [Square's focused selection task](https://mobbin.com/screens/9ab71ea9-dd45-4801-a0a4-249028e9838e), [Figma's captured comparison view](https://mobbin.com/screens/ebb90bf9-735a-4f5f-968a-8152ff58dde8), [Semrush's focused original/new review](https://mobbin.com/screens/ed82aafc-c4dc-442d-87fc-359f7347f940), and [Motion's focused task details](https://mobbin.com/screens/2bd6cc77-0af2-4557-a4f6-42fe1309e1ee). They support task separation and comparison structure, not the exact labels, native controls, or owner effects.
+
+Exact dimensions, narrow fallback, disclosure behavior, and the proposed wording are design judgments constrained by existing native contracts. No reference demonstrates a suitable Minecraft breakpoint or certifies the safety of saving, resolving, or retrying.
+
+## Common workflow requirements
+
+These requirements constrain both proposals. They do not select a final screen layout or add a new backend.
+
+| View or transition                             | Proposed presentation                                                                                                                         | Existing effect and retained state                                                                                                                                                                           |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Reference selection                            | Search toolbar, titled candidate list, selected-value facts, separate technical details, and explicit confirmation                            | Search/inspection do not save. Preserve the requested ID, source context, unresolved/missing/unavailable distinction, bounded result accounting, and actual selection admission.                             |
+| Manual ID repair                               | A contained disclosure belonging to the original field; a collapsed error remains visible beside its title                                    | Disclosure alone has no effect. Preserve rejected native input, error text, caret, focus, and requested versus resolved identity; confirmation stages through the same actor.                                |
+| Field information and source inspection        | Ordinary purpose and current/draft/saved/effective facts first; exact path, ID, revisions, and complete diagnostics under inspectable details | Preserve capture identity and freshness. Never label a captured observation as the current source or run an implicit refresh on navigation.                                                                  |
+| Document actions                               | Separate edit history, source/default actions, and inspection/result navigation; explain whole-document scope once                            | Keep Undo, Redo, Defaults, Reload saved, Import, and Discard draft distinct. Use owner-supplied defaults labels. Unshown fields remain in the actual document scope.                                         |
+| Single-document review                         | A changed-field list and captured comparison with validation/application facts and explicit owner submission                                  | Save is conditional on current native-input, validation, permission, source, and review guards. Viewing or refreshing a review is not a write.                                                               |
+| Batch review                                   | A document index, per-owner comparison/requirements, and ordered outcomes                                                                     | No invented cross-document transaction. Retain earlier confirmed saves after a later refusal; expose unknown writes for reconciliation, not blanket retry.                                                   |
+| Conflict review                                | Field index plus earlier/observed/draft comparison and explicit per-field choices                                                             | Choose every required field. Resolve changes the draft and resets its Undo history; it does not save or apply. Collections remain whole choices. Stale context requires a new review.                        |
+| Import review                                  | Choose an admitted source/format, inspect differences and diagnostics, then explicitly stage                                                  | Preserve source identity/schema facts, repairable invalid input, and stale-target refusal. Staging changes the draft only; neither selecting nor closing a chooser writes.                                   |
+| Unsaved close                                  | A bounded decision naming the affected document(s), with Keep editing, Discard draft, and the owner's guarded save choice                     | Escape keeps editing. Do not conflate draft abandonment, cancellation, navigation, and saved application. A proposed Review link would open review rather than silently save.                                |
+| Operation entry and result                     | Name each immediate effect; separate selecting an operation, starting it, and inspecting its retained result                                  | Keep the existing action and operation scope. Show unavailable reasons locally. Result links require an actual retained operation; do not draw empty success histories or fake completion.                   |
+| Pending/failed/unknown operation               | State, reported progress, affected source/runtime, useful diagnostics, and valid recovery choices                                             | Back leaves work running. Cancellation is a request, not rollback. Confirmed saves survive application failures; application-only recovery cannot repeat persistence. Reconcile unknown writes before retry. |
+| Context loss, stale data, or missing authority | An outcome beside the affected task, with safe return/refresh when actually available                                                         | Preserve edits and refuse unauthorized/stale effects. Missing provider, unavailable catalogue, resolved-empty, invalid draft, and unknown operation outcome remain distinct.                                 |
+
+Both directions must retain information access from every supported control, local persistent errors, useful narration, keyboard reading order, and the selected visual navigation hierarchy. Richer grouping must not require schema/codec reordering. Displaced technical facts remain fully inspectable and copyable within existing privacy/capability boundaries.
+
+## Owner decision and later specification work
+
+The owner can select A, B, or an explicit split by task. One possible split is adjacent selection/field details with focused conflict/import/batch review; this is a recommendation to review, not an adopted default. Operations still need one consistent distinction between immediate effect and result inspection in either direction.
+
+After selection, evolve the presentation declarations and shared destination layouts over existing editors, reference selections, reviews, and operations. Specify declaration defaults/customization, admission failures, measured reflow, disclosure focus, technical-detail projection, and source/context freshness in the owning API and migration documents. Add observable acceptance cases for the selected routes and negative states; do not relabel static mockups as executed tests. Consumer authoring should supply semantic groups, title/help, and effects, not renderer coordinates or private replacement screens.
