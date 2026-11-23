@@ -16,6 +16,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -42,6 +43,11 @@ public final class PlatformTaskChecks {
   private static ClientFileSettings<Config> settings;
   private static Object watched;
   private static int draws;
+  private static boolean suppress;
+
+  public static boolean suppressDraw(Object graphic) {
+    return suppress && (watched == null || graphic == watched);
+  }
 
   static void register(ClientRegistration registration) {
     settings = ClientFileSettings.clientJson(registration, DEFINITION);
@@ -68,6 +74,9 @@ public final class PlatformTaskChecks {
   private byte[] bytes;
   private ClientEditor<?> actual;
   private PreparedGraphic ready;
+  private EditBox retainedQuery, retainedManual;
+  private int oldWidth, oldHeight;
+  private final int[] windowWidth = new int[1], windowHeight = new int[1];
   private int stage;
 
   PlatformTaskChecks(BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -208,7 +217,7 @@ public final class PlatformTaskChecks {
                                         new GraphicSceneData(
                                             request.stamp(),
                                             PlatformMeshChecks.pattern(),
-                                            GraphicCamera.STANDARD,
+                                            new GraphicCamera(0, 0, 0.8, 0, 0),
                                             List.of(
                                                 new GraphicSceneData.Fact(
                                                     DocumentId.parse("fixture:task_models"),
@@ -309,7 +318,8 @@ public final class PlatformTaskChecks {
         var ownerNotice = (Component) observed(actual.form(), "notice");
         check.accept(
             "task owner scope does not attempt to focus hidden settings",
-            ownerNotice == null || !ownerNotice.getString().contains("That destination is unavailable"));
+            ownerNotice == null
+                || !ownerNotice.getString().contains("That destination is unavailable"));
         check.accept(
             "task entry keeps one actual editor and prepares nothing implicitly",
             workflow.documents().stream()
@@ -320,8 +330,14 @@ public final class PlatformTaskChecks {
                 && providers.get() == 1
                 && prepares.get() == 0
                 && Arrays.equals(bytes, source()));
-        click(workflow.screen(), button(workflow.screen(), "Blue"));
-        stage++;
+        retainedQuery = input(workflow.screen(), "Search");
+        retainedManual = input(workflow.screen(), "Reference ID");
+        replace(workflow.screen(), retainedQuery, "Blue");
+        oldWidth = workflow.screen().width;
+        oldHeight = workflow.screen().height;
+        NativeClientProbe.size(client, windowWidth, windowHeight);
+        NativeClientProbe.resize(client, 320, 240);
+        stage = 14;
       }
       case 3 -> {
         var use = button(workflow.screen(), "Use for Models");
@@ -359,12 +375,20 @@ public final class PlatformTaskChecks {
         capture.accept(
             "task-catalogue.png",
             () -> {
-              var prepare = button(workflow.screen(), "Prepare draft preview");
               check.accept(
-                  "task preview action can be focused and revealed",
-                  focus(workflow.screen(), prepare));
-              click(workflow.screen(), prepare);
-              stage = 7;
+                  "unprepared preview controls can be focused and revealed",
+                  focus(workflow.screen(), button(workflow.screen(), "Reset view")));
+              capture.accept(
+                  "task-preview-before-prepare.png",
+                  () -> {
+                    var prepare = button(workflow.screen(), "Prepare draft preview");
+                    check.accept(
+                        "task preview action can be focused and revealed",
+                        focus(workflow.screen(), prepare));
+                    suppress = true;
+                    click(workflow.screen(), prepare);
+                    stage = 7;
+                  });
             });
       }
       case 7 -> {
@@ -380,7 +404,13 @@ public final class PlatformTaskChecks {
         check.accept(
             "preview camera controls belong to actual native tree",
             focus(workflow.screen(), button(workflow.screen(), "Reset view")));
-        stage++;
+        stage = 20;
+        capture.accept(
+            "task-preview-pre-draw.png",
+            () -> {
+              suppress = false;
+              stage = 8;
+            });
       }
       case 8 -> {
         if (draws == 0) return false;
@@ -391,6 +421,7 @@ public final class PlatformTaskChecks {
         capture.accept(
             "task-preview.png",
             () -> {
+              assertPreviewPixels();
               var subject =
                   widgets(workflow.screen()).stream()
                       .filter(widget -> widget.getMessage().getString().contains("First subject"))
@@ -443,6 +474,7 @@ public final class PlatformTaskChecks {
                 && ready.releaseCompletion().toCompletableFuture().isDone()
                 && Arrays.equals(bytes, source()));
         watched = null;
+        suppress = false;
         stage++;
         return true;
       }
@@ -458,9 +490,152 @@ public final class PlatformTaskChecks {
         workflow.showHome();
         stage = 9;
       }
+      case 14 -> {
+        if (workflow.screen().width > 400 || workflow.screen().width >= oldWidth) return false;
+        var task =
+            observed(
+                ((Map<?, ?>) observed(workflow, "taskViews")).values().iterator().next(), "view");
+        var regions = observed(observed(task, "panels"), "regions");
+        check.accept(
+            "task narrow reflow retains actual query and manual controls",
+            input(workflow.screen(), "Search") == retainedQuery
+                && input(workflow.screen(), "Reference ID") == retainedManual
+                && retainedQuery.getValue().equals("Blue")
+                && ((design.inherent.reform.presentation.TaskPresentation.Regions) regions)
+                        .arrangement()
+                    == design.inherent.reform.presentation.TaskPresentation.Arrangement.FOCUSED);
+        NativeClientProbe.resize(client, windowWidth[0], windowHeight[0]);
+        stage = 15;
+      }
+      case 15 -> {
+        if (workflow.screen().width != oldWidth || workflow.screen().height != oldHeight)
+          return false;
+        check.accept(
+            "task return reflow preserves source owner and no implicit preparation",
+            input(workflow.screen(), "Search") == retainedQuery
+                && input(workflow.screen(), "Reference ID") == retainedManual
+                && retainedQuery.getValue().equals("Blue")
+                && workflow.editor(DEFINITION.id()) == actual
+                && sources.get() == 1
+                && providers.get() == 1
+                && prepares.get() == 0
+                && Arrays.equals(bytes, source()));
+        var blue = button(workflow.screen(), "Blue");
+        check.accept(
+            "task returned choice can be focused and revealed", focus(workflow.screen(), blue));
+        click(workflow.screen(), blue);
+        stage = 3;
+      }
       case 20 -> {}
       default -> throw new AssertionError("Unknown registered task stage " + stage);
     }
     return false;
+  }
+
+  private void assertPreviewPixels() {
+    try {
+      var image =
+          javax.imageio.ImageIO.read(
+              client.gameDirectory.toPath().resolve("platform-task-preview.png").toFile());
+      var before =
+          javax.imageio.ImageIO.read(
+              client.gameDirectory.toPath().resolve("platform-task-preview-pre-draw.png").toFile());
+      var catalogue =
+          javax.imageio.ImageIO.read(
+              client.gameDirectory.toPath().resolve("platform-task-catalogue.png").toFile());
+      var scrolled =
+          javax.imageio.ImageIO.read(
+              client
+                  .gameDirectory
+                  .toPath()
+                  .resolve("platform-task-preview-before-prepare.png")
+                  .toFile());
+      var blue = button(workflow.screen(), "Blue");
+      var initialGlyphs = glyphs(catalogue, blue);
+      var scrollGlyphs = glyphs(scrolled, blue);
+      var preparedGlyphs = glyphs(before, blue);
+      var drawnGlyphs = glyphs(image, blue);
+      if (!initialGlyphs.equals(scrollGlyphs)
+          || !initialGlyphs.equals(preparedGlyphs)
+          || !initialGlyphs.equals(drawnGlyphs))
+        throw new AssertionError(
+            "Task text changed outside preview: catalogue="
+                + initialGlyphs.cardinality()
+                + " scroll="
+                + scrollGlyphs.cardinality()
+                + " prepare="
+                + preparedGlyphs.cardinality()
+                + " draw="
+                + drawnGlyphs.cardinality());
+      int glyphs = 0, changed = 0;
+      double sx = image.getWidth() / (double) workflow.screen().width;
+      double sy = image.getHeight() / (double) workflow.screen().height;
+      for (int y = (int) ((blue.getY() + 3) * sy);
+          y < (blue.getY() + blue.getHeight() - 3) * sy;
+          y++)
+        for (int x = (int) ((blue.getX() + 3) * sx);
+            x < (blue.getX() + blue.getWidth() - 3) * sx;
+            x++) {
+          boolean a = white(before.getRGB(x, y)), b = white(image.getRGB(x, y));
+          if (a) glyphs++;
+          if (a != b) changed++;
+        }
+      check.accept(
+          "private preview preserves unrelated native text pixels", glyphs > 10 && changed < 3);
+      var widget =
+          widgets(workflow.screen()).stream()
+              .filter(value -> value.getMessage().getString().equals("Draft preview"))
+              .findFirst()
+              .orElseThrow();
+      double distance = Math.min(widget.getWidth(), widget.getHeight()) * 0.1;
+      var colors = new int[] {0xffff0000, 0xff00ff00, 0xff0000ff, 0xffffff00};
+      for (int i = 0; i < 4; i++) {
+        int x =
+            (int)
+                Math.floor(
+                    (widget.getX() + widget.getWidth() / 2.0 + (i % 2 == 0 ? -distance : distance))
+                        * image.getWidth()
+                        / workflow.screen().width);
+        int y =
+            (int)
+                Math.floor(
+                    (widget.getY() + widget.getHeight() / 2.0 + (i < 2 ? -distance : distance))
+                        * image.getHeight()
+                        / workflow.screen().height);
+        int value = image.getRGB(x, y);
+        for (int shift : new int[] {16, 8, 0})
+          if (Math.abs(((value >>> shift) & 255) - ((colors[i] >>> shift) & 255)) > 4)
+            throw new AssertionError(
+                "Actual task preview pixel mismatch at "
+                    + x
+                    + ","
+                    + y
+                    + ": "
+                    + Integer.toHexString(value));
+      }
+      check.accept("root-mounted task preview displays all four expected texture quadrants", true);
+    } catch (java.io.IOException failed) {
+      throw new AssertionError("Task screenshot could not be inspected", failed);
+    }
+  }
+
+  private static boolean white(int value) {
+    return ((value >>> 16) & 255) > 239 && ((value >>> 8) & 255) > 239 && (value & 255) > 239;
+  }
+
+  private BitSet glyphs(
+      java.awt.image.BufferedImage image,
+      net.minecraft.client.gui.components.AbstractWidget widget) {
+    var mask = new BitSet();
+    double sx = image.getWidth() / (double) workflow.screen().width;
+    double sy = image.getHeight() / (double) workflow.screen().height;
+    int offset = 0;
+    for (int y = (int) ((widget.getY() + 3) * sy);
+        y < (widget.getY() + widget.getHeight() - 3) * sy;
+        y++)
+      for (int x = (int) ((widget.getX() + 3) * sx);
+          x < (widget.getX() + widget.getWidth() - 3) * sx;
+          x++) mask.set(offset++, white(image.getRGB(x, y)));
+    return mask;
   }
 }

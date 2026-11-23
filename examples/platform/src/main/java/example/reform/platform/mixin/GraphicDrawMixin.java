@@ -9,6 +9,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /** Read-only fixture observation of this prepared lease's actual native submission. */
 @Mixin(targets = "design.inherent.reform.minecraft.client.PreparedGraphic", remap = false)
 abstract class GraphicDrawMixin {
+  @Inject(method = "draw", at = @At("HEAD"), cancellable = true)
+  private void suppressForIndependentPixelControl(CallbackInfoReturnable<Object> result) {
+    if (PlatformTaskChecks.suppressDraw(this))
+      result.setReturnValue(
+          design.inherent.reform.minecraft.client.ClientMeshGraphic.DrawOutcome.WAITING);
+  }
+
   @Inject(method = "draw", at = @At("RETURN"))
   private void observe(CallbackInfoReturnable<Object> result) {
     PlatformTaskChecks.recordDraw(this, result.getReturnValue());
