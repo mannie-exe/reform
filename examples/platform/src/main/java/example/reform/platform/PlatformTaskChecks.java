@@ -5,6 +5,7 @@ import static example.reform.platform.PlatformWidgets.*;
 import design.inherent.reform.definition.*;
 import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.minecraft.client.*;
+import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.DestinationId;
 import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.graphics.*;
@@ -78,6 +79,7 @@ public final class PlatformTaskChecks {
   private int oldWidth, oldHeight;
   private final int[] windowWidth = new int[1], windowHeight = new int[1];
   private int stage;
+  private boolean discarding;
 
   PlatformTaskChecks(BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
     this.check = check;
@@ -166,7 +168,43 @@ public final class PlatformTaskChecks {
                             Component.literal("Use for Artwork"))),
                     (ClientViewContext scope, ClientEditor<Config> editor) -> {
                       sources.incrementAndGet();
-                      scope.onClose(sourceCloses::incrementAndGet);
+                      scope.onClose(
+                          () -> {
+                            sourceCloses.incrementAndGet();
+                            if (discarding) {
+                              check.accept(
+                                  "task cleanup sees its actual owner closed", !editor.isOpen());
+                              check.accept(
+                                  "closing owner is truthfully unavailable during cleanup",
+                                  workflow
+                                          .navigation()
+                                          .inspect(new ClientDestination.View(PROFILES))
+                                          .kind()
+                                      == DestinationAvailability.Kind.CLOSED);
+                              try {
+                                workflow.discard(DEFINITION.id());
+                                throw new AssertionError("Recursive owner retirement entered");
+                              } catch (PolicyRefusal expected) {
+                                check.accept(
+                                    "task cleanup cannot recursively discard its retiring owner",
+                                    expected.report().issues().stream()
+                                        .anyMatch(
+                                            issue ->
+                                                issue.code().equals("client.editor_retiring")));
+                              }
+                              try {
+                                workflow.editor(DEFINITION.id());
+                                throw new AssertionError("Retiring owner was reopened");
+                              } catch (PolicyRefusal expected) {
+                                check.accept(
+                                    "task cleanup cannot reopen its retiring owner",
+                                    expected.report().issues().stream()
+                                        .anyMatch(
+                                            issue ->
+                                                issue.code().equals("client.editor_retiring")));
+                              }
+                            }
+                          });
                       return references;
                     })
                 .withHelp(
@@ -347,8 +385,16 @@ public final class PlatformTaskChecks {
             raw("models").equals("fixture:default")
                 && raw("artwork").equals("fixture:default")
                 && !actual.dirty());
-        click(workflow.screen(), use);
-        stage++;
+        var information =
+            widgets(workflow.screen()).stream()
+                .filter(widget -> widget.getClass().getSimpleName().equals("InformationButton"))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "task exposes actual field information beside requested values",
+            focus(workflow.screen(), information));
+        click(workflow.screen(), information);
+        stage = 17;
       }
       case 4 -> {
         if (actual.busy() || !raw("models").equals("fixture:blue")) return false;
@@ -460,16 +506,29 @@ public final class PlatformTaskChecks {
                 && sources.get() == 1
                 && providers.get() == 1
                 && prepares.get() == 1);
-        workflow.close();
-        NativeScreens.open(client, parent);
-        stage++;
+        discarding = true;
+        try {
+          workflow.discard(DEFINITION.id());
+        } finally {
+          discarding = false;
+        }
+        check.accept(
+            "explicit owner discard retires its cached task scopes immediately",
+            !actual.isOpen() && sourceCloses.get() == 1 && providerCloses.get() == 1);
+        pending =
+            workflow
+                .navigation()
+                .open(new ClientDestination.View(PROFILES))
+                .completion()
+                .toCompletableFuture();
+        stage = 16;
       }
       case 11 -> {
         check.accept(
             "workflow retirement closes all task factory scopes but not borrowed source",
             !actual.isOpen()
-                && sourceCloses.get() == 1
-                && providerCloses.get() == 1
+                && sourceCloses.get() == 2
+                && providerCloses.get() == 2
                 && references.isOpen()
                 && ready.releaseCompletion().toCompletableFuture().isDone()
                 && Arrays.equals(bytes, source()));
@@ -525,6 +584,52 @@ public final class PlatformTaskChecks {
             "task returned choice can be focused and revealed", focus(workflow.screen(), blue));
         click(workflow.screen(), blue);
         stage = 3;
+      }
+      case 16 -> {
+        if (!pending.isDone() || sources.get() != 2 || providers.get() != 2) return false;
+        var fresh = workflow.editor(DEFINITION.id());
+        check.accept(
+            "reopening a discarded task binds only the fresh owner and retained source",
+            ((NavigationAttempt.Result) pending.join()).outcome()
+                    == NavigationAttempt.Outcome.REVEALED
+                && fresh != actual
+                && !fresh.dirty()
+                && sources.get() == 2
+                && providers.get() == 2
+                && raw("models").equals("fixture:default")
+                && raw("artwork").equals("fixture:default")
+                && prepares.get() == 1
+                && references.isOpen()
+                && Arrays.equals(bytes, source()));
+        actual = fresh;
+        workflow.close();
+        NativeScreens.open(client, parent);
+        stage = 11;
+      }
+      case 17 -> {
+        if (workflow.inspectedField().isEmpty()) return false;
+        check.accept(
+            "task field information uses actual owner without staging or preparing",
+            workflow.inspectedField().orElseThrow().path().equals(FieldPath.ROOT.field("models"))
+                && workflow.editor(DEFINITION.id()) == actual
+                && !actual.dirty()
+                && prepares.get() == 0
+                && Arrays.equals(bytes, source()));
+        var close = button(workflow.screen(), "Close information");
+        check.accept(
+            "task information close is mounted and revealable", focus(workflow.screen(), close));
+        click(workflow.screen(), close);
+        stage = 18;
+      }
+      case 18 -> {
+        if (workflow.inspectedField().isPresent()) return false;
+        var use = button(workflow.screen(), "Use for Models");
+        if (!use.active) return false;
+        check.accept(
+            "task returns from field inspection to the same staged-choice service",
+            focus(workflow.screen(), use));
+        click(workflow.screen(), use);
+        stage = 4;
       }
       case 20 -> {}
       default -> throw new AssertionError("Unknown registered task stage " + stage);

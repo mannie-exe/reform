@@ -203,10 +203,9 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                 list.row(
                     Component.empty(),
                     Component.translatableWithFallback(
-                        "reform.reference.examined",
-                        "%s shown; %s source entries examined on this page",
-                        page.choices().size(),
-                        page.examined()));
+                        "reform.task.page_values",
+                        "%s values on this page",
+                        page.choices().size()));
                 for (var choice : page.choices()) {
                   var action =
                       button(
@@ -269,10 +268,24 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
               .map(DraftNode.Scalar.class::cast)
               .map(DraftNode.Scalar::raw)
               .orElse("—");
-      detail.row(
+      var token = generation;
+      var information =
+          new InformationButton(
+              selection.title(),
+              () -> {
+                if (!ended
+                    && visible
+                    && token == generation
+                    && isCurrent()
+                    && editor.isOpen()
+                    && editor.actions().mayInspect())
+                  editor.presentation().information(selection.field(), selection.title());
+              });
+      detail.field(
           "detail:requested:" + selection.field(),
           selection.title(),
-          text("draft_value", "Draft value").copy().append(": ").append(value));
+          text("draft_value", "Draft value").copy().append(": ").append(value),
+          information);
       var pick = button(selection.label(), () -> choose(selection));
       pick.active = canChoose(selection.field());
       picks.add(pick);
@@ -295,6 +308,17 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
       detail.row(text("revision", "Revision"), Component.literal(stamp.revision()));
       detail.row(text("snapshot", "Snapshot"), Component.literal(stamp.snapshot().toString()));
       detail.row(text("context", "Context"), Component.literal(stamp.context().toString()));
+      browser
+          .page()
+          .ifPresent(
+              page ->
+                  detail.row(
+                      text("search", "Search"),
+                      Component.translatableWithFallback(
+                          "reform.reference.examined",
+                          "%s shown; %s source entries examined on this page",
+                          page.choices().size(),
+                          page.examined())));
     }
     if (!notice.getString().isEmpty()) detail.row("detail:notice", Component.empty(), notice);
     detail.endGroup();

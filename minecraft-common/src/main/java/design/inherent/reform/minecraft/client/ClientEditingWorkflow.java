@@ -95,13 +95,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     ClientEditor<?> editor;
     ClientForm.PendingEditor opening;
     CompletableFuture<ClientEditor<?>> waiting;
+    boolean retiring;
 
     Entry(ClientForm form) {
       this.form = form;
     }
   }
 
-  private record TaskEntry(OwnerContext lifetime, ReferenceTaskView<?, ?> view) {}
+  private record TaskEntry(
+      OwnerContext lifetime, ReferenceTaskView<?, ?> view, ClientEditor<?> owner) {}
 
   private final Map<DestinationId, TaskEntry> taskViews = new LinkedHashMap<>();
 
@@ -125,7 +127,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var view = declaration.open(actual, new ClientViewContext(owner), this);
       requireOpen();
       owner.requireOwner();
-      taskViews.put(id, new TaskEntry(owner, view));
+      taskViews.put(id, new TaskEntry(owner, view, actual));
       owner.onClose(closing::close);
       return view;
     } catch (RuntimeException | Error failure) {
@@ -290,6 +292,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (selected.route().isEmpty())
         return availability(DestinationAvailability.Kind.READY, null, null);
       var entry = entry(selected.route().orElseThrow());
+      if (entry.retiring)
+        return availability(
+            DestinationAvailability.Kind.CLOSED,
+            "client.editor_retiring",
+            "This editing session is closing.");
       if (entry.editor == null) {
         var cached = entry.form.availability();
         if (!cached.ready())
@@ -733,6 +740,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   public ClientEditor<?> editor(DocumentId document) {
     requireOpen();
     var entry = entry(document);
+    if (entry.retiring)
+      throw new PolicyRefusal("client.editor_retiring", "This editing session is closing.");
     if (entry.editor != null) {
       if (!entry.editor.isOpen())
         throw new PolicyRefusal(
@@ -810,11 +819,42 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (batch != null && batch.hasActiveOperations())
       throw new PolicyRefusal("client.batch_busy", "Wait for the batch operation to settle");
     var entry = entry(document);
+    if (entry.retiring)
+      throw new PolicyRefusal("client.editor_retiring", "This editing session is closing.");
     if (entry.editor == null) return;
     if (entry.editor.isOpen() && entry.editor.busy())
       throw new PolicyRefusal("client.editor_busy", "Wait for this document's pending operation");
-    entry.editor.close();
-    entry.editor = null;
+    var previous = entry.editor;
+    entry.retiring = true;
+    Throwable failure = null;
+    try {
+      try {
+        previous.close();
+      } catch (RuntimeException | Error failed) {
+        failure = failed;
+      }
+      for (var item : List.copyOf(taskViews.entrySet())) {
+        if (item.getValue().owner() != previous) continue;
+        taskViews.remove(item.getKey());
+        try {
+          item.getValue().lifetime().close();
+        } catch (RuntimeException | Error failed) {
+          if (failure == null) failure = failed;
+          else if (failure != failed) failure.addSuppressed(failed);
+        }
+      }
+    } finally {
+      entry.editor = null;
+      entry.retiring = false;
+    }
+    if (failure != null) {
+      var refused =
+          new PolicyRefusal(
+              "client.document_retirement_failed",
+              "The editing session closed, but some resources could not be released. Reopen the document before editing again.");
+      refused.initCause(failure);
+      throw refused;
+    }
   }
 
   /** Local cached views only; no validation, source IO, source capture or permission lookup. */
