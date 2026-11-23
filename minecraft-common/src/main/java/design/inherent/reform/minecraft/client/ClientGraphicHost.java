@@ -194,6 +194,7 @@ public final class ClientGraphicHost implements AutoCloseable {
     private boolean visible = true, ended;
     private State state = State.IDLE;
     private ValidationReport report = ValidationReport.VALID;
+    private ValidationReport cleanupReport = ValidationReport.VALID;
     private Throwable failure;
 
     private View(ClientEditor<T> editor, ClientGraphicProvider<T, S> provider) {
@@ -232,7 +233,7 @@ public final class ClientGraphicHost implements AutoCloseable {
       return new Snapshot(
           state,
           visible,
-          report,
+          report.and(cleanupReport),
           latest == null ? Optional.empty() : latest.operation().map(OperationHandle::snapshot));
     }
 
@@ -251,7 +252,7 @@ public final class ClientGraphicHost implements AutoCloseable {
         case FAILED ->
             Optional.of(
                 new GraphicPreparation.Failed(
-                    report,
+                    report.and(cleanupReport),
                     failure == null
                         ? new IllegalStateException("Native preview failed")
                         : failure));
@@ -410,7 +411,11 @@ public final class ClientGraphicHost implements AutoCloseable {
           }
           feedback(
               canvas,
-              report.issues().isEmpty() ? label(state) : report.issues().getFirst().fallback());
+              report.issues().isEmpty()
+                  ? cleanupReport.issues().isEmpty()
+                      ? label(state)
+                      : cleanupReport.issues().getFirst().fallback()
+                  : report.issues().getFirst().fallback());
         }
 
         private void feedback(FormCanvas canvas, String message) {
@@ -438,32 +443,33 @@ public final class ClientGraphicHost implements AutoCloseable {
 
     private void observeClosedLease() {
       if (nativeGraphic == null || !nativeGraphic.state().closing()) return;
-      var release = nativeGraphic.state();
       nativeGraphic = null;
-      if (release.releaseFailure().isPresent()) {
-        failure = release.releaseFailure().orElseThrow();
-        report =
-            problem(
-                "preview.release_failed",
-                "Preview cleanup failed; its remaining resources are still accounted for");
-        if (!ended) state = State.FAILED;
-        releaseFailures++;
-        if (releaseFailure == null) releaseFailure = failure;
-      } else if (state == State.READY) state = State.IDLE;
+      if (state == State.READY) state = State.IDLE;
+    }
+
+    private void recordReleaseFailure(UUID request, Throwable failed) {
+      ClientSettingsRuntime.requireClientThread();
+      cleanupReport =
+          problem(
+              "preview.release_failed",
+              "Preview cleanup failed; its remaining resources are still accounted for");
+      releaseFailures++;
+      if (releaseFailure == null) releaseFailure = failed;
+      // A retired interest cannot replace a newer request's outcome or reopen a closed view.
+      if (latest == null || latest.id.equals(request)) {
+        if (failure == null) failure = failed;
+        if (!ended && (state == State.READY || state == State.IDLE)) state = State.FAILED;
+      }
     }
 
     private void closeOne(PreparedGraphic previous) {
       try {
         previous.close();
       } catch (RuntimeException | Error failed) {
-        failure = failed;
-        report =
-            problem(
-                "preview.release_failed",
-                "Preview cleanup failed; its remaining resources are still accounted for");
-        if (!ended) state = State.FAILED;
-        releaseFailures++;
-        if (releaseFailure == null) releaseFailure = failed;
+        // RenderLifetime settles its callback before propagating synchronous release failure.
+        // Non-release close failures have no such callback and still need their own report.
+        if (previous.state().releaseFailure().isEmpty())
+          recordReleaseFailure(previous.stamp().request(), failed);
       }
     }
 
@@ -642,7 +648,23 @@ public final class ClientGraphicHost implements AutoCloseable {
                                                     .releaseCompletion()
                                                     .thenAccept(
                                                         release -> {
-                                                          if (release.released()) output.close();
+                                                          if (release.released()) {
+                                                            try {
+                                                              output.close();
+                                                            } catch (RuntimeException
+                                                                | Error failed) {
+                                                              view.recordReleaseFailure(id, failed);
+                                                            }
+                                                          } else {
+                                                            view.recordReleaseFailure(
+                                                                id,
+                                                                release
+                                                                    .releaseFailure()
+                                                                    .orElseGet(
+                                                                        () ->
+                                                                            new IllegalStateException(
+                                                                                "Native preview release did not complete")));
+                                                          }
                                                         });
                                               });
                                       enteredGraphic = new PreparedGraphic(prepared, nativeGraphic);

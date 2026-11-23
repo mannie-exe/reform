@@ -102,4 +102,39 @@ class RenderLifetimeTest {
     lifetime.close();
     assertEquals(1, attempts.get());
   }
+
+  @Test
+  void releaseObserversSettleOnceBeforeSynchronousOrDeferredFailurePropagates() {
+    for (boolean deferred : new boolean[] {false, true}) {
+      var failure = new IllegalStateException("Exact native release failure");
+      var observations = new AtomicInteger();
+      var lifetime =
+          new RenderLifetime(
+              1,
+              () -> {},
+              () -> {
+                throw failure;
+              });
+      lifetime
+          .releaseCompletion()
+          .thenAccept(
+              state -> {
+                assertSame(failure, state.releaseFailure().orElseThrow());
+                assertFalse(state.released());
+                observations.incrementAndGet();
+              });
+      if (deferred) {
+        var use = lifetime.acquire();
+        lifetime.close();
+        assertEquals(0, observations.get());
+        assertSame(failure, assertThrows(IllegalStateException.class, use::retire));
+        use.retire();
+      } else {
+        assertSame(failure, assertThrows(IllegalStateException.class, lifetime::close));
+      }
+      assertEquals(1, observations.get());
+      lifetime.close();
+      assertEquals(1, observations.get());
+    }
+  }
 }

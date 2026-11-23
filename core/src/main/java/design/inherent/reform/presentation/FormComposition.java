@@ -158,7 +158,7 @@ public final class FormComposition {
     var root = new FormTarget.Field(FieldPath.ROOT);
     builder.add(root, Optional.empty(), Optional.of(new Field(model.root())));
     builder.walk(resolve(model.root().children(), presentation), root);
-    for (var path : admittedFields) {
+    for (var path : admitted) {
       var target = new FormTarget.Field(path);
       if (builder.nodes.containsKey(target)) continue;
       FormTarget parent = root;
