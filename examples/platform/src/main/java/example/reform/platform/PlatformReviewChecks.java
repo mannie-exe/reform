@@ -10,6 +10,7 @@ import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.minecraft.client.ClientRegistration;
 import design.inherent.reform.minecraft.client.NativeScreens;
 import design.inherent.reform.minecraft.client.ReviewScreen;
+import design.inherent.reform.minecraft.client.ScrollFrame;
 import design.inherent.reform.minecraft.client.SettingsScreen;
 import design.inherent.reform.operation.DocumentReview;
 import design.inherent.reform.owner.EditorActor;
@@ -18,6 +19,7 @@ import java.nio.file.Path;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
@@ -59,6 +61,8 @@ final class PlatformReviewChecks implements PlatformFormProbe.Scene {
   }
 
   private DraftRevision observed;
+  private int oldScale, oldReviewWidth, oldReviewHeight;
+  private final int[] windowWidth = new int[1], windowHeight = new int[1];
 
   private static final FieldPath MIN = PlatformCatalogExample.GLOBAL.field("minimum");
   private static final FieldPath MAX = PlatformCatalogExample.GLOBAL.field("maximum");
@@ -145,13 +149,25 @@ final class PlatformReviewChecks implements PlatformFormProbe.Scene {
                 .contains(NativeScreens.current(client).getFocused()));
   }
 
-  private CycleButton<?> fieldChoice() {
+  private AbstractButton fieldChoice() {
     return widgets(view).stream()
         .filter(CycleButton.class::isInstance)
         .map(CycleButton.class::cast)
         .filter(value -> value.getValue() instanceof FieldPath)
+        .filter(
+            value ->
+                !NativeClientProbe.narration(value::updateNarration)
+                    .contains("Diagnostic location"))
+        .map(AbstractButton.class::cast)
         .findFirst()
-        .orElseThrow();
+        .orElseGet(
+            () ->
+                button(
+                    view,
+                    Component.translatableWithFallback(
+                            "reform_platform_example:settings/catalog/fields/global/minimum",
+                            "Minimum")
+                        .getString()));
   }
 
   private EditBox search() {
@@ -263,8 +279,12 @@ final class PlatformReviewChecks implements PlatformFormProbe.Scene {
                 .filter(CycleButton.class::isInstance)
                 .map(CycleButton.class::cast)
                 .filter(value -> value.getValue() instanceof FieldPath)
+                .filter(
+                    value ->
+                        NativeClientProbe.narration(value::updateNarration)
+                            .contains("Diagnostic location"))
                 .toList();
-        check("related diagnostic uses a bounded location control", choices.size() == 2);
+        check("related diagnostic uses one bounded location control", choices.size() == 1);
         var related = choices.getLast();
         check("related diagnostic receives visible native focus", focus(view, related));
         NativeClientProbe.press(related);
@@ -349,10 +369,19 @@ final class PlatformReviewChecks implements PlatformFormProbe.Scene {
             view.selectedField().filter(MIN::equals).isPresent());
         check(
             "single-result field chooser cannot retain disabled focus",
-            !fieldChoice().active && !fieldChoice().isFocused());
+            fieldChoice() instanceof CycleButton<?>
+                ? !fieldChoice().active && !fieldChoice().isFocused()
+                : fieldChoice().active && fieldChoice().isFocused());
         filter = search();
         filter.setCursorPosition(1);
         filter.setHighlightPos(3);
+        oldScale = client.options.guiScale().get();
+        oldReviewWidth = view.width;
+        oldReviewHeight = view.height;
+        NativeClientProbe.size(client, windowWidth, windowHeight);
+        check(
+            "wide inspection separates actual field context and captured comparison",
+            view.children().stream().filter(ScrollFrame.class::isInstance).count() == 2);
         client.options.guiScale().set(3);
         NativeClientProbe.resize(client, 480, 360);
         NativeClientProbe.reflow(client);
@@ -369,7 +398,18 @@ final class PlatformReviewChecks implements PlatformFormProbe.Scene {
                 && view.reviewedInput().orElseThrow() == captured);
         geometry(view);
         check("narrow capture reveals the retained search input", focus(view, filter));
-        capture.accept("form-review-narrow.png", () -> next("narrow inspection captured"));
+        check(
+            "narrow inspection mounts one complete task flow",
+            view.children().stream().filter(ScrollFrame.class::isInstance).count() == 1);
+        capture.accept(
+            "form-review-narrow.png",
+            () -> {
+              client.options.guiScale().set(oldScale);
+              NativeClientProbe.resize(client, windowWidth[0], windowHeight[0]);
+              NativeClientProbe.reflow(client);
+              stage = 16;
+              progress.accept("inspection return to original native size requested");
+            });
       }
       case 10 -> {
         press(button(view, "Validate"));
@@ -445,6 +485,21 @@ final class PlatformReviewChecks implements PlatformFormProbe.Scene {
                 && form.editorView().availability() == EditorActor.Availability.CLOSED);
         complete = true;
         return true;
+      }
+      case 16 -> {
+        if (view.width != oldReviewWidth || view.height != oldReviewHeight) return false;
+        check(
+            "returned inspection restores two panes and exact capture, selection and native input",
+            view.children().stream().filter(ScrollFrame.class::isInstance).count() == 2
+                && search() == filter
+                && filter.getCursorPosition() == 1
+                && filter.getHighlighted().equals("in")
+                && view.selectedField().filter(MIN::equals).isPresent()
+                && view.reviewedInput().orElseThrow() == captured
+                && observed.context().equals(captured.target().context())
+                && Files.readString(path()).equals(original));
+        geometry(view);
+        stage = 10;
       }
       default -> throw new AssertionError("Unknown inspection stage");
     }

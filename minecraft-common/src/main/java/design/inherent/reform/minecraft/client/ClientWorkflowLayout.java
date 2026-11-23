@@ -239,7 +239,13 @@ public record ClientWorkflowLayout(List<Group> groups, List<ReviewScope> reviews
     }
   }
 
-  /** Display an owner's actual explicit operation using the common retained result view. */
+  /**
+   * Display an owner's actual explicit operation using the common retained result view. title names
+   * the immediate effect. A retained handle has a separate inspection control. blocked and
+   * mayObserve are lightweight cached presentation checks, polled on the native lifecycle thread;
+   * they must not perform IO, admit an owner, or start work. Activation rechecks the actual
+   * service. Refusing a new invocation does not itself revoke access to an earlier result.
+   */
   public record Action<O>(
       DocumentId id,
       Component title,

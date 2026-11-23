@@ -128,9 +128,7 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
     panel.field(
         "primary:filter",
         Component.empty(),
-        searchNotice == null
-            ? text("search_help", "Search the admitted source; no files or terrain are loaded.")
-            : searchNotice,
+        searchNotice == null ? text("search_help", "Search available values.") : searchNotice,
         filter,
         searchButton);
     panel.endGroup();

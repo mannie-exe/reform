@@ -58,6 +58,14 @@ The subject selector measures the native localized caption for every declared ch
 
 `MEASURE_GRAPHIC_PREFERRED` controls the viewport's preferred size independently of information-pane width. Its height fits the current pane, including in focused flow. **Show preview** reveals and focuses that complete read-only viewport; it does not prepare, select, save, or apply anything. The native focus outline and narration identify the preview and its current state. Resizing can refit native display resources while retaining the same prepared subject, captured draft, and provider work; it does not recapture or recompile the subject.
 
+### Operation actions and captured inspection
+
+A contributed action's title names its immediate effect. That button invokes the existing operation service; **Inspect operation** or **Inspect result** opens an actual retained handle separately. Refusing another invocation does not itself revoke observation of an earlier result. The `blocked` and `mayObserve` callbacks supply lightweight cached presentation checks on the native lifecycle thread; they must not perform IO or open owners. The actual invocation and inspection recheck their service guards.
+
+`OperationScreen` places the outcome and progress beside bounded details when the measured content fits, and uses a complete stacked flow otherwise. A task without details does not reserve an empty pane. Technical IDs and revisions remain available through **Show technical details**. **Result available** means the operation produced a result; persistence and application still follow that owner's receipt. Page selection, capture identity, focus, and independent region bookmarks survive reflow without repeating the effect. Back leaves admitted work running; cancellation requests remain distinct from drained cancellation and rollback.
+
+Source review uses the same responsive task regions: a searchable, paged field index beside captured source/value comparison, with the compact field selector retained in stacked flow. It keeps the actual capture, stable field identity, raw search input, and guarded return to the same owner. Inspecting or selecting another captured field neither refreshes its source nor saves a draft.
+
 ## Workspace shell in 0.4 development
 
 The development workflow defaults to Home. Mounting Home lists declared top-level destinations without opening their owners. Select a destination, call `show(route)` or `showPlacement(id)`, or declare an explicit initial destination before expecting that document's controls to be mounted. `openEditor(route)` admits an editor; it does not navigate the body. Standalone settings screens continue to open their document directly.

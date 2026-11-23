@@ -90,6 +90,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
   }
 
+  private record ContributionState(boolean busy, Optional<Component> blocked, boolean observable) {}
+
   private static final class Entry {
     final ClientForm form;
     ClientEditor<?> editor;
@@ -1239,7 +1241,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private net.minecraft.client.gui.components.CycleButton<Filter> viewFilter;
     private FormPanel panel;
     private List<DocumentState> displayed = List.of();
-    private List<Boolean> displayedOperations = List.of();
+    private List<ContributionState> displayedOperations = List.of();
     private Language language;
     private List<ClientWorkflowLayout.Category> categoryPath;
     private DocumentId selectedRoute = entries.keySet().iterator().next();
@@ -2190,28 +2192,35 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private void operationRow(Object token, Contributed<?> entry) {
       var action = entry.action;
       var blocked = action.blocked().get();
-      var open =
-          button(
-              token,
-              entry.latest == null
-                  ? text("start", "Start…")
-                  : text("operation_result", "View operation"),
-              action.title(),
-              () -> openOperation(entry, false));
-      open.active = entry.latest != null || blocked.isEmpty();
+      var run = button(token, action.title(), action.title(), () -> openOperation(entry, true));
+      run.active = !entry.busy() && blocked.isEmpty();
+      blocked.ifPresent(
+          reason -> run.setTooltip(net.minecraft.client.gui.components.Tooltip.create(reason)));
       if (entry.latest != null) {
-        var retry =
+        var inspect =
             button(
                 token,
-                text("run_again", "Run again…"),
+                entry.latest.snapshot().result().isPresent()
+                    ? text("inspect_result", "Inspect result")
+                    : text("inspect_operation", "Inspect operation"),
                 action.title(),
-                () -> openOperation(entry, true));
-        retry.active = !entry.busy() && blocked.isEmpty();
+                () -> openOperation(entry, false));
+        inspect.active = action.mayObserve().getAsBoolean();
+        if (!inspect.active)
+          inspect.setTooltip(
+              net.minecraft.client.gui.components.Tooltip.create(
+                  text(
+                      "operation_inspection_unavailable",
+                      "This context cannot inspect this operation.")));
         panel.anchorRow(
-            action.id().toString(), action.title(), blocked.orElse(action.context()), open, retry);
+            action.id().toString(),
+            Component.empty(),
+            blocked.orElse(action.context()),
+            run,
+            inspect);
       } else
         panel.anchorRow(
-            action.id().toString(), action.title(), blocked.orElse(action.context()), open);
+            action.id().toString(), Component.empty(), blocked.orElse(action.context()), run);
     }
 
     private Button button(Object token, Component label, Component document, Runnable action) {
@@ -2540,8 +2549,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           || focusRoute != null && !focusRoute.equals(actionRoute)) rebuildWidgets();
     }
 
-    private List<Boolean> contributionStates() {
-      return contributions.values().stream().map(Contributed::busy).toList();
+    private List<ContributionState> contributionStates() {
+      return contributions.values().stream()
+          .map(
+              entry ->
+                  new ContributionState(
+                      entry.busy(),
+                      entry.action.blocked().get().map(Component::copy),
+                      entry.latest != null && entry.action.mayObserve().getAsBoolean()))
+          .toList();
     }
 
     @Override

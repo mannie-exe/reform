@@ -2,6 +2,9 @@ package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.operation.OperationSnapshot;
+import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.TaskPresentation;
+import design.inherent.reform.presentation.ThemeValues;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -92,7 +95,11 @@ public final class OperationScreen<O> extends NativeFormScreen {
   private OperationSnapshot<O> observed;
   private Outcome outcome;
   private Component presentationFailure, notice;
-  private FormPanel panel;
+  private FormPanel panel, detail;
+  private TaskPanels panels;
+  private TaskPanels.State retained = TaskPanels.State.empty();
+  private String retainedFooter;
+  private boolean technical;
   private FormChrome chrome;
   private Language language;
   private Object generation;
@@ -197,29 +204,54 @@ public final class OperationScreen<O> extends NativeFormScreen {
     chrome =
         new FormChrome(
             minecraft, width, height, title, contextLabel, Component.empty(), footer, theme());
-    panel = chrome.panel();
+    boolean hasDetails =
+        technical
+            || outcome != null && !outcome.details().isEmpty()
+            || observed != null && !observed.report().valid()
+            || presentationFailure != null
+            || notice != null
+            || blocked.values().stream().anyMatch(Optional::isPresent);
+    var policy =
+        hasDetails
+            ? taskPresentation()
+            : taskPresentation()
+                .withPreference(
+                    TaskPresentation.Kind.OPERATIONS, TaskPresentation.Preference.FOCUSED);
+    int primaryWidth = theme().values().value(ThemeValues.Role.MEASURE_EDITOR_MINIMUM);
+    int detailWidth = theme().values().value(ThemeValues.Role.MEASURE_INFORMATION_MINIMUM);
+    int minimumHeight =
+        3 * font.lineHeight + theme().values().value(ThemeValues.Role.CONTROL_HEIGHT);
+    panels =
+        new TaskPanels(
+            chrome,
+            policy,
+            TaskPresentation.Kind.OPERATIONS,
+            new TaskPresentation.Offer(
+                new FormGeometry.Size(primaryWidth, minimumHeight), primaryWidth),
+            new TaskPresentation.Offer(
+                new FormGeometry.Size(detailWidth, minimumHeight), detailWidth),
+            theme(),
+            retained);
+    panel = panels.primary();
+    detail = panels.detail();
     chrome.mountActions(this::addRenderableWidget, panel);
     if (observed == null) {
       panel.row(
+          "primary:unavailable",
           text("unavailable", "This operation is unavailable to the current context."),
           Component.empty());
     } else {
       var summary = outcome == null ? Component.empty() : outcome.summary();
       boolean hasSummary = !summary.getString().isEmpty();
-      if (hasSummary) panel.row(text("result", "Result"), summary);
-      panel.row(
-          text("state", "Actual state"),
-          text(
-              "state_detail",
-              "%s · result revision %s",
-              observed.state().name(),
-              observed.revision()));
+      if (hasSummary) panel.row("primary:result", text("result", "Result"), summary);
+      panel.row("primary:state", text("state", "Actual state"), stateLabel(observed.state()));
       var progress = observed.progress();
       if (!observed.terminal()
           || progress.completed() > 0
           || progress.total().isPresent()
           || !progress.unit().isEmpty())
         panel.row(
+            "primary:progress",
             text("progress", "Reported progress"),
             text(
                 "progress_detail",
@@ -232,6 +264,7 @@ public final class OperationScreen<O> extends NativeFormScreen {
                     : text("unknown_total", "unknown").getString()));
       if (!hasSummary) {
         panel.row(
+            "primary:effects",
             text("effects", "Effects"),
             observed.cancellationRequested() && !observed.terminal()
                 ? text(
@@ -247,16 +280,42 @@ public final class OperationScreen<O> extends NativeFormScreen {
       }
       report("operation", text("diagnostics", "Operation diagnostics"), observed.report());
       if (outcome != null) details();
-      if (presentationFailure != null) panel.row(Component.empty(), presentationFailure);
-      panel.row(
-          text("identity", "Operation"),
-          Component.literal(observed.operation() + "\n" + observed.id()));
+      if (presentationFailure != null)
+        detail.row("detail:presentation", Component.empty(), presentationFailure);
+      panel.actions(
+          "primary:technical",
+          button(
+              "technical",
+              technical
+                  ? text("hide_technical", "Hide technical details")
+                  : text("show_technical", "Show technical details"),
+              () -> {
+                technical = !technical;
+                rebuildWidgets();
+              }));
+      if (technical) {
+        detail.row(
+            "detail:identity",
+            text("identity", "Operation"),
+            Component.literal(observed.operation() + "\n" + observed.id()));
+        detail.row(
+            "detail:revision",
+            text("revision", "Result revision"),
+            Component.literal(Long.toString(observed.revision())));
+      }
     }
     for (var action : actions)
-      blocked.get(action.id()).ifPresent(reason -> panel.row(action.label(), reason));
-    if (notice != null) panel.row(text("notice", "Request status"), notice);
-    panel.finish(0);
+      blocked
+          .get(action.id())
+          .ifPresent(reason -> detail.row("detail:blocked:" + action.id(), action.label(), reason));
+    if (notice != null) detail.row("detail:notice", text("notice", "Request status"), notice);
+    var focus = panels.finish();
     addRenderableWidget(panel);
+    if (detail != panel) addRenderableWidget(detail);
+    if (retainedFooter != null
+        && controls.containsKey(retainedFooter)
+        && controls.get(retainedFooter).active) setFocused(controls.get(retainedFooter));
+    else focus.ifPresent(this::setFocused);
   }
 
   private void details() {
@@ -291,22 +350,26 @@ public final class OperationScreen<O> extends NativeFormScreen {
               .build();
       previous.active = page > 0;
       next.active = page + 1 < pages;
-      panel.row(
+      detail.row(
+          "detail:page",
           text("page", "Result details %s of %s", page + 1, pages),
           Component.empty(),
           previous,
           next);
     }
     for (int i = page * PAGE_SIZE; i < Math.min(details.size(), (page + 1) * PAGE_SIZE); i++) {
-      var detail = details.get(i);
-      panel.row("detail:" + i, detail.label(), detail.value());
+      var item = details.get(i);
+      detail.row("detail:value:" + i, item.label(), item.value());
     }
   }
 
   private void report(
       String key, Component title, design.inherent.reform.validation.ValidationReport report) {
     if (!report.complete())
-      panel.row(title, text("incomplete", "The reported diagnostics are incomplete."));
+      detail.row(
+          "detail:incomplete:" + key,
+          title,
+          text("incomplete", "The reported diagnostics are incomplete."));
     int pages = Math.max(1, (report.issues().size() + PAGE_SIZE - 1) / PAGE_SIZE);
     diagnosticPage = Math.clamp(diagnosticPage, 0, pages - 1);
     if (pages > 1) {
@@ -337,7 +400,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
               .build();
       previous.active = diagnosticPage > 0;
       next.active = diagnosticPage + 1 < pages;
-      panel.row(
+      detail.row(
+          "detail:diagnostic-page",
           text("diagnostic_page", "Diagnostics %s of %s", diagnosticPage + 1, pages),
           Component.empty(),
           previous,
@@ -347,8 +411,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
         i < Math.min(report.issues().size(), (diagnosticPage + 1) * PAGE_SIZE);
         i++) {
       var issue = report.issues().get(i);
-      panel.row(
-          "report:" + key + ":" + i,
+      detail.row(
+          "detail:report:" + key + ":" + i,
           title.copy().append(" · ").append(issue.path().toString()),
           Component.literal(issue.fallback()));
     }
@@ -432,26 +496,44 @@ public final class OperationScreen<O> extends NativeFormScreen {
         || language != Language.getInstance()) rebuildWidgets();
   }
 
-  @Override
-  protected void rebuildWidgets() {
-    var bookmark = panel == null ? null : panel.bookmark();
-    var panelFocus = panel == null ? null : panel.focusKey();
-    var focus =
+  private void rememberPresentation() {
+    if (panels != null) retained = panels.remember(getFocused());
+    retainedFooter =
         controls.entrySet().stream()
             .filter(entry -> entry.getValue() == getFocused())
             .map(Map.Entry::getKey)
-            .findFirst();
+            .findFirst()
+            .orElse(null);
+  }
+
+  @Override
+  protected void beforeResize() {
+    rememberPresentation();
+  }
+
+  @Override
+  protected void rebuildWidgets() {
+    rememberPresentation();
     super.rebuildWidgets();
-    if (bookmark != null) panel.restore(bookmark);
-    if (panelFocus != null) {
-      setFocused(panel);
-      panel.restoreFocus(panelFocus);
-    } else focus.map(controls::get).filter(control -> control.active).ifPresent(this::setFocused);
   }
 
   @Override
   protected void setInitialFocus() {
+    if (panels != null && (getFocused() == panels.primary() || getFocused() == panels.detail()))
+      return;
     setFocused(controls.get("back"));
+  }
+
+  private static Component stateLabel(OperationSnapshot.State state) {
+    return switch (state) {
+      case QUEUED -> text("state.queued", "Queued");
+      case RUNNING -> text("state.running", "Running");
+      case CANCELLATION_REQUESTED -> text("state.cancellation_requested", "Cancellation requested");
+      case COMPLETED -> text("state.completed", "Result available");
+      case REFUSED -> text("state.refused", "Request refused");
+      case FAILED -> text("state.failed", "Operation failed");
+      case CANCELLED -> text("state.cancelled", "Cancelled");
+    };
   }
 
   @Override
@@ -466,15 +548,16 @@ public final class OperationScreen<O> extends NativeFormScreen {
                 observed == null
                     ? text("unavailable", "This operation is unavailable to the current context.")
                     : text(
-                        "narration",
-                        "Operation %s. State %s. %s: %s %s. Cancellation requested: %s.",
-                        observed.id().toString(),
-                        observed.state().name(),
+                        "narration_summary",
+                        "State %s. %s: %s %s. Cancellation requested: %s.",
+                        stateLabel(observed.state()),
                         observed.progress().phase(),
                         observed.progress().completed(),
                         observed.progress().unit(),
                         observed.cancellationRequested()));
     if (outcome != null) message.append(". ").append(outcome.summary());
+    if (technical && observed != null)
+      message.append(". ").append(observed.operation() + " " + observed.id());
     return message;
   }
 

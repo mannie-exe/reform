@@ -9,6 +9,9 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.TaskPresentation;
+import design.inherent.reform.presentation.ThemeValues;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -72,7 +75,10 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private DocumentReview review;
   private EditorActor.Validation validated;
   private OperationHandle<?> operation;
-  private FormPanel panel;
+  private FormPanel panel, fieldPanel;
+  private TaskPanels panels;
+  private TaskPanels.State retained = TaskPanels.State.empty();
+  private int retainedFooter = -1;
   private FormChrome chrome;
   private FormEditBox filter;
   private FieldPath selected;
@@ -81,7 +87,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private Optional<Component> submissionReason = Optional.empty();
   private Language language;
   private Object widgets;
-  private int issuePage, changePage;
+  private int issuePage, changePage, fieldPage;
   private boolean activated,
       requested,
       validating,
@@ -242,14 +248,36 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     button(text("back", "Back"), () -> finish(Optional.empty()));
     chrome =
         new FormChrome(minecraft, width, height, title, contextLabel, status(), footer, theme());
-    panel = chrome.panel();
-    chrome.mountActions(this::addRenderableWidget, panel);
+    int fieldWidth = theme().values().value(ThemeValues.Role.MEASURE_INFORMATION_MINIMUM);
+    int comparisonWidth = theme().values().value(ThemeValues.Role.MEASURE_EDITOR_MINIMUM);
+    int minimumHeight =
+        3 * font.lineHeight + theme().values().value(ThemeValues.Role.CONTROL_HEIGHT);
+    panels =
+        new TaskPanels(
+            chrome,
+            taskPresentation(),
+            TaskPresentation.Kind.INSPECTION,
+            new TaskPresentation.Offer(
+                new FormGeometry.Size(fieldWidth, minimumHeight), fieldWidth),
+            new TaskPresentation.Offer(
+                new FormGeometry.Size(comparisonWidth, minimumHeight), comparisonWidth),
+            theme(),
+            retained);
+    fieldPanel = panels.primary();
+    panel = panels.detail();
+    chrome.mountActions(this::addRenderableWidget, fieldPanel);
     narration = title.copy().append(". ").append(contextLabel);
     if (review != null) content();
     else panel.row(text("source", "Source and values"), status());
-    if (notice != null) panel.row("notice", text("notice", "View status"), notice);
-    addRenderableWidget(panel);
-    panel.finish(0);
+    if (notice != null) panel.row("detail:notice", text("notice", "View status"), notice);
+    var restored = panels.finish();
+    addRenderableWidget(fieldPanel);
+    if (fieldPanel != panel) addRenderableWidget(panel);
+    if (retainedFooter >= 0
+        && retainedFooter < footer.size()
+        && footer.get(retainedFooter).active
+        && footer.get(retainedFooter).visible) setFocused(footer.get(retainedFooter));
+    else restored.ifPresent(this::setFocused);
     wasCurrent = current();
     wasAvailable = ready();
   }
@@ -259,9 +287,9 @@ public final class ReviewScreen<T> extends NativeFormScreen {
         Component.literal(review.source().description())
             .append(" (" + review.source().kind() + ")");
     review.source().location().ifPresent(value -> source.append("\n").append(value));
-    panel.row("source", text("source", "Observed source"), source);
+    panel.row("detail:source", text("source", "Observed source"), source);
     panel.row(
-        "basis",
+        "detail:basis",
         text("basis", "Capture"),
         text(
             "basis_detail",
@@ -288,7 +316,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     if (submission.isPresent()) changes();
     if (!current())
       panel.row(
-          "stale",
+          "detail:stale",
           text("stale", "Draft changed after this capture"),
           text("stale_help", "These details retain their original version. Refresh the view."));
     if (review.entries().isEmpty()) {
@@ -303,6 +331,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
       filter.setHint(text("search", "Find a field"));
       filter.setResponder(
           ignored -> {
+            fieldPage = 0;
             if (!closed && NativeScreens.current(minecraft) == this) rebuildWidgets();
           });
     }
@@ -311,8 +340,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
         review.entries().stream()
             .filter(value -> searchIndex.getOrDefault(value.path(), "").contains(query))
             .toList();
-    panel.row(
-        "search",
+    fieldPanel.row(
+        "primary:search",
         text("search", "Find a field"),
         text("matches", "%s of %s fields match", matches.size(), review.entries().size()),
         filter);
@@ -324,34 +353,38 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     selected = entry.path();
     var paths = new ArrayList<>(matches.stream().map(DocumentReview.Entry::path).toList());
     if (!paths.contains(selected)) paths.addFirst(selected);
-    var token = widgets;
-    var choice =
-        NativeCycles.<FieldPath>builder(this::label, selected, paths)
-            .displayOnlyValue()
-            .create(
-                0,
-                0,
-                180,
-                20,
-                text("field", "Field"),
-                (button, path) -> {
-                  if (closed || widgets != token || NativeScreens.current(minecraft) != this)
-                    return;
-                  selected = path;
-                  expanded.clear();
-                  rebuildWidgets();
-                });
-    choice.active = paths.size() > 1;
-    panel.row(
-        "field",
-        text("field", "Field"),
-        entry.wholeValue()
-            ? text("whole", "Whole value; collection rows are not aligned by position.")
-            : Component.empty(),
-        choice);
+    if (panels.arrangement() == TaskPresentation.Arrangement.ADJACENT) {
+      fieldIndex(paths);
+    } else {
+      var token = widgets;
+      var choice =
+          NativeCycles.<FieldPath>builder(this::label, selected, paths)
+              .displayOnlyValue()
+              .create(
+                  0,
+                  0,
+                  180,
+                  20,
+                  text("field", "Field"),
+                  (button, path) -> {
+                    if (closed || widgets != token || NativeScreens.current(minecraft) != this)
+                      return;
+                    selected = path;
+                    expanded.clear();
+                    rebuildWidgets();
+                  });
+      choice.active = paths.size() > 1;
+      fieldPanel.row(
+          "primary:field",
+          text("field", "Field"),
+          entry.wholeValue()
+              ? text("whole", "Whole value; collection rows are not aligned by position.")
+              : Component.empty(),
+          choice);
+    }
     if (matches.isEmpty())
-      panel.row(
-          "no_matches",
+      fieldPanel.row(
+          "primary:no_matches",
           text("no_matches", "No matching fields"),
           text("selection_retained", "The selected capture remains visible."));
     actions
@@ -382,7 +415,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
         entry.effective(),
         entry.numericValues().effective());
     panel.row(
-        "application",
+        "detail:application",
         text("application", "Owner-declared application"),
         entry
             .application()
@@ -394,13 +427,13 @@ public final class ReviewScreen<T> extends NativeFormScreen {
                         "No application boundary is declared for this field. Saving does not certify live effects.")));
     if (review.effective().isEmpty())
       panel.row(
-          "effective_state",
+          "detail:effective_state",
           text("effective_state", "Effective observation"),
           text("not_observed", "This owner has not supplied a qualified effective observation."));
     else {
       var effective = review.effective().orElseThrow();
       panel.row(
-          "effective_state",
+          "detail:effective_state",
           text("effective_state", "Effective observation"),
           text(
               "effective_detail",
@@ -411,6 +444,74 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     }
     narration = narration.copy().append(". ").append(label(selected));
     diagnosis();
+  }
+
+  private void fieldIndex(List<FieldPath> paths) {
+    int pages = Math.max(1, (paths.size() + ISSUE_PAGE - 1) / ISSUE_PAGE);
+    fieldPage = Math.clamp(fieldPage, 0, pages - 1);
+    var token = widgets;
+    if (pages > 1) {
+      var previous =
+          indexButton(
+              text("previous_fields", "Previous fields"),
+              token,
+              () -> {
+                fieldPage--;
+                rebuildWidgets();
+              });
+      var next =
+          indexButton(
+              text("next_fields", "Next fields"),
+              token,
+              () -> {
+                fieldPage++;
+                rebuildWidgets();
+              });
+      previous.active = fieldPage > 0;
+      next.active = fieldPage + 1 < pages;
+      fieldPanel.row(
+          "primary:field-page",
+          text("field_page", "Fields %s of %s", fieldPage + 1, pages),
+          Component.empty(),
+          previous,
+          next);
+    }
+    for (int at = fieldPage * ISSUE_PAGE;
+        at < Math.min(paths.size(), (fieldPage + 1) * ISSUE_PAGE);
+        at++) {
+      var path = paths.get(at);
+      var choose =
+          indexButton(
+              label(path),
+              token,
+              () -> {
+                selected = path;
+                expanded.clear();
+                rebuildWidgets();
+                setFocused(fieldPanel);
+                fieldPanel.focusRow("primary:field:" + path);
+              });
+      choose.setTooltip(Tooltip.create(label(path)));
+      fieldPanel.anchorRow(
+          "primary:field:" + path,
+          Component.empty(),
+          path.equals(selected) ? text("selected_field", "Selected field") : Component.empty(),
+          choose);
+    }
+  }
+
+  private Button indexButton(Component label, Object token, Runnable selected) {
+    return ClientControls.action(
+            font,
+            label,
+            () -> {
+              if (!closed
+                  && widgets == token
+                  && NativeScreens.current(minecraft) == this
+                  && ready()) selected.run();
+            },
+            theme())
+        .build();
   }
 
   private void value(
@@ -451,11 +552,11 @@ public final class ReviewScreen<T> extends NativeFormScreen {
                   })
               .bounds(0, 0, 80, 20)
               .build();
-      panel.row("value:" + kind, title, summary, expand);
+      panel.row("detail:value:" + kind, title, summary, expand);
       panel.row(
           Component.empty(),
           text("characters", "%s characters in the complete captured value", raw.length()));
-    } else panel.row("value:" + kind, title, summary);
+    } else panel.row("detail:value:" + kind, title, summary);
   }
 
   private Optional<Component> submitBlocked() {
@@ -564,7 +665,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
                           text(
                               "application_unknown",
                               "No application boundary is declared for this field. Saving does not certify live effects.")));
-      panel.row("change:" + index, label(change.path()), detail);
+      panel.row("detail:change:" + index, label(change.path()), detail);
     }
   }
 
@@ -933,26 +1034,28 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     return control;
   }
 
+  private void rememberPresentation() {
+    if (panels != null) retained = panels.remember(getFocused());
+    retainedFooter = footer.indexOf(getFocused());
+  }
+
+  @Override
+  protected void beforeResize() {
+    rememberPresentation();
+  }
+
   @Override
   protected void rebuildWidgets() {
-    var bookmark = panel == null ? null : panel.bookmark();
-    var focus = panel == null ? null : panel.focusKey();
-    int footerFocus = footer.indexOf(getFocused());
+    rememberPresentation();
     super.rebuildWidgets();
-    if (bookmark != null) panel.restore(bookmark);
-    if (focus != null) {
-      setFocused(panel);
-      panel.restoreFocus(focus);
-    } else if (footerFocus >= 0
-        && footerFocus < footer.size()
-        && footer.get(footerFocus).active
-        && footer.get(footerFocus).visible) setFocused(footer.get(footerFocus));
   }
 
   @Override
   protected void setInitialFocus() {
-    setFocused(panel);
-    panel.focusVisibleControl();
+    if (panels != null && (getFocused() == panels.primary() || getFocused() == panels.detail()))
+      return;
+    setFocused(fieldPanel);
+    fieldPanel.focusVisibleControl();
   }
 
   private Component status() {
