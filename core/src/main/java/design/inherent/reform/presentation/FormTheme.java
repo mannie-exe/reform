@@ -10,6 +10,16 @@ import java.util.*;
 public final class FormTheme {
   public static final FormTheme EMPTY = new FormTheme(ThemePatch.empty(), List.of(), List.of());
 
+  /** Static declarations, independent of how many fields a current draft projects. */
+  public record Limits(int maximumSections, int maximumFields) {
+    public static final Limits STANDARD = new Limits(256, 512);
+
+    public Limits {
+      if (maximumSections < 1 || maximumFields < 1)
+        throw new IllegalArgumentException("Theme declaration limits must be positive");
+    }
+  }
+
   public enum SectionKind {
     GROUP,
     RANGE
@@ -52,13 +62,19 @@ public final class FormTheme {
   private final List<Field> fields;
   private final Map<String, Section> bySection;
   private final Map<FieldPath, Field> byField;
+  private final Limits limits;
 
   public FormTheme(ThemePatch root, List<Section> sections, List<Field> fields) {
+    this(root, sections, fields, Limits.STANDARD);
+  }
+
+  public FormTheme(ThemePatch root, List<Section> sections, List<Field> fields, Limits limits) {
     this.root = Objects.requireNonNull(root);
+    this.limits = Objects.requireNonNull(limits);
+    if (sections.size() > limits.maximumSections() || fields.size() > limits.maximumFields())
+      throw new IllegalArgumentException("Theme scopes exceed their declared admission");
     this.sections = List.copyOf(sections);
     this.fields = List.copyOf(fields);
-    if (sections.size() > 256 || fields.size() > FormCatalog.Limits.STANDARD.maximumEntries())
-      throw new IllegalArgumentException("Theme scopes exceed the admitted form envelope");
     var boxes = new LinkedHashMap<String, Section>();
     for (var section : sections)
       if (boxes.putIfAbsent(section.boxId(), section) != null)
@@ -73,6 +89,10 @@ public final class FormTheme {
 
   public ThemePatch root() {
     return root;
+  }
+
+  public Limits limits() {
+    return limits;
   }
 
   public List<Section> sections() {
@@ -92,7 +112,12 @@ public final class FormTheme {
   }
 
   public FormTheme withRoot(ThemePatch patch) {
-    return new FormTheme(patch, sections, fields);
+    return new FormTheme(patch, sections, fields, limits);
+  }
+
+  /** Replace metadata admission without widening catalogue, draft, or owner bounds. */
+  public FormTheme withLimits(Limits limits) {
+    return new FormTheme(root, sections, fields, limits);
   }
 
   public FormTheme withGroup(String id, ThemePatch patch) {
@@ -102,7 +127,7 @@ public final class FormTheme {
   public FormTheme withSection(Section section) {
     var next = new ArrayList<>(sections);
     next.add(section);
-    return new FormTheme(root, next, fields);
+    return new FormTheme(root, next, fields, limits);
   }
 
   public FormTheme withField(FieldPath path, ThemePatch patch) {
@@ -112,7 +137,7 @@ public final class FormTheme {
   public FormTheme withField(Field field) {
     var next = new ArrayList<>(fields);
     next.add(field);
-    return new FormTheme(root, sections, next);
+    return new FormTheme(root, sections, next, limits);
   }
 
   void requireSections(FormLayout layout, List<FormPresentation.Range> ranges) {

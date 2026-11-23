@@ -20,6 +20,11 @@ import net.minecraft.network.chat.Component;
 public record ClientWorkflowLayout(List<Group> groups, List<ReviewScope> reviews) {
   public static final int MAXIMUM_PLACEMENTS = 512;
   public static final int MAXIMUM_GROUPS = 128;
+  public static final int MAXIMUM_CATEGORY_DEPTH = 4;
+
+  /** Home, every category prefix, and every placement; fields have their own owner admission. */
+  public static final int MAXIMUM_NAVIGATION_DESTINATIONS =
+      1 + MAXIMUM_GROUPS * MAXIMUM_CATEGORY_DEPTH + MAXIMUM_PLACEMENTS;
 
   public ClientWorkflowLayout {
     groups = List.copyOf(groups);
@@ -196,7 +201,8 @@ public record ClientWorkflowLayout(List<Group> groups, List<ReviewScope> reviews
       placements = List.copyOf(placements);
       actions = List.copyOf(actions);
       path = List.copyOf(path);
-      if (path.size() > 4 || path.stream().map(Category::id).distinct().count() != path.size())
+      if (path.size() > MAXIMUM_CATEGORY_DEPTH
+          || path.stream().map(Category::id).distinct().count() != path.size())
         throw new IllegalArgumentException("Group paths have at most four distinct categories");
     }
 

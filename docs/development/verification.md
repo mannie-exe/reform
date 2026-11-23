@@ -1,17 +1,21 @@
 # Verification
 
-## 0.4 development: scoped native themes and retained workspace
+## 0.4 development: bounded composition and scoped native themes
 
-The unpublished `0.4.0-dev.16` candidate passes `spotlessApply check build`, with 639 core tests on each game's codec runtime, 104 tooling cases, four packaged native consumer compiles, and eight public consumer inputs. Its source implementation is commit `e87d7cb`. Formatting, local links, distribution metadata, and missing-adapter refusal checks pass. These results qualify the foundations below, not the complete 0.4 design or a public release.
+The unpublished `0.4.0-dev.17` candidate passes `spotlessApply check build`, with 643 core tests on each game's codec runtime, 104 tooling cases, four packaged native consumer compiles, and eight public consumer inputs. Formatting, local links, distribution metadata, and missing-adapter refusal checks pass. These results qualify the foundations below, not the complete 0.4 design or a public release.
 
-The independent workspace passes initial and saved-file reopen boots on all four minimum targets: 289 first-boot and 105 reopen checks per target. All eight clients exit normally, close their managed workflows, and remove their disposable runtime. Actual execution is on macOS Apple Silicon; this is not Windows/Linux rendering, physical IME, or spoken narration qualification.
+The independent workspace passes initial and saved-file reopen boots on all four minimum targets: 292 first-boot and 108 reopen checks per target. All eight clients exit normally, close their managed workflows, and remove their disposable runtime. Actual execution is on macOS Apple Silicon; this is not Windows/Linux rendering, physical IME, or spoken narration qualification.
 
 | Target            | Candidate SHA-256                                                  |
 | ----------------- | ------------------------------------------------------------------ |
-| Fabric / 1.21.1   | `fffd86e42bec757392e4d264de7056fb004a54406ab809d9f63df3bb7fabfc8d` |
-| NeoForge / 1.21.1 | `34adf05037ab7544db46e66c693703265c96442c0be2572ca67d3c9e32ccfde9` |
-| Fabric / 26.3     | `00975afcc061875e918aee5217a2566bc7ec635b6db074d88f96ce45e2c199d0` |
-| NeoForge / 26.3   | `d191da6a432f10f6a9006d9670795e435500651cd6e190055f9b74052ffc0243` |
+| Fabric / 1.21.1   | `8bc041e1378acc809647cd0ddb88c010e071c19a942448a3a433bb2a7d47656d` |
+| NeoForge / 1.21.1 | `546f52168a26783930186033f91c448fbe2d33950cc93ca95ae5a892ec3002aa` |
+| Fabric / 26.3     | `38e3e08f076e0a34711486be723a6586e71b16e2a3026525eb5ccacba266c33a` |
+| NeoForge / 26.3   | `ba733b42d4c3c52c81ae89334f8f5be2584b0bbc8981c758e225fdbe4e0eef0c` |
+
+The shared `DestinationGraph` admits the complete topology without invoking targets. Core controls cover duplicate IDs, missing parents, cycles, exact depth, authored order, root requirements, and the full 1,025-destination workflow envelope. A native 1,021-destination scene keeps every owner unopened, so owner catalogue allowances cannot mask static category capacity. Frozen dev.16 reproduces `Complete navigation admission exhausted`; dev.17 passes that same scene on all four targets with unchanged source bytes. The negative exits through the diagnostic fixture and is not counted as a successful workflow closure.
+
+Theme metadata now has explicit declaration limits, independent of the currently projected catalogue. Tests admit 513 declared field scopes through a supplied limit without constructing a value or enlarging catalogue limits; default and tightened limits refuse excess declarations, and builders preserve the selected admission. This does not qualify arbitrary extreme theme geometry.
 
 Native controls exercise workflow and field scopes, control height, a scoped numeric-input width, inherited text styles, the local Unicode information glyph, and actual bold caret measurement. Pointer placement and native arrow events use the same glyph widths without changing text or the retained owner draft. A mounted screen refuses replacement theme declarations. Both input draw-call families on 1.21.1 retain their actual shadow policy; aggregate injection requirements reject a missing supported family.
 
@@ -21,7 +25,7 @@ The same pairs retain lazy Home without owner entry, stable cached header bounds
 
 Two native adapter regressions have separate retained negatives: a constructor-populated client field was mistaken for mounted state on 26.3, and NeoForge 1.21.1's explicit-shadow draw calls differed from Fabric's calls. The successor uses the real native initialization state and both required call families. Earlier fixture visibility and raw-reference assumptions were corrected using shader source and independent native controls; no source, input, or ownership guard was removed.
 
-Complete graphic slots, custom-control interaction bindings, theme extremes and declaration diagnostics, typed navigation/group destinations, responsive task/meta surfaces, production Lootr preview layout, optional recipe links, and the full lifecycle/performance matrix remain development work. Consumer provider/lifetime evidence retains its own exact older artifacts; this workspace result does not relabel it as a candidate-16 run. The [presentation contract](../design/presentation-0.4-api.md) remains the full selected scope.
+Complete graphic slots, custom-control interaction bindings, theme extremes and declaration diagnostics, typed navigation/group destinations, responsive task/meta surfaces, production Lootr preview layout, optional recipe links, and the full lifecycle/performance matrix remain development work. Consumer provider/lifetime evidence retains its own exact older artifacts; this workspace result does not relabel it as a candidate-17 run. The [presentation contract](../design/presentation-0.4-api.md) remains the full selected scope.
 
 ## Stable 0.3.0 release qualification
 

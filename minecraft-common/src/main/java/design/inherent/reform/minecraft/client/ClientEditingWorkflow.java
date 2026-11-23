@@ -1132,8 +1132,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (geometry.navigation().isPresent()) {
         var at = geometry.navigation().orElseThrow();
         var nodes = navigationEntries();
-        int maximum =
-            ClientWorkflowLayout.MAXIMUM_PLACEMENTS + ClientWorkflowLayout.MAXIMUM_GROUPS + 1;
+        int maximum = ClientWorkflowLayout.MAXIMUM_NAVIGATION_DESTINATIONS;
         for (var placement : allPlacements()) {
           var bound = entry(placement.route());
           if (bound.editor != null && bound.editor.isOpen())

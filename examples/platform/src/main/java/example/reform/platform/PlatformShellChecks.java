@@ -42,6 +42,33 @@ final class PlatformShellChecks implements AutoCloseable {
   private byte[] source;
   private ClientEditor<?> opened;
 
+  private ClientWorkflowLayout maximumHierarchy(DocumentId route) {
+    var groups = new java.util.ArrayList<ClientWorkflowLayout.Group>();
+    for (int group = 0; group < ClientWorkflowLayout.MAXIMUM_GROUPS; group++) {
+      var path = new java.util.ArrayList<ClientWorkflowLayout.Category>();
+      for (int depth = 0; depth < 4; depth++)
+        path.add(
+            new ClientWorkflowLayout.Category(
+                DocumentId.parse("reform_platform_example:limit_category/" + group + "/" + depth),
+                Component.literal("Limit category " + group + "." + depth),
+                Component.empty()));
+      var placements = new java.util.ArrayList<ClientWorkflowLayout.Placement>();
+      // The first page deliberately admits no owner, so catalogue capacity cannot mask the
+      // static category-prefix deficit. The other 127 pages retain one real declared owner.
+      if (group != 0)
+        for (int placement = 0; placement < 4; placement++)
+          placements.add(
+              new ClientWorkflowLayout.Placement(
+                  DocumentId.parse(
+                      "reform_platform_example:limit_placement/" + group + "/" + placement),
+                  route,
+                  Component.literal("Limit placement " + group + "." + placement),
+                  Optional.empty()));
+      groups.add(new ClientWorkflowLayout.Group(path, placements, List.of()));
+    }
+    return new ClientWorkflowLayout(groups, List.of());
+  }
+
   PlatformShellChecks(BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
     this.check = check;
     this.capture = capture;
@@ -342,6 +369,42 @@ final class PlatformShellChecks implements AutoCloseable {
             });
       }
       case 5 -> {
+        var forms = List.of(PlatformWorkflowExample.forms().getFirst());
+        var layout = maximumHierarchy(forms.getFirst().route());
+        var metadata =
+            ClientWorkspacePresentation.standard(
+                new WorkspaceIdentity(
+                    DocumentId.parse("reform_platform_example:maximum_hierarchy"),
+                    Component.literal("Complete declared hierarchy")));
+        check.accept(
+            "maximum category-prefix hierarchy admits without opening an owner",
+            metadata.validate(forms, layout).valid());
+        workflow = ClientEditingWorkflow.open(parent, forms, layout, metadata);
+        NativeScreens.open(client, workflow.screen());
+        click(workflow.screen(), button(workflow.screen(), "Limit category 0.0"));
+        stage++;
+      }
+      case 6 -> {
+        check.accept(
+            "actual native tree admits 1021 static destinations without borrowing owner capacity",
+            workflow.isOpen()
+                && workflow.documents().stream()
+                    .noneMatch(ClientEditingWorkflow.DocumentState::opened)
+                && widgets(workflow.screen()).stream()
+                    .anyMatch(
+                        widget -> widget.getMessage().getString().contains("Limit category 0.0")));
+        check.accept(
+            "complete hierarchy projection leaves the actual source unchanged",
+            Arrays.equals(source, Files.readAllBytes(sourcePath())));
+        stage++;
+        capture.accept(
+            "shell-maximum-hierarchy.png",
+            () -> {
+              workflow.close();
+              NativeScreens.open(client, parent);
+            });
+      }
+      case 7 -> {
         return true;
       }
       default -> throw new AssertionError("Unknown shell scene");

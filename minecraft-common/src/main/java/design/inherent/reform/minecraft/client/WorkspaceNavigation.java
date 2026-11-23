@@ -2,6 +2,7 @@ package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.presentation.DestinationGraph;
 import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.NavigationHistory;
@@ -410,25 +411,14 @@ final class WorkspaceNavigation {
   }
 
   private static Map<Key, Entry> admit(List<Entry> declared, int maximumEntries) {
-    if (maximumEntries < 1 || declared.size() > maximumEntries)
-      throw new IllegalArgumentException("Complete navigation admission exhausted");
+    var graph =
+        new DestinationGraph<>(
+            declared.stream()
+                .map(entry -> new DestinationGraph.Node<>(entry.key(), entry.parent(), entry))
+                .toList(),
+            new DestinationGraph.Limits(maximumEntries, maximumEntries));
     var entries = new LinkedHashMap<Key, Entry>();
-    for (var entry : declared)
-      if (entries.putIfAbsent(entry.key(), entry) != null)
-        throw new IllegalArgumentException("Duplicate navigation identity");
-    var admitted = new HashSet<Key>();
-    for (var entry : entries.values()) {
-      var seen = new HashSet<Key>();
-      var current = entry;
-      while (current != null && !admitted.contains(current.key())) {
-        if (!seen.add(current.key()))
-          throw new IllegalArgumentException("Navigation parents must form bounded trees");
-        if (current.parent().isEmpty()) break;
-        current = entries.get(current.parent().orElseThrow());
-        if (current == null) throw new IllegalArgumentException("Navigation parent is absent");
-      }
-      admitted.addAll(seen);
-    }
+    graph.nodes().forEach(node -> entries.put(node.id(), node.target()));
     return entries;
   }
 
