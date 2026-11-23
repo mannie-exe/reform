@@ -242,6 +242,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private Object widgetGeneration;
   private int pendingEdits;
   private long version;
+  private long previewInputEpoch;
   private boolean activated, requested, updating, saving, loading, handoff, closed, formUnavailable;
   private Component notice;
   private DraftTree modelDraft;
@@ -528,6 +529,42 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                 entry.getValue().editable()
                     && !Objects.equals(
                         versions.get(entry.getKey()), acceptedVersions.get(entry.getKey())));
+  }
+
+  design.inherent.reform.presentation.graphics.PreviewInputStamp previewInputStamp(
+      design.inherent.reform.edit.DraftRevision expected) {
+    ClientSettingsRuntime.requireClientThread();
+    if (closed) throw new PolicyRefusal("editor.closed", "This retained form is closed");
+    var current = actions.view();
+    if (formUnavailable
+        || current.availability() != EditorActor.Availability.READY
+        || current.snapshot().isEmpty())
+      throw new PolicyRefusal("editor.unavailable", "No current preview input is available");
+    if (pendingWork() || retainedInput() || unsent())
+      throw new PolicyRefusal(
+          "preview.input_unaccepted",
+          "Finish or repair the retained input before preparing a preview");
+    if (!expected.matches(current.snapshot().orElseThrow()))
+      throw new PolicyRefusal("preview.stale", "The requested preview draft is no longer current");
+    if (!actions.mayInspect())
+      throw new PolicyRefusal(
+          "owner.permission", "Read access to this preview input is unavailable");
+    return new design.inherent.reform.presentation.graphics.PreviewInputStamp(
+        expected, previewInputEpoch);
+  }
+
+  Map<DocumentId, design.inherent.reform.reference.ReferenceStamp> previewReferenceStamps() {
+    var stamps = new LinkedHashMap<DocumentId, design.inherent.reform.reference.ReferenceStamp>();
+    sources.forEach(
+        (id, source) -> source.observedStamp().ifPresent(stamp -> stamps.put(id, stamp)));
+    return Map.copyOf(stamps);
+  }
+
+  private void advancePreviewInput() {
+    if (previewInputEpoch == Long.MAX_VALUE)
+      throw new PolicyRefusal(
+          "preview.input_epoch_exhausted", "Reopen this editor before further native edits");
+    previewInputEpoch++;
   }
 
   boolean pendingWork() {
@@ -2584,6 +2621,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     boolean changed =
         !quantity.input.expected().equals(change.input().expected())
             || !Objects.equals(local.get(path), change.input().text());
+    if (change.accepted() && changed) advancePreviewInput();
     updating = true;
     try {
       if (change.accepted()) {
@@ -2618,6 +2656,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (current == null || current.token() != token) return;
     if (!locallyAvailable(path)) return;
     if (updating || value.equals(local.get(path))) return;
+    advancePreviewInput();
     if (current.quantity() != null) {
       current.quantity().input = current.quantity().input.edit(value);
       current.quantity().deferred = false;

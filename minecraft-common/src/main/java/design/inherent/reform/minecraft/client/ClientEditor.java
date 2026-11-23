@@ -1,10 +1,13 @@
 package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.minecraft.internal.ClientSettingsRuntime;
 import design.inherent.reform.operation.DocumentActions;
+import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.graphics.DraftPreviewInput;
 import java.util.Objects;
 import net.minecraft.client.gui.screens.Screen;
 
@@ -15,6 +18,8 @@ public final class ClientEditor<T> implements AutoCloseable {
   private Screen host;
   private Runnable abandoned;
   private boolean closed;
+  private final java.util.Set<ClientPreviewCapture<T>> previewCaptures =
+      java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
   private ClientEditor(SettingsScreen<T> screen) {
     ClientSettingsRuntime.requireClientThread();
@@ -99,6 +104,33 @@ public final class ClientEditor<T> implements AutoCloseable {
     return isOpen() && !busy() && screen.canSubmit();
   }
 
+  /** Capture one complete READ-authorized draft, independent of required save-review scope. */
+  public ClientPreviewCapture<T> capturePreview(EntryPoint entry, DraftRevision expected) {
+    ClientSettingsRuntime.requireClientThread();
+    var view = presentation();
+    var stamp = view.previewInputStamp(Objects.requireNonNull(expected));
+    var references = view.previewReferenceStamps();
+    var capture =
+        new ClientPreviewCapture<>(
+            actions.capturePreview(entry, expected),
+            captured -> {
+              if (!isOpen())
+                throw new PolicyRefusal("editor.closed", "This client editor is closed");
+              var current = view.previewInputStamp(expected);
+              if (!stamp.equals(current) || !references.equals(view.previewReferenceStamps()))
+                throw new PolicyRefusal(
+                    "preview.stale", "Native input or reference sources changed during capture");
+              return new DraftPreviewInput<>(
+                  stamp,
+                  captured.candidate().orElseThrow(),
+                  captured.observation().provenance(),
+                  references);
+            });
+    previewCaptures.add(capture);
+    capture.completion().whenComplete((ignored, failed) -> previewCaptures.remove(capture));
+    return capture;
+  }
+
   void onAbandoned(Runnable owner) {
     ClientSettingsRuntime.requireClientThread();
     if (closed || abandoned != null)
@@ -117,6 +149,8 @@ public final class ClientEditor<T> implements AutoCloseable {
     ClientSettingsRuntime.requireClientThread();
     if (closed) return;
     closed = true;
+    for (var capture : java.util.List.copyOf(previewCaptures)) capture.abandon();
+    previewCaptures.clear();
     abandoned = null;
     host = null;
     try {

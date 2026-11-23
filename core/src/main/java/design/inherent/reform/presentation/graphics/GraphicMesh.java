@@ -56,8 +56,6 @@ public final class GraphicMesh {
     long minimumBytes = (long) vertices.size() * 36 + (long) triangles.size() * 16;
     if (minimumBytes > limits.outputBytes())
       throw new PolicyRefusal("preview.budget", "The mesh exceeds the declared output-byte budget");
-    if (vertices.size() < 3 || triangles.isEmpty())
-      throw new IllegalArgumentException("A mesh needs vertices and at least one triangle");
     this.vertices = List.copyOf(vertices);
     this.triangles = List.copyOf(triangles);
     minimumBytes = (long) this.vertices.size() * 36 + (long) this.triangles.size() * 16;
@@ -82,6 +80,12 @@ public final class GraphicMesh {
     }
     materials = Set.copyOf(used);
     geometryBytes = bytes;
+    // An intentionally invisible model is ready, not invalid or still loading. Its fit has no
+    // extent; a viewport keeps its existing camera rather than dividing by this zero-size box.
+    if (this.triangles.isEmpty()) {
+      bounds = new Bounds(0, 0, 0, 0, 0, 0);
+      return;
+    }
     double minX = Double.POSITIVE_INFINITY, minY = minX, minZ = minX;
     double maxX = Double.NEGATIVE_INFINITY, maxY = maxX, maxZ = maxX;
     for (var vertex : this.vertices) {
@@ -97,6 +101,11 @@ public final class GraphicMesh {
 
   public List<Vertex> vertices() {
     return vertices;
+  }
+
+  /** No drawable faces. Native preparation must not invent geometry or allocate a draw for it. */
+  public boolean isEmpty() {
+    return triangles.isEmpty();
   }
 
   public List<Triangle> triangles() {

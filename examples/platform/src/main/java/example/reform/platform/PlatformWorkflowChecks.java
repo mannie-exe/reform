@@ -75,6 +75,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
   private final BiConsumer<String, Runnable> capture;
   private final JsonArray checks = new JsonArray();
   private JsonObject cachedSearchCost;
+  private final PlatformPreviewChecks preview = new PlatformPreviewChecks(this::check);
   private final DocumentId preferences = PlatformWorkflowExample.DEFINITION.id();
   private ClientEditingWorkflow workflow, independent, shutdown;
   private ClientEditingWorkflow hierarchy;
@@ -206,6 +207,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
         if (PlatformWorkflowExample.settings().runtime().isEmpty()
             || PlatformWorkflowExample.keys().definition().isEmpty()
             || !PlatformWorkflowSources.ready()) return false;
+        if (!reopen && !preview.tick()) return false;
         if (!reopen && !hierarchyControls()) return false;
         var forms = PlatformWorkflowExample.forms();
         for (var invalid :

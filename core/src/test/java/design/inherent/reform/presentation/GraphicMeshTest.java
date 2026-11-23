@@ -24,6 +24,27 @@ class GraphicMeshTest {
   }
 
   @Test
+  void intentionalEmptyGeometryHasFiniteNeutralFitAndNoMaterials() {
+    var mesh = new GraphicMesh(LIMITS, List.of(), List.of());
+    assertTrue(mesh.isEmpty());
+    assertEquals(new GraphicMesh.Bounds(0, 0, 0, 0, 0, 0), mesh.bounds());
+    assertEquals(0, mesh.geometryBytes());
+    assertTrue(mesh.materials().isEmpty());
+    var unused = new GraphicMesh(LIMITS, vertices(), List.of());
+    assertTrue(unused.isEmpty());
+    assertEquals(mesh.bounds(), unused.bounds());
+    assertEquals(108, unused.geometryBytes());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new GraphicMesh(
+                LIMITS, List.of(), List.of(new GraphicMesh.Triangle(0, 1, 2, MATERIAL))));
+    assertFalse(
+        new GraphicMesh(LIMITS, vertices(), List.of(new GraphicMesh.Triangle(0, 1, 2, MATERIAL)))
+            .isEmpty());
+  }
+
+  @Test
   void meshFreezesGeometryAndPreservesCoordinatesUvWindingAndMaterialIdentity() {
     var vertices = new ArrayList<>(vertices());
     vertices.set(0, vertex(-2, 0, 0, -0.25f, 1.25f));
