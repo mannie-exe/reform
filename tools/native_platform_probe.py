@@ -247,7 +247,13 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             if workflow_client and isinstance(native.get("workflow"), dict):
                 native["workflow"]["captures"] = retain_captures(
                     fixture, reports, native["workflow"].get("captures", []),
-                    {"platform-form-workflow-wide.png", "platform-form-workflow-narrow.png"}, reopen)
+                    {"platform-form-workflow-wide.png", "platform-form-workflow-narrow.png",
+                     "platform-form-graphic-texture.png", "platform-form-graphic-layers.png", "platform-form-graphic-orbit.png"}, reopen)
+            if workflow_client and isinstance(native.get("sceneFailure"), dict):
+                native["sceneFailure"]["captures"] = retain_captures(
+                    fixture, reports, native["sceneFailure"].get("captures", []),
+                    {"platform-form-workflow-wide.png", "platform-form-workflow-narrow.png",
+                     "platform-form-graphic-texture.png", "platform-form-graphic-layers.png", "platform-form-graphic-orbit.png"}, reopen)
             if recipe_client and isinstance(native.get("recipe"), dict):
                 workflow = native["recipe"].get("advanced")
                 if isinstance(workflow, dict):

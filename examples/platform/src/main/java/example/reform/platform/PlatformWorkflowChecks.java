@@ -75,7 +75,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
   private final BiConsumer<String, Runnable> capture;
   private final JsonArray checks = new JsonArray();
   private JsonObject cachedSearchCost;
-  private final PlatformPreviewChecks preview = new PlatformPreviewChecks(this::check);
+  private final PlatformPreviewChecks preview;
   private final DocumentId preferences = PlatformWorkflowExample.DEFINITION.id();
   private ClientEditingWorkflow workflow, independent, shutdown;
   private ClientEditingWorkflow hierarchy;
@@ -98,6 +98,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
     this.reopen = reopen;
     this.progress = progress;
     this.capture = capture;
+    this.preview = new PlatformPreviewChecks(this::check, capture);
   }
 
   public JsonObject report() {
@@ -106,11 +107,17 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
     report.add("checks", checks);
     report.addProperty("sourceKind", PlatformWorkflowSources.sourceKind());
     report.add("sourceEvidence", PlatformWorkflowSources.sourceReport());
+    report.add("graphics", preview.graphicsReport());
     if (cachedSearchCost != null) report.add("cachedSearchCost", cachedSearchCost);
     report.addProperty("workflowClosed", workflow != null && !workflow.isOpen());
     report.addProperty("independentClosed", independent == null || !independent.isOpen());
     report.addProperty("shutdownClosed", shutdown != null && !shutdown.isOpen());
     return report;
+  }
+
+  @Override
+  public void close() {
+    preview.close();
   }
 
   private void check(String label, boolean valid) {

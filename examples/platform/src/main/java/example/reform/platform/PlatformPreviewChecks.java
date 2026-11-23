@@ -25,6 +25,7 @@ import net.minecraft.network.chat.Component;
 final class PlatformPreviewChecks {
   private final Minecraft client = Minecraft.getInstance();
   private final BiConsumer<String, Boolean> check;
+  private final PlatformMeshChecks meshes;
   private ClientEditingWorkflow workflow;
   private ClientEditor<?> editor;
   private Screen parent;
@@ -33,8 +34,9 @@ final class PlatformPreviewChecks {
   private CompletableFuture<? extends DraftPreviewInput<?>> captured;
   private int stage;
 
-  PlatformPreviewChecks(BiConsumer<String, Boolean> check) {
+  PlatformPreviewChecks(BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
     this.check = check;
+    meshes = new PlatformMeshChecks(check, capture);
   }
 
   private byte[] bytes() throws Exception {
@@ -76,6 +78,7 @@ final class PlatformPreviewChecks {
   boolean tick() throws Exception {
     switch (stage) {
       case 0 -> {
+        if (!meshes.tick()) return false;
         PlatformGraphicImageChecks.run(check);
         parent = NativeScreens.current(client);
         original = bytes();
@@ -147,5 +150,14 @@ final class PlatformPreviewChecks {
       }
     }
     return false;
+  }
+
+  com.google.gson.JsonObject graphicsReport() {
+    return meshes.report();
+  }
+
+  void close() {
+    meshes.close();
+    if (workflow != null) workflow.close();
   }
 }
