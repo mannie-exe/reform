@@ -200,6 +200,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private int longLabelScale;
   private SettingsScreen<?> standalone;
   private OperationHandle<?> guardedSave;
+  private design.inherent.reform.minecraft.client.NavigationAttempt guardedNavigation;
   private int guardedSubmissions;
   private int rootSelectionStage;
   private PlatformReferenceTitleChecks referenceTitleChecks;
@@ -1470,10 +1471,19 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
                 Component.literal("Guarded submission"),
                 List.of(twin.form(Component.literal("Bounded preferences"))));
         NativeScreens.open(client, workflow.screen());
-        workflow.show(twinId);
+        guardedNavigation =
+            workflow
+                .navigation()
+                .open(
+                    new design.inherent.reform.minecraft.client.ClientDestination.Document(twinId));
         stage = 210;
       }
       case 210 -> {
+        if (guardedNavigation.result().isEmpty()) return false;
+        check(
+            "custom submission waits for actual navigation mount",
+            guardedNavigation.result().orElseThrow().outcome()
+                == design.inherent.reform.minecraft.client.NavigationAttempt.Outcome.REVEALED);
         if (!ready(twinId)) return false;
         check(
             "a settled valid native form admits a custom submission",

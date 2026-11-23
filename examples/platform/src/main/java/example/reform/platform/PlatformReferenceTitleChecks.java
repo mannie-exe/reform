@@ -215,8 +215,23 @@ final class PlatformReferenceTitleChecks {
             ClientEditingWorkflow.open(
                 parent, Component.literal("Reference choices"), List.of(form));
         NativeScreens.open(client, workflow.screen());
-        workflow.show(form.route());
-        pending = workflow.openEditor(form.route()).toCompletableFuture();
+        pending =
+            workflow
+                .navigation()
+                .open(
+                    new design.inherent.reform.minecraft.client.ClientDestination.Document(
+                        form.route()))
+                .completion()
+                .thenApply(
+                    result -> {
+                      check(
+                          "reference view waits for actual navigation mount",
+                          result.outcome()
+                              == design.inherent.reform.minecraft.client.NavigationAttempt.Outcome
+                                  .REVEALED);
+                      return result;
+                    })
+                .toCompletableFuture();
         next("open owner-titled reference controls");
       }
       case 1 -> {
