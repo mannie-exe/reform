@@ -1,5 +1,24 @@
 # Verification
 
+## 0.4 development: Home, headers, and cached view lifetimes
+
+The unpublished `0.4.0-dev.13` candidate passes `spotlessApply check build`, with 635 core tests on each game's codec runtime, four packaged native consumer compiles, eight public consumer inputs, and tooling/artifact checks. The maintained Markdown passes formatting and local-link checks. This qualifies the implemented foundations below, not the complete 0.4 design or a public release.
+
+The independent workspace fixture passes initial and saved-file reopen boots on all four minimum targets, with 247 first-boot and 63 reopen checks per target, including nested reference controls. All eight clients exit normally, close their managed workflows, and remove their disposable runtime. Actual execution is on macOS Apple Silicon; this is not Windows/Linux native graphics, physical IME, or spoken narration qualification.
+
+| Target            | Candidate SHA-256                                                  |
+| ----------------- | ------------------------------------------------------------------ |
+| Fabric / 1.21.1   | `499a1470df9b5b68e2672a38d21a36009cd93f8d0d6c4dd3345a067155ce5614` |
+| NeoForge / 1.21.1 | `b0ccd7295a5e0780196e9fec6eff4bb7f7eaaa5276c77c6964ed7284527c375b` |
+| Fabric / 26.3     | `0749428793e80e81537536a168ea12e2fc0b9239c0751b27fb364d76012143cb` |
+| NeoForge / 26.3   | `4d08c0bc1e7f8f101e63e2b8c53c26f467c69150ece07363a2b0a06bad0cc8e8` |
+
+New controls exercise metadata admission without entering owners or canvas factories; lazy default Home; actual destination selection; stable cached header bounds during Home/document navigation; an unsaved native field retained on Home without a document Save action; and unchanged source bytes. A scoped factory registers cleanup before construction, checks the actual native thread during release, closes the returned canvas before resource hooks, attempts later hooks after a cleanup failure, preserves that failure on the original construction cause, and refuses new ownership after retirement. Optional failed artwork leaves settings usable. Neutral destination identities preserve the existing namespaced syntax without becoming document identities.
+
+The same pairs retain mixed-owner source-specific saves, aliases, field history, invalid native input, inspection, document actions, titled references, long-label wrapping, narrow/high-scale geometry, and saved reopen. Earlier dev.12 failures remain separately attributed fixture evidence: automatic first-document assumptions and the old exact three-row count needed explicit entry and the additional Home row. No source guard, wrapping assertion, or original navigation node was removed.
+
+Complete theme and variant propagation, ARGB edge cases, typed navigation/group destinations, responsive task/meta surfaces, production Lootr preview layout, optional recipe links, and the full lifecycle/extreme/performance matrix remain development work. Header role colors and these cached-canvas checks do not certify those features. The [presentation contract](../design/presentation-0.4-api.md) remains the full selected scope.
+
 ## Stable 0.3.0 release qualification
 
 The 0.3.0 build passes `mise run check` and `mise run check:security`. It retains 590 core tests on each codec runtime, four packaged native consumers, eight public consumer inputs, tooling, Markdown, and workflow checks. Security review reports no release-blocking findings or source secrets; 31 explicitly classified supplied-runtime advisories remain visible. This is not a whole-game security certification.
