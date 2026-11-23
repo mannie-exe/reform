@@ -89,7 +89,7 @@ final class NativeChooserControls {
   }
 
   private void open() {
-    press(button(form, "Import…"));
+    press(ownerAction(form, "Import…"));
   }
 
   private void signal(String action) throws java.io.IOException {

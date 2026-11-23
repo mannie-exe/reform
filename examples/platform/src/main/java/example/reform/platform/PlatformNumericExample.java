@@ -7,6 +7,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.definition.RecordType;
 import design.inherent.reform.minecraft.client.ClientFileSettings;
 import design.inherent.reform.minecraft.client.ClientRegistration;
+import design.inherent.reform.presentation.FormLayout;
 import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.NumericDisplay;
 import design.inherent.reform.serialization.DecimalText;
@@ -72,14 +73,30 @@ public final class PlatformNumericExample {
                               BigDecimal.ZERO, "example.zoom.native", "Native initial view")))));
   public static final FormPresentation PRESENTATION =
       new FormPresentation(
-          List.of(
-              new FormPresentation.Range(
-                  "duration_bounds",
-                  "example.numeric.duration_bounds",
-                  "Duration bounds",
-                  "Both values are stored in ticks. Minimum must not exceed maximum; editing never moves the other field.",
-                  FieldPath.ROOT.field("minimum"),
-                  FieldPath.ROOT.field("maximum"))));
+              List.of(
+                  new FormPresentation.Range(
+                      "duration_bounds",
+                      "example.numeric.duration_bounds",
+                      "Duration bounds",
+                      "Both values are stored in ticks. Minimum must not exceed maximum; editing never moves the other field.",
+                      FieldPath.ROOT.field("minimum"),
+                      FieldPath.ROOT.field("maximum"))))
+          .withLayout(
+              new FormLayout(
+                  List.of(
+                      new FormLayout.Row(
+                          "scale",
+                          List.of(
+                              FieldPath.ROOT.field("duration"), FieldPath.ROOT.field("distance")))),
+                  List.of(
+                      new FormLayout.Group(
+                          "timing",
+                          "example.numeric.timing",
+                          "Timing and distance",
+                          "Independent choices; values keep their declared units.",
+                          List.of(
+                              FieldPath.ROOT.field("duration"),
+                              FieldPath.ROOT.field("distance"))))));
   private static final FieldKey<Double> PROBABILITY =
       FieldKey.of(
           "probability",

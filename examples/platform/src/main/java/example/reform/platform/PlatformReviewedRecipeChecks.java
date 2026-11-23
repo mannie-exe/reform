@@ -216,17 +216,14 @@ final class PlatformReviewedRecipeChecks {
             || actions.hasActiveOperations()
             || !button(form, "Done").active) return false;
         if (!defaultsMenuOpened) {
-          press("More…");
-          defaultsMenuOpened =
-              widgets(form).stream()
-                  .anyMatch(widget -> widget.getMessage().getString().equals("Settings"));
+          press("Document actions…");
+          defaultsMenuOpened = actionHost(form) != form;
           return false;
         }
-        if (widgets(form).stream()
-            .noneMatch(widget -> widget.getMessage().getString().equals("Settings")))
+        if (actionHost(form) == form)
           throw new AssertionError(
               "The entered actions pane was dismissed: " + form.getNarrationMessage().getString());
-        if (!button(form, "Load defaults").active) return false;
+        if (!button(actionHost(form), "Load defaults").active) return false;
         press("Load defaults");
         next("staging full defaults for reviewed owner effects");
       }
@@ -235,7 +232,7 @@ final class PlatformReviewedRecipeChecks {
         recorded(
             "defaults stage leaves the native context intact and performs no writes",
             parent.getUiState().getSettings() == original && !Files.exists(output) && saves == 0);
-        press("Settings");
+        returnToSettings(form);
         replace(form, input(form, "Soil depth"), "8");
         next("edited the visible projection");
       }

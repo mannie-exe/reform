@@ -6,8 +6,74 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FormGeometryTest {
+  @Test
+  void explicitControlClustersKeepStepperPairsTogetherAndRefuseInvalidJoins() {
+    var sizes =
+        List.of(
+            new FormGeometry.Size(100, 20),
+            new FormGeometry.Size(24, 20),
+            new FormGeometry.Size(24, 20),
+            new FormGeometry.Size(112, 20),
+            new FormGeometry.Size(20, 20));
+    var flow = FormGeometry.controls(sizes, 142, 4, java.util.Set.of(1));
+    assertEquals(flow.placements().get(1).y(), flow.placements().get(2).y());
+    assertTrue(flow.placements().get(1).y() > flow.placements().getFirst().y());
+    assertEquals(68, flow.height());
+    var tooNarrow = FormGeometry.controls(sizes, 30, 4, java.util.Set.of(1));
+    assertTrue(
+        tooNarrow.placements().stream().allMatch(at -> at.x() >= 0 && at.x() + at.width() <= 30));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> FormGeometry.controls(sizes, 100, 4, java.util.Set.of(-1)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> FormGeometry.controls(sizes, 100, 4, java.util.Set.of(4)));
+    assertThrows(
+        ArithmeticException.class,
+        () ->
+            FormGeometry.controls(
+                List.of(new FormGeometry.Size(80, 20), new FormGeometry.Size(80, 20)),
+                100,
+                Integer.MAX_VALUE));
+  }
+
   private static final FormGeometry.WorkspaceMetrics WORKSPACE =
       new FormGeometry.WorkspaceMetrics(112, 180, 180, 160, 220, 8);
+
+  @Test
+  void inlineFieldBoundaryUsesMeasuredContentAndEmptyLabelsCreateNoPhantomTrack() {
+    var controls = List.of(new FormGeometry.Size(60, 20), new FormGeometry.Size(20, 20));
+    assertTrue(FormGeometry.fieldTracks(167, 100, controls, 8).stacked());
+    var wrapped = FormGeometry.fieldTracks(168, 100, controls, 8);
+    assertFalse(wrapped.stacked());
+    assertEquals(44, wrapped.controls().height());
+    var inline = FormGeometry.fieldTracks(192, 100, controls, 8);
+    assertFalse(inline.stacked());
+    assertEquals(100, inline.textWidth());
+    assertEquals(108, inline.controlsX());
+    var flow = FormGeometry.fieldTracks(100, 0, controls, 8);
+    assertFalse(flow.stacked());
+    assertEquals(0, flow.textWidth());
+    assertEquals(0, flow.controlsX());
+    assertEquals(20, flow.controls().height());
+    assertEquals(100, FormGeometry.fieldTracks(100, 50, List.of(), 8).textWidth());
+  }
+
+  @Test
+  void relatedTracksPreserveOrderRemaindersAndRefusePartialColumnCredit() {
+    assertTrue(FormGeometry.relatedTracks(List.of(160, 120), 331, 12).isEmpty());
+    var tracks = FormGeometry.relatedTracks(List.of(160, 120), 333, 12);
+    assertEquals(160, tracks.getFirst().width());
+    assertEquals(172, tracks.get(1).x());
+    assertEquals(161, tracks.get(1).width());
+    assertEquals(333, tracks.getLast().x() + tracks.getLast().width());
+    assertTrue(FormGeometry.relatedTracks(List.of(Integer.MAX_VALUE, 120), 1000, 12).isEmpty());
+    var three = FormGeometry.relatedTracks(List.of(80, 100, 120), 385, 12);
+    assertEquals(3, three.size());
+    assertEquals(385, three.getLast().x() + three.getLast().width());
+    assertThrows(
+        IllegalArgumentException.class, () -> FormGeometry.relatedTracks(List.of(0, 10), 100, 4));
+  }
 
   @Test
   void workspaceRetainsEditorAndUsesCompactDrawerOnlyBelowMeasuredMinimum() {

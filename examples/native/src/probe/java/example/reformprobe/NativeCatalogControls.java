@@ -255,7 +255,7 @@ final class NativeCatalogControls {
             "reordering retains selected UUID and authored text",
             form.selectedSection().filter(first::equals).isPresent()
                 && raw(first.field("name")).equals("Alpha revised"));
-        press(button(form, "Undo"));
+        press(ownerAction(form, "Undo"));
         next("catalog reorder undo requested");
       }
       case 4 -> {
@@ -311,7 +311,7 @@ final class NativeCatalogControls {
         check(
             "inactive state is included in screen narration",
             form.getNarrationMessage().getString().contains("inactive"));
-        press(button(form, "Import…"));
+        press(ownerAction(form, "Import…"));
         check("catalog opens the shared import workflow", client.screen instanceof ImportScreen<?>);
         press(button(client.screen, "Back"));
         check(

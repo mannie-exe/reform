@@ -2,7 +2,6 @@ package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.operation.OperationSnapshot;
-import design.inherent.reform.presentation.FormGeometry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -94,6 +93,7 @@ public final class OperationScreen<O> extends NativeFormScreen {
   private Outcome outcome;
   private Component presentationFailure, notice;
   private FormPanel panel;
+  private FormChrome chrome;
   private Language language;
   private Object generation;
   private int page, diagnosticPage;
@@ -194,28 +194,10 @@ public final class OperationScreen<O> extends NativeFormScreen {
       footer.add(control);
     }
     footer.add(button("back", text("back", "Back"), this::finish));
-    var geometry =
-        FormGeometry.controls(
-            footer.stream().map(value -> new FormGeometry.Size(value.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int footerTop = height - 12 - geometry.height();
-    for (int i = 0; i < footer.size(); i++) {
-      var at = geometry.placements().get(i);
-      var control = footer.get(i);
-      control.setPosition(12 + at.x(), footerTop + at.y());
-      control.setWidth(at.width());
-      addRenderableWidget(control);
-    }
-    int bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
-    panel =
-        new FormPanel(
-            minecraft,
-            12,
-            bodyTop,
-            Math.max(1, width - 24),
-            Math.max(1, footerTop - bodyTop - 8),
-            false);
+    chrome =
+        new FormChrome(minecraft, width, height, title, contextLabel, Component.empty(), footer);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     if (observed == null) {
       panel.row(
           text("unavailable", "This operation is unavailable to the current context."),
@@ -493,9 +475,7 @@ public final class OperationScreen<O> extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
-    graphics.drawWordWrap(
-        font, contextLabel, 12, 30, Math.max(1, width - 24), FormPanel.DESCRIPTION_TEXT);
+    chrome.render(graphics);
   }
 
   private void finish() {

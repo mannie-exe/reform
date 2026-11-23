@@ -8,7 +8,6 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
-import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +34,7 @@ public final class BatchReviewScreen extends NativeFormScreen {
   private OperationHandle<DocumentBatch.Result> submission;
   private ValidationReport readiness = ValidationReport.VALID;
   private FormPanel panel;
+  private FormChrome chrome;
   private Language language;
   private Component notice;
   private Object generation;
@@ -120,23 +120,13 @@ public final class BatchReviewScreen extends NativeFormScreen {
       controls.add(cancel);
     }
     controls.add(button(text("back", "Back to documents"), this::onClose));
-    var geometry =
-        FormGeometry.controls(
-            controls.stream().map(value -> new FormGeometry.Size(value.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int footer = height - 12 - geometry.height();
-    for (int i = 0; i < controls.size(); i++) {
-      var at = geometry.placements().get(i);
-      var control = controls.get(i);
-      control.setPosition(12 + at.x(), footer + at.y());
-      control.setWidth(at.width());
-      addRenderableWidget(control);
-    }
     float scroll = panel == null ? 0 : panel.scroll();
     String focus = panel == null ? null : panel.focusKey();
-    panel =
-        new FormPanel(minecraft, 12, 36, Math.max(1, width - 24), Math.max(1, footer - 44), false);
+    chrome =
+        new FormChrome(
+            minecraft, width, height, title, Component.empty(), Component.empty(), controls);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
         Component.empty(),
         text(
@@ -402,6 +392,6 @@ public final class BatchReviewScreen extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
+    chrome.render(graphics);
   }
 }

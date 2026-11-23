@@ -133,7 +133,7 @@ final class NativeImportControls {
   }
 
   private void open() {
-    press(button(form, "Import…"));
+    press(ownerAction(form, "Import…"));
   }
 
   private boolean previewFinished() {
@@ -237,13 +237,13 @@ final class NativeImportControls {
         check(
             "retired import action cannot replay",
             form.editorView().snapshot().orElseThrow().version() == version);
-        press(button(form, "Undo"));
+        press(ownerAction(form, "Undo"));
         step("native whole import undo requested");
       }
       case 5 -> {
         if (!ready() || !raw("count").equals("1")) return false;
         check("one native Undo restores earlier work", raw("label").equals("Earlier work"));
-        press(button(form, "Redo"));
+        press(ownerAction(form, "Redo"));
         step("native whole import redo requested");
       }
       case 6 -> {

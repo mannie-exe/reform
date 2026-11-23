@@ -38,7 +38,12 @@ public final class FormCatalog {
   }
 
   /** An actual declared section; captions do not rename or grant access to its data. */
-  public record Section(FieldPath path, String translationKey, String label, String help) {
+  public record Section(
+      FieldPath path, String translationKey, String label, String help, String supplementalHelp) {
+    public Section(FieldPath path, String translationKey, String label, String help) {
+      this(path, translationKey, label, help, "");
+    }
+
     public Section {
       Objects.requireNonNull(path);
       if (path.segments().size() > 128
@@ -47,9 +52,17 @@ public final class FormCatalog {
           || translationKey.length() > 256
           || Objects.requireNonNull(label).isBlank()
           || label.length() > 1024
-          || Objects.requireNonNull(help).length() > 4096)
+          || Objects.requireNonNull(help).length() > 4096
+          || Objects.requireNonNull(supplementalHelp).length() > 4096)
         throw new IllegalArgumentException(
             "Catalog sections require bounded declared identities/captions");
+    }
+
+    /**
+     * Owner-resolved facts appended after translated purpose; never used as a translation fallback.
+     */
+    public Section withSupplementalHelp(String help) {
+      return new Section(path, translationKey, label, this.help, help);
     }
   }
 

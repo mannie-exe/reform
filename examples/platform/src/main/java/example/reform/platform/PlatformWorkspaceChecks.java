@@ -9,6 +9,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftLimits;
 import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.minecraft.client.ClientChoiceScreen;
 import design.inherent.reform.minecraft.client.ClientEditingWorkflow;
 import design.inherent.reform.minecraft.client.ClientFileSettings;
 import design.inherent.reform.minecraft.client.ClientRegistration;
@@ -44,6 +45,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private static final String DEFAULTS_HELP =
       "Stage this example's declared defaults without saving. "
           + "A field's Default choice removes only that field's override.";
+  private static final String HELP_SUPPLEMENT = "Owner context survives help translation.";
   private static ClientFileSettings<PlatformWorkflowExample.Preferences> twin;
   private static PlatformWorkspaceChecks active;
   private static int informationCaptures;
@@ -107,14 +109,86 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   }
 
   private final Minecraft client = Minecraft.getInstance();
+  private ClientChoiceScreen entryChoice;
+  private Screen entryParent;
+  private Button retiredEntryChoice;
+  private int choiceStage, choiceCalls;
+  private boolean choiceBlocked = true, choicesQualified;
+
+  private boolean entryChoices() {
+    if (choiceStage == 0) {
+      entryParent = NativeScreens.current(client);
+      entryChoice =
+          new ClientChoiceScreen(
+              entryParent,
+              Component.literal("Choose settings context"),
+              Component.literal(
+                  "Local files and running-server policies retain distinct owners and permissions."),
+              List.of(
+                  new ClientChoiceScreen.Choice(
+                      "local",
+                      Component.literal("Local files"),
+                      Component.literal("Edit local preferences without changing server policy."),
+                      Optional::empty,
+                      () -> choiceCalls++),
+                  new ClientChoiceScreen.Choice(
+                      "server",
+                      Component.literal("Running server"),
+                      Component.literal("Use the actual current world's admission."),
+                      () ->
+                          choiceBlocked
+                              ? Optional.of(Component.literal("No running server is available"))
+                              : Optional.empty(),
+                      () -> choiceCalls++)),
+              Component.literal("Done"));
+      NativeScreens.open(client, entryChoice);
+      choiceStage++;
+      return false;
+    }
+    if (choiceStage == 1) {
+      geometry(entryChoice);
+      var unavailable = button(entryChoice, "Running server");
+      check(
+          "entry choice retains owner blocked reason beside a disabled native control",
+          !unavailable.active
+              && String.join("\n", measuredText(entryChoice))
+                  .contains("No running server is available")
+              && NativeNarrationProbe.read(unavailable).contains("No running server is available"));
+      NativeClientProbe.press(unavailable);
+      check("blocked native choice callback rechecks owner admission", choiceCalls == 0);
+      retiredEntryChoice = unavailable;
+      choiceBlocked = false;
+      choiceStage++;
+      return false;
+    }
+    var admitted = button(entryChoice, "Running server");
+    if (!admitted.active) return false;
+    NativeClientProbe.press(retiredEntryChoice);
+    check("entry reflow retires the previous native callback", choiceCalls == 0);
+    check(
+        "admitted entry action belongs to the actual native focus tree",
+        focus(entryChoice, admitted));
+    click(entryChoice, admitted);
+    check("native entry choice invokes its owner once", choiceCalls == 1);
+    geometry(entryChoice);
+    click(entryChoice, button(entryChoice, "Done"));
+    check("entry Done restores its actual parent", NativeScreens.current(client) == entryParent);
+    NativeClientProbe.press(admitted);
+    check("closed entry callbacks cannot replay", choiceCalls == 1);
+    choicesQualified = true;
+    return true;
+  }
+
   private final Screen parent = NativeScreens.current(client);
   private final boolean reopen;
   private final Consumer<String> progress;
   private final BiConsumer<String, Runnable> capture;
   private final JsonArray checks = new JsonArray();
+  private final JsonArray layoutMeasurements = new JsonArray();
   private final DocumentId preferences = PlatformWorkflowExample.DEFINITION.id();
   private ClientEditingWorkflow workflow, shutdown;
   private byte[] jsonBefore, twinBefore, nativeBefore;
+  private byte[] actionSourceBefore;
   private int stage, guiScale, informationScale, defaultStage;
   private final int[] windowWidth = new int[1], windowHeight = new int[1];
   private boolean complete;
@@ -127,7 +201,10 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private SettingsScreen<?> standalone;
   private OperationHandle<?> guardedSave;
   private int guardedSubmissions;
+  private int rootSelectionStage;
   private PlatformReferenceTitleChecks referenceTitleChecks;
+  private List<design.inherent.reform.minecraft.client.ClientEditor<?>> abandonedEditors =
+      List.of();
 
   PlatformWorkspaceChecks(
       boolean reopen, Consumer<String> progress, BiConsumer<String, Runnable> capture) {
@@ -147,6 +224,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
     var result = new JsonObject();
     result.addProperty("status", complete ? "PASS" : "RUNNING");
     result.add("checks", checks);
+    result.add("layoutMeasurements", layoutMeasurements);
+    result.add("inputCosts", inputCosts());
     result.addProperty("sourceKind", PlatformWorkflowSources.sourceKind());
     result.addProperty("workflowClosed", workflow != null && !workflow.isOpen());
     result.addProperty("shutdownClosed", shutdown != null && !shutdown.isOpen());
@@ -192,7 +271,12 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
 
   private ClientWorkflowLayout.Placement placement(
       String name, DocumentId route, String label, Optional<FieldPath> path) {
-    return new ClientWorkflowLayout.Placement(id(name), route, Component.literal(label), path);
+    return new ClientWorkflowLayout.Placement(id(name), route, Component.literal(label), path)
+        .inSection(
+            new ClientWorkflowLayout.Section(
+                id("content/" + name),
+                Component.literal(label),
+                Component.literal("These fields share one retained document.")));
   }
 
   private ClientEditingWorkflow open() {
@@ -200,7 +284,29 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
     var options =
         new design.inherent.reform.minecraft.client.ClientFormOptions<
             PlatformWorkflowExample.Preferences>(
-            design.inherent.reform.presentation.FormPresentation.EMPTY, java.util.Map.of());
+            design.inherent.reform.presentation.FormPresentation.EMPTY
+                .withCatalog(
+                    new design.inherent.reform.presentation.FormCatalog(
+                        List.of(
+                            new design.inherent.reform.presentation.FormCatalog.Section(
+                                    FieldPath.ROOT.field("distance"),
+                                    "workspace.purpose",
+                                    "Distance",
+                                    "Fallback purpose must not replace resources")
+                                .withSupplementalHelp(HELP_SUPPLEMENT),
+                            new design.inherent.reform.presentation.FormCatalog.Section(
+                                FieldPath.ROOT.field("label"), "workspace.late", "Label", ""))))
+                .withLayout(
+                    new design.inherent.reform.presentation.FormLayout(
+                        List.of(
+                            new design.inherent.reform.presentation.FormLayout.Row(
+                                "preferences",
+                                List.of(
+                                    FieldPath.ROOT.field("enabled"),
+                                    FieldPath.ROOT.field("distance"),
+                                    FieldPath.ROOT.field("label")))),
+                        List.of())),
+            java.util.Map.of());
     var label = Component.literal(DEFAULTS_LABEL);
     var help = Component.literal(DEFAULTS_HELP);
     var defaultsOptions = options.withDefaults(label, help);
@@ -396,11 +502,14 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   }
 
   private void press(String label) {
-    var control = button(workflow.screen(), label);
-    check(
-        "requested workspace action is in the native focus tree",
-        focus(workflow.screen(), control));
-    click(workflow.screen(), control);
+    if (label.equals("Settings")) {
+      returnToSettings(workflow.screen());
+      return;
+    }
+    var control = ownerAction(workflow.screen(), label);
+    var host = actionHost(workflow.screen());
+    check("requested workspace action is in the native focus tree", focus(host, control));
+    click(host, control);
   }
 
   private byte[] source(String name) throws Exception {
@@ -409,15 +518,20 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   }
 
   private String narration(Screen screen) {
+    var host = actionHost(screen);
     return NativeClientProbe.narration(
         output -> {
-          for (var child : screen.children())
+          for (var child : host.children())
             if (child instanceof net.minecraft.client.gui.narration.NarratableEntry narrated)
               narrated.updateNarration(output.nest());
         });
   }
 
   private void navigationGeometry() {
+    var measured = measuredPanels(workflow.screen());
+    measured.addProperty("width", workflow.screen().width);
+    measured.addProperty("height", workflow.screen().height);
+    layoutMeasurements.add(measured);
     var rows =
         widgets(workflow.screen()).stream()
             .filter(widget -> widget.getClass().getSimpleName().equals("NavigationButton"))
@@ -462,6 +576,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
             || PlatformWorkflowExample.settings().runtime().isEmpty()
             || PlatformWorkflowExample.keys().definition().isEmpty()
             || !PlatformWorkflowSources.ready()) return false;
+        if (!choicesQualified && !entryChoices()) return false;
         jsonBefore = source("workflow_preferences");
         twinBefore = source("workspace_twin");
         nativeBefore = Files.readAllBytes(PlatformWorkflowSources.clientPath());
@@ -476,6 +591,28 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (workflow.documents().stream().anyMatch(state -> !state.opened() || state.busy())
             || !ready(preferences)
             || !ready(twinId)) return false;
+        if (rootSelectionStage == 0) {
+          check(
+              "initial owner has an actual focused field",
+              workflow.editor(preferences).form().focusField(FieldPath.ROOT.field("distance")));
+          workflow.show(twinId);
+          rootSelectionStage++;
+          return false;
+        }
+        if (rootSelectionStage == 1) {
+          rootSelectionStage++;
+          return false;
+        }
+        if (rootSelectionStage == 2) {
+          check(
+              "root selection retains the requested document action scope after native ticks",
+              workflow
+                  .screen()
+                  .getNarrationMessage()
+                  .getString()
+                  .contains("Independent preferences:"));
+          rootSelectionStage++;
+        }
         if (!checkDefaultControl(twinId)) return false;
         check(
             "mixed page retains its native root",
@@ -573,20 +710,22 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         capture.accept(
             "form-workspace-wide.png",
             () -> {
+              var visibleHelp = String.join("\n", measuredText(workflow.screen()));
+              check(
+                  "translated field purpose retains separately owned context facts",
+                  visibleHelp.contains("Localized purpose from resources")
+                      && visibleHelp.contains(HELP_SUPPLEMENT)
+                      && !visibleHelp.contains("Fallback purpose must not replace resources"));
+              check(
+                  "language resources resolve help with an empty construction-time fallback",
+                  visibleHelp.contains("Purpose loaded after definition construction"));
               workflow.editor(preferences).form().focusField(FieldPath.ROOT.field("distance"));
               var field = control(preferences, "distance");
               var information =
-                  widgets(workflow.screen()).stream()
-                      .filter(Button.class::isInstance)
-                      .map(Button.class::cast)
-                      .filter(button -> button.getMessage().getString().equals("i"))
-                      .min(
-                          java.util.Comparator.comparingInt(
-                              button -> Math.abs(button.getY() - field.getY())))
-                      .orElseThrow();
+                  java.util.Objects.requireNonNull(informationFor(workflow.screen(), field));
               check(
                   "information action belongs to the requested field row",
-                  information.getY() == field.getY());
+                  NativeNarrationProbe.read(information).contains("About Distance"));
               check(
                   "information button text is bold", information.getMessage().getStyle().isBold());
               check(
@@ -602,6 +741,12 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
       }
       case 100 -> {
         if (workflow.inspectedField().isEmpty()) return false;
+        check(
+            "guarded information keeps supplemental help alongside the field",
+            measuredText(workflow.screen()).stream()
+                    .filter(value -> value.contains(HELP_SUPPLEMENT))
+                    .count()
+                == 2);
         var information = workflow.inspectedField().orElseThrow();
         check(
             "plain information action keeps the native workspace and exact field: "
@@ -632,8 +777,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
             "technical disclosure is keyboard-reachable", focus(workflow.screen(), retiredDetails));
         check(
             "native Enter expands technical disclosure",
-            NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", true));
-        NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", false);
+            NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.enter", true));
+        NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.enter", false);
         stage = 104;
       }
       case 104 -> {
@@ -737,7 +882,10 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
       }
       case 112 -> {}
       case 108 -> {
-        if (!ready(preferences) || !raw(preferences, "distance").equals("64")) return false;
+        if (!ready(preferences)
+            || !raw(preferences, "distance").equals("64")
+            || !workflow.editor(preferences).canSubmit()
+            || !control(preferences, "distance").getValue().equals("64")) return false;
         var undo = ownerAction(workflow.screen(), "Undo");
         if (!undo.active) return false;
         check(
@@ -746,8 +894,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
                 && raw(twinId, "distance").equals("64"));
         check(
             "native Enter activates the custom-defaults history action",
-            NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", true));
-        NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", false);
+            NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.enter", true));
+        NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.enter", false);
         next("custom defaults retain ordinary draft history");
       }
       case 109 -> {
@@ -809,8 +957,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
             focus(workflow.screen(), retiredBack));
         check(
             "native Enter activates navigation Back",
-            NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", true));
-        NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", false);
+            NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.enter", true));
+        NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.enter", false);
         var returned = control(preferences, "distance");
         check(
             "Back restores the existing invalid field and its native caret selection",
@@ -1048,7 +1196,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
           refused = true;
         }
         check("active default-action presentation cannot be replaced", refused);
-        click(standalone, button(standalone, "Settings"));
+        returnToSettings(standalone);
         var row =
             widgets(standalone).stream()
                 .filter(Button.class::isInstance)
@@ -1184,8 +1332,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
                     .equals(FieldPath.ROOT));
         check(
             "default workflow history restores its native key-input route",
-            NativeClientProbe.key(workflow.screen(), "key.keyboard.left", true));
-        NativeClientProbe.key(workflow.screen(), "key.keyboard.left", false);
+            NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.left", true));
+        NativeClientProbe.key(actionHost(workflow.screen()), "key.keyboard.left", false);
         workflow.screen().onClose();
         check(
             "default workflow history does not write its source",
@@ -1344,6 +1492,55 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
       case 220 -> {
         if (!referenceTitleChecks.tick()) return false;
         checks.addAll(referenceTitleChecks.report().getAsJsonArray("checks"));
+        workflow = open();
+        NativeScreens.open(client, workflow.screen());
+        stage = 221;
+      }
+      case 221 -> {
+        if (workflow.documents().stream().anyMatch(state -> !state.opened() || state.busy())
+            || !ready(preferences)) return false;
+        actionSourceBefore = source("workflow_preferences");
+        edit(preferences, "distance", "129");
+        stage = 222;
+      }
+      case 222 -> {
+        if (!ready(preferences)
+            || !raw(preferences, "distance").equals("129")
+            || !workflow.editor(preferences).canSubmit()) return false;
+        press("Document actions…");
+        var menu = actionHost(workflow.screen());
+        check(
+            "document actions retain every actual owner while open",
+            menu != workflow.screen()
+                && workflow.isOpen()
+                && workflow.documents().stream()
+                    .allMatch(ClientEditingWorkflow.DocumentState::opened));
+        abandonedEditors =
+            workflow.documents().stream()
+                .<design.inherent.reform.minecraft.client.ClientEditor<?>>map(
+                    state -> workflow.editor(state.document()))
+                .toList();
+        var retired = button(menu, DEFAULTS_LABEL);
+        geometry(menu);
+        stage = 224;
+        capture.accept(
+            "form-workspace-actions-lifetime.png",
+            () -> {
+              NativeScreens.open(client, parent);
+              NativeClientProbe.pressRetired(retired);
+              stage = 223;
+            });
+      }
+      case 224 -> {}
+      case 223 -> {
+        check(
+            "unexpected document-action departure closes the whole editing lifetime",
+            !workflow.isOpen()
+                && abandonedEditors.stream()
+                    .noneMatch(design.inherent.reform.minecraft.client.ClientEditor::isOpen));
+        check(
+            "retired action cannot write or default after abandonment",
+            Arrays.equals(actionSourceBefore, source("workflow_preferences")));
         shutdown = open();
         shutdown.editor(preferences);
         complete = true;

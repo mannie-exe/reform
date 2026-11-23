@@ -271,6 +271,7 @@ final class PlatformConflictChecks implements PlatformFormProbe.Scene {
         check(
             "obsolete conflict and Undo history are cleared",
             form.editorView().operationReport().valid() && !ownerAction(form, "Undo").active);
+        returnToSettings(form);
         long version = form.editorView().snapshot().orElseThrow().version();
         NativeClientProbe.press(retired);
         check(

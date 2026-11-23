@@ -28,6 +28,7 @@ import design.inherent.reform.presentation.FormDependencies;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormModel;
 import design.inherent.reform.presentation.FormPresentation;
+import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.presentation.NumericInput;
 import design.inherent.reform.reference.CollectionSelection;
 import design.inherent.reform.reference.ReferenceActions;
@@ -87,7 +88,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     private final DoubleConsumer edits;
 
     QuantitySlider(Component label, DoubleConsumer edits) {
-      super(0, 0, 160, 20, label, 0);
+      super(0, 0, FormTokens.Control.SLIDER_PREFERRED, FormTokens.Control.HEIGHT, label, 0);
       this.label = label;
       this.edits = edits;
     }
@@ -202,6 +203,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private final Map<FieldPath, Long> versions = new LinkedHashMap<>();
   private final Map<FieldPath, Long> acceptedVersions = new LinkedHashMap<>();
   private final List<AbstractWidget> footer = new ArrayList<>();
+  private final Map<Button, Runnable> footerCallbacks = new java.util.IdentityHashMap<>();
   private final List<FieldPath> visibleFields = new ArrayList<>();
   private java.util.Set<FieldPath> previousFields = java.util.Set.of();
   private final Map<AbstractWidget, Boolean> structureButtons = new LinkedHashMap<>();
@@ -215,6 +217,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private UUID formSession;
   private long formGeneration;
   private FormPanel panel;
+  private FormChrome chrome;
   private EditorActor.View<T> displayed;
   private Button save,
       undo,
@@ -237,7 +240,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private FieldPath requestedFocus;
   private OperationHandle<EditorActor.Commit<T>> lastCommit;
   private Object widgetGeneration;
-  private int bodyTop, statusTop, statusWidth, pendingEdits;
+  private int pendingEdits;
   private long version;
   private boolean activated, requested, updating, saving, loading, handoff, closed, formUnavailable;
   private Component notice;
@@ -248,7 +251,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private boolean bodyVisible = true;
   private Runnable editorAbandoned;
   private ImportCatalog<T> declaredImports;
-  private boolean moreActions;
+  private Runnable discardDocument;
   private FieldPath workspaceSelection = FieldPath.ROOT;
   private design.inherent.reform.presentation.SectionNavigation.Bookmark retainedBodyScroll;
   private String retainedBodyFocus;
@@ -338,6 +341,18 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             .shape());
   }
 
+  Optional<Component> supplementalHelp(design.inherent.reform.operation.FieldInformation captured) {
+    if (!mayInspect()
+        || actions.view().snapshot().filter(value -> captured.target().matches(value)).isEmpty())
+      return Optional.empty();
+    return presentation.catalog().sections().stream()
+        .filter(
+            section ->
+                section.path().equals(captured.path()) && !section.supplementalHelp().isBlank())
+        .findFirst()
+        .map(section -> Component.literal(section.supplementalHelp()));
+  }
+
   boolean mayInspect() {
     return !closed && actions.mayInspect();
   }
@@ -346,11 +361,16 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     inlineInformation = information;
   }
 
-  record Selection(FieldPath path, Component title, Component help) {
+  record Selection(
+      FieldPath path,
+      Component title,
+      Component help,
+      Optional<ClientWorkflowLayout.Section> section) {
     Selection {
       Objects.requireNonNull(path);
       title = Objects.requireNonNull(title).copy();
       help = Objects.requireNonNull(help).copy();
+      Objects.requireNonNull(section);
     }
   }
 
@@ -396,11 +416,10 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   List<FormGeometry.Size> actionSizes(net.minecraft.client.gui.Font measuredFont) {
     var labels = new ArrayList<Component>();
-    labels.add(moreActions ? text("return_settings", "Settings") : text("more_actions", "More…"));
+    labels.add(text("document_actions", "Document actions…"));
     labels.add(text("revert", "Revert"));
     labels.add(text("review_changes", "Review changes…"));
     if (actions.view().review().isPresent()) labels.add(text("conflict", "Review conflict…"));
-    labels.add(text("inspect", "Inspect…"));
     labels.add(commitLabel());
     return labels.stream()
         .map(label -> new FormGeometry.Size(Math.max(56, measuredFont.width(label) + 20), 20))
@@ -413,10 +432,6 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   Component contextMessage() {
     return contextLabel.copy();
-  }
-
-  boolean showingActions() {
-    return moreActions;
   }
 
   List<FormCatalog.Entry> navigationEntries() {
@@ -697,7 +712,6 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         changeCatalog(
             () -> {
               workspaceSelection = path;
-              moreActions = false;
             });
     if (selected) focusField(path);
     return selected;
@@ -716,16 +730,22 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   /** Focus and reveal a currently rendered field, including related diagnostic destinations. */
   public boolean focusField(FieldPath path) {
-    boolean rebuild =
-        moreActions || composition == null && hasNavigation() && !workspaceSelection.equals(path);
-    moreActions = false;
+    boolean rebuild = composition == null && hasNavigation() && !workspaceSelection.equals(path);
     workspaceSelection = path;
     if (rebuild) rebuildWidgets();
     if (path.equals(FieldPath.ROOT) && panel != null) {
-      panel.jump(key(path));
+      var owned = new ArrayList<AbstractWidget>();
+      visibleFields.stream()
+          .map(controls::get)
+          .filter(Objects::nonNull)
+          .map(Control::widget)
+          .forEach(owned::add);
+      owned.addAll(defaultControls.values());
+      owned.addAll(editorButtons.values());
+      owned.addAll(availabilityButtons.values());
+      owned.addAll(informationButtons.values());
       setFocused(panel);
-      panel.focusVisibleControl();
-      return panel.getFocused() != null;
+      return panel.focusFirst(owned);
     }
     var controlPath = path;
     if (fieldControl(path).isEmpty()) {
@@ -810,6 +830,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     float scroll = panel == null ? 0 : panel.scroll();
     String focus = panel == null ? null : panel.focusKey();
     footer.clear();
+    footerCallbacks.clear();
     structureButtons.clear();
     structurePaths.clear();
     defaultControls.clear();
@@ -820,7 +841,6 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     disclosureButtons.clear();
     informationButtons.clear();
     var current = actions.view();
-    bodyTop = top + 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
     save = button(commitLabel(), this::requestSave);
     reviewSubmission =
         button(text("review_changes", "Review changes…"), () -> openInspection(true));
@@ -849,10 +869,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             ? button(text("conflict", "Review conflict…"), this::openConflict)
             : null;
     done = button(text("done", "Done"), this::onClose);
-    var more =
-        button(
-            moreActions ? text("return_settings", "Settings") : text("more_actions", "More…"),
-            this::toggleActions);
+    var more = button(text("document_actions", "Document actions…"), this::openActions);
     footer.clear();
     footer.add(done);
     footer.add(more);
@@ -862,65 +879,33 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     footer.add(save);
     if (composition != null) {
       inspection = button(text("inspect", "Inspect…"), this::openInspection);
+      footer.remove(inspection);
       appendComposedRows(current);
       return;
     }
-    var geometry =
-        FormGeometry.controls(
-            footer.stream().map(widget -> new FormGeometry.Size(widget.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int footerTop = top + height - 12 - geometry.height();
-    statusTop = footerTop - 24;
-    var inspectLabel = text("inspect", "Inspect…");
-    int inspectWidth =
-        Math.min(Math.max(20, Math.min(100, (width - 24) / 3)), font.width(inspectLabel) + 20);
-    statusWidth = Math.max(1, width - 24 - inspectWidth - 8);
-    var inspectGeneration = widgetGeneration;
-    inspection =
-        Button.builder(
-                inspectLabel,
-                ignored -> {
-                  if (widgetGeneration == inspectGeneration) openInspection();
-                })
-            .bounds(left + width - 12 - inspectWidth, statusTop, inspectWidth, 20)
-            .build();
+    inspection = button(text("inspect", "Inspect…"), this::openInspection);
     inspection.setTooltip(
         Tooltip.create(text("inspect_help", "Inspect source, changes and diagnostics")));
-    addRenderableWidget(inspection);
-    for (int i = 0; i < footer.size(); i++) {
-      var position = geometry.placements().get(i);
-      var widget = footer.get(i);
-      widget.setPosition(left + 12 + position.x(), footerTop + position.y());
-      widget.setWidth(position.width());
-      addRenderableWidget(widget);
-    }
-    save.setX(left + width - 12 - save.getWidth());
+    footer.remove(save);
+    footer.add(save);
+    chrome =
+        new FormChrome(
+            minecraft,
+            new FormGeometry.Placement(left, top, width, height),
+            title,
+            contextLabel,
+            status(),
+            footer);
     var content = prepareContent(current);
     var model = content.model();
     var modelError = content.error();
     bodyVisible = true;
-    panel =
-        new FormPanel(
-            minecraft,
-            left + 12,
-            bodyTop,
-            Math.max(1, width - 24),
-            Math.max(1, statusTop - bodyTop - 8),
-            false);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
+    chrome.alignTrailingAction();
     if (inlineInformation != null) inlineInformation.append(panel);
     if (modelError != null) panel.row(text("form_unavailable", "Form unavailable"), modelError);
-    if (moreActions) {
-      panel.section("settings:actions", text("more_actions_title", "More actions"));
-      panel.row(undo.getMessage(), Component.empty(), undo);
-      panel.row(redo.getMessage(), Component.empty(), redo);
-      panel.row(defaults.getMessage(), defaultsHelp(), defaults);
-      panel.row(reload.getMessage(), Component.empty(), reload);
-      panel.row(importData.getMessage(), Component.empty(), importData);
-      panel.row(outcomeButton.getMessage(), Component.empty(), outcomeButton);
-      if (previewButton != null)
-        panel.row(previewButton.getMessage(), Component.empty(), previewButton);
-    } else if (model != null && bodyVisible) {
+    if (model != null && bodyVisible) {
       expandedEditors.retainAll(
           formLayout.stream()
               .map(FormModel.Layout::path)
@@ -1003,8 +988,14 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       panel.row(text("catalog_section", "Section unavailable"), catalog.unavailable());
       return;
     }
-    catalog.help().ifPresent(help -> panel.row(Component.empty(), help));
     var node = section.node().orElseThrow();
+    var shape = node.type().orElseThrow().shape();
+    boolean inlineHelp =
+        (shape instanceof ValueShape.Scalar
+                || shape instanceof ValueShape.Reference<?> reference
+                    && !referenceTitles.containsKey(reference.source()))
+            && fieldEditors.at(node.path(), node.type().orElseThrow()).isEmpty();
+    if (!inlineHelp) catalog.help().ifPresent(help -> panel.row(Component.empty(), help));
     var caption = catalog.caption(node.path());
     if (node.role() == FormModel.Role.ROW || node.role() == FormModel.Role.MAP_ROW) {
       var parent = catalog.parent().orElseThrow();
@@ -1020,35 +1011,39 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (content.error() != null)
       panel.row(text("form_unavailable", "Form unavailable"), content.error());
     else if (content.model() != null) {
-      if (moreActions) {
-        panel.section(scoped("actions"), title);
-        for (var action : List.of(undo, redo, defaults, reload, importData, outcomeButton))
-          panel.row(
-              action.getMessage(), action == defaults ? defaultsHelp() : Component.empty(), action);
-        if (previewButton != null)
-          panel.row(previewButton.getMessage(), Component.empty(), previewButton);
-      } else {
-        var nodes = new LinkedHashMap<FieldPath, FormModel.Node>();
-        var pending = new java.util.ArrayDeque<FormModel.Node>();
-        pending.push(content.model().root());
-        while (!pending.isEmpty()) {
-          var node = pending.pop();
-          nodes.put(node.path(), node);
-          for (var child : node.children().reversed()) pending.push(child);
-        }
-        for (var selection : composition.selections()) {
-          var node = nodes.get(selection.path());
-          if (node == null) {
-            panel.row(selection.title(), text("field_unavailable", "Unavailable in this draft"));
-            continue;
-          }
-          if (node.path().equals(FieldPath.ROOT))
-            panel.section(key(node.path()), selection.title());
-          if (!selection.help().getString().isBlank())
-            panel.row(Component.empty(), selection.help());
-          fields(node, selection.title());
-        }
+      var nodes = new LinkedHashMap<FieldPath, FormModel.Node>();
+      var pending = new java.util.ArrayDeque<FormModel.Node>();
+      pending.push(content.model().root());
+      while (!pending.isEmpty()) {
+        var node = pending.pop();
+        nodes.put(node.path(), node);
+        for (var child : node.children().reversed()) pending.push(child);
       }
+      ClientWorkflowLayout.Section openSection = null;
+      for (var selection : composition.selections()) {
+        var section = selection.section().orElse(null);
+        if (!Objects.equals(openSection, section)) {
+          if (openSection != null) panel.endGroup();
+          openSection = section;
+          if (section != null) {
+            if (!section.eyebrow().getString().isBlank()) panel.eyebrow(section.eyebrow());
+            panel.beginGroup(scoped("section:" + section.id()), section.title());
+            if (!section.help().getString().isBlank()) panel.row(Component.empty(), section.help());
+          }
+        }
+        var node = nodes.get(selection.path());
+        if (node == null) {
+          panel.row(selection.title(), text("field_unavailable", "Unavailable in this draft"));
+          continue;
+        }
+        if (node.path().equals(FieldPath.ROOT)) {
+          if (openSection == null) panel.section(key(node.path()), selection.title());
+          else panel.anchor(key(node.path()));
+        }
+        if (!selection.help().getString().isBlank()) panel.row(Component.empty(), selection.help());
+        fields(node, selection.title());
+      }
+      if (openSection != null) panel.endGroup();
     }
     retainModelInputs();
     displayed = current;
@@ -1087,14 +1082,74 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     return cachedModel;
   }
 
-  private void toggleActions() {
+  void discardDocument(Runnable discard) {
+    discardDocument = discard;
+  }
+
+  private DocumentActionsScreen.Action menuAction(Supplier<Button> control, Component help) {
+    return new DocumentActionsScreen.Action(
+        control.get().getMessage(),
+        help,
+        () -> !closed && control.get() != null && control.get().active,
+        () -> {
+          var current = control.get();
+          if (!closed && isCurrent() && current != null && current.active) {
+            var callback = footerCallbacks.get(current);
+            if (callback != null) callback.run();
+          }
+        });
+  }
+
+  private void openActions() {
     if (closed || !isCurrent()) return;
     if (saving || loading || pendingEdits > 0 || unsent()) {
-      notice = text("actions_wait", "Finish pending input before changing actions.");
+      notice = text("actions_wait", "Finish pending input before opening document actions.");
       return;
     }
-    moreActions = !moreActions;
-    rebuildWidgets();
+    var groups = new ArrayList<DocumentActionsScreen.Group>();
+    groups.add(
+        new DocumentActionsScreen.Group(
+            text("edit_history", "Edit history"),
+            List.of(
+                menuAction(() -> undo, Component.empty()),
+                menuAction(() -> redo, Component.empty()))));
+    groups.add(
+        new DocumentActionsScreen.Group(
+            text("document_source", "Source and defaults"),
+            List.of(
+                menuAction(() -> defaults, defaultsHelp()),
+                menuAction(() -> reload, Component.empty()),
+                menuAction(() -> importData, Component.empty()))));
+    var results = new ArrayList<DocumentActionsScreen.Action>();
+    results.add(
+        menuAction(
+            () -> inspection, text("inspect_help", "Inspect source, changes and diagnostics")));
+    results.add(menuAction(() -> outcomeButton, Component.empty()));
+    if (previewButton != null) results.add(menuAction(() -> previewButton, Component.empty()));
+    groups.add(
+        new DocumentActionsScreen.Group(
+            text("document_results", "Inspection and results"), results));
+    if (discardDocument != null)
+      groups.add(
+          new DocumentActionsScreen.Group(
+              text("document_lifetime", "Draft"),
+              List.of(
+                  new DocumentActionsScreen.Action(
+                      text("discard", "Discard draft"),
+                      text("discard_help", "Release this draft. Completed saves are retained."),
+                      () -> !closed && !saving && !loading && pendingEdits == 0,
+                      () -> {
+                        if (!closed && isCurrent()) discardDocument.run();
+                      }))));
+    var owner = title.copy();
+    openScreen(
+        new DocumentActionsScreen(
+            owner,
+            contextLabel,
+            groups,
+            () -> !closed,
+            () -> openScreen(ownerScreen()),
+            this::abandonEditing));
   }
 
   @Override
@@ -1141,6 +1196,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             .bounds(0, 0, Math.max(56, font.width(label) + 20), 20)
             .build();
     footer.add(result);
+    footerCallbacks.put(result, action);
     return result;
   }
 
@@ -1432,6 +1488,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       fieldRow(path, label, control.widget(), browse);
     } else if (control.quantity() != null) {
       var quantity = control.quantity();
+      ControlSizing.offer(quantity.units, unitWidth(quantity.input), 20);
       if (quantity.slider == null)
         fieldRow(path, label, control.widget(), quantity.less, quantity.more, quantity.units);
       else
@@ -1557,10 +1614,32 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (hasAvailability(path)) row.add(availabilityButton(path, label));
     panel.relatedField(
         key(path),
-        presentation.range(path).map(range -> scoped("range:" + range.id())).orElse(null),
+        presentation
+            .range(path)
+            .map(range -> scoped("range:" + range.id()))
+            .or(
+                () ->
+                    presentation.layout().row(path).map(rowGroup -> scoped("row:" + rowGroup.id())))
+            .orElse(null),
         label,
-        Component.empty(),
+        fieldHelp(path),
         row.toArray(AbstractWidget[]::new));
+    var control = controls.get(path);
+    if (control != null && control.quantity() != null)
+      panel.keepTogether(control.quantity().less, control.quantity().more);
+  }
+
+  private Component fieldHelp(FieldPath path) {
+    var declared =
+        presentation.catalog().sections().stream()
+            .filter(section -> section.path().equals(path) && CatalogHelp.present(section))
+            .findFirst();
+    if (declared.isPresent()) {
+      var section = declared.orElseThrow();
+      return CatalogHelp.describe(section);
+    }
+    String key = labelKey(path) + ".help";
+    return Language.getInstance().has(key) ? Component.translatable(key) : Component.empty();
   }
 
   private boolean defaultedBoolean(
@@ -1588,7 +1667,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             };
     int controlWidth =
         List.of("default", "true", "false").stream()
-            .mapToInt(choice -> font.width(caption.apply(choice)) + 24)
+            .mapToInt(
+                choice ->
+                    font.width(caption.apply(choice))
+                        + FormTokens.Control.CAPTION_PADDING
+                        + FormTokens.Control.CHOICE_INDICATOR)
             .max()
             .orElseThrow();
     var button =
@@ -2028,20 +2111,42 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void children(FormModel.Node parent) {
+    children(parent.children(), true);
+  }
+
+  private void children(List<FormModel.Node> children, boolean includeGroups) {
     var grouped = new java.util.HashSet<FieldPath>();
-    for (var child : parent.children()) {
+    for (var child : children) {
       if (grouped.contains(child.path())) continue;
+      var group =
+          includeGroups
+              ? presentation.layout().group(child.path())
+              : Optional.<design.inherent.reform.presentation.FormLayout.Group>empty();
+      if (group.isPresent()) {
+        var box = group.orElseThrow();
+        var members =
+            box.fields().stream()
+                .flatMap(path -> children.stream().filter(node -> node.path().equals(path)))
+                .toList();
+        panel.beginGroup(
+            scoped("group:" + box.id()),
+            Component.translatableWithFallback(box.translationKey(), box.label()));
+        if (!box.help().isBlank())
+          panel.row(
+              Component.empty(),
+              Component.translatableWithFallback(box.translationKey() + ".help", box.help()));
+        children(members, false);
+        panel.endGroup();
+        members.forEach(node -> grouped.add(node.path()));
+        continue;
+      }
       var range = presentation.range(child.path());
       if (range.isPresent()) {
         var pair = range.orElseThrow();
         var minimum =
-            parent.children().stream()
-                .filter(node -> node.path().equals(pair.minimum()))
-                .findFirst();
+            children.stream().filter(node -> node.path().equals(pair.minimum())).findFirst();
         var maximum =
-            parent.children().stream()
-                .filter(node -> node.path().equals(pair.maximum()))
-                .findFirst();
+            children.stream().filter(node -> node.path().equals(pair.maximum())).findFirst();
         if (minimum.isPresent() && maximum.isPresent()) {
           panel.beginGroup(
               scoped("range:" + pair.id()),
@@ -2058,11 +2163,26 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           continue;
         }
       }
+      var rowGroup = presentation.layout().row(child.path());
+      if (rowGroup.isPresent()) {
+        for (var path : rowGroup.orElseThrow().fields())
+          children.stream()
+              .filter(node -> node.path().equals(path))
+              .findFirst()
+              .ifPresent(
+                  member -> {
+                    fields(member, label(member));
+                    grouped.add(member.path());
+                  });
+        continue;
+      }
       if (child.role() == FormModel.Role.UNKNOWN) {
         var label =
             Component.translatableWithFallback(
                 "reform.settings.unknown_field", "Unknown field: %s", clip(child.name(), 120));
-        var retained = new EditBox(font, 0, 0, 160, 20, label);
+        var retained =
+            new EditBox(
+                font, 0, 0, FormTokens.Control.TEXT_INPUT, FormTokens.Control.HEIGHT, label);
         String raw = raw(child.input());
         retained.setMaxLength(Math.max(128, raw.length()));
         retained.setValue(raw);
@@ -2073,7 +2193,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             text("unknown_retained", "Retained until explicitly removed"),
             retained,
             structuralButton(
-                parent.path(),
+                new FieldPath(
+                    child.path().segments().subList(0, child.path().segments().size() - 1)),
                 text("remove", "Remove"),
                 label,
                 new DraftEdit.RemoveUnknown(child.name())));
@@ -2237,10 +2358,32 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
               ? List.of("false", "true")
               : scalar.choices();
       if (cycle) {
+        java.util.function.Function<String, Component> caption =
+            value ->
+                scalar.kind() == ValueShape.ScalarKind.BOOLEAN
+                    ? value.equals("true") ? text("on", "On") : text("off", "Off")
+                    : Component.literal(value);
         var button =
-            NativeCycles.<String>builder(Component::literal, raw, choices)
+            NativeCycles.<String>builder(caption, raw, choices)
                 .displayOnlyValue()
-                .create(0, 0, 160, 20, label, (widget, value) -> edit(path, token, value));
+                .create(
+                    0,
+                    0,
+                    Math.max(
+                        60,
+                        Math.min(
+                            FormTokens.Control.UNIT_PREFERRED_LIMIT,
+                            choices.stream()
+                                .mapToInt(
+                                    value ->
+                                        font.width(caption.apply(value))
+                                            + FormTokens.Control.CAPTION_PADDING
+                                            + FormTokens.Control.CHOICE_INDICATOR)
+                                .max()
+                                .orElse(60))),
+                    20,
+                    label,
+                    (widget, value) -> edit(path, token, value));
         return new Control(button, button::setValue, true, declared, true, target, token, null);
       }
       Quantity quantity =
@@ -2253,7 +2396,16 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           quantity == null
               ? scalar.maximumLength() > 0 ? scalar.maximumLength() : 128
               : quantity.input.display().limits().maximumCharacters();
-      var input = new FormEditBox(font, 0, 0, 160, 20, label);
+      var input =
+          new FormEditBox(
+              font,
+              0,
+              0,
+              scalar.kind() == ValueShape.ScalarKind.TEXT
+                  ? FormTokens.Control.TEXT_INPUT
+                  : FormTokens.Control.NUMERIC_INPUT,
+              FormTokens.Control.HEIGHT,
+              label);
       input.setMaxLength(Math.max(raw.length(), inputLimit));
       input.setValue(raw);
       var position = inputPositions.get(path);
@@ -2276,7 +2428,9 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           token,
           quantity);
     }
-    var unavailable = new FormEditBox(font, 0, 0, 160, 20, label);
+    var unavailable =
+        new FormEditBox(
+            font, 0, 0, FormTokens.Control.TEXT_INPUT, FormTokens.Control.HEIGHT, label);
     unavailable.setMaxLength(Math.max(128, raw.length()));
     unavailable.setValue(
         raw.isEmpty() ? text("unsupported", "Editor unavailable").getString() : raw);
@@ -2285,6 +2439,29 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         Tooltip.create(
             text("unsupported_help", "This type needs a dedicated editor. Its data is retained.")));
     return new Control(unavailable, ignored -> {}, false, declared, false, target, token, null);
+  }
+
+  private int unitWidth(NumericInput input) {
+    int width =
+        input.display().units().stream()
+            .mapToInt(
+                unit ->
+                    font.width(
+                            Component.translatableWithFallback(
+                                unit.translationKey(), unit.fallback()))
+                        + 24)
+            .max()
+            .orElse(FormTokens.Control.UNIT_MINIMUM);
+    if (input.display().units().stream().noneMatch(unit -> unit.id().equals(input.unit())))
+      width =
+          Math.max(
+              width,
+              font.width(
+                      text("unit_unavailable", "Unavailable unit")
+                          .copy()
+                          .append(": " + input.unit()))
+                  + 24);
+    return Math.max(48, Math.min(240, width));
   }
 
   private Quantity quantity(
@@ -2328,7 +2505,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             .create(
                 0,
                 0,
-                112,
+                unitWidth(quantity.input),
                 20,
                 label.copy().append(": ").append(text("unit", "Display unit")),
                 (button, unit) -> changeQuantity(path, token, quantity.input.select(unit), false));
@@ -2828,6 +3005,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             if (!summary.getString().isEmpty()) explanation.append("\n").append(summary);
             summary = explanation;
           }
+          var help = fieldHelp(path);
+          if (!help.getString().isEmpty()) {
+            if (!summary.getString().isEmpty()) help = help.copy().append("\n").append(summary);
+            summary = help;
+          }
           panel.summary(key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
             input.setTextColor(
@@ -2947,22 +3129,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   public void render(FormCanvas graphics, int mouseX, int mouseY, float delta) {
     if (composition != null) return;
     super.render(graphics, mouseX, mouseY, delta);
-    graphics.drawCenteredString(font, title, left + width / 2, top + 12, FormPanel.TITLE_TEXT);
-    graphics.drawWordWrap(
-        font,
-        contextLabel,
-        left + 12,
-        top + 30,
-        Math.max(1, width - 24),
-        FormPanel.DESCRIPTION_TEXT);
-    var lines = font.split(status(), statusWidth);
-    for (int i = 0; i < Math.min(2, lines.size()); i++)
-      graphics.drawString(
-          font,
-          lines.get(i),
-          left + 12,
-          statusTop + i * font.lineHeight,
-          FormPanel.DESCRIPTION_TEXT);
+    chrome.render(graphics, status());
   }
 
   @Override
@@ -2974,10 +3141,6 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   @Override
   public boolean keyPressed(int key, int scan, int modifiers) {
     if (closed || !isCurrent()) return false;
-    if (moreActions && key == InputConstants.KEY_ESCAPE) {
-      toggleActions();
-      return true;
-    }
     if (super.keyPressed(key, scan, modifiers)) return true;
     if (loading) return false;
     if (hasControlDown()) {

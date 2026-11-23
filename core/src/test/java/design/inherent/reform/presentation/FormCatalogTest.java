@@ -22,6 +22,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class FormCatalogTest {
+  @Test
+  void supplementalOwnerFactsStaySeparateFromTranslatablePurposeAndLabelOnlySearch() {
+    var original =
+        new FormCatalog.Section(FieldPath.ROOT, "example.settings", "Settings", "Fallback purpose");
+    var decorated = original.withSupplementalHelp("Saved changes require a restart.");
+    assertEquals("", original.supplementalHelp());
+    assertEquals("Fallback purpose", decorated.help());
+    assertEquals("Saved changes require a restart.", decorated.supplementalHelp());
+    var type = ValueTypes.integer(0, 10);
+    var snapshot =
+        new FormCatalog(List.of(decorated))
+            .snapshot(new FormModel(type, DraftTree.from(type, 1, DraftLimits.CONFIGURATION)));
+    assertEquals(decorated, snapshot.entry(FieldPath.ROOT).orElseThrow().section().orElseThrow());
+    assertEquals(1, snapshot.search("settings").size());
+    assertTrue(snapshot.search("restart").isEmpty());
+    assertThrows(
+        IllegalArgumentException.class, () -> original.withSupplementalHelp("x".repeat(4097)));
+    assertThrows(NullPointerException.class, () -> original.withSupplementalHelp(null));
+  }
+
   private record Profile(String name, Map<String, Integer> roles) {}
 
   private record Profiles(List<Profile> profiles, Optional<Integer> optional) {}

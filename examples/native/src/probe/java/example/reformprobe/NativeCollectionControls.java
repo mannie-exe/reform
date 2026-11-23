@@ -180,7 +180,7 @@ final class NativeCollectionControls {
             "detached collection button cannot stage another edit",
             form.editorView().snapshot().orElseThrow().version() == version);
         back();
-        press(button(form, "Undo"));
+        press(ownerAction(form, "Undo"));
         step("collection edit undone through parent actor");
       }
       case 4 -> {
@@ -188,7 +188,7 @@ final class NativeCollectionControls {
         check(
             "one undo restores the whole membership edit",
             values("tones").equals(List.of("CALM", "CALM")));
-        press(button(form, "Redo"));
+        press(ownerAction(form, "Redo"));
         step("collection membership redo requested");
       }
       case 5 -> {
@@ -278,7 +278,7 @@ final class NativeCollectionControls {
                     .toList()
                     .equals(blockIds));
         back();
-        press(button(form, "Undo"));
+        press(ownerAction(form, "Undo"));
         step("whole page batch undone");
       }
       case 12 -> {

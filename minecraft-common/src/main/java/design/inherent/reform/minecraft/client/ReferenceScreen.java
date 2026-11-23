@@ -3,7 +3,6 @@ package design.inherent.reform.minecraft.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationSnapshot;
-import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.reference.ReferenceLimits;
 import design.inherent.reform.reference.ReferencePage;
 import design.inherent.reform.reference.ReferenceQuery;
@@ -30,11 +29,11 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   private final List<AbstractWidget> querying = new ArrayList<>();
   private EditBox filter, key;
   private FormPanel panel;
+  private FormChrome chrome;
   private Button use, back, nextPage;
   private ReferenceSelection.Search search;
   private ReferenceSelection.Lookup<V> lookup;
   private Component notice, searchNotice, lookupNotice;
-  private int bodyTop, statusTop;
   private boolean started, staging, returning, closed, wasCurrent = true;
 
   ReferenceScreen(
@@ -75,29 +74,9 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
     use = footer(text("use", "Use selection"), this::choose);
     footer(text("refresh", "Refresh source"), this::refresh);
     back = footer(text("back", "Back"), this::onClose);
-    var geometry =
-        FormGeometry.controls(
-            footer.stream().map(w -> new FormGeometry.Size(w.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int footerTop = height - 12 - geometry.height();
-    statusTop = footerTop - 24;
-    for (int i = 0; i < footer.size(); i++) {
-      var at = geometry.placements().get(i);
-      var widget = footer.get(i);
-      widget.setPosition(12 + at.x(), footerTop + at.y());
-      widget.setWidth(at.width());
-      addRenderableWidget(widget);
-    }
-    bodyTop = 40 + font.split(sourceLabel(), Math.max(1, width - 24)).size() * font.lineHeight;
-    panel =
-        new FormPanel(
-            minecraft,
-            12,
-            bodyTop,
-            Math.max(1, width - 24),
-            Math.max(1, statusTop - bodyTop - 8),
-            false);
+    chrome = new FormChrome(minecraft, width, height, title, sourceLabel(), status(), footer);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     panel.field(
         "filter",
         text("filter", "Search"),
@@ -423,13 +402,7 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
-    graphics.drawWordWrap(
-        font, sourceLabel(), 12, 30, Math.max(1, width - 24), FormPanel.DESCRIPTION_TEXT);
-    var lines = font.split(status(), Math.max(1, width - 24));
-    for (int i = 0; i < Math.min(2, lines.size()); i++)
-      graphics.drawString(
-          font, lines.get(i), 12, statusTop + i * font.lineHeight, FormPanel.DESCRIPTION_TEXT);
+    chrome.render(graphics, status());
   }
 
   @Override

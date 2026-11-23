@@ -225,6 +225,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             result = execute(command, example, log, timeout,
                              chooser_report=output if chooser_client else None)
             native = json.loads(output.read_text()) if output.is_file() else {}
+            failed_scene = fixture / "platform-scene-failure.json"
+            if failed_scene.is_file() and not failed_scene.is_symlink() and failed_scene.stat().st_size <= 131072:
+                native["sceneFailure"] = json.loads(failed_scene.read_text())
             image = fixture / "platform-form.png"
             if client and image.is_file() and not image.is_symlink():
                 copied = reports / ("reopen.png" if reopen else "first.png")
@@ -236,7 +239,11 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             if workspace_client and isinstance(native.get("workspace"), dict):
                 native["workspace"]["captures"] = retain_captures(
                     fixture, reports, native["workspace"].get("captures", []),
-                    {"platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png"}, reopen)
+                    {"platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png"}, reopen)
+            if workspace_client and isinstance(native.get("sceneFailure"), dict):
+                native["sceneFailure"]["captures"] = retain_captures(
+                    fixture, reports, native["sceneFailure"].get("captures", []),
+                    {"platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png"}, reopen)
             if workflow_client and isinstance(native.get("workflow"), dict):
                 native["workflow"]["captures"] = retain_captures(
                     fixture, reports, native["workflow"].get("captures", []),

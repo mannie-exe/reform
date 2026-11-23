@@ -9,6 +9,7 @@ import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.FormTokens;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -665,6 +666,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private design.inherent.reform.presentation.SectionNavigation.Bookmark retainedScroll;
     private DocumentId actionRoute;
     private int statusTop, statusWidth;
+    private FormGeometry.ScreenFrame outerFrame;
     private int titleLeft, titleWidth;
     private List<net.minecraft.util.FormattedCharSequence> titleLines = List.of();
 
@@ -696,7 +698,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         // Aliases and ancestor/child placements share one physical control, draft and history.
         if (selections.stream().anyMatch(before -> path.startsWith(before.path()))) continue;
         selections.removeIf(before -> before.path().startsWith(path));
-        selections.add(new SettingsView.Selection(path, item.title(), item.help()));
+        selections.add(new SettingsView.Selection(path, item.title(), item.help(), item.section()));
       }
       for (var route : selected.keySet()) ensureOwner(route);
       var returned = resetList ? navigation.position(selectedKey).orElse(null) : null;
@@ -708,16 +710,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         actionRoute = selected.keySet().stream().findFirst().orElse(null);
       var actionEntry = actionRoute == null ? null : entry(actionRoute);
       // Current owner buttons are installed after the actual view has refreshed their state.
-      int padding = Math.min(12, Math.max(0, (Math.min(width, height) - 1) / 2));
+      int padding =
+          Math.min(FormTokens.Space.SCREEN, Math.max(0, (Math.min(width, height) - 1) / 2));
       int available = Math.max(1, width - 2 * padding);
       var metrics =
           new FormGeometry.WorkspaceMetrics(
-              Math.max(112, font.width(text("search", "Search settings")) + 20),
-              180,
-              180,
+              Math.max(
+                  FormTokens.Measure.NAVIGATION_MINIMUM,
+                  font.width(text("search", "Search settings")) + 20),
+              FormTokens.Measure.EDITOR_MINIMUM,
+              FormTokens.Measure.INFORMATION_MINIMUM,
               Math.max(112, Math.min(200, available / 4)),
-              220,
-              8);
+              FormTokens.Measure.INFORMATION_PREFERRED,
+              FormTokens.Space.CONTENT);
       int bodyTop = padding + 26;
       var preliminary =
           FormGeometry.workspace(
@@ -727,6 +732,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               metrics,
               drawerOpen,
               information.open());
+      net.minecraft.client.gui.components.Button navigationToggle = null;
       if (preliminary.compactNavigation()) {
         var toggle =
             button(
@@ -739,7 +745,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 });
         toggle.setPosition(padding, padding);
         toggle.setWidth(Math.min(100, available));
-        addRenderableWidget(toggle);
+        navigationToggle = toggle;
       }
       titleLeft =
           padding
@@ -748,24 +754,31 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   : preliminary.navigation().map(at -> at.width() + 8).orElse(0));
       titleWidth = Math.max(1, width - padding - titleLeft);
       var wrappedTitle = font.split(title, titleWidth);
-      titleLines =
-          List.copyOf(
-              wrappedTitle.subList(
-                  0, Math.min(wrappedTitle.size(), Math.max(1, height / 5 / font.lineHeight))));
-      bodyTop = padding + Math.max(20, titleLines.size() * font.lineHeight) + 6;
+      titleLines = List.copyOf(wrappedTitle);
       // Measure once with the same labels before mounting, rather than reserving a fixed row count.
       var actionView =
           actionEntry == null || actionEntry.editor == null || !actionEntry.editor.isOpen()
               ? null
               : actionEntry.editor.presentation();
       var actionSizes = new ArrayList<FormGeometry.Size>();
-      actionSizes.add(new FormGeometry.Size(actions.getFirst().getWidth(), 20));
+      actionSizes.add(
+          new FormGeometry.Size(actions.getFirst().getWidth(), FormTokens.Control.HEIGHT));
       if (actionView != null) for (var size : actionView.actionSizes(font)) actionSizes.add(size);
-      var actionGeometry = FormGeometry.controls(actionSizes, available, 4);
-      int footerTop = Math.max(bodyTop + 1, height - padding - actionGeometry.height());
-      statusTop = Math.max(bodyTop, footerTop - 26);
-      statusWidth = available;
-      int editorBottom = Math.max(bodyTop + 1, statusTop - 8);
+      outerFrame =
+          FormGeometry.screenFrame(
+              width,
+              height,
+              Math.max(
+                  FormTokens.Measure.TITLE_MINIMUM_HEIGHT, titleLines.size() * font.lineHeight),
+              0,
+              FormTokens.Measure.STATUS_MINIMUM_HEIGHT,
+              actionSizes);
+      bodyTop = outerFrame.content().y();
+      statusTop = outerFrame.status().map(FormGeometry.Placement::y).orElse(bodyTop);
+      statusWidth = outerFrame.content().width();
+      int editorBottom = bodyTop + outerFrame.content().height();
+      if (navigationToggle != null && !outerFrame.headerInContent())
+        addRenderableWidget(navigationToggle);
       var geometry =
           FormGeometry.workspace(
               available, bodyTop, editorBottom, metrics, drawerOpen, information.open());
@@ -774,6 +787,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       panel =
           new FormPanel(
               minecraft, padding + bounds.x(), bounds.y(), bounds.width(), bounds.height(), false);
+      if (outerFrame.headerInContent()) {
+        panel.heading(title);
+        if (navigationToggle != null) panel.actions("workspace:categories", navigationToggle);
+      }
+      if (outerFrame.statusInContent()) panel.row(Component.empty(), scopeStatus());
       if (notice != null) panel.row(Component.empty(), notice);
       if (!geometry.navigationOverlay()) {
         if (information.open() && geometry.information().isEmpty()) information.append(panel);
@@ -781,6 +799,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           var bound = entry(item.getKey());
           if (bound.editor != null && bound.editor.isOpen()) {
             var view = bound.editor.presentation();
+            var route = item.getKey();
+            view.discardDocument(() -> confirmDiscard(route));
             view.compose(panel, item.getValue());
             mount(
                 view,
@@ -838,20 +858,6 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   "Each document saves separately. Drafts and undo history remain when you browse."),
               review);
         }
-        if (actionView != null && actionView.showingActions()) {
-          var route = actionRoute;
-          var discard =
-              button(
-                  token,
-                  text("discard", "Discard draft"),
-                  actionEntry.form.title(),
-                  () -> confirmDiscard(route));
-          discard.active = !actionEntry.editor.busy();
-          panel.row(
-              actionEntry.form.title(),
-              text("discard_help", "Release this draft. Completed saves are retained."),
-              discard);
-        }
         if (batchView != null)
           panel.row(
               Component.empty(),
@@ -863,6 +869,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   () -> navigate(batchView)));
         if (selected.isEmpty())
           panel.row(text("no_matches", "No matching settings or operations."), Component.empty());
+        if (actionView != null) actions.addAll(actionView.ownerActions());
+        if (outerFrame.actionsInContent())
+          panel.actions(
+              "workspace:actions",
+              actions.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
         panel.finish(0);
         if (returned != null) panel.restore(returned.scroll());
         else if (!resetList && retainedScroll != null) panel.restore(retainedScroll);
@@ -883,8 +894,6 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         information.focus(informationTarget, () -> setFocused(informationTarget));
       }
       resetList = false;
-      if (actionView != null && !geometry.navigationOverlay())
-        actions.addAll(actionView.ownerActions());
       var footerGeometry =
           FormGeometry.controls(
               actions.stream()
@@ -892,16 +901,22 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   .toList(),
               available,
               4);
-      int actualFooterTop = Math.max(bodyTop + 1, height - padding - footerGeometry.height());
-      for (int i = 0; i < actions.size(); i++) {
-        var position = footerGeometry.placements().get(i);
-        var action = actions.get(i);
-        action.setPosition(padding + position.x(), actualFooterTop + position.y());
-        action.setWidth(position.width());
-        addRenderableWidget(action);
+      if (!outerFrame.actionsInContent() && outerFrame.actions().isPresent()) {
+        var actionBounds = outerFrame.actions().orElseThrow();
+        if (footerGeometry.height() > actionBounds.height())
+          throw new IllegalStateException("Actual owner actions exceed their measured region");
+        for (int i = 0; i < actions.size(); i++) {
+          var position = footerGeometry.placements().get(i);
+          var action = actions.get(i);
+          action.setPosition(actionBounds.x() + position.x(), actionBounds.y() + position.y());
+          action.setWidth(position.width());
+          addRenderableWidget(action);
+        }
+        if (actionView != null && actions.size() > 1 && !geometry.navigationOverlay())
+          actions
+              .getLast()
+              .setX(actionBounds.x() + actionBounds.width() - actions.getLast().getWidth());
       }
-      if (actionView != null && actions.size() > 1 && !geometry.navigationOverlay())
-        actions.getLast().setX(padding + available - actions.getLast().getWidth());
       navigationWidgets = null;
       if (geometry.navigation().isPresent()) {
         var at = geometry.navigation().orElseThrow();
@@ -1127,13 +1142,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                           new WorkspaceNavigation.Key(
                               WorkspaceNavigation.Kind.FIELD, placement.id(), Optional.of(path)))
                   .orElse(key);
-          var help =
-              node.section()
-                  .map(
-                      section ->
-                          Component.translatableWithFallback(
-                              section.translationKey() + ".help", section.help()))
-                  .orElse(Component.empty());
+          var help = node.section().map(CatalogHelp::describe).orElse(Component.empty());
           result.put(
               field,
               new WorkspaceNavigation.Entry(
@@ -1339,7 +1348,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         retainedScroll = panel.bookmark();
         retainedFocus = getFocused() == panel ? panel.focusKey() : null;
       }
-      var focused = mountedView();
+      var focused = focusedView();
       DocumentId rememberedOwner = actionRoute;
       if (focused instanceof SettingsView<?> settings)
         for (var bound : entries.values())
@@ -1425,8 +1434,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void showEditor(ClientEditor<?> selected, Optional<FieldPath> field) {
       notice = null;
+      boolean restoreFocus =
+          navigation.restoring()
+              && navigation
+                  .position(selectedKey)
+                  .map(position -> position.focus() != null)
+                  .orElse(false);
       rebuildWidgets();
-      field.ifPresent(selected.presentation()::focusAfterLoad);
+      if (!restoreFocus) selected.presentation().focusAfterLoad(field.orElse(FieldPath.ROOT));
     }
 
     private void showOpeningFailure(Throwable failure) {
@@ -1567,7 +1582,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       super.tick();
       if (!isOpen() || NativeScreens.current(minecraft) != this) return;
       if (information.tick()) rebuildWidgets();
-      var focused = mountedView();
+      var focused = focusedView();
       DocumentId focusRoute = null;
       if (focused instanceof SettingsView<?> settings)
         for (var bound : entries.values())
@@ -1595,7 +1610,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     protected void setInitialFocus() {
-      if (getFocused() != null) return;
+      if (hasCurrentFocus()) return;
       if (navigationWidgets != null && navigation.restoreSearchFocus())
         setFocused(navigationWidgets.search());
       else if (panel != null && !drawerOpen) {
@@ -1659,19 +1674,23 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (!isOpen()) return;
       if (information.guard()) rebuildWidgets();
       super.render(graphics, x, y, delta);
-      for (int i = 0; i < titleLines.size(); i++) {
+      for (int i = 0; outerFrame.title().isPresent() && i < titleLines.size(); i++) {
         var line = titleLines.get(i);
         graphics.drawString(
             font,
             line,
             titleLeft + (titleWidth - font.width(line)) / 2,
-            12 + i * font.lineHeight,
+            outerFrame.title().orElseThrow().y() + i * font.lineHeight,
             FormPanel.TITLE_TEXT);
       }
       var lines = font.split(scopeStatus(), Math.max(1, statusWidth));
-      for (int i = 0; i < Math.min(2, lines.size()); i++)
+      for (int i = 0; outerFrame.status().isPresent() && i < Math.min(2, lines.size()); i++)
         graphics.drawString(
-            font, lines.get(i), 12, statusTop + i * font.lineHeight, FormPanel.DESCRIPTION_TEXT);
+            font,
+            lines.get(i),
+            outerFrame.status().orElseThrow().x(),
+            statusTop + i * font.lineHeight,
+            FormPanel.DESCRIPTION_TEXT);
     }
   }
 }

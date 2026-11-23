@@ -23,6 +23,7 @@
 - [Server settings](server-settings.md) owns actual-server lifecycle, policy/native binding and local native-source access.
 - [World recipes](world-recipes.md) owns unsaved creation-context admission and domain compilation.
 - [Presentation](presentation.md) owns measured panel/geometry/navigation boundaries.
+- [Form composition](composition.md) owns automatic rows, authored relationships, content groups, and document actions.
 - [Interface writing](interface-writing.md) owns built-in labels, help, outcomes and narration.
 - [Coverage](coverage.md) indexes implementation and remaining qualification.
 - [Verification](verification.md) owns current evidence and material gaps.

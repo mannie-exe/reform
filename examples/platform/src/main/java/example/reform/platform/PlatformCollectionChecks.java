@@ -122,11 +122,7 @@ final class PlatformCollectionChecks implements PlatformFormProbe.Scene {
   }
 
   private void browse(String field) {
-    if (widgets(form).stream()
-        .anyMatch(
-            widget ->
-                widget instanceof Button && widget.getMessage().getString().equals("Settings")))
-      press(button(form, "Settings"));
+    returnToSettings(form);
     press(narrated(field + ": Choose values"));
   }
 

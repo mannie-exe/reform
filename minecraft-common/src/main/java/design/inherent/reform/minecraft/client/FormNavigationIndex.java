@@ -158,12 +158,9 @@ final class FormNavigationIndex {
     return selected().stream()
         .flatMap(entry -> projection.breadcrumbs(entry.path()).reversed().stream())
         .flatMap(entry -> entry.section().stream())
-        .filter(section -> !section.help().isBlank())
+        .filter(CatalogHelp::present)
         .findFirst()
-        .map(
-            section ->
-                Component.translatableWithFallback(
-                    section.translationKey() + ".help", section.help()));
+        .map(CatalogHelp::describe);
   }
 
   Component narration() {

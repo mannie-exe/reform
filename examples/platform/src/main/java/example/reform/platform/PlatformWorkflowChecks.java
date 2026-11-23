@@ -123,15 +123,14 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
   }
 
   private void press(Screen screen, String label) {
-    var available =
-        widgets(screen).stream().anyMatch(widget -> widget.getMessage().getString().equals(label));
-    if (!available
-        && widgets(screen).stream()
-            .anyMatch(widget -> widget.getMessage().getString().equals("More…")))
-      press(screen, "More…");
-    var target = button(screen, label);
-    focus(screen, target);
-    click(screen, target);
+    if (label.equals("Settings")) {
+      returnToSettings(screen);
+      return;
+    }
+    var target = ownerAction(screen, label);
+    var host = actionHost(screen);
+    focus(host, target);
+    click(host, target);
   }
 
   private Button navigation(Screen screen, String label) {

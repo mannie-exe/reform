@@ -942,11 +942,6 @@ final class NativeIntegratedPolicyControls {
         if (client.screen != form
             || form.editorView().review().isPresent()
             || !button(form, "Save and apply").active) return false;
-        if (widgets(form).stream()
-            .anyMatch(widget -> widget.getMessage().getString().equals("Settings"))) {
-          click(form, button(form, "Settings"));
-          return false;
-        }
         check(
             "explicit re-observation and review retain the typed change against the fresh source",
             form.editorView().dirty()

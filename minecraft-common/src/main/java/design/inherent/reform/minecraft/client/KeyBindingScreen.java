@@ -7,7 +7,6 @@ import design.inherent.reform.minecraft.client.KeyBindingOptions.Modifier;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.EditorActor;
-import design.inherent.reform.presentation.FormGeometry;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -40,10 +39,10 @@ public final class KeyBindingScreen extends NativeFormScreen {
   private KeyBindingOptions.Conflicts conflicts;
   private KeyCapture capture;
   private FormPanel panel;
+  private FormChrome chrome;
   private Object widgets, reviewEpoch;
   private OperationHandle<EditorActor.View<Map<String, KeyBindingOptions.Binding>>> operation;
   private Component notice, conflictNotice;
-  private int statusTop;
   private boolean requested, reviewing, reviewAgain, closed, returning, wasCurrent;
 
   public KeyBindingScreen(
@@ -125,30 +124,10 @@ public final class KeyBindingScreen extends NativeFormScreen {
     button(Control.REFRESH, text("review", "Refresh conflicts"), this::review);
     button(Control.APPLY, text("apply", "Apply draft"), this::apply);
     button(Control.BACK, text("back", "Back"), this::onClose);
-    var layout =
-        FormGeometry.controls(
-            footer.stream().map(widget -> new FormGeometry.Size(widget.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int top = height - 12 - layout.height();
-    statusTop = top - 24;
-    for (int i = 0; i < footer.size(); i++) {
-      var widget = footer.get(i);
-      var placement = layout.placements().get(i);
-      widget.setPosition(12 + placement.x(), top + placement.y());
-      widget.setWidth(placement.width());
-      addRenderableWidget(widget);
-    }
-    int bodyTop =
-        34 + font.split(request.contextLabel(), Math.max(1, width - 24)).size() * font.lineHeight;
-    panel =
-        new FormPanel(
-            minecraft,
-            12,
-            bodyTop,
-            Math.max(1, width - 24),
-            Math.max(1, statusTop - bodyTop - 8),
-            false);
+    chrome =
+        new FormChrome(minecraft, width, height, title, request.contextLabel(), status(), footer);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
         "purpose",
         text("purpose", "Native keybinding"),
@@ -412,13 +391,7 @@ public final class KeyBindingScreen extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int mouseX, int mouseY, float delta) {
     super.render(graphics, mouseX, mouseY, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
-    graphics.drawWordWrap(
-        font, request.contextLabel(), 12, 30, Math.max(1, width - 24), FormPanel.DESCRIPTION_TEXT);
-    var lines = font.split(status(), Math.max(1, width - 24));
-    for (int i = 0; i < Math.min(2, lines.size()); i++)
-      graphics.drawString(
-          font, lines.get(i), 12, statusTop + i * font.lineHeight, FormPanel.DESCRIPTION_TEXT);
+    chrome.render(graphics, status());
   }
 
   @Override

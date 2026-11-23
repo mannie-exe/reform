@@ -389,7 +389,7 @@ final class NativeCloseControls {
         check(
             "leaving feedback retains its editing lifetime",
             client.screen == form && actions.view().snapshot().isPresent());
-        press(button(form, "Operation…"));
+        press(ownerAction(form, "Operation…"));
         outcome = outcome();
         check(
             "operation result reopens by exact retained identity",
@@ -504,7 +504,7 @@ final class NativeCloseControls {
                     .value()
                     .equals(new Options(8, "queued")));
         confirmedSaves.incrementAndGet();
-        press(button(form, "Operation…"));
+        press(ownerAction(form, "Operation…"));
         outcome = outcome();
         check(
             "cancelled request and actual completed result remain separate",

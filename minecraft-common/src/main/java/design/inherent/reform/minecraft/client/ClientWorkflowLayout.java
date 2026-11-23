@@ -34,12 +34,33 @@ public record ClientWorkflowLayout(List<Group> groups, List<ReviewScope> reviews
           "Workflow groups, placements, operations and reviews require unique bounded identities");
     var placements = new HashSet<DocumentId>();
     var actions = new HashSet<DocumentId>();
+    var sections = new HashMap<DocumentId, Section>();
     var complete = new HashSet<List<Category>>();
     var prefixes = new HashMap<DocumentId, List<Category>>();
     for (var group : groups) {
-      for (var placement : group.placements())
+      var closedSections = new HashMap<DocumentId, Set<DocumentId>>();
+      var currentSections = new HashMap<DocumentId, DocumentId>();
+      for (var placement : group.placements()) {
         if (!placements.add(placement.id()))
           throw new IllegalArgumentException("Duplicate workflow placement");
+        var section = placement.section().orElse(null);
+        if (section != null) {
+          var before = sections.putIfAbsent(section.id(), section);
+          if (before != null && !before.equals(section))
+            throw new IllegalArgumentException("A content section needs one stable title and help");
+        }
+        var id = section == null ? null : section.id();
+        var previous = currentSections.get(placement.route());
+        if (!Objects.equals(previous, id)) {
+          var closed =
+              closedSections.computeIfAbsent(placement.route(), ignored -> new HashSet<>());
+          if (previous != null) closed.add(previous);
+          if (id != null && closed.contains(id))
+            throw new IllegalArgumentException(
+                "Content sections must be contiguous within an owner page");
+          currentSections.put(placement.route(), id);
+        }
+      }
       for (var action : group.actions())
         if (!actions.add(action.id()))
           throw new IllegalArgumentException("Duplicate workflow action");
@@ -56,16 +77,65 @@ public record ClientWorkflowLayout(List<Group> groups, List<ReviewScope> reviews
     }
   }
 
-  /** Navigation only. Multiple placements can open the same retained document and draft. */
+  /** A content box, independent of navigation and source ownership. */
+  public record Section(DocumentId id, Component title, Component help, Component eyebrow) {
+    public Section(DocumentId id, Component title, Component help) {
+      this(id, title, help, Component.empty());
+    }
+
+    public Section {
+      Objects.requireNonNull(id);
+      title = Objects.requireNonNull(title).copy();
+      help = Objects.requireNonNull(help).copy();
+      eyebrow = Objects.requireNonNull(eyebrow).copy();
+      if (title.getString().isBlank()
+          || title.getString().length() > 1024
+          || help.getString().length() > 4096
+          || eyebrow.getString().length() > 1024)
+        throw new IllegalArgumentException("Section captions must be bounded");
+    }
+
+    @Override
+    public Component title() {
+      return title.copy();
+    }
+
+    @Override
+    public Component help() {
+      return help.copy();
+    }
+
+    @Override
+    public Component eyebrow() {
+      return eyebrow.copy();
+    }
+
+    public Section withEyebrow(Component eyebrow) {
+      return new Section(id, title, help, eyebrow);
+    }
+  }
+
+  /** Multiple placements can compose the same retained document, optionally in content boxes. */
   public record Placement(
       DocumentId id,
       DocumentId route,
       Component title,
       Optional<FieldPath> field,
       Component help,
-      Set<ApplicationEffects.Timing> timings) {
+      Set<ApplicationEffects.Timing> timings,
+      Optional<Section> section) {
+    public Placement(
+        DocumentId id,
+        DocumentId route,
+        Component title,
+        Optional<FieldPath> field,
+        Component help,
+        Set<ApplicationEffects.Timing> timings) {
+      this(id, route, title, field, help, timings, Optional.empty());
+    }
+
     public Placement(DocumentId id, DocumentId route, Component title, Optional<FieldPath> field) {
-      this(id, route, title, field, Component.empty(), Set.of());
+      this(id, route, title, field, Component.empty(), Set.of(), Optional.empty());
     }
 
     public Placement {
@@ -75,6 +145,11 @@ public record ClientWorkflowLayout(List<Group> groups, List<ReviewScope> reviews
       Objects.requireNonNull(field);
       help = Objects.requireNonNull(help).copy();
       timings = Set.copyOf(timings);
+      Objects.requireNonNull(section);
+    }
+
+    public Placement inSection(Section section) {
+      return new Placement(id, route, title, field, help, timings, Optional.of(section));
     }
 
     @Override

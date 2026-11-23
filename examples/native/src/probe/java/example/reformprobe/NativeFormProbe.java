@@ -1017,7 +1017,7 @@ public final class NativeFormProbe {
           check(
               distance.getValue().equals("128") && Files.readString(path()).equals(savedBytes),
               "Revert changed saved values");
-          click(button(form, "Defaults"));
+          click(ownerAction(form, "Defaults"));
           next("revert retains actual saved baseline");
         }
         case 10 -> {
@@ -1218,6 +1218,8 @@ public final class NativeFormProbe {
   }
 
   static void click(Screen screen, Button button) {
+    var host = actionHost(screen);
+    if (host != screen && widgets(host).contains(button)) screen = host;
     check(
         button.active && button.visible,
         "Inactive native control " + button.getMessage().getString());
@@ -1237,18 +1239,38 @@ public final class NativeFormProbe {
         .orElseThrow();
   }
 
-  /** Reach a mounted action through the actual native More pane, without calling owner services. */
+  /** The explicit action view is a separate native screen over the same retained owner. */
+  static Screen actionHost(Screen root) {
+    var current = Minecraft.getInstance().screen;
+    return current != null && current.getClass().getSimpleName().equals("DocumentActionsScreen")
+        ? current
+        : root;
+  }
+
+  static void returnToSettings(Screen root) {
+    var host = actionHost(root);
+    if (host != root) click(host, button(host, "Back to settings"));
+    check(Minecraft.getInstance().screen == root, "Document actions return to the retained owner");
+  }
+
   static Button ownerAction(Screen screen, String label) {
-    if (widgets(screen).stream()
+    var host = actionHost(screen);
+    if (widgets(host).stream()
         .noneMatch(
             widget -> widget instanceof Button && widget.getMessage().getString().equals(label))) {
-      var more = button(screen, "More…");
-      if (!focus(screen, more)) throw new AssertionError("More is outside the native focus tree");
-      click(screen, more);
+      returnToSettings(screen);
+      if (widgets(screen).stream()
+          .noneMatch(
+              widget ->
+                  widget instanceof Button && widget.getMessage().getString().equals(label))) {
+        var open = button(screen, "Document actions…");
+        check(focus(screen, open), "Actions are in the native focus tree");
+        click(screen, open);
+      }
+      host = actionHost(screen);
     }
-    var action = button(screen, label);
-    if (!focus(screen, action))
-      throw new AssertionError("Owner action is outside the native focus tree");
+    var action = button(host, label);
+    check(focus(host, action), "Owner action is in the native focus tree");
     return action;
   }
 

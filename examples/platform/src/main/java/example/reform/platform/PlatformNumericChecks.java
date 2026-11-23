@@ -548,12 +548,26 @@ final class PlatformNumericChecks implements PlatformFormProbe.Scene {
                 && duration.getCursorPosition() == cursor
                 && duration.getHighlighted().equals(selected));
         verify(
-            "narrow range retains both fields and stacks their measured controls",
+            "narrow range retains both fields and uses complete columns or a complete stack: minimum="
+                + rangeMinimum.getValue()
+                + "@"
+                + rangeMinimum.getX()
+                + ","
+                + rangeMinimum.getY()
+                + "; maximum="
+                + rangeMaximum.getValue()
+                + "@"
+                + rangeMaximum.getX()
+                + ","
+                + rangeMaximum.getY(),
             field("minimum") == rangeMinimum
                 && field("maximum") == rangeMaximum
                 && rangeMinimum.getValue().equals("2.5")
                 && rangeMaximum.getValue().equals("60")
-                && rangeMinimum.getY() < rangeMaximum.getY());
+                && ((rangeMinimum.getY() == rangeMaximum.getY()
+                        && rangeMinimum.getX() < rangeMaximum.getX())
+                    || (rangeMinimum.getX() == rangeMaximum.getX()
+                        && rangeMinimum.getY() < rangeMaximum.getY())));
         geometry(form);
         verify(
             "compact numeric caption can be reached without changing its value",

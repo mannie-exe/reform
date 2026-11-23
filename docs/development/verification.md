@@ -1,5 +1,26 @@
 # Verification
 
+## Responsive composition candidate
+
+The unpublished 0.3.0-dev.8 candidate adds [semantic roles, authored composition, and measured screen regions](composition.md). Shared native frames contain headers, context, body, status, and actions; the compact entry chooser uses a font-measured reading offer. Playground's composition contracts and historical Compat 619c90b inform the layout; neither is a library dependency. Public 0.2.0 remains unchanged.
+
+`spotlessApply check build` passed with 590 core checks on each codec runtime, all four packaged native consumers, eight public consumer inputs, and tooling/artifact checks. Geometry cases include complete relationship fallback, joined steppers, parent containment, overflow to scrolling content, offset constraints, and centered wide/narrow reading offers.
+
+| Target            | Candidate SHA-256                                                  | Workspace pair | Authoring pair |
+| ----------------- | ------------------------------------------------------------------ | -------------- | -------------- |
+| NeoForge / 1.21.1 | `130e11b5d9057c2048fc58bef33b53024011642ff66cbabab6b67abd1daadcba` | PASS           | PASS           |
+| Fabric / 1.21.1   | `22560701656c47164b16ff72ef6b6173208e201cb83019fbef4ea0ce1786e790` | PASS           | PASS           |
+| NeoForge / 26.3   | `af74a977e10f7455e13f7b1d74d8d235ff2b82f177bc465c92789acadbd036f3` | PASS           | PASS           |
+| Fabric / 26.3     | `4541017e0aab91759d8f6dc622850780599d6851311b4db59c487422ce214b40` | PASS           | PASS           |
+
+Each workspace pair passes 216 top-level first-boot and 42 reopen assertions (252 and 42 when nested assertions are included). Each authoring pair passes 915 and 81 nested assertions across numeric, reference, collection, dependency, import, conflict, catalog, review, review-command, and workflow scenarios. All sixteen final clients exited normally and their fixtures were removed. A separate NeoForge 1.21.1 creation-recipe pair also passes on the exact candidate, with both clients exiting normally and their fixture removed.
+
+Tests use the packaged library and actual native buttons, retained drafts, serializers, callbacks, and source/reopen outcomes. Entry-choice checks cover blocked reasons, native narration, readiness changes, repeated admission, retired callbacks, parent return, and shutdown. The unchanged catalog return assertion now passes after fixing focus on a retired FormPanel. Earlier candidates remain attributed causal evidence rather than qualification of these products.
+
+Actual Compat 0.43.0-layout-dev.5 on NeoForge 1.21.1 passes its 479 Java and 21 tooling checks, minimum dedicated startup, twelve-scene/two-boot workspace, staged settings, exact numeric domains and units, running policies, native source owners, conflict recovery, and operation failures/retry. The twelve scenes include three context-chooser sizes and three settings documents at wide, narrow, and high-GUI sizes. Measured field/control, stepper, footer, and host-bound checks supplement inspected screenshots. Matched before/after counts are mixed: wide reachable inputs change from 14 to 15, 15 to 11, and 9 to 10 across the three documents. Restored explanations and owner context can increase page height; this does not establish a universal density improvement.
+
+Native execution used macOS Apple Silicon. These results do not qualify spoken narration, physical IME input, Windows/Linux graphics, Skyweave migration, Lootr coexistence, or full-pack performance. Scripted input costs exclude rendering and asynchronous domain work. The candidate remains unpublished; no personal instances or public releases were changed.
+
 ## Stable 0.2.0 release preparation
 
 The stable four-target build passes the required local `mise run check`. Every owned compiled class in each 0.2.0 JAR is byte-identical to its native-qualified dev.67 counterpart; only release identity and metadata change. Local dependency review passes with 31 explicitly classified supplied-runtime advisories and no source-secret findings. Hosted checks, reproducible release assets, and public dependency resolution have their own delivery evidence. Skyweave's actual 0.2 adoption remains deferred by its owner and, under the release authorization, is follow-up work rather than a publication gate. The actual Compat dev.67 binding is qualified below.

@@ -5,5 +5,7 @@
   "key.reform_platform.workflow_primary": "Workflow primary action",
   "key.reform_platform.workflow_secondary": "Unselected workflow action",
   "reform_platform_example:settings/workflow_keys/fields/key.reform_platform.workflow_primary": "Primary action",
-  "reform_platform_example:settings/workflow_keys/fields/key.reform_platform.workflow_secondary": "Secondary action"
+  "reform_platform_example:settings/workflow_keys/fields/key.reform_platform.workflow_secondary": "Secondary action",
+  "workspace.purpose.help": "Localized purpose from resources",
+  "workspace.late.help": "Purpose loaded after definition construction"
 }

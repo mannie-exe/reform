@@ -108,9 +108,7 @@ final class NativeRecipePreviewControls {
   }
 
   private void edit(String value) {
-    if (widgets(form).stream()
-        .anyMatch(widget -> widget.getMessage().getString().equals("Settings")))
-      click(form, button(form, "Settings"));
+    returnToSettings(form);
     replace(form, input(form, "Soil depth"), value);
   }
 
@@ -228,13 +226,6 @@ final class NativeRecipePreviewControls {
         step("older preview retained with its source and draft; revert requested");
       }
       case 8 -> {
-        if (client.screen == form
-            && button(form, "Done").active
-            && widgets(form).stream()
-                .anyMatch(widget -> widget.getMessage().getString().equals("Settings"))) {
-          click(form, button(form, "Settings"));
-          return false;
-        }
         if (!ready("2") || actions.view().dirty()) return false;
         form.onClose();
         check(

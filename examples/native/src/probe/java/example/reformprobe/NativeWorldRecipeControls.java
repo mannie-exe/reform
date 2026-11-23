@@ -147,7 +147,7 @@ final class NativeWorldRecipeControls {
             soil.getValue().equals("2") && !actions.view().dirty());
         check("native apply is not labeled file save", button(form, "Apply recipe").active);
         check("native context reload is explicit", ownerAction(form, "Reload context").active);
-        click(form, button(form, "Settings"));
+        returnToSettings(form);
         soil = input(form, "Soil depth");
         geometry(form);
         capture.accept("form-recipe.png", () -> replace(form, soil, "-"));

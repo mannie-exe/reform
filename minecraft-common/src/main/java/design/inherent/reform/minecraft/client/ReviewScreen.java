@@ -9,7 +9,6 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
-import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -74,6 +73,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private EditorActor.Validation validated;
   private OperationHandle<?> operation;
   private FormPanel panel;
+  private FormChrome chrome;
   private FormEditBox filter;
   private FieldPath selected;
   private ValidationReport diagnostics = ValidationReport.VALID;
@@ -81,7 +81,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private Optional<Component> submissionReason = Optional.empty();
   private Language language;
   private Object widgets;
-  private int statusTop, issuePage, changePage;
+  private int issuePage, changePage;
   private boolean activated,
       requested,
       validating,
@@ -240,29 +240,9 @@ public final class ReviewScreen<T> extends NativeFormScreen {
             });
     edit.active = current() && selected != null && !review.entries().isEmpty() && operation == null;
     button(text("back", "Back"), () -> finish(Optional.empty()));
-    var geometry =
-        FormGeometry.controls(
-            footer.stream().map(value -> new FormGeometry.Size(value.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int top = height - 12 - geometry.height();
-    statusTop = top - 24;
-    for (int i = 0; i < footer.size(); i++) {
-      var at = geometry.placements().get(i);
-      var control = footer.get(i);
-      control.setPosition(12 + at.x(), top + at.y());
-      control.setWidth(at.width());
-      addRenderableWidget(control);
-    }
-    int bodyTop = 40 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
-    panel =
-        new FormPanel(
-            minecraft,
-            12,
-            bodyTop,
-            Math.max(1, width - 24),
-            Math.max(1, statusTop - bodyTop - 8),
-            false);
+    chrome = new FormChrome(minecraft, width, height, title, contextLabel, status(), footer);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     narration = title.copy().append(". ").append(contextLabel);
     if (review != null) content();
     else panel.row(text("source", "Source and values"), status());
@@ -990,13 +970,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
-    graphics.drawWordWrap(
-        font, contextLabel, 12, 30, Math.max(1, width - 24), FormPanel.DESCRIPTION_TEXT);
-    var lines = font.split(status(), Math.max(1, width - 24));
-    for (int i = 0; i < Math.min(2, lines.size()); i++)
-      graphics.drawString(
-          font, lines.get(i), 12, statusTop + i * font.lineHeight, FormPanel.DESCRIPTION_TEXT);
+    chrome.render(graphics, status());
   }
 
   private void finish(Optional<FieldPath> path) {

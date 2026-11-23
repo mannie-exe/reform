@@ -274,7 +274,7 @@ final class NativeKeyControls {
         if (rawPhase == 1) {
           if (!raw(primary.field("key")).equals("key.keyboard.h")) return false;
           check("raw fallback shares actual draft service", actions.view().dirty());
-          press(button(form, "Undo"));
+          press(ownerAction(form, "Undo"));
           rawPhase = 2;
           return false;
         }
@@ -344,7 +344,7 @@ final class NativeKeyControls {
             "key and modifier enter shared draft together",
             raw(primary.field("modifier")).equals("SHIFT"));
         unchanged();
-        press(button(form, "Undo"));
+        press(ownerAction(form, "Undo"));
         step("compound capture undone once");
       }
       case 4 -> {
@@ -352,7 +352,7 @@ final class NativeKeyControls {
         check(
             "one undo restores complete native binding",
             raw(primary.field("modifier")).equals("NONE") && !actions.view().canUndo());
-        press(button(form, "Redo"));
+        press(ownerAction(form, "Redo"));
         step("compound capture redone once");
       }
       case 5 -> {

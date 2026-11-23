@@ -12,7 +12,6 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
-import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.validation.ValidationReport;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -42,11 +41,11 @@ public final class ImportScreen<T> extends NativeFormScreen {
   private DocumentImports.Preview review;
   private OperationHandle<?> operation;
   private FormPanel panel;
+  private FormChrome chrome;
   private Component sourceLabel, notice;
   private Object widgetGeneration, selectionEpoch;
   private FileDialogRequest dialogRequest;
   private boolean picker, staging, closed, returning, wasCurrent = true;
-  private int statusTop;
 
   public ImportScreen(
       Component title,
@@ -134,23 +133,21 @@ public final class ImportScreen<T> extends NativeFormScreen {
     cancel.active = operation != null && !staging && !operation.snapshot().cancellationRequested();
     var back = button(text("back", "Back"), this::onClose);
     back.active = !staging;
-    var layout =
-        FormGeometry.controls(
-            footer.stream().map(widget -> new FormGeometry.Size(widget.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int top = height - 12 - layout.height();
-    statusTop = top - 24;
-    for (int i = 0; i < footer.size(); i++) {
-      var position = layout.placements().get(i);
-      var widget = footer.get(i);
-      widget.setPosition(12 + position.x(), top + position.y());
-      widget.setWidth(position.width());
-      addRenderableWidget(widget);
-    }
-    panel =
-        new FormPanel(
-            minecraft, 12, 40, Math.max(1, width - 24), Math.max(1, statusTop - 48), false);
+    chrome =
+        new FormChrome(
+            minecraft,
+            width,
+            height,
+            title,
+            Component.empty(),
+            operation == null
+                ? notice == null
+                    ? text("footer", "Stage changes the draft only; Back retains earlier work.")
+                    : notice
+                : progress(operation.snapshot()),
+            footer);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
         "purpose",
         text("draft_only", "Import into this draft"),
@@ -575,22 +572,13 @@ public final class ImportScreen<T> extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
-    var message =
+    chrome.render(
+        graphics,
         operation == null
             ? notice == null
                 ? text("footer", "Stage changes the draft only; Back retains earlier work.")
                 : notice
-            : progress(operation.snapshot());
-    var lines = font.split(message, Math.max(1, width - 24));
-    for (int i = 0; i < Math.min(2, lines.size()); i++)
-      graphics.drawString(
-          font,
-          lines.get(i),
-          12,
-          statusTop + i * font.lineHeight,
-          FormPanel.DESCRIPTION_TEXT,
-          false);
+            : progress(operation.snapshot()));
   }
 
   private Component progress(OperationSnapshot<?> state) {

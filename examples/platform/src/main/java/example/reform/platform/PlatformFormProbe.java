@@ -102,9 +102,33 @@ final class PlatformFormProbe {
           result.complete(report);
         }
       } catch (Exception | AssertionError failed) {
+        retainFailure(failed);
         scene.close();
         subscription.close();
         result.completeExceptionally(failed);
+      }
+    }
+
+    private void retainFailure(Throwable failed) {
+      try {
+        var failure = new JsonObject();
+        failure.addProperty("status", "FAIL");
+        failure.addProperty("scene", label);
+        failure.addProperty("diagnostic", scene.diagnostic());
+        failure.addProperty("failure", failed.toString());
+        failure.add("partial", scene.report());
+        failure.add("captures", captures);
+        var screen =
+            design.inherent.reform.minecraft.client.NativeScreens.current(Minecraft.getInstance());
+        if (screen != null) {
+          failure.addProperty("screen", screen.getClass().getSimpleName());
+          failure.addProperty("narration", screen.getNarrationMessage().getString());
+        }
+        Files.writeString(
+            Minecraft.getInstance().gameDirectory.toPath().resolve("platform-scene-failure.json"),
+            failure.toString());
+      } catch (Exception observationFailed) {
+        failed.addSuppressed(observationFailed);
       }
     }
   }

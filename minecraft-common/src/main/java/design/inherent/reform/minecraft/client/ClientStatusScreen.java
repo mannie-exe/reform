@@ -1,6 +1,5 @@
 package design.inherent.reform.minecraft.client;
 
-import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.validation.Issue;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayList;
@@ -31,6 +30,7 @@ public final class ClientStatusScreen extends NativeFormScreen {
   private final Runnable enter, retire;
   private State displayed;
   private FormPanel diagnostics;
+  private FormChrome chrome;
   private Object widgets;
   private boolean closed;
 
@@ -104,21 +104,11 @@ public final class ClientStatusScreen extends NativeFormScreen {
                 })
             .bounds(0, 0, Math.max(56, font.width(text("back", "Back")) + 20), 20)
             .build());
-    var geometry =
-        FormGeometry.controls(
-            actions.stream().map(button -> new FormGeometry.Size(button.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int top = height - 12 - geometry.height();
-    for (int i = 0; i < actions.size(); i++) {
-      var at = geometry.placements().get(i);
-      var button = actions.get(i);
-      button.setPosition(12 + at.x(), top + at.y());
-      button.setWidth(at.width());
-      addRenderableWidget(button);
-    }
-    diagnostics =
-        new FormPanel(minecraft, 12, 44, Math.max(1, width - 24), Math.max(1, top - 52), false);
+    chrome =
+        new FormChrome(
+            minecraft, width, height, title, Component.empty(), Component.empty(), actions);
+    diagnostics = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, diagnostics);
     diagnostics.row(Component.empty(), message(displayed));
     diagnostics.finish(scroll);
     addRenderableWidget(diagnostics);
@@ -144,7 +134,7 @@ public final class ClientStatusScreen extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 20, FormPanel.TITLE_TEXT);
+    chrome.render(graphics);
   }
 
   @Override

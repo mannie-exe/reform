@@ -1,6 +1,7 @@
 package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.presentation.SectionNavigation;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,10 +15,10 @@ import net.minecraft.network.chat.Component;
 
 /** Measured configuration rows; native widgets retain their own keyboard and narration behavior. */
 final class FormPanel extends ScrollFrame {
-  static final int ACTIVE_TEXT = 0xffff55;
-  static final int TITLE_TEXT = 0xffffff;
-  static final int ERROR_TEXT = 0xff5555;
-  static final int DESCRIPTION_TEXT = 0xaaaaaa;
+  static final int ACTIVE_TEXT = FormTokens.Color.TEXT_ACTIVE;
+  static final int TITLE_TEXT = FormTokens.Color.TEXT;
+  static final int ERROR_TEXT = FormTokens.Color.TEXT_ERROR;
+  static final int DESCRIPTION_TEXT = FormTokens.Color.TEXT_SUPPORTING;
 
   static NavigationButton navigationButton(
       Component label, int width, boolean category, boolean selected, Runnable action) {
@@ -73,10 +74,17 @@ final class FormPanel extends ScrollFrame {
     @Override
     protected void renderNavigation(FormCanvas graphics, int mx, int my, float tick) {
       if (selected) {
-        graphics.fill(getX(), getY(), getX() + width, getY() + height, 0xff888888);
-        graphics.fill(getX() + 1, getY() + 1, getX() + width - 1, getY() + height - 1, 0xff3d3d3d);
+        graphics.fill(
+            getX(), getY(), getX() + width, getY() + height, FormTokens.Color.LINE_SELECTED);
+        graphics.fill(
+            getX() + 1,
+            getY() + 1,
+            getX() + width - 1,
+            getY() + height - 1,
+            FormTokens.Color.SURFACE_SELECTED);
       } else if (isHoveredOrFocused())
-        graphics.fill(getX(), getY(), getX() + width, getY() + height, 0x88555555);
+        graphics.fill(
+            getX(), getY(), getX() + width, getY() + height, FormTokens.Color.SURFACE_HOVER);
       renderString(
           graphics,
           Minecraft.getInstance().font,
@@ -153,18 +161,18 @@ final class FormPanel extends ScrollFrame {
           field,
           boundary,
           relationship,
-          controls.stream()
-              .map(widget -> new FormGeometry.Size(widget.getWidth(), widget.getHeight()))
-              .toList());
+          controls.stream().map(ControlSizing::preferred).toList());
     }
   }
 
   private record Positioned(AbstractWidget widget, int x, int y, String key) {}
 
   private record Layout(
-      Row row, int x, int y, int height, int textWidth, int summaryY, boolean stacked) {}
+      Row row, int x, int y, int height, int textWidth, int textY, int summaryY, boolean stacked) {}
 
-  private record Outline(int top, int bottom, int labelWidth) {}
+  private record Outline(int left, int width, int top, int bottom, int labelWidth) {}
+
+  private record Frame(int left, int width, int top, int labelWidth) {}
 
   private final List<Outline> outlines = new ArrayList<>();
   private String rememberedFocus;
@@ -180,6 +188,8 @@ final class FormPanel extends ScrollFrame {
   }
 
   private final List<Row> rows = new ArrayList<>();
+  private final java.util.Set<AbstractWidget> joinedControls =
+      java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
   private final List<Positioned> positions = new ArrayList<>();
   private final List<Layout> layout = new ArrayList<>();
   private final Minecraft client;
@@ -195,11 +205,42 @@ final class FormPanel extends ScrollFrame {
   }
 
   void heading(Component label) {
-    rows.add(new Row(null, label, Component.empty(), List.of(), true, null, false, 0, null));
+    rows.add(
+        new Row(
+            null,
+            label
+                .copy()
+                .withStyle(net.minecraft.ChatFormatting.BOLD, net.minecraft.ChatFormatting.WHITE),
+            Component.empty(),
+            List.of(),
+            true,
+            null,
+            false,
+            0,
+            null));
+  }
+
+  void eyebrow(Component label) {
+    rows.add(
+        new Row(
+            null,
+            label.copy().withStyle(net.minecraft.ChatFormatting.YELLOW),
+            Component.empty(),
+            List.of(),
+            true,
+            null,
+            false,
+            0,
+            null));
   }
 
   void section(String id, Component label) {
     rows.add(new Row(null, label, Component.empty(), List.of(), true, id, false, 0, null));
+  }
+
+  void anchor(String id) {
+    rows.add(
+        new Row(null, Component.empty(), Component.empty(), List.of(), false, id, false, 0, null));
   }
 
   void row(Component label, Component summary, AbstractWidget... controls) {
@@ -225,6 +266,31 @@ final class FormPanel extends ScrollFrame {
       Component summary,
       AbstractWidget... controls) {
     rows.add(new Row(key, label, summary, List.of(controls), false, key, true, 0, relationship));
+  }
+
+  /** A measured flow of actual buttons, without repeating their labels beside them. */
+  void actions(String key, AbstractWidget... controls) {
+    row(key, Component.empty(), Component.empty(), controls);
+  }
+
+  void keepTogether(AbstractWidget first, AbstractWidget second) {
+    if (rows.stream()
+        .noneMatch(
+            row -> {
+              int index = row.controls.indexOf(first);
+              return index >= 0
+                  && index + 1 < row.controls.size()
+                  && row.controls.get(index + 1) == second;
+            }))
+      throw new IllegalArgumentException("Joined native controls must be adjacent in one row");
+    joinedControls.add(first);
+  }
+
+  private java.util.Set<Integer> joins(Row row) {
+    var joins = new java.util.HashSet<Integer>();
+    for (int i = 0; i + 1 < row.controls.size(); i++)
+      if (joinedControls.contains(row.controls.get(i))) joins.add(i);
+    return joins;
   }
 
   void summary(String key, Component summary) {
@@ -362,12 +428,28 @@ final class FormPanel extends ScrollFrame {
             });
   }
 
+  boolean focusFirst(java.util.Collection<? extends GuiEventListener> owned) {
+    var target =
+        positions.stream()
+            .filter(
+                at ->
+                    owned.contains(at.widget)
+                        && at.widget.active
+                        && at.widget.visible
+                        && at.key != null)
+            .findFirst();
+    if (target.isEmpty()) return false;
+    restoreFocus(target.orElseThrow().key);
+    return getFocused() == target.orElseThrow().widget;
+  }
+
   private int usableWidth() {
-    return Math.max(30, width - 2 * border - 8);
+    return Math.max(1, width - 2 * border - 8);
   }
 
   private void measure() {
-    int y = 0, wrap = usableWidth(), frameTop = -1, frameLabelWidth = 0;
+    int y = 0, wrap = usableWidth();
+    var frames = new java.util.ArrayDeque<Frame>();
     positions.clear();
     layout.clear();
     outlines.clear();
@@ -375,50 +457,64 @@ final class FormPanel extends ScrollFrame {
     for (int i = 0; i < rows.size(); i++) {
       var row = rows.get(i);
       if (row.boundary == 1) {
-        if (frameTop >= 0)
-          throw new IllegalStateException("Nested settings groups are unsupported");
+        if (frames.size() >= 8) throw new IllegalStateException("Settings groups exceed depth 8");
         y += 4;
-        frameTop = y + 6 + client.font.lineHeight / 2;
-        frameLabelWidth = Math.min(wrap - 16, client.font.width(row.label));
+        int edge = Math.min(frames.size() * FormTokens.Space.CONTENT, Math.max(0, (wrap - 1) / 2));
+        frames.push(
+            new Frame(
+                edge,
+                Math.max(1, wrap - edge * 2),
+                y + 6 + client.font.lineHeight / 2,
+                Math.max(0, Math.min(wrap - edge * 2 - 16, client.font.width(row.label)))));
       }
       if (row.boundary == -1) {
-        if (frameTop < 0) throw new IllegalStateException("Unmatched settings group");
+        if (frames.isEmpty()) throw new IllegalStateException("Unmatched settings group");
         y += 2;
-        outlines.add(new Outline(frameTop, y, frameLabelWidth));
-        frameTop = -1;
-        y += 14;
+        var frame = frames.pop();
+        outlines.add(new Outline(frame.left, frame.width, frame.top, y, frame.labelWidth));
+        y += frames.isEmpty() ? FormTokens.Space.SECTION : FormTokens.Space.NESTED_SECTION;
         continue;
       }
-      int inset = frameTop >= 0 ? 8 : 0, available = wrap - inset * 2;
-      if (row.field
-          && i + 1 < rows.size()
-          && rows.get(i + 1).field
-          && FormGeometry.pair(
-              row.relationship,
-              minimumWidth(row),
-              rows.get(i + 1).relationship,
-              minimumWidth(rows.get(i + 1)),
-              available,
-              12)) {
-        int column = (available - 12) / 2;
-        int first = measureRow(row, inset, y, column);
-        var next = rows.get(++i);
-        int second = measureRow(next, inset + column + 12, y, column);
-        alignControls(row, Math.max(first, second));
-        alignControls(next, Math.max(first, second));
-        y += Math.max(first, second) + 12;
+      int inset = Math.min(frames.size() * FormTokens.Space.CONTENT, Math.max(0, (wrap - 1) / 2));
+      int available = Math.max(1, wrap - inset * 2);
+      var related = new ArrayList<Row>();
+      related.add(row);
+      if (row.field && row.relationship != null)
+        for (int next = i + 1; next < rows.size() && related.size() < 3; next++) {
+          var candidate = rows.get(next);
+          if (!candidate.field || !row.relationship.equals(candidate.relationship)) break;
+          related.add(candidate);
+        }
+      var tracks =
+          related.size() > 1
+              ? FormGeometry.relatedTracks(
+                  related.stream().map(this::minimumWidth).toList(),
+                  available,
+                  FormTokens.Space.RELATED)
+              : List.<FormGeometry.Placement>of();
+      if (!tracks.isEmpty()) {
+        int shared = 0;
+        for (int index = 0; index < related.size(); index++) {
+          var at = tracks.get(index);
+          shared = Math.max(shared, measureRow(related.get(index), inset + at.x(), y, at.width()));
+        }
+        for (var member : related) alignControls(member, shared);
+        i += related.size() - 1;
+        y += shared + FormTokens.Space.FIELD;
       } else {
-        int measured = measureRow(row, inset, y, available);
-        y += measured + (row.heading || measured == 0 ? 0 : navigation ? 4 : 12);
+        for (var member : related) {
+          int measured = measureRow(member, inset, y, available);
+          y +=
+              measured
+                  + (member.heading || measured == 0
+                      ? 0
+                      : navigation ? FormTokens.Space.INLINE : FormTokens.Space.FIELD);
+        }
+        i += related.size() - 1;
       }
     }
-    if (frameTop >= 0) throw new IllegalStateException("Unclosed settings group");
+    if (!frames.isEmpty()) throw new IllegalStateException("Unclosed settings group");
     extent = Math.max(1, y);
-  }
-
-  private int controlWidth(Row row) {
-    return row.preferred.stream().mapToInt(FormGeometry.Size::width).sum()
-        + Math.max(0, row.controls.size() - 1) * 4;
   }
 
   int fieldWidth() {
@@ -439,32 +535,47 @@ final class FormPanel extends ScrollFrame {
               j, new Positioned(position.widget, position.x, position.y + offset, position.key));
       }
       layout.set(
-          i, new Layout(row, at.x, at.y, sharedHeight, at.textWidth, at.summaryY, at.stacked));
+          i,
+          new Layout(
+              row,
+              at.x,
+              at.y,
+              sharedHeight,
+              at.textWidth,
+              at.textY + (at.stacked ? 0 : delta / 2),
+              at.summaryY,
+              at.stacked));
       return;
     }
   }
 
   private int minimumWidth(Row row) {
-    return Math.max(Math.min(client.font.width(row.label), 120), controlWidth(row));
+    return Math.max(
+        Math.min(client.font.width(row.label), FormTokens.Measure.LABEL_PREFERRED_LIMIT),
+        Math.max(1, FormGeometry.minimumControlWidth(row.preferred, 4, joins(row))));
   }
 
-  private int labelTrack(Row row, int wrap) {
-    int widestControls =
-        !row.field || row.relationship == null
-            ? controlWidth(row)
-            : rows.stream()
-                .filter(other -> row.relationship.equals(other.relationship))
-                .mapToInt(this::controlWidth)
-                .max()
-                .orElse(0);
-    return Math.max(0, wrap - widestControls - 8);
+  private record TextMeasure(int summaryY, int height) {}
+
+  private TextMeasure textMeasure(Row row, int width) {
+    int label =
+        row.label.getString().isEmpty()
+            ? 0
+            : client.font.split(row.label, width).size() * client.font.lineHeight;
+    int summary = label + (row.summary.getString().isEmpty() ? 0 : FormTokens.Space.TEXT);
+    int height =
+        summary
+            + (row.summary.getString().isEmpty()
+                ? 0
+                : client.font.split(row.summary, width).size() * client.font.lineHeight);
+    return new TextMeasure(summary, height);
   }
 
   private int measureRow(Row row, int left, int y, int wrap) {
     if (row.anchor != null) sections.add(row.anchor, y);
     if (row.heading) {
       int height = 12 + client.font.split(row.label, wrap).size() * client.font.lineHeight;
-      layout.add(new Layout(row, left, y + 6, height, wrap, 0, false));
+      layout.add(new Layout(row, left, y + 6, height, wrap, 0, 0, false));
       return height;
     }
     if (navigation && row.controls.size() == 1) {
@@ -484,35 +595,51 @@ final class FormPanel extends ScrollFrame {
                       * client.font.lineHeight
                   + 10));
       positions.add(new Positioned(button, left, y, row.key));
-      layout.add(new Layout(row, left, y, button.getHeight(), wrap, 0, false));
+      layout.add(new Layout(row, left, y, button.getHeight(), wrap, 0, 0, false));
       return button.getHeight();
     }
-    int controls = controlWidth(row);
-    int track = labelTrack(row, wrap);
     int preferredText =
-        Math.max(
-            100,
-            Math.min(200, Math.max(client.font.width(row.label), client.font.width(row.summary))));
-    boolean stacked = row.field || wrap - controls - 8 < preferredText;
-    int textWidth = stacked ? wrap : row.field ? Math.max(1, track) : wrap - controls - 8;
-    int labelHeight =
-        row.label.getString().isEmpty()
+        row.label.getString().isEmpty() && row.summary.getString().isEmpty()
             ? 0
-            : client.font.split(row.label, textWidth).size() * client.font.lineHeight;
-    int summaryY = labelHeight + (row.summary.getString().isEmpty() ? 0 : 4);
-    int textHeight =
-        summaryY
-            + (row.summary.getString().isEmpty()
-                ? 0
-                : client.font.split(row.summary, textWidth).size() * client.font.lineHeight);
-    int start = stacked ? 0 : row.field ? textWidth + 8 : wrap - controls;
-    var controlLayout = FormGeometry.controls(row.preferred, Math.max(1, wrap - start), 4);
+            : Math.max(
+                FormTokens.Measure.TEXT_MINIMUM,
+                Math.min(
+                    FormTokens.Measure.TEXT_PREFERRED_LIMIT,
+                    Math.max(client.font.width(row.label), client.font.width(row.summary))));
+    var joined = joins(row);
+    var tracks =
+        FormGeometry.fieldTracks(
+            wrap, preferredText, row.preferred, FormTokens.Space.CONTENT, joined);
+    var text = textMeasure(row, Math.max(1, tracks.textWidth()));
+    if (row.field && !tracks.stacked() && !row.controls.isEmpty()) {
+      var alternative = textMeasure(row, wrap);
+      int controlsHeight =
+          FormGeometry.controls(row.preferred, wrap, FormTokens.Space.INLINE, joined).height();
+      int stackedHeight =
+          alternative.height()
+              + (alternative.height() > 0 && controlsHeight > 0 ? FormTokens.Space.TEXT : 0)
+              + controlsHeight;
+      if (stackedHeight < Math.max(text.height(), tracks.controls().height())) {
+        tracks =
+            FormGeometry.fieldTracks(wrap, wrap, row.preferred, FormTokens.Space.CONTENT, joined);
+        text = alternative;
+      }
+    }
+    boolean stacked = tracks.stacked();
+    int textWidth = Math.max(1, tracks.textWidth());
+    int summaryY = text.summaryY();
+    int textHeight = text.height();
+    int start = tracks.controlsX();
+    var controlLayout = tracks.controls();
     int controlHeight = controlLayout.height();
     int height =
         stacked && controlHeight > 0 && textHeight > 0
-            ? textHeight + 4 + controlHeight
+            ? textHeight + FormTokens.Space.TEXT + controlHeight
             : Math.max(textHeight, controlHeight);
-    int actionY = stacked && textHeight > 0 ? y + textHeight + 4 : y + (height - controlHeight) / 2;
+    int actionY =
+        stacked && textHeight > 0
+            ? y + textHeight + FormTokens.Space.TEXT
+            : y + (height - controlHeight) / 2;
     for (int index = 0; index < row.controls.size(); index++) {
       var widget = row.controls.get(index);
       var at = controlLayout.placements().get(index);
@@ -525,7 +652,16 @@ final class FormPanel extends ScrollFrame {
               actionY + at.y(),
               row.key == null ? null : row.key + "/" + index));
     }
-    layout.add(new Layout(row, left, y, height, textWidth, summaryY, stacked));
+    layout.add(
+        new Layout(
+            row,
+            left,
+            y,
+            height,
+            textWidth,
+            stacked ? 0 : (height - textHeight) / 2,
+            summaryY,
+            stacked));
     return height;
   }
 
@@ -541,17 +677,22 @@ final class FormPanel extends ScrollFrame {
 
   @Override
   protected void drawBackground(FormCanvas graphics, float tick) {
-    graphics.fill(left, top, right, bottom, navigation ? 0xec202020 : 0xec101010);
+    graphics.fill(
+        left,
+        top,
+        right,
+        bottom,
+        navigation ? FormTokens.Color.SURFACE_NAVIGATION : FormTokens.Color.SURFACE_FORM);
   }
 
   @Override
   protected void drawPanel(FormCanvas graphics, int relativeY, int mx, int my) {
     position();
     for (var outline : outlines) {
-      int x = left + border, edge = x + usableWidth() - 1;
+      int x = left + border + outline.left, edge = x + outline.width - 1;
       int y = relativeY + outline.top, end = relativeY + outline.bottom;
       if (end < top || y >= bottom) continue;
-      int color = 0xff000000 | 0x555555;
+      int color = FormTokens.Color.LINE;
       graphics.vLine(x, y, end, color);
       graphics.vLine(edge, y, end, color);
       graphics.hLine(x, x + 4, y, color);
@@ -570,13 +711,14 @@ final class FormPanel extends ScrollFrame {
             row.anchor != null && row.anchor.equals(highlighted)
                 ? ACTIVE_TEXT
                 : row.heading ? DESCRIPTION_TEXT : TITLE_TEXT;
-        graphics.drawWordWrap(client.font, row.label, left + border + at.x, y, at.textWidth, color);
+        graphics.drawWordWrap(
+            client.font, row.label, left + border + at.x, y + at.textY, at.textWidth, color);
         if (!row.summary.getString().isEmpty())
           graphics.drawWordWrap(
               client.font,
               row.summary,
               left + border + at.x,
-              y + at.summaryY,
+              y + at.textY + at.summaryY,
               at.textWidth,
               DESCRIPTION_TEXT);
         for (var widget : row.controls)

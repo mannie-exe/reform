@@ -22,6 +22,8 @@ The internal native panel measures labels, summaries, widgets and group boundari
 
 An optional `FormPresentation` declares [numeric range relationships](numbers.md). The generated form keeps the two actual endpoint controls, localized group help and measured shared columns. These declarations neither alter the source schema nor replace the owner's complete validation.
 
+[Form composition](composition.md) describes automatic inline fields, explicit non-range rows, boxed groups, composed content sections, and document actions. Those declarations reuse this panel and the actual owners rather than introducing another layout or editing backend.
+
 It also declares bounded [local dependencies](dependencies.md). Known false and unknown inputs have different explanations; inactive values remain visible and retained. A separate Availability action keeps reasons keyboard/narration-accessible when a disabled native control cannot focus. The same current decision covers scalar, numeric, reference and structural callbacks.
 
 `FormModel` builds a bounded active authoring tree from declared types and immutable drafts. Record fields, sequence rows, map key/value parts, active optional/default payloads and selected branches retain their actual structured paths. Unknown fields remain visible without gaining an editable declared type. Its opaque widget keys are distinct from the human `FieldPath.toString()` output; arbitrary field labels cannot collide with another control. Creating this model performs no codec, source lookup or owner effect.

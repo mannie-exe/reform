@@ -5,7 +5,6 @@ import design.inherent.reform.edit.DraftEdit;
 import design.inherent.reform.edit.DraftTarget;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationSnapshot;
-import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.reference.CollectionSelection;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.reference.ReferenceBrowser;
@@ -45,12 +44,13 @@ final class CollectionScreen<T, V> extends NativeFormScreen {
   private List<Choice> known = List.of(), shown = List.of();
   private Map<String, Long> counts = Map.of();
   private FormPanel panel;
+  private FormChrome chrome;
   private EditBox filter, raw;
   private Component notice, sourceNotice, inspection;
   private String shownFilter = "";
   private net.minecraft.locale.Language knownLanguage;
   private Object widgetGeneration;
-  private int nextOffset, memberOffset, statusTop;
+  private int nextOffset, memberOffset;
   private boolean localExhausted = true,
       started,
       closed,
@@ -147,24 +147,20 @@ final class CollectionScreen<T, V> extends NativeFormScreen {
     var back = action(text("back", "Back"), null, false, this::onClose);
     footer.add(refresh);
     footer.add(back);
-    var geometry =
-        FormGeometry.controls(
-            footer.stream().map(w -> new FormGeometry.Size(w.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int footerTop = height - 12 - geometry.height();
-    statusTop = footerTop - 24;
-    for (int i = 0; i < footer.size(); i++) {
-      var at = geometry.placements().get(i);
-      var button = footer.get(i);
-      button.setPosition(12 + at.x(), footerTop + at.y());
-      button.setWidth(at.width());
-      button.active = selection.pending().isEmpty();
-      addRenderableWidget(button);
-    }
-    panel =
-        new FormPanel(
-            minecraft, 12, 40, Math.max(1, width - 24), Math.max(1, statusTop - 48), false);
+    footer.forEach(button -> button.active = selection.pending().isEmpty());
+    chrome =
+        new FormChrome(
+            minecraft,
+            width,
+            height,
+            title,
+            Component.empty(),
+            notice == null
+                ? text("draft_only", "Selections change the draft only. Back retains your work.")
+                : notice,
+            footer);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     boolean editable = editable();
     var target = selection.view().target();
     panel.row(
@@ -643,20 +639,11 @@ final class CollectionScreen<T, V> extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
-    var message =
+    chrome.render(
+        graphics,
         notice == null
             ? text("draft_only", "Selections change the draft only. Back retains your work.")
-            : notice;
-    var lines = font.split(message, Math.max(1, width - 24));
-    for (int i = 0; i < Math.min(2, lines.size()); i++)
-      graphics.drawString(
-          font,
-          lines.get(i),
-          12,
-          statusTop + i * font.lineHeight,
-          FormPanel.DESCRIPTION_TEXT,
-          false);
+            : notice);
   }
 
   @Override

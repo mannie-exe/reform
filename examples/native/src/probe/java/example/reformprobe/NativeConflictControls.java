@@ -172,7 +172,7 @@ final class NativeConflictControls {
               "save has not overwritten the external source", Files.readString(path).equals(saved));
           if (!fallbackReload) {
             fallbackReload = true;
-            press(button(form, "Reload saved"));
+            press(ownerAction(form, "Reload saved"));
           }
           return false;
         }
@@ -258,7 +258,8 @@ final class NativeConflictControls {
                     .equals(ConflictExample.DEFINITION.defaults()));
         check(
             "obsolete conflict and Undo history are cleared",
-            form.editorView().operationReport().valid() && !button(form, "Undo").active);
+            form.editorView().operationReport().valid() && !ownerAction(form, "Undo").active);
+        returnToSettings(form);
         long version = form.editorView().snapshot().orElseThrow().version();
         retired.onPress();
         check(
@@ -276,7 +277,7 @@ final class NativeConflictControls {
       case 11 -> {
         if (!ready() || !raw("minimum").equals("6")) return false;
         write(new ConflictExample.Profile(3, 14, List.of("next")));
-        press(button(form, "Reload saved"));
+        press(ownerAction(form, "Reload saved"));
         step("fresh saved observation requested");
       }
       case 12 -> {
@@ -338,7 +339,7 @@ final class NativeConflictControls {
         if (form.editorView().review().isEmpty()) {
           if (!fallbackReload) {
             fallbackReload = true;
-            press(button(form, "Reload saved"));
+            press(ownerAction(form, "Reload saved"));
           }
           return false;
         }
@@ -368,7 +369,7 @@ final class NativeConflictControls {
         if (!ready() || !raw("minimum").equals("19")) return false;
         write(new ConflictExample.Profile(7, 10, List.of("safe")));
         saved = Files.readString(path);
-        press(button(form, "Reload saved"));
+        press(ownerAction(form, "Reload saved"));
         step("native invalid draft observes saved alternatives");
       }
       case 22 -> {

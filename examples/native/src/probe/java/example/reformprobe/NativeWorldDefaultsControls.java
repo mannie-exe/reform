@@ -101,13 +101,11 @@ final class NativeWorldDefaultsControls {
   }
 
   private boolean showSettings() {
-    if (!ready()) return false;
-    if (widgets(form).stream()
-        .anyMatch(widget -> widget.getMessage().getString().equals("Settings"))) {
-      press(form, "Settings");
+    if (actionHost(form) != form) {
+      returnToSettings(form);
       return false;
     }
-    return true;
+    return ready();
   }
 
   private int depth(WorldCreationContext context) {

@@ -9,7 +9,6 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
-import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -51,9 +50,10 @@ public final class ConflictScreen<T> extends NativeFormScreen {
   private DocumentConflicts.Preview review;
   private OperationHandle<?> operation;
   private FormPanel panel;
+  private FormChrome chrome;
   private Object widgets;
   private Component notice;
-  private int statusTop;
+
   private boolean requested, refreshing, resolving, closed, returning, wasCurrent;
 
   public ConflictScreen(
@@ -149,29 +149,9 @@ public final class ConflictScreen<T> extends NativeFormScreen {
         operation != null && !resolving && !operation.snapshot().cancellationRequested();
     var back = button(text("back", "Back"), this::onClose);
     back.active = !resolving;
-    var layout =
-        FormGeometry.controls(
-            footer.stream().map(widget -> new FormGeometry.Size(widget.getWidth(), 20)).toList(),
-            Math.max(1, width - 24),
-            4);
-    int top = height - 12 - layout.height();
-    statusTop = top - 24;
-    for (int index = 0; index < footer.size(); index++) {
-      var position = layout.placements().get(index);
-      var widget = footer.get(index);
-      widget.setPosition(12 + position.x(), top + position.y());
-      widget.setWidth(position.width());
-      addRenderableWidget(widget);
-    }
-    int bodyTop = 34 + font.split(contextLabel, Math.max(1, width - 24)).size() * font.lineHeight;
-    panel =
-        new FormPanel(
-            minecraft,
-            12,
-            bodyTop,
-            Math.max(1, width - 24),
-            Math.max(1, statusTop - bodyTop - 8),
-            false);
+    chrome = new FormChrome(minecraft, width, height, title, contextLabel, status(), footer);
+    panel = chrome.panel();
+    chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
         "purpose",
         text("purpose", "Manual conflict review"),
@@ -436,18 +416,7 @@ public final class ConflictScreen<T> extends NativeFormScreen {
   @Override
   public void render(FormCanvas graphics, int x, int y, float delta) {
     super.render(graphics, x, y, delta);
-    graphics.drawCenteredString(font, title, width / 2, 12, FormPanel.TITLE_TEXT);
-    graphics.drawWordWrap(
-        font, contextLabel, 12, 30, Math.max(1, width - 24), FormPanel.DESCRIPTION_TEXT);
-    var lines = font.split(status(), Math.max(1, width - 24));
-    for (int i = 0; i < Math.min(2, lines.size()); i++)
-      graphics.drawString(
-          font,
-          lines.get(i),
-          12,
-          statusTop + i * font.lineHeight,
-          FormPanel.DESCRIPTION_TEXT,
-          false);
+    chrome.render(graphics, status());
   }
 
   private void finish(Optional<DocumentConflicts.Resolution<T>> result) {

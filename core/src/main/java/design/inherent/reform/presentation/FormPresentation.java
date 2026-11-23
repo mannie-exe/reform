@@ -65,6 +65,7 @@ public final class FormPresentation {
   private final Map<FieldPath, Range> endpoints;
   private final FormDependencies dependencies;
   private final FormCatalog catalog;
+  private final FormLayout layout;
   private final List<UnavailableField> unavailableFields;
   private final Set<FieldPath> unavailablePaths;
 
@@ -77,17 +78,19 @@ public final class FormPresentation {
   }
 
   public FormPresentation(List<Range> ranges, FormDependencies dependencies, FormCatalog catalog) {
-    this(ranges, dependencies, catalog, List.of());
+    this(ranges, dependencies, catalog, List.of(), FormLayout.AUTO);
   }
 
   private FormPresentation(
       List<Range> ranges,
       FormDependencies dependencies,
       FormCatalog catalog,
-      List<UnavailableField> unavailableFields) {
+      List<UnavailableField> unavailableFields,
+      FormLayout layout) {
     this.ranges = List.copyOf(ranges);
     this.dependencies = Objects.requireNonNull(dependencies);
     this.catalog = Objects.requireNonNull(catalog);
+    this.layout = Objects.requireNonNull(layout);
     if (ranges.size() > 128) throw new IllegalArgumentException("Too many form relationships");
     if (unavailableFields.size() > 128)
       throw new IllegalArgumentException("Too many unavailable fields");
@@ -107,6 +110,13 @@ public final class FormPresentation {
         throw new IllegalArgumentException("Range identity or endpoint is already registered");
     }
     endpoints = Map.copyOf(fields);
+    for (var row : layout.rows())
+      for (var field : row.fields())
+        if (endpoints.containsKey(field))
+          throw new IllegalArgumentException("A range already declares this field's related row");
+    for (var range : ranges)
+      if (!layout.group(range.minimum()).equals(layout.group(range.maximum())))
+        throw new IllegalArgumentException("Range endpoints cannot cross layout group boundaries");
   }
 
   public List<Range> ranges() {
@@ -125,15 +135,23 @@ public final class FormPresentation {
     return catalog;
   }
 
+  public FormLayout layout() {
+    return layout;
+  }
+
+  public FormPresentation withLayout(FormLayout layout) {
+    return new FormPresentation(ranges, dependencies, catalog, unavailableFields, layout);
+  }
+
   public FormPresentation withCatalog(FormCatalog catalog) {
-    return new FormPresentation(ranges, dependencies, catalog, unavailableFields);
+    return new FormPresentation(ranges, dependencies, catalog, unavailableFields, layout);
   }
 
   /**
    * Compose a bounded immutable observation for this form. The actual owner still guards effects.
    */
   public FormPresentation withUnavailableFields(List<UnavailableField> unavailable) {
-    return new FormPresentation(ranges, dependencies, catalog, unavailable);
+    return new FormPresentation(ranges, dependencies, catalog, unavailable, layout);
   }
 
   public Optional<UnavailableField> unavailableAt(FieldPath path) {
@@ -158,6 +176,7 @@ public final class FormPresentation {
 
   public FormDependencies.Bound bind(ValueType<?> root) {
     catalog.requireCompatible(root);
+    layout.requireCompatible(root);
     for (var range : ranges) {
       requireNumeric(DraftTypes.declaredAt(root, range.minimum()));
       requireNumeric(DraftTypes.declaredAt(root, range.maximum()));

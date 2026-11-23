@@ -24,6 +24,7 @@ final class WorkspaceInformation {
   private FieldInformation captured;
   private FormInformation.Subject metadata = FormInformation.Subject.EMPTY;
   private Optional<Component> numericBounds = Optional.empty();
+  private Optional<Component> supplementalHelp = Optional.empty();
   private Component notice;
   private boolean stale;
   private boolean detailsExpanded;
@@ -70,6 +71,7 @@ final class WorkspaceInformation {
     captured = null;
     metadata = FormInformation.Subject.EMPTY;
     numericBounds = Optional.empty();
+    supplementalHelp = Optional.empty();
     notice = null;
     stale = false;
     detailsExpanded = false;
@@ -111,8 +113,10 @@ final class WorkspaceInformation {
       captured = outcome.result().orElse(null);
       metadata = FormInformation.Subject.EMPTY;
       numericBounds = Optional.empty();
+      supplementalHelp = Optional.empty();
       if (captured != null) {
         numericBounds = owner.numericBounds(captured);
+        supplementalHelp = owner.supplementalHelp(captured);
         try {
           metadata = owner.describeInformation(captured);
           notice = null;
@@ -150,6 +154,7 @@ final class WorkspaceInformation {
     captured = null;
     metadata = FormInformation.Subject.EMPTY;
     numericBounds = Optional.empty();
+    supplementalHelp = Optional.empty();
     notice = null;
     stale = false;
     try {
@@ -202,6 +207,7 @@ final class WorkspaceInformation {
           text("earlier", "Earlier observation"),
           text("changed", "The draft changed. Refresh to inspect its current values."));
     if (!metadata.purpose().getString().isBlank()) panel.row(Component.empty(), metadata.purpose());
+    supplementalHelp.ifPresent(value -> panel.row(Component.empty(), value));
     for (var fact : metadata.facts()) panel.row(fact.label(), fact.value());
     numericBounds.ifPresent(value -> panel.row(text("numeric_bounds", "Numeric bounds"), value));
     captured

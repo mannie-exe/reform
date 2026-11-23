@@ -118,9 +118,7 @@ final class PlatformRecipePreviewChecks implements PlatformFormProbe.Scene {
   }
 
   private void edit(String value) {
-    if (widgets(form).stream()
-        .anyMatch(widget -> widget.getMessage().getString().equals("Settings")))
-      click(form, button(form, "Settings"));
+    returnToSettings(form);
     replace(form, input(form, "Soil depth"), value);
   }
 
@@ -238,11 +236,8 @@ final class PlatformRecipePreviewChecks implements PlatformFormProbe.Scene {
         step("older preview retained with its source and draft; revert requested");
       }
       case 8 -> {
-        if (NativeScreens.current(client) == form
-            && button(form, "Done").active
-            && widgets(form).stream()
-                .anyMatch(widget -> widget.getMessage().getString().equals("Settings"))) {
-          click(form, button(form, "Settings"));
+        if (actionHost(form) != form) {
+          returnToSettings(form);
           return false;
         }
         if (!ready("2") || actions.view().dirty()) return false;

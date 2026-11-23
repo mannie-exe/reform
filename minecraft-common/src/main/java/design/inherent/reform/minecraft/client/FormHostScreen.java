@@ -87,12 +87,15 @@ abstract class FormHostScreen extends NativeFormScreen {
   }
 
   protected final FormView mountedView() {
-    for (var view : views)
-      if (view.ownsFocus(getFocused())) {
-        mounted = view;
-        break;
-      }
+    var focused = focusedView();
+    if (focused != null) mounted = focused;
     return mounted;
+  }
+
+  /** Actual native focus, independently of the fallback used to route screen-level keys. */
+  protected final FormView focusedView() {
+    for (var view : views) if (view.ownsFocus(getFocused())) return view;
+    return null;
   }
 
   protected final void mount(FormView view) {
@@ -107,6 +110,8 @@ abstract class FormHostScreen extends NativeFormScreen {
 
   /** One root handoff retains every composed owner, including owners other than the initiator. */
   protected final void navigate(Screen next) {
+    if (minecraft != null && NativeScreens.current(minecraft) == this && next != this)
+      beforeRebuild();
     handingOff = true;
     try {
       NativeScreens.open(minecraft, next);
@@ -137,6 +142,7 @@ abstract class FormHostScreen extends NativeFormScreen {
     else {
       beforeRebuild();
       super.rebuildWidgets();
+      if (!hasCurrentFocus()) setInitialFocus();
     }
   }
 
@@ -160,8 +166,17 @@ abstract class FormHostScreen extends NativeFormScreen {
 
   @Override
   protected void setInitialFocus() {
+    if (hasCurrentFocus()) return;
     if (mounted == null) super.setInitialFocus();
     else mounted.setInitialFocus();
+  }
+
+  /** Re-entering a retained screen must not retain focus on a retired native container. */
+  protected final boolean hasCurrentFocus() {
+    if (getFocused() == null) return false;
+    if (children().contains(getFocused())) return true;
+    setFocused(null);
+    return false;
   }
 
   @Override
