@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Compose measured inline fields, explicit related columns, boxes, and eyebrows through reusable declarations. Stack complete relationships when space is constrained.
+- Share semantic spacing, control, color, and text roles with contained screen regions, native action offers, and a measured entry chooser.
+- Replace the More toggle with Document actions over the retained owner. Preserve whole-document scope, drafts, history, invalid input, and source guards.
+- Retain translated purpose and supplemental owner facts in field help and contextual information. Preserve authored row relationships for titled references.
+- Fix cross-document navigation, history restoration, and focus after returning from auxiliary editors. Preserve native caret and selection through reflow.
+- Fix grouped titled-reference rebuilding with malformed input, and refuse reused native-test coordinates whose original library bytes have changed.
+
 ## 0.2.0
 
 - License current source and future releases under Apache-2.0; preserve the original MIT license on published 0.1.0.

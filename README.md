@@ -2,13 +2,13 @@
 
 Shared native configuration editing and command services for Minecraft mods.
 
-re:form 0.2.0 supports Minecraft 1.21.1 on Java 21 and Minecraft 26.3 on Java 25, each on NeoForge and Fabric. It supplies responsive settings workspaces, typed recursive forms, shared commands, local profile authoring, owner-aware review and native creation-recipe editing. [Coverage](docs/development/coverage.md) lists the supported workflows. [Verification](docs/development/verification.md) records the exercised artifacts and limits.
+re:form 0.3.0 supports Minecraft 1.21.1 on Java 21 and Minecraft 26.3 on Java 25, each on NeoForge and Fabric. It supplies responsive settings workspaces, typed recursive forms, shared commands, local profile authoring, owner-aware review and native creation-recipe editing. [Coverage](docs/development/coverage.md) lists the supported workflows. [Verification](docs/development/verification.md) records the exercised artifacts and limits.
 
 Start with the [native addon](examples/native/README.md) for client/server bindings or the [headless example](examples/headless/README.md) for neutral definitions, editing and storage. Use the matching release tag for released examples. The mod ID is `reform`; target-specific Maven modules use `design.inherent:reform-<loader>-<game>`, as described in [native targets](docs/development/platform-targets.md). Game-independent consumers use the same core API. The immutable 0.1.0 release retains its original module and API.
 
 ## Installation
 
-Download the combined `reform-0.2.0-mc<game>-<loader>.jar` for your exact game and loader from [the release](https://github.com/mannie-exe/reform/releases/tag/v0.2.0), then place it in `mods/` on both installed sides when a dependent mod requires it. For example, NeoForge 1.21.1 uses `reform-0.2.0-mc1.21.1-neoforge.jar`. The game supplies DFU and Gson. The [consumer resolution](docs/publishing.md#consumer-resolution) guide shows the artifact-only Gradle repository and dependency declaration. Install one target's combined JAR, not multiple variants.
+Download the combined `reform-0.3.0-mc<game>-<loader>.jar` for your exact game and loader from [the release](https://github.com/mannie-exe/reform/releases/tag/v0.3.0), then place it in `mods/` on both installed sides when a dependent mod requires it. For example, NeoForge 1.21.1 uses `reform-0.3.0-mc1.21.1-neoforge.jar`. The game supplies DFU and Gson. The [consumer resolution](docs/publishing.md#consumer-resolution) guide shows the artifact-only Gradle repository and dependency declaration. Install one target's combined JAR, not multiple variants.
 
 ## Development
 

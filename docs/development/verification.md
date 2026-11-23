@@ -1,5 +1,13 @@
 # Verification
 
+## Stable 0.3.0 release qualification
+
+The 0.3.0 build passes `mise run check` and `mise run check:security`. It retains 590 core tests on each codec runtime, four packaged native consumers, eight public consumer inputs, tooling, Markdown, and workflow checks. Security review reports no release-blocking findings or source secrets; 31 explicitly classified supplied-runtime advisories remain visible. This is not a whole-game security certification.
+
+Every owned class in the four stable JARs is byte-identical to qualified dev.10: 645 for Fabric 1.21.1, 667 for NeoForge 1.21.1, 647 for Fabric 26.3, and 669 for NeoForge 26.3. Version identity and metadata change separately. The native workspace, authoring, and earlier attributable evidence below retain their actual artifact identities.
+
+Actual Compat dev.6 adoption passes its required build, minimum dedicated startup, twelve-scene/two-JVM workspace, and staged negative/review/save controls. Actual Lootr dev.2 adoption passes all four initial/saved-file reopen pairs, additional GUI scales, and minimum Compat coexistence: eleven normal-exit clients. Consumer releases still need public resolution against the published stable artifacts. Skyweave's actual migration remains independently deferred; these results do not qualify that binding, arbitrary full-pack behavior, other-OS graphics, physical IME, or spoken narration.
+
 ## Grouped reference construction follow-up
 
 A subsequent actual Lootr Fabric 1.21.1 scene exposed a dev.8 crash outside the original matrix: collapsing a malformed titled reference inside an authored group triggered measurement before the closing group rows existed. An independent grouped native fixture reproduced `Unclosed settings group` on the exact frozen product. Dev.8 remains preserved with that newly discovered limitation; its earlier passing evidence retains its actual coverage.
