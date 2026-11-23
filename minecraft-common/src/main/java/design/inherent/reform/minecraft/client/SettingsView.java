@@ -688,7 +688,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     dependencies = presentation.bind(definition.type());
     if (definition != actions.definition())
       throw new IllegalArgumentException("A form requires its actual owner definition");
-    catalog = new FormNavigationIndex(presentation.catalog(), definition.id());
+    catalog = new FormNavigationIndex(presentation, definition.id());
   }
 
   private static Component text(String key, String fallback) {
@@ -2156,95 +2156,55 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void children(FormModel.Node parent) {
-    children(parent.children(), true);
+    composed(
+        design.inherent.reform.presentation.FormComposition.resolve(
+            parent.children(), presentation));
   }
 
-  private void children(List<FormModel.Node> children, boolean includeGroups) {
-    var grouped = new java.util.HashSet<FieldPath>();
-    for (var child : children) {
-      if (grouped.contains(child.path())) continue;
-      var group =
-          includeGroups
-              ? presentation.layout().group(child.path())
-              : Optional.<design.inherent.reform.presentation.FormLayout.Group>empty();
-      if (group.isPresent()) {
-        var box = group.orElseThrow();
-        var members =
-            box.fields().stream()
-                .flatMap(path -> children.stream().filter(node -> node.path().equals(path)))
-                .toList();
-        panel.beginGroup(
-            scoped("group:" + box.id()),
-            Component.translatableWithFallback(box.translationKey(), box.label()));
-        if (!box.help().isBlank())
-          panel.row(
-              Component.empty(),
-              Component.translatableWithFallback(box.translationKey() + ".help", box.help()));
-        children(members, false);
-        panel.endGroup();
-        members.forEach(node -> grouped.add(node.path()));
-        continue;
-      }
-      var range = presentation.range(child.path());
-      if (range.isPresent()) {
-        var pair = range.orElseThrow();
-        var minimum =
-            children.stream().filter(node -> node.path().equals(pair.minimum())).findFirst();
-        var maximum =
-            children.stream().filter(node -> node.path().equals(pair.maximum())).findFirst();
-        if (minimum.isPresent() && maximum.isPresent()) {
+  private void composed(List<design.inherent.reform.presentation.FormComposition.Part> parts) {
+    for (var part : parts)
+      switch (part) {
+        case design.inherent.reform.presentation.FormComposition.Field field ->
+            composedField(field.node());
+        case design.inherent.reform.presentation.FormComposition.Box box -> {
           panel.beginGroup(
-              scoped("range:" + pair.id()),
-              Component.translatableWithFallback(pair.translationKey(), pair.label()));
-          if (!pair.help().isBlank())
+              scoped(box.id()),
+              Component.translatableWithFallback(box.translationKey(), box.label()));
+          if (!box.help().isBlank())
             panel.row(
                 Component.empty(),
-                Component.translatableWithFallback(pair.translationKey() + ".help", pair.help()));
-          fields(minimum.orElseThrow(), label(minimum.orElseThrow()));
-          fields(maximum.orElseThrow(), label(maximum.orElseThrow()));
+                Component.translatableWithFallback(box.translationKey() + ".help", box.help()));
+          composed(box.children());
           panel.endGroup();
-          grouped.add(pair.minimum());
-          grouped.add(pair.maximum());
-          continue;
+        }
+        case design.inherent.reform.presentation.FormComposition.Row row -> {
+          for (var field : row.children()) composedField(field.node());
         }
       }
-      var rowGroup = presentation.layout().row(child.path());
-      if (rowGroup.isPresent()) {
-        for (var path : rowGroup.orElseThrow().fields())
-          children.stream()
-              .filter(node -> node.path().equals(path))
-              .findFirst()
-              .ifPresent(
-                  member -> {
-                    fields(member, label(member));
-                    grouped.add(member.path());
-                  });
-        continue;
-      }
-      if (child.role() == FormModel.Role.UNKNOWN) {
-        var label =
-            Component.translatableWithFallback(
-                "reform.settings.unknown_field", "Unknown field: %s", clip(child.name(), 120));
-        var retained =
-            new EditBox(
-                font, 0, 0, FormTokens.Control.TEXT_INPUT, FormTokens.Control.HEIGHT, label);
-        String raw = raw(child.input());
-        retained.setMaxLength(Math.max(128, raw.length()));
-        retained.setValue(raw);
-        retained.setEditable(false);
-        panel.row(
-            scoped(child.key()),
-            label,
-            text("unknown_retained", "Retained until explicitly removed"),
-            retained,
-            structuralButton(
-                new FieldPath(
-                    child.path().segments().subList(0, child.path().segments().size() - 1)),
-                text("remove", "Remove"),
-                label,
-                new DraftEdit.RemoveUnknown(child.name())));
-      } else fields(child, label(child));
-    }
+  }
+
+  private void composedField(FormModel.Node child) {
+    if (child.role() == FormModel.Role.UNKNOWN) {
+      var label =
+          Component.translatableWithFallback(
+              "reform.settings.unknown_field", "Unknown field: %s", clip(child.name(), 120));
+      var retained =
+          new EditBox(font, 0, 0, FormTokens.Control.TEXT_INPUT, FormTokens.Control.HEIGHT, label);
+      String raw = raw(child.input());
+      retained.setMaxLength(Math.max(128, raw.length()));
+      retained.setValue(raw);
+      retained.setEditable(false);
+      panel.row(
+          scoped(child.key()),
+          label,
+          text("unknown_retained", "Retained until explicitly removed"),
+          retained,
+          structuralButton(
+              new FieldPath(child.path().segments().subList(0, child.path().segments().size() - 1)),
+              text("remove", "Remove"),
+              label,
+              new DraftEdit.RemoveUnknown(child.name())));
+    } else fields(child, label(child));
   }
 
   private void openConflict() {

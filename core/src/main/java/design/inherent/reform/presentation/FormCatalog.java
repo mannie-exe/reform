@@ -138,8 +138,14 @@ public final class FormCatalog {
   }
 
   public Snapshot snapshot(FormModel model) {
+    return snapshot(model, FormPresentation.EMPTY);
+  }
+
+  /** Presentation order does not alter schema or codec traversal. */
+  public Snapshot snapshot(FormModel model, FormPresentation presentation) {
     requireCompatible(model.root().type().orElseThrow());
-    var builder = new Builder();
+    Objects.requireNonNull(presentation).requireCompatible(model.root().type().orElseThrow());
+    var builder = new Builder(presentation);
     builder.add(model.root(), Optional.empty());
     builder.walk(model.root(), FieldPath.ROOT, declared.containsKey(FieldPath.ROOT));
     for (var section : sections)
@@ -299,7 +305,12 @@ public final class FormCatalog {
 
   private final class Builder {
     final Map<FieldPath, Entry> entries = new LinkedHashMap<>();
+    private final FormPresentation presentation;
     private long characters;
+
+    Builder(FormPresentation presentation) {
+      this.presentation = presentation;
+    }
 
     void add(Entry entry) {
       characters += entry.label().length();
@@ -335,7 +346,8 @@ public final class FormCatalog {
     }
 
     void walk(FormModel.Node node, FieldPath parent, boolean inside) {
-      for (var child : node.children()) {
+      for (var child :
+          FormComposition.fields(FormComposition.resolve(node.children(), presentation))) {
         boolean explicit = declared.containsKey(child.path());
         boolean included = explicit || inside && boundary(child);
         FieldPath next = parent;

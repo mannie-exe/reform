@@ -3,7 +3,9 @@ package design.inherent.reform.minecraft.client;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.presentation.FormCatalog;
+import design.inherent.reform.presentation.FormComposition;
 import design.inherent.reform.presentation.FormModel;
+import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.value.ValueShape;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +21,7 @@ final class FormNavigationIndex {
   record FieldMatch(FieldPath path, String label, String help, String search) {}
 
   private final FormCatalog definition;
+  private final FormPresentation presentation;
   private final DocumentId document;
   private FormCatalog.Snapshot projection;
   private List<FieldMatch> fields = List.of();
@@ -30,8 +33,9 @@ final class FormNavigationIndex {
   private long generation;
   private Component failure;
 
-  FormNavigationIndex(FormCatalog definition, DocumentId document) {
-    this.definition = Objects.requireNonNull(definition);
+  FormNavigationIndex(FormPresentation presentation, DocumentId document) {
+    this.presentation = Objects.requireNonNull(presentation);
+    this.definition = presentation.catalog();
     this.document = Objects.requireNonNull(document);
   }
 
@@ -56,7 +60,7 @@ final class FormNavigationIndex {
     failure = null;
     if (model != null) {
       try {
-        projection = definition.snapshot(model).relabel(this::label);
+        projection = definition.snapshot(model, presentation).relabel(this::label);
         try {
           fields = indexFields(model);
         } catch (IllegalArgumentException unadmitted) {
@@ -195,7 +199,9 @@ final class FormNavigationIndex {
     var bounds = definition.limits();
     while (!stack.isEmpty()) {
       var node = stack.pop();
-      for (var child : node.children().reversed()) stack.push(child);
+      for (var child :
+          FormComposition.fields(FormComposition.resolve(node.children(), presentation)).reversed())
+        stack.push(child);
       if (node.role() != FormModel.Role.FIELD || projection.entry(node.path()).isPresent())
         continue;
       var shape = node.type().orElseThrow().shape();
