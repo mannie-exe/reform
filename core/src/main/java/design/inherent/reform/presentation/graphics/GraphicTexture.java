@@ -61,4 +61,39 @@ public final class GraphicTexture {
   public long encodedBytes() {
     return (long) bytes.length + (metadata == null ? 0 : metadata.length);
   }
+
+  /**
+   * Explicit preparation check before native allocation; header admission alone is insufficient.
+   */
+  public void validatePng() {
+    int offset = 8;
+    boolean header = false, data = false;
+    while (bytes.length - offset >= 12) {
+      var input = ByteBuffer.wrap(bytes);
+      int length = input.getInt(offset), kind = input.getInt(offset + 4);
+      if (length < 0 || length > bytes.length - offset - 12)
+        throw invalidPng("The PNG contains a truncated chunk");
+      var crc = new java.util.zip.CRC32();
+      crc.update(bytes, offset + 4, length + 4);
+      if (crc.getValue() != Integer.toUnsignedLong(input.getInt(offset + 8 + length)))
+        throw invalidPng("The PNG contains a damaged chunk checksum");
+      if (kind == 0x49484452) {
+        if (header || offset != 8 || length != 13)
+          throw invalidPng("The PNG must contain one leading IHDR");
+        header = true;
+      }
+      if (kind == 0x49444154 && length > 0) data = true;
+      offset += length + 12;
+      if (kind == 0x49454e44) {
+        if (!header || !data || length != 0 || offset != bytes.length)
+          throw invalidPng("The PNG must end after its image data and empty IEND");
+        return;
+      }
+    }
+    throw invalidPng("The PNG has no complete IEND after its image data");
+  }
+
+  private static PolicyRefusal invalidPng(String message) {
+    return new PolicyRefusal("preview.texture_invalid", message);
+  }
 }

@@ -11,6 +11,7 @@
 - [Publication](publication.md) owns effective handles and context/revision checks.
 - [Owners](owners.md) owns asynchronous actor sessions, shared admission and outcome receipts.
 - [Operations](operations.md) owns shared local GUI/command services, progress and cancellation.
+- [Preview preparation](previews.md) owns read-only captured input, frozen graphics data, explicit budgets, and native retirement responsibilities.
 - [Native search reporting](search-reporting.md) owns retained pages, result notices, recipient continuity and native reservation accounting.
 - [Local import](imports.md) owns admitted sources/formats, bounded preview and reviewed draft replacement.
 - [Manual conflicts](conflicts.md) owns qualified observations, explicit choices and shared GUI/command resolution.

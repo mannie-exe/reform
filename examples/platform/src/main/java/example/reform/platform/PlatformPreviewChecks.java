@@ -76,6 +76,7 @@ final class PlatformPreviewChecks {
   boolean tick() throws Exception {
     switch (stage) {
       case 0 -> {
+        PlatformGraphicImageChecks.run(check);
         parent = NativeScreens.current(client);
         original = bytes();
         workflow =
