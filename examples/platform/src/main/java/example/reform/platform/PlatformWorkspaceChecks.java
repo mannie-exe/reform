@@ -87,6 +87,10 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
                 new DraftLimits(128, 16384, 64, 128, 1048576)));
   }
 
+  static design.inherent.reform.minecraft.client.ClientForm navigationTwin() {
+    return twin.form(Component.literal("Tick target preferences"));
+  }
+
   static java.util.concurrent.CompletionStage<JsonObject> run(
       ClientRegistration registration, boolean reopen) {
     return PlatformFormProbe.run(
@@ -233,6 +237,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
     result.addProperty("workflowClosed", workflow != null && !workflow.isOpen());
     result.addProperty("shutdownClosed", shutdown != null && !shutdown.isOpen());
     if (referenceTitleChecks != null) result.add("referenceTitles", referenceTitleChecks.report());
+    if (shellChecks != null) result.add("tickNavigation", shellChecks.tickNavigationReport());
     return result;
   }
 

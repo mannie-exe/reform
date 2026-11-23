@@ -303,7 +303,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   }
 
   private java.util.Set<DestinationAvailability.Recovery> navigationRecovery() {
-    return overview.navigation.canBack()
+    return isOpen() && overview.navigation.canBack()
         ? java.util.Set.of(DestinationAvailability.Recovery.BACK)
         : java.util.Set.of();
   }
@@ -366,22 +366,17 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         attempt.finish(outcome, available.report(), null);
         return attempt;
       }
-      if (target instanceof ClientDestination.Operation operation) {
-        overview.revealOperation(contributions.get(operation.id()));
-        attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
-        return attempt;
-      }
-      if (target instanceof ClientDestination.OperationResult result) {
-        inspectOperation(contributions.get(result.id()));
-        attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
+      if (target instanceof ClientDestination.Operation
+          || target instanceof ClientDestination.OperationResult) {
+        pendingNavigation = attempt;
+        finishOperationNavigation(attempt);
         return attempt;
       }
       var selected = resolveDestination(target);
+      pendingNavigation = attempt;
       if (selected.route().isEmpty()) {
-        overview.mountDestination(selected, null, restoring);
-        attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
+        finishReveal(attempt, selected, null, restoring, null);
       } else {
-        pendingNavigation = attempt;
         var retained = entry(selected.route().orElseThrow()).editor;
         if (retained != null
             && retained.isOpen()
@@ -413,11 +408,13 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       boolean restoring,
       Throwable failure) {
     if (pendingNavigation != attempt || overview.navigationRequest != attempt.id()) return;
+    if (overview.deferNavigation(() -> finishReveal(attempt, selected, editor, restoring, failure)))
+      return;
     pendingNavigation = null;
     try {
       requireOverview();
       if (failure != null) throw new CompletionException(failure);
-      editor.actions().requireInspection();
+      if (editor != null) editor.actions().requireInspection();
       var available = inspectDestination(attempt.target());
       if (available.kind() == DestinationAvailability.Kind.MISSING
           || available.kind() == DestinationAvailability.Kind.UNAVAILABLE) {
@@ -431,10 +428,40 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         return;
       }
       if (selected.target().isPresent()
-          && !editor.presentation().navigationTargetExists(selected.target().orElseThrow()))
-        throw missingDestination();
+          && !Objects.requireNonNull(editor)
+              .presentation()
+              .navigationTargetExists(selected.target().orElseThrow())) throw missingDestination();
       overview.mountDestination(selected, editor, restoring);
       attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
+    } catch (RuntimeException failed) {
+      finishNavigationFailure(attempt, failed);
+    }
+  }
+
+  private void finishOperationNavigation(NavigationAttempt attempt) {
+    if (pendingNavigation != attempt || overview.navigationRequest != attempt.id()) return;
+    if (overview.deferNavigation(() -> finishOperationNavigation(attempt))) return;
+    pendingNavigation = null;
+    try {
+      requireOverview();
+      var available = inspectDestination(attempt.target());
+      if (available.kind() != DestinationAvailability.Kind.READY) {
+        attempt.finish(
+            available.kind() == DestinationAvailability.Kind.MISSING
+                ? NavigationAttempt.Outcome.MISSING
+                : NavigationAttempt.Outcome.UNAVAILABLE,
+            available.report(),
+            null);
+        return;
+      }
+      if (attempt.target() instanceof ClientDestination.Operation operation) {
+        overview.revealOperation(contributions.get(operation.id()));
+        attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
+      } else {
+        var result = (ClientDestination.OperationResult) attempt.target();
+        inspectOperation(contributions.get(result.id()));
+        attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
+      }
     } catch (RuntimeException failed) {
       finishNavigationFailure(attempt, failed);
     }
@@ -449,9 +476,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             ? NavigationAttempt.Outcome.CLOSED
             : failure instanceof PolicyRefusal refused
                 ? refused.report().issues().stream()
-                        .anyMatch(issue -> issue.code().equals("navigation.target_missing"))
-                    ? NavigationAttempt.Outcome.MISSING
-                    : NavigationAttempt.Outcome.REFUSED
+                        .anyMatch(
+                            issue ->
+                                java.util.Set.of(
+                                        "editor.closed",
+                                        "owner.closed",
+                                        "client.workflow_closed",
+                                        "client.editor_unavailable")
+                                    .contains(issue.code()))
+                    ? NavigationAttempt.Outcome.CLOSED
+                    : refused.report().issues().stream()
+                            .anyMatch(issue -> issue.code().equals("navigation.target_missing"))
+                        ? NavigationAttempt.Outcome.MISSING
+                        : NavigationAttempt.Outcome.REFUSED
                 : NavigationAttempt.Outcome.FAILED;
     var report =
         failure instanceof PolicyRefusal refused
@@ -849,6 +886,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private void retire() {
     if (closed) return;
     closed = true;
+    overview.cancelDeferredNavigation();
     supersedeNavigation();
     Throwable failure = null;
     try {
@@ -940,6 +978,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     requireOpen();
     if (NativeScreens.current(Minecraft.getInstance()) != from)
       throw new PolicyRefusal("client.workflow_view", "This workflow view is no longer current");
+    var navigationToken = new Object();
+    overview.navigationRequest = navigationToken;
+    overview.cancelDeferredNavigation();
+    overview.navigation.cancelRestoration();
+    supersedeNavigation();
+    if (overview.navigationRequest != navigationToken) return;
     if (batch != null && batch.hasActiveOperations())
       throw new PolicyRefusal("client.batch_busy", "Wait for the batch operation to settle");
     var admission =
@@ -1041,8 +1085,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private <O> void openOperation(Contributed<O> entry, boolean restart) {
     requireOverview();
     overview.navigation.cancelRestoration();
-    overview.navigationRequest = new Object();
+    var navigationToken = new Object();
+    overview.navigationRequest = navigationToken;
+    overview.cancelDeferredNavigation();
     supersedeNavigation();
+    if (overview.navigationRequest != navigationToken) return;
     var action = entry.action;
     if (entry.latest == null || restart) {
       if (entry.busy())
@@ -1623,21 +1670,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void selectHome() {
-      if (presentation.home().isEmpty())
-        throw new PolicyRefusal(
-            "navigation.target_missing", "This workspace does not declare Home");
-      navigation.cancelRestoration();
-      navigation.temporaryReveal(null);
-      temporaryReveal = null;
-      supersedeNavigation();
-      navigationRequest = new Object();
-      information.clear();
-      selectedKey = homeKey();
-      actionRoute = null;
-      drawerOpen = false;
-      resetList = true;
-      notice = null;
-      rebuildWidgets();
+      if (presentation.home().isEmpty()) throw missingDestination();
+      openDestination(new ClientDestination.Home());
     }
 
     private List<WorkspaceHeader.Crumb> locationTrail() {
@@ -1831,7 +1865,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                     Optional.empty(),
                     group.title(),
                     Component.empty(),
-                    () -> selectPage(List.of(), key)));
+                    () -> selectPage(key)));
           } else
             for (int depth = 0; depth < group.path().size(); depth++) {
               var prefix = List.copyOf(group.path().subList(0, depth + 1));
@@ -1844,7 +1878,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               result.putIfAbsent(
                   key,
                   new WorkspaceNavigation.Entry(
-                      key, parent, item.title(), item.help(), () -> selectPage(prefix, key)));
+                      key, parent, item.title(), item.help(), () -> selectPage(key)));
             }
         }
       var states = new LinkedHashMap<DocumentId, DocumentState>();
@@ -1925,19 +1959,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       supersedeNavigation();
     }
 
-    private void selectPage(List<ClientWorkflowLayout.Category> path, WorkspaceNavigation.Key key) {
-      navigation.cancelRestoration();
-      navigation.temporaryReveal(null);
-      temporaryReveal = null;
-      supersedeNavigation();
-      navigationRequest = new Object();
-      information.clear();
-      categoryPath = List.copyOf(path);
-      selectedKey = key;
-      drawerOpen = false;
-      resetList = true;
-      notice = null;
-      rebuildWidgets();
+    private void selectPage(WorkspaceNavigation.Key key) {
+      openDestination(new ClientDestination.Category(new DestinationId(key.placement())));
     }
 
     private void selectPlacement(ClientWorkflowLayout.Placement placement) {

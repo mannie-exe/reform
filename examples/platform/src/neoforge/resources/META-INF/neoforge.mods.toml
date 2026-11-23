@@ -20,3 +20,6 @@ modId="reform"
 type="required"
 versionRange="[${libraryVersion}]"
 side="BOTH"
+
+[[mixins]]
+config="reform-platform-client.mixins.json"

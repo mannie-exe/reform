@@ -42,6 +42,7 @@ final class PlatformShellChecks implements AutoCloseable {
   private byte[] source;
   private ClientEditor<?> opened;
   private PlatformNavigationChecks navigationChecks;
+  private PlatformNavigationTickChecks tickChecks;
 
   private ClientWorkflowLayout maximumHierarchy(DocumentId route) {
     var groups = new java.util.ArrayList<ClientWorkflowLayout.Group>();
@@ -489,15 +490,22 @@ final class PlatformShellChecks implements AutoCloseable {
       }
       case 7 -> {
         if (navigationChecks == null) navigationChecks = new PlatformNavigationChecks(check);
-        return navigationChecks.tick();
+        if (!navigationChecks.tick()) return false;
+        if (tickChecks == null) tickChecks = new PlatformNavigationTickChecks(check);
+        return tickChecks.tick();
       }
       default -> throw new AssertionError("Unknown shell scene");
     }
     return false;
   }
 
+  com.google.gson.JsonObject tickNavigationReport() {
+    return tickChecks == null ? new com.google.gson.JsonObject() : tickChecks.report();
+  }
+
   @Override
   public void close() {
+    if (tickChecks != null) tickChecks.close();
     if (navigationChecks != null) navigationChecks.close();
     if (workflow != null) workflow.close();
   }

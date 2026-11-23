@@ -152,9 +152,9 @@ tasks.withType(JavaCompile).configureEach { dependsOn 'verifyLibrary' }
 tasks.matching { it.name in ['runClient', 'runServer'] }.configureEach { dependsOn 'verifyLibrary' }
 if (bareLibrary) tasks.named('runServer') { standardInput = System.in }
 tasks.named('processResources') {
-    inputs.properties([game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: ''])
-    filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json']) {
-        expand game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: '',
+    inputs.properties([game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: '', javaVersion: target.java])
+    filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json', 'reform-platform-client.mixins.json']) {
+        expand game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: '', javaVersion: target.java,
             probeAccessWidener: game == '1.21.1' ? '"accessWidener": "platform-probe.accesswidener",' : ''
     }
 }

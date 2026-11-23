@@ -16,6 +16,7 @@ abstract class FormHostScreen extends NativeFormScreen {
   private FormView mounted;
   private final List<FormView> views = new ArrayList<>();
   private boolean ticking, rebuildRequested, handingOff;
+  private Runnable deferredNavigation;
   private final FormView.Host host =
       new FormView.Host() {
         public Screen screen() {
@@ -146,6 +147,17 @@ abstract class FormHostScreen extends NativeFormScreen {
     views.clear();
   }
 
+  /** Coalesce the latest selection until mounted view ticks and their rebuilds have settled. */
+  protected final boolean deferNavigation(Runnable selection) {
+    if (!ticking) return false;
+    deferredNavigation = java.util.Objects.requireNonNull(selection);
+    return true;
+  }
+
+  protected final void cancelDeferredNavigation() {
+    deferredNavigation = null;
+  }
+
   private void requestRebuild() {
     if (ticking) rebuildRequested = true;
     else {
@@ -200,6 +212,9 @@ abstract class FormHostScreen extends NativeFormScreen {
       rebuildRequested = false;
       requestRebuild();
     }
+    var selected = deferredNavigation;
+    deferredNavigation = null;
+    if (selected != null) selected.run();
   }
 
   @Override
