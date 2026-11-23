@@ -18,6 +18,8 @@ abstract class FormView {
 
     Font font();
 
+    ClientTheme theme();
+
     boolean current(FormView view);
 
     <W extends GuiEventListener & Renderable & NarratableEntry> W add(W widget);
@@ -48,6 +50,7 @@ abstract class FormView {
   protected final Component title;
   protected Minecraft minecraft;
   protected Font font;
+  private ClientTheme mountedTheme = ClientTheme.standard();
   protected int left, top, width, height;
   private Host host;
 
@@ -72,6 +75,7 @@ abstract class FormView {
     this.host = Objects.requireNonNull(host);
     minecraft = Minecraft.getInstance();
     font = host.font();
+    mountedTheme = host.theme();
     left = bounds.x();
     top = bounds.y();
     width = bounds.width();
@@ -81,6 +85,10 @@ abstract class FormView {
 
   protected final Screen ownerScreen() {
     return Objects.requireNonNull(host, "The view is not mounted").screen();
+  }
+
+  protected ClientTheme theme() {
+    return mountedTheme;
   }
 
   protected final boolean isCurrent() {
@@ -130,6 +138,8 @@ abstract class FormView {
 
   protected final void openScreen(Screen next) {
     // Minecraft uses null to return to the world or choose its native title screen.
+    if (next instanceof NativeFormScreen themed && next != ownerScreen())
+      themed.inheritTheme(theme());
     host.navigate(next);
   }
 

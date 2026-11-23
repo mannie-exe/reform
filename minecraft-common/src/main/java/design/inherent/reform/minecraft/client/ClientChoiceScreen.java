@@ -82,7 +82,7 @@ public final class ClientChoiceScreen extends NativeFormScreen {
       List<Choice> choices,
       Component backLabel,
       int maximumChoices) {
-    super(Objects.requireNonNull(title).copy());
+    super(Objects.requireNonNull(title).copy(), parent);
     if (maximumChoices < 1 || maximumChoices > 256)
       throw new IllegalArgumentException("Choice admission is bounded to256");
     this.parent = parent;
@@ -110,7 +110,7 @@ public final class ClientChoiceScreen extends NativeFormScreen {
     generation = new Object();
     var token = generation;
     reasons = readiness();
-    var back = ClientControls.action(font, backLabel, this::onClose).build();
+    var back = ClientControls.action(font, backLabel, this::onClose, theme()).build();
     var content =
         FormGeometry.centeredWidth(
             new FormGeometry.Placement(0, 0, width, height),
@@ -118,7 +118,8 @@ public final class ClientChoiceScreen extends NativeFormScreen {
                 Math.multiplyExact(font.width("M"), FormTokens.Measure.READING_COLUMNS),
                 2 * FormTokens.Space.SCREEN));
     chrome =
-        new FormChrome(minecraft, content, title, explanation, Component.empty(), List.of(back));
+        new FormChrome(
+            minecraft, content, title, explanation, Component.empty(), List.of(back), theme());
     panel = chrome.panel();
     for (var choice : choices) {
       var reason = reasons.get(choice.id());
@@ -133,7 +134,8 @@ public final class ClientChoiceScreen extends NativeFormScreen {
                       return;
                     }
                     choice.selected().run();
-                  })
+                  },
+                  theme())
               .createNarration(
                   original ->
                       original

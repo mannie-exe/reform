@@ -13,13 +13,24 @@ public record ClientWorkspacePresentation(
     HeaderComposition header,
     Optional<HomePage> home,
     ThemePatch theme,
-    Optional<DestinationId> initial) {
+    Optional<DestinationId> initial,
+    Map<ClientTheme.TextRole, net.minecraft.network.chat.Style> textStyles) {
   public ClientWorkspacePresentation {
     Objects.requireNonNull(identity);
     Objects.requireNonNull(header);
     Objects.requireNonNull(home);
     Objects.requireNonNull(theme);
     Objects.requireNonNull(initial);
+    textStyles = Map.copyOf(textStyles);
+  }
+
+  public ClientWorkspacePresentation(
+      WorkspaceIdentity identity,
+      HeaderComposition header,
+      Optional<HomePage> home,
+      ThemePatch theme,
+      Optional<DestinationId> initial) {
+    this(identity, header, home, theme, initial, Map.of());
   }
 
   public static ClientWorkspacePresentation standard(WorkspaceIdentity identity) {
@@ -32,23 +43,40 @@ public record ClientWorkspacePresentation(
   }
 
   public ClientWorkspacePresentation withHeader(HeaderComposition header) {
-    return new ClientWorkspacePresentation(identity, header, home, theme, initial);
+    return new ClientWorkspacePresentation(identity, header, home, theme, initial, textStyles);
   }
 
   public ClientWorkspacePresentation withHome(HomePage home) {
-    return new ClientWorkspacePresentation(identity, header, Optional.of(home), theme, initial);
+    return new ClientWorkspacePresentation(
+        identity, header, Optional.of(home), theme, initial, textStyles);
   }
 
   public ClientWorkspacePresentation withoutHome() {
-    return new ClientWorkspacePresentation(identity, header, Optional.empty(), theme, initial);
+    return new ClientWorkspacePresentation(
+        identity, header, Optional.empty(), theme, initial, textStyles);
   }
 
   public ClientWorkspacePresentation withTheme(ThemePatch patch) {
-    return new ClientWorkspacePresentation(identity, header, home, patch, initial);
+    return new ClientWorkspacePresentation(identity, header, home, patch, initial, textStyles);
   }
 
   public ClientWorkspacePresentation withInitialDestination(DestinationId id) {
-    return new ClientWorkspacePresentation(identity, header, home, theme, Optional.of(id));
+    return new ClientWorkspacePresentation(
+        identity, header, home, theme, Optional.of(id), textStyles);
+  }
+
+  public ClientWorkspacePresentation withTextStyle(
+      ClientTheme.TextRole role, net.minecraft.network.chat.Style style) {
+    var next =
+        new EnumMap<ClientTheme.TextRole, net.minecraft.network.chat.Style>(
+            ClientTheme.TextRole.class);
+    next.putAll(textStyles);
+    next.put(Objects.requireNonNull(role), Objects.requireNonNull(style));
+    return new ClientWorkspacePresentation(identity, header, home, theme, initial, next);
+  }
+
+  public ClientTheme clientTheme() {
+    return new ClientTheme(ThemeScope.root(theme), textStyles);
   }
 
   public ThemeValues values() {

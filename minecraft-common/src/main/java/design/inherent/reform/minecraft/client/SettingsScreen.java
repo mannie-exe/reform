@@ -10,7 +10,6 @@ import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormPresentation;
-import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.reference.ReferenceActions;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +17,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -157,7 +155,7 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
       FormPresentation presentation,
       FieldEditors<T> fieldEditors,
       SubmissionLabels submissionLabels) {
-    super(title);
+    super(title, parent);
     view =
         new SettingsView<>(
             parent,
@@ -280,7 +278,12 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     view.standalone();
     view.inlineInformation(null);
     informationPanel = null;
-    int padding = Math.min(FormTokens.Space.SCREEN, Math.max(0, (Math.min(width, height) - 1) / 2));
+    int padding =
+        Math.min(
+            theme()
+                .values()
+                .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_SCREEN),
+            Math.max(0, (Math.min(width, height) - 1) / 2));
     int available = Math.max(1, width - 2 * padding);
     if (!view.hasNavigation()) {
       navigationWidgets = null;
@@ -312,13 +315,29 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     var metrics =
         new FormGeometry.WorkspaceMetrics(
             Math.max(
-                FormTokens.Measure.NAVIGATION_MINIMUM,
+                theme()
+                    .values()
+                    .value(
+                        design.inherent.reform.presentation.ThemeValues.Role
+                            .MEASURE_NAVIGATION_MINIMUM),
                 font.width(workspaceText("search", "Search settings")) + 20),
-            FormTokens.Measure.EDITOR_MINIMUM,
-            FormTokens.Measure.INFORMATION_MINIMUM,
+            theme()
+                .values()
+                .value(design.inherent.reform.presentation.ThemeValues.Role.MEASURE_EDITOR_MINIMUM),
+            theme()
+                .values()
+                .value(
+                    design.inherent.reform.presentation.ThemeValues.Role
+                        .MEASURE_INFORMATION_MINIMUM),
             Math.max(112, Math.min(200, available / 4)),
-            FormTokens.Measure.INFORMATION_PREFERRED,
-            FormTokens.Space.CONTENT);
+            theme()
+                .values()
+                .value(
+                    design.inherent.reform.presentation.ThemeValues.Role
+                        .MEASURE_INFORMATION_PREFERRED),
+            theme()
+                .values()
+                .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_CONTENT));
     int top = padding;
     int bottom = Math.max(top + 1, height - padding);
     var layout =
@@ -328,7 +347,8 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
       layout =
           FormGeometry.workspace(available, top, bottom, metrics, drawerOpen, information.open());
       var toggle =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   workspaceText("categories", "Categories"),
                   ignored -> {
                     drawerOpen = !drawerOpen;
@@ -474,7 +494,8 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
   }
 
   private void mountInformation(FormGeometry.Placement at) {
-    informationPanel = new FormPanel(minecraft, at.x(), at.y(), at.width(), at.height(), false);
+    informationPanel =
+        new FormPanel(minecraft, at.x(), at.y(), at.width(), at.height(), false, theme());
     addRenderableWidget(informationPanel);
     information.dock(informationPanel, () -> setFocused(informationPanel));
   }

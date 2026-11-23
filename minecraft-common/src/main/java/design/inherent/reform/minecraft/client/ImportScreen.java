@@ -145,7 +145,8 @@ public final class ImportScreen<T> extends NativeFormScreen {
                     ? text("footer", "Stage changes the draft only; Back retains earlier work.")
                     : notice
                 : progress(operation.snapshot()),
-            footer);
+            footer,
+            theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
@@ -527,7 +528,8 @@ public final class ImportScreen<T> extends NativeFormScreen {
 
   private Button action(Component label, Runnable callback) {
     var generation = widgetGeneration;
-    return Button.builder(
+    return theme()
+        .buttonBuilder(
             label,
             ignored -> {
               if (!closed

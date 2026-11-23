@@ -8,6 +8,10 @@ import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.DestinationId;
 import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.FormPresentation;
+import design.inherent.reform.presentation.FormTheme;
+import design.inherent.reform.presentation.ThemePatch;
+import design.inherent.reform.presentation.ThemeValues;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
@@ -109,14 +113,36 @@ final class PlatformShellChecks implements AutoCloseable {
                 DocumentId.parse("reform_platform_example:shell"),
                 Component.literal("Stable settings workspace"),
                 Component.literal("Declared identity stays in place")))
-        .withHeader(header);
+        .withHeader(header)
+        .withTheme(
+            ThemePatch.empty()
+                .set(ThemeValues.Role.SPACE_SCREEN, 16)
+                .set(ThemeValues.Role.SPACE_FIELD, 18)
+                .set(ThemeValues.Role.CONTROL_HEIGHT, 24)
+                .set(ThemeValues.Role.TEXT, 0xffd0ffe8)
+                .set(ThemeValues.Role.TEXT_SUPPORTING, 0xffb8c8dc))
+        .withTextStyle(
+            ClientTheme.TextRole.TITLE, net.minecraft.network.chat.Style.EMPTY.withBold(true));
   }
 
   boolean tick() throws Exception {
     switch (stage) {
       case 0 -> {
         source = Files.readAllBytes(sourcePath());
-        var forms = PlatformWorkflowExample.forms();
+        var forms = new java.util.ArrayList<>(PlatformWorkflowExample.forms());
+        var themed =
+            FormPresentation.EMPTY.withTheme(
+                FormTheme.EMPTY
+                    .withRoot(ThemePatch.empty().set(ThemeValues.Role.SPACE_FIELD, 14))
+                    .withField(
+                        design.inherent.reform.definition.FieldPath.ROOT.field("distance"),
+                        ThemePatch.empty().set(ThemeValues.Role.CONTROL_NUMERIC_INPUT, 140)));
+        forms.set(
+            0,
+            PlatformWorkflowExample.settings()
+                .form(
+                    Component.literal("Client preferences"),
+                    new ClientFormOptions<>(themed, java.util.Map.of())));
         var metadata = presentation(false);
         check.accept(
             "shell metadata validates without entering a canvas or source",
@@ -149,6 +175,26 @@ final class PlatformShellChecks implements AutoCloseable {
                 && workflow.documents().stream()
                     .noneMatch(ClientEditingWorkflow.DocumentState::opened));
         check.accept(
+            "native shell retains an explicitly resolved immutable theme",
+            ((NativeFormScreen) workflow.screen())
+                        .theme()
+                        .values()
+                        .value(ThemeValues.Role.SPACE_SCREEN)
+                    == 16
+                && ((NativeFormScreen) workflow.screen())
+                        .theme()
+                        .values()
+                        .value(ThemeValues.Role.TEXT)
+                    == 0xffd0ffe8
+                && ((NativeFormScreen) workflow.screen())
+                    .theme()
+                    .text(ClientTheme.TextRole.TITLE, Component.literal("Measured title"))
+                    .getStyle()
+                    .isBold());
+        check.accept(
+            "native Home button uses the declared control height and role foreground",
+            button(workflow.screen(), "Client preferences").getHeight() == 24);
+        check.accept(
             "Home exposes no document save or defaults actions",
             widgets(workflow.screen()).stream()
                 .noneMatch(
@@ -159,6 +205,12 @@ final class PlatformShellChecks implements AutoCloseable {
         check.accept(
             "Home narration reports zero cached owners",
             workflow.screen().getNarrationMessage().getString().contains("0 opened"));
+        try {
+          ((NativeFormScreen) workflow.screen()).withTheme(ClientTheme.standard());
+          throw new AssertionError("Mounted screen accepted a replacement theme");
+        } catch (IllegalStateException expected) {
+          check.accept("actual mounted native screen refuses theme replacement", true);
+        }
         homeCanvas = lastCanvas;
         stage++;
         capture.accept(
@@ -187,6 +239,21 @@ final class PlatformShellChecks implements AutoCloseable {
         check.accept(
             "header navigation leaves the real input focusable",
             opened.form().focusField(distance));
+        check.accept(
+            "scoped field uses its declared native input offer",
+            opened.form().fieldControl(distance).orElseThrow().getWidth() == 140);
+        var information =
+            widgets(workflow.screen()).stream()
+                .filter(w -> w.getMessage().getString().equals("i"))
+                .toList();
+        check.accept(
+            "themed native information glyph retains its local Unicode font",
+            !information.isEmpty()
+                && information.stream()
+                    .allMatch(
+                        w ->
+                            w.getMessage().getStyle().isBold()
+                                && w.getMessage().getStyle().toString().contains("uniform")));
         replace(
             workflow.screen(),
             (net.minecraft.client.gui.components.EditBox)

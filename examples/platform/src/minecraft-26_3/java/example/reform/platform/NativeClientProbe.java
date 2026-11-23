@@ -18,6 +18,30 @@ import org.lwjgl.sdl.SDLKeyboard;
 import org.lwjgl.sdl.SDLVideo;
 
 final class NativeClientProbe {
+  static net.minecraft.client.gui.components.EditBox rawTextAlphaInput(
+      net.minecraft.client.gui.Font font, int x, int y) {
+    var input =
+        new net.minecraft.client.gui.components.EditBox(
+            font,
+            x,
+            y,
+            160,
+            20,
+            net.minecraft.network.chat.Component.literal("Raw native alpha reference"));
+    input.setValue("Example");
+    input.setTextColor(0x03ffffff);
+    input.addFormatter(
+        (text, offset) ->
+            net.minecraft.network.chat.Component.literal(text)
+                .withStyle(net.minecraft.network.chat.Style.EMPTY.withBold(true))
+                .getVisualOrderText());
+    return input;
+  }
+
+  static boolean normalizesSmallTextAlpha() {
+    return false;
+  }
+
   static java.util.concurrent.Executor ioPool() {
     return net.minecraft.util.Util.ioPool();
   }

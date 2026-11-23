@@ -64,6 +64,16 @@ class DistributionRefusals(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing shared native client API"):
             VERIFY.verify(self.root, self.version)
 
+    def test_missing_owned_control_hook_refused(self):
+        with zipfile.ZipFile(self.binary) as archive:
+            entries = [(entry, archive.read(entry)) for entry in archive.infolist()
+                       if entry.filename != "design/inherent/reform/minecraft/mixin/ControlStyleMixin.class"]
+        with zipfile.ZipFile(self.binary, "w") as archive:
+            for entry, data in entries:
+                archive.writestr(entry, data)
+        with self.assertRaisesRegex(ValueError, "Missing admitted native adapter: ControlStyleMixin"):
+            VERIFY.verify(self.root, self.version)
+
     def test_chat_hook_cannot_become_a_common_side_mixin(self):
         import json
         with zipfile.ZipFile(self.binary) as archive:

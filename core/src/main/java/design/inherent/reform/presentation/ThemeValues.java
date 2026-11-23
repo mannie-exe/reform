@@ -103,6 +103,7 @@ public final class ThemeValues {
   }
 
   ThemeValues resolve(ThemePatch patch) {
+    if (patch.changes().isEmpty()) return this;
     var resolved = new EnumMap<Role, Integer>(Role.class);
     resolved.putAll(values);
     for (var change : patch.changes()) {

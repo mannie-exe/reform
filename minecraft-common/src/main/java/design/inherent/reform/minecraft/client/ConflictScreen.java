@@ -149,7 +149,8 @@ public final class ConflictScreen<T> extends NativeFormScreen {
         operation != null && !resolving && !operation.snapshot().cancellationRequested();
     var back = button(text("back", "Back"), this::onClose);
     back.active = !resolving;
-    chrome = new FormChrome(minecraft, width, height, title, contextLabel, status(), footer);
+    chrome =
+        new FormChrome(minecraft, width, height, title, contextLabel, status(), footer, theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
@@ -360,7 +361,8 @@ public final class ConflictScreen<T> extends NativeFormScreen {
   private Button button(Component label, Runnable callback) {
     var generation = widgets;
     var result =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (!closed && widgets == generation && NativeScreens.current(minecraft) == this)

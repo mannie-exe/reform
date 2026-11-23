@@ -80,7 +80,8 @@ public final class UnsavedChangesScreen extends NativeFormScreen {
     controls.get(Choice.SAVE).active = blocked.isEmpty();
     blocked.ifPresent(reason -> controls.get(Choice.SAVE).setTooltip(Tooltip.create(reason)));
     chrome =
-        new FormChrome(minecraft, width, height, title, contextLabel, Component.empty(), widgets);
+        new FormChrome(
+            minecraft, width, height, title, contextLabel, Component.empty(), widgets, theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(Component.empty(), explanation);
@@ -103,7 +104,8 @@ public final class UnsavedChangesScreen extends NativeFormScreen {
   private Button button(Choice choice, Component label) {
     var token = generation;
     var button =
-        Button.builder(label, ignored -> choose(token, choice))
+        theme()
+            .buttonBuilder(label, ignored -> choose(token, choice))
             .bounds(0, 0, Math.max(20, font.width(label) + 20), 20)
             .build();
     controls.put(choice, button);

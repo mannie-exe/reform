@@ -26,6 +26,10 @@ abstract class FormHostScreen extends NativeFormScreen {
           return FormHostScreen.this.font;
         }
 
+        public ClientTheme theme() {
+          return FormHostScreen.this.theme();
+        }
+
         public boolean current(FormView candidate) {
           return views.contains(candidate)
               && minecraft != null
@@ -86,6 +90,10 @@ abstract class FormHostScreen extends NativeFormScreen {
     super(title);
   }
 
+  protected FormHostScreen(Component title, Screen parent) {
+    super(title, parent);
+  }
+
   protected final FormView mountedView() {
     var focused = focusedView();
     if (focused != null) mounted = focused;
@@ -110,6 +118,7 @@ abstract class FormHostScreen extends NativeFormScreen {
 
   /** One root handoff retains every composed owner, including owners other than the initiator. */
   protected final void navigate(Screen next) {
+    if (next instanceof NativeFormScreen themed && next != this) themed.inheritTheme(theme());
     if (minecraft != null && NativeScreens.current(minecraft) == this && next != this)
       beforeRebuild();
     handingOff = true;

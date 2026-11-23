@@ -79,31 +79,44 @@ public final class FormGeometry {
       int contextHeight,
       int statusHeight,
       List<Size> actions) {
+    return screenFrame(
+        width, height, titleHeight, contextHeight, statusHeight, actions, ThemeValues.standard());
+  }
+
+  public static ScreenFrame screenFrame(
+      int width,
+      int height,
+      int titleHeight,
+      int contextHeight,
+      int statusHeight,
+      List<Size> actions,
+      ThemeValues theme) {
+    Objects.requireNonNull(theme);
     if (width < 1 || height < 1 || titleHeight < 0 || contextHeight < 0 || statusHeight < 0)
       throw new IllegalArgumentException("Invalid screen measurements");
-    int gutter = Math.min(FormTokens.Space.SCREEN, (Math.min(width, height) - 1) / 2);
+    int gutter =
+        Math.min(theme.value(ThemeValues.Role.SPACE_SCREEN), (Math.min(width, height) - 1) / 2);
     int available = width - 2 * gutter, bottom = height - gutter;
-    int minimum = Math.min(FormTokens.Measure.CONTENT_MINIMUM_HEIGHT, height - 2 * gutter);
-    var flow = controls(actions, available, FormTokens.Space.INLINE);
+    int minimum =
+        Math.min(theme.value(ThemeValues.Role.MEASURE_CONTENT_MINIMUM_HEIGHT), height - 2 * gutter);
+    int contentGap = theme.value(ThemeValues.Role.SPACE_CONTENT);
+    var flow = controls(actions, available, theme.value(ThemeValues.Role.SPACE_INLINE));
     boolean flowingActions =
-        !actions.isEmpty()
-            && (long) flow.height() + FormTokens.Space.CONTENT + minimum > bottom - gutter;
+        !actions.isEmpty() && (long) flow.height() + contentGap + minimum > bottom - gutter;
     var actionBounds =
         actions.isEmpty() || flowingActions
             ? Optional.<Placement>empty()
             : Optional.of(new Placement(gutter, bottom - flow.height(), available, flow.height()));
-    if (actionBounds.isPresent()) bottom = actionBounds.get().y() - FormTokens.Space.CONTENT;
+    if (actionBounds.isPresent()) bottom = actionBounds.get().y() - contentGap;
     boolean flowingStatus =
-        statusHeight > 0
-            && (long) statusHeight + FormTokens.Space.CONTENT + minimum > bottom - gutter;
+        statusHeight > 0 && (long) statusHeight + contentGap + minimum > bottom - gutter;
     var statusBounds =
         statusHeight == 0 || flowingStatus
             ? Optional.<Placement>empty()
             : Optional.of(new Placement(gutter, bottom - statusHeight, available, statusHeight));
-    if (statusBounds.isPresent()) bottom = statusBounds.get().y() - FormTokens.Space.CONTENT;
+    if (statusBounds.isPresent()) bottom = statusBounds.get().y() - contentGap;
     long header = (long) titleHeight + contextHeight;
-    boolean flowingHeader =
-        header > 0 && header + FormTokens.Space.CONTENT + minimum > bottom - gutter;
+    boolean flowingHeader = header > 0 && header + contentGap + minimum > bottom - gutter;
     int top = gutter;
     Optional<Placement> title = Optional.empty(), context = Optional.empty();
     if (!flowingHeader) {
@@ -115,7 +128,7 @@ public final class FormGeometry {
         context = Optional.of(new Placement(gutter, top, available, contextHeight));
         top += contextHeight;
       }
-      if (header > 0) top += FormTokens.Space.CONTENT;
+      if (header > 0) top += contentGap;
     }
     return new ScreenFrame(
         new Placement(0, 0, width, height),
@@ -267,12 +280,22 @@ public final class FormGeometry {
 
   public static FieldTracks fieldTracks(
       int width, int textMinimum, List<Size> controls, int gap, Set<Integer> joinedAfter) {
-    if (width < 1 || textMinimum < 0 || gap < 0)
+    return fieldTracks(width, textMinimum, controls, gap, joinedAfter, FormTokens.Space.INLINE);
+  }
+
+  public static FieldTracks fieldTracks(
+      int width,
+      int textMinimum,
+      List<Size> controls,
+      int gap,
+      Set<Integer> joinedAfter,
+      int inlineGap) {
+    if (width < 1 || textMinimum < 0 || gap < 0 || inlineGap < 0)
       throw new IllegalArgumentException("Invalid field measurements");
     long preferred =
         controls.stream().mapToLong(Size::width).sum()
-            + Math.max(0L, controls.size() - 1L) * FormTokens.Space.INLINE;
-    int controlMinimum = minimumControlWidth(controls, FormTokens.Space.INLINE, joinedAfter);
+            + Math.max(0L, controls.size() - 1L) * inlineGap;
+    int controlMinimum = minimumControlWidth(controls, inlineGap, joinedAfter);
     boolean stacked =
         textMinimum > 0 && !controls.isEmpty() && textMinimum + (long) gap + controlMinimum > width;
     int start =
@@ -285,7 +308,7 @@ public final class FormGeometry {
         text,
         start,
         stacked,
-        controls(controls, Math.max(1, width - start), FormTokens.Space.INLINE, joinedAfter));
+        controls(controls, Math.max(1, width - start), inlineGap, joinedAfter));
   }
 
   /** Equal responsive tracks for one authored relationship; no inferred adjacency grouping. */

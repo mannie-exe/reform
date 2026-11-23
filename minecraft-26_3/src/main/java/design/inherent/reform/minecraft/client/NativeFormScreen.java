@@ -12,6 +12,9 @@ import net.minecraft.network.chat.Component;
 
 /** Native extraction boundary; forms use the game's retained GUI pipeline. */
 public abstract class NativeFormScreen extends Screen {
+  private ClientTheme theme = ClientTheme.standard();
+  private boolean themeBound, parentTheme;
+
   private record PointerDispatch(MouseButtonEvent event, boolean doubleClick) {}
 
   private PointerDispatch pointer;
@@ -19,6 +22,42 @@ public abstract class NativeFormScreen extends Screen {
 
   protected NativeFormScreen(Component title) {
     super(title);
+  }
+
+  protected NativeFormScreen(Component title, Screen parent) {
+    super(title);
+    if (parent instanceof NativeFormScreen form) {
+      theme = form.theme();
+      parentTheme = true;
+    }
+  }
+
+  public final ClientTheme theme() {
+    return theme;
+  }
+
+  private boolean themeMounted() {
+    return ((design.inherent.reform.minecraft.mixin.ScreenMountStateAccessor) this)
+            .reform$initialized()
+        || NativeScreens.current(net.minecraft.client.Minecraft.getInstance()) == this;
+  }
+
+  public final NativeFormScreen withTheme(ClientTheme theme) {
+    if (themeMounted()) throw new IllegalStateException("Declare a theme before native mounting");
+    this.theme = java.util.Objects.requireNonNull(theme);
+    themeBound = true;
+    return this;
+  }
+
+  final void inheritTheme(ClientTheme theme) {
+    if (!themeBound && !themeMounted()) withTheme(theme);
+  }
+
+  final void inheritFallbackTheme(ClientTheme theme) {
+    if (!themeBound && !parentTheme && !themeMounted()) {
+      this.theme = theme;
+      parentTheme = true;
+    }
   }
 
   @Override

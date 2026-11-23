@@ -125,7 +125,8 @@ public final class KeyBindingScreen extends NativeFormScreen {
     button(Control.APPLY, text("apply", "Apply draft"), this::apply);
     button(Control.BACK, text("back", "Back"), this::onClose);
     chrome =
-        new FormChrome(minecraft, width, height, title, request.contextLabel(), status(), footer);
+        new FormChrome(
+            minecraft, width, height, title, request.contextLabel(), status(), footer, theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
@@ -187,7 +188,8 @@ public final class KeyBindingScreen extends NativeFormScreen {
   private void button(Control id, Component label, Runnable callback) {
     var generation = widgets;
     var button =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (!closed

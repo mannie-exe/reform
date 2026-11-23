@@ -85,6 +85,7 @@ final class WorkspaceNavigation {
   private int queryCursor, querySelection;
   private boolean searchFocused;
   private Object generation;
+  private ClientTheme theme = ClientTheme.standard();
 
   record Widgets(FormEditBox search, FormPanel panel, List<Button> history) {}
 
@@ -134,7 +135,8 @@ final class WorkspaceNavigation {
     for (boolean forward : List.of(false, true)) {
       var label = forward ? text("forward", "Forward") : text("back", "Back");
       var button =
-          Button.builder(
+          theme
+              .buttonBuilder(
                   label,
                   ignored -> {
                     if (current(token)) move(forward);
@@ -226,6 +228,20 @@ final class WorkspaceNavigation {
       FormCatalog.Limits limits,
       List<Component> notices,
       Consumer<FormPanel> prefix) {
+    return build(
+        client, bounds, declared, selected, limits, notices, prefix, ClientTheme.standard());
+  }
+
+  Widgets build(
+      Minecraft client,
+      FormGeometry.Placement bounds,
+      List<Entry> declared,
+      Key selected,
+      FormCatalog.Limits limits,
+      List<Component> notices,
+      Consumer<FormPanel> prefix,
+      ClientTheme theme) {
+    this.theme = Objects.requireNonNull(theme);
     Objects.requireNonNull(limits);
     var entries = admit(declared, limits.maximumEntries());
     visit(selected, limits);
@@ -258,6 +274,7 @@ final class WorkspaceNavigation {
     search =
         new FormEditBox(
             client.font, bounds.x(), searchTop, searchWidth, 20, text("search", "Search settings"));
+    ClientControls.theme(search, theme);
     search.setMaxLength(limits.maximumQueryCharacters());
     search.setHint(text("search", "Search settings"));
     search.setValue(query);
@@ -280,7 +297,8 @@ final class WorkspaceNavigation {
             searchTop + 26,
             bounds.width(),
             Math.max(1, bounds.height() - (searchTop - bounds.y()) - 26),
-            true);
+            true,
+            theme);
     Objects.requireNonNull(prefix).accept(panel);
     var children = new LinkedHashMap<Key, List<Entry>>();
     var roots = new ArrayList<Entry>();

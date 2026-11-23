@@ -51,7 +51,7 @@ public final class ClientStatusScreen extends NativeFormScreen {
       Optional<Runnable> retry,
       Runnable enter,
       Runnable retire) {
-    super(title);
+    super(title, parent);
     this.parent = parent;
     this.state = Objects.requireNonNull(state);
     this.editor = Objects.requireNonNull(editor);
@@ -86,7 +86,8 @@ public final class ClientStatusScreen extends NativeFormScreen {
     var generation = widgets;
     if (displayed.canRetry() && retry.isPresent())
       actions.add(
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("retry", "Retry"),
                   ignored -> {
                     if (!closed
@@ -97,7 +98,8 @@ public final class ClientStatusScreen extends NativeFormScreen {
               .bounds(0, 0, Math.max(56, font.width(text("retry", "Retry")) + 20), 20)
               .build());
     actions.add(
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 text("back", "Back"),
                 ignored -> {
                   if (widgets == generation) onClose();
@@ -106,7 +108,14 @@ public final class ClientStatusScreen extends NativeFormScreen {
             .build());
     chrome =
         new FormChrome(
-            minecraft, width, height, title, Component.empty(), Component.empty(), actions);
+            minecraft,
+            width,
+            height,
+            title,
+            Component.empty(),
+            Component.empty(),
+            actions,
+            theme());
     diagnostics = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, diagnostics);
     diagnostics.row(Component.empty(), message(displayed));

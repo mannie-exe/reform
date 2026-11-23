@@ -9,6 +9,18 @@ import net.minecraft.network.chat.Component;
 /** Plain contextual information action with native button input/focus and subject narration. */
 final class InformationButton extends NativeNavigationButton {
   private final Component subject;
+  private ClientTheme theme = ClientTheme.standard();
+
+  void theme(ClientTheme theme) {
+    this.theme = theme;
+    setMessage(theme.text(ClientTheme.TextRole.VALUE, getMessage()));
+    setWidth(
+        theme
+            .values()
+            .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_INFORMATION));
+    setHeight(
+        theme.values().value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_HEIGHT));
+  }
 
   InformationButton(Component subject, Runnable action) {
     super(
@@ -27,17 +39,24 @@ final class InformationButton extends NativeNavigationButton {
   protected void renderNavigation(FormCanvas canvas, int x, int y, float delta) {
     int color =
         !active
-            ? FormPanel.DESCRIPTION_TEXT
-            : isHoveredOrFocused() ? FormPanel.ACTIVE_TEXT : FormPanel.TITLE_TEXT;
+            ? theme.color(ClientTheme.TextRole.SUPPORT)
+            : theme.color(
+                isHoveredOrFocused() ? ClientTheme.TextRole.ACTIVE : ClientTheme.TextRole.VALUE);
     if (isFocused()) {
-      canvas.fill(getX(), getY() + height - 2, getX() + width, getY() + height, 0xffffffff);
+      canvas.fill(
+          getX(),
+          getY() + height - 2,
+          getX() + width,
+          getY() + height,
+          theme.values().value(design.inherent.reform.presentation.ThemeValues.Role.FOCUS));
     }
-    canvas.drawCenteredString(
+    canvas.drawArgb(
         Minecraft.getInstance().font,
-        getMessage(),
-        getX() + width / 2,
+        getMessage().getVisualOrderText(),
+        getX() + (width - Minecraft.getInstance().font.width(getMessage())) / 2,
         getY() + (height - Minecraft.getInstance().font.lineHeight) / 2,
-        color);
+        color,
+        true);
   }
 
   @Override

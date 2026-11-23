@@ -68,6 +68,7 @@ public final class FormPresentation {
   private final FormLayout layout;
   private final List<UnavailableField> unavailableFields;
   private final Set<FieldPath> unavailablePaths;
+  private final FormTheme theme;
 
   public FormPresentation(List<Range> ranges) {
     this(ranges, FormDependencies.NONE);
@@ -87,10 +88,22 @@ public final class FormPresentation {
       FormCatalog catalog,
       List<UnavailableField> unavailableFields,
       FormLayout layout) {
+    this(ranges, dependencies, catalog, unavailableFields, layout, FormTheme.EMPTY);
+  }
+
+  private FormPresentation(
+      List<Range> ranges,
+      FormDependencies dependencies,
+      FormCatalog catalog,
+      List<UnavailableField> unavailableFields,
+      FormLayout layout,
+      FormTheme theme) {
     this.ranges = List.copyOf(ranges);
     this.dependencies = Objects.requireNonNull(dependencies);
     this.catalog = Objects.requireNonNull(catalog);
     this.layout = Objects.requireNonNull(layout);
+    this.theme = Objects.requireNonNull(theme);
+    theme.requireSections(layout, ranges);
     if (ranges.size() > 128) throw new IllegalArgumentException("Too many form relationships");
     if (unavailableFields.size() > 128)
       throw new IllegalArgumentException("Too many unavailable fields");
@@ -140,18 +153,26 @@ public final class FormPresentation {
   }
 
   public FormPresentation withLayout(FormLayout layout) {
-    return new FormPresentation(ranges, dependencies, catalog, unavailableFields, layout);
+    return new FormPresentation(ranges, dependencies, catalog, unavailableFields, layout, theme);
   }
 
   public FormPresentation withCatalog(FormCatalog catalog) {
-    return new FormPresentation(ranges, dependencies, catalog, unavailableFields, layout);
+    return new FormPresentation(ranges, dependencies, catalog, unavailableFields, layout, theme);
+  }
+
+  public FormTheme theme() {
+    return theme;
+  }
+
+  public FormPresentation withTheme(FormTheme theme) {
+    return new FormPresentation(ranges, dependencies, catalog, unavailableFields, layout, theme);
   }
 
   /**
    * Compose a bounded immutable observation for this form. The actual owner still guards effects.
    */
   public FormPresentation withUnavailableFields(List<UnavailableField> unavailable) {
-    return new FormPresentation(ranges, dependencies, catalog, unavailable, layout);
+    return new FormPresentation(ranges, dependencies, catalog, unavailable, layout, theme);
   }
 
   public Optional<UnavailableField> unavailableAt(FieldPath path) {
@@ -175,6 +196,7 @@ public final class FormPresentation {
   }
 
   public FormDependencies.Bound bind(ValueType<?> root) {
+    theme.requireCompatible(root);
     catalog.requireCompatible(root);
     layout.requireCompatible(root);
     for (var range : ranges) {

@@ -10,7 +10,6 @@ import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.DestinationId;
 import design.inherent.reform.presentation.FormGeometry;
-import design.inherent.reform.presentation.FormTokens;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -752,10 +751,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private DocumentId actionRoute;
     private int statusTop, statusWidth;
     private FormGeometry.ScreenFrame outerFrame;
-    private final WorkspaceHeader header = new WorkspaceHeader(presentation);
+    private final WorkspaceHeader header =
+        new WorkspaceHeader(presentation, presentation.clientTheme());
 
     Overview(Screen parent, Component title) {
       super(title);
+      withTheme(presentation.clientTheme());
       this.parent = parent;
       categoryPath = layout == null ? List.of() : layout.groups().getFirst().path();
       selectedKey =
@@ -825,20 +826,46 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var actionEntry = actionRoute == null ? null : entry(actionRoute);
       // Current owner buttons are installed after the actual view has refreshed their state.
       int padding =
-          Math.min(FormTokens.Space.SCREEN, Math.max(0, (Math.min(width, height) - 1) / 2));
+          Math.min(
+              theme()
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_SCREEN),
+              Math.max(0, (Math.min(width, height) - 1) / 2));
       int available = Math.max(1, width - 2 * padding);
       var metrics =
           new FormGeometry.WorkspaceMetrics(
               Math.max(
-                  FormTokens.Measure.NAVIGATION_MINIMUM,
+                  theme()
+                      .values()
+                      .value(
+                          design.inherent.reform.presentation.ThemeValues.Role
+                              .MEASURE_NAVIGATION_MINIMUM),
                   font.width(text("search", "Search settings")) + 20),
-              FormTokens.Measure.EDITOR_MINIMUM,
-              FormTokens.Measure.INFORMATION_MINIMUM,
+              theme()
+                  .values()
+                  .value(
+                      design.inherent.reform.presentation.ThemeValues.Role.MEASURE_EDITOR_MINIMUM),
+              theme()
+                  .values()
+                  .value(
+                      design.inherent.reform.presentation.ThemeValues.Role
+                          .MEASURE_INFORMATION_MINIMUM),
               Math.max(112, Math.min(200, available / 4)),
-              FormTokens.Measure.INFORMATION_PREFERRED,
-              FormTokens.Space.CONTENT);
+              theme()
+                  .values()
+                  .value(
+                      design.inherent.reform.presentation.ThemeValues.Role
+                          .MEASURE_INFORMATION_PREFERRED),
+              theme()
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_CONTENT));
       int headerHeight = header.measure(font, available);
-      int bodyTop = padding + headerHeight + FormTokens.Space.CONTENT;
+      int bodyTop =
+          padding
+              + headerHeight
+              + theme()
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_CONTENT);
       var preliminary =
           FormGeometry.workspace(
               available,
@@ -865,7 +892,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       final var categoriesToggle = navigationToggle;
       int navigationHeight =
           preliminary.compactNavigation()
-              ? FormTokens.Control.HEIGHT + FormTokens.Space.CONTENT
+              ? theme()
+                      .values()
+                      .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_HEIGHT)
+                  + theme()
+                      .values()
+                      .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_CONTENT)
               : 0;
       // Measure once with the same labels before mounting, rather than reserving a fixed row count.
       var actionView =
@@ -874,22 +906,44 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               : actionEntry.editor.presentation();
       var actionSizes = new ArrayList<FormGeometry.Size>();
       actionSizes.add(
-          new FormGeometry.Size(actions.getFirst().getWidth(), FormTokens.Control.HEIGHT));
-      if (actionView != null) for (var size : actionView.actionSizes(font)) actionSizes.add(size);
+          new FormGeometry.Size(
+              actions.getFirst().getWidth(),
+              theme()
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_HEIGHT)));
+      if (actionView != null)
+        for (var size : actionView.actionSizes(font, theme())) actionSizes.add(size);
       outerFrame =
           FormGeometry.screenFrame(
               width,
               height,
-              Math.max(FormTokens.Measure.TITLE_MINIMUM_HEIGHT, headerHeight + navigationHeight),
+              Math.max(
+                  theme()
+                      .values()
+                      .value(
+                          design.inherent.reform.presentation.ThemeValues.Role
+                              .MEASURE_TITLE_MINIMUM_HEIGHT),
+                  headerHeight + navigationHeight),
               0,
-              FormTokens.Measure.STATUS_MINIMUM_HEIGHT,
-              actionSizes);
+              theme()
+                  .values()
+                  .value(
+                      design.inherent.reform.presentation.ThemeValues.Role
+                          .MEASURE_STATUS_MINIMUM_HEIGHT),
+              actionSizes,
+              theme().values());
       bodyTop = outerFrame.content().y();
       statusTop = outerFrame.status().map(FormGeometry.Placement::y).orElse(bodyTop);
       statusWidth = outerFrame.content().width();
       int editorBottom = bodyTop + outerFrame.content().height();
       if (navigationToggle != null && !outerFrame.headerInContent()) {
-        navigationToggle.setPosition(padding, padding + headerHeight + FormTokens.Space.TEXT);
+        navigationToggle.setPosition(
+            padding,
+            padding
+                + headerHeight
+                + theme()
+                    .values()
+                    .value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_TEXT));
         addRenderableWidget(navigationToggle);
       }
       var headerBounds =
@@ -919,12 +973,29 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             FormGeometry.centeredWidth(
                 bounds,
                 Math.addExact(
-                    Math.multiplyExact(font.width("M"), FormTokens.Measure.READING_COLUMNS),
-                    2 * FormTokens.Space.SCREEN));
+                    Math.multiplyExact(
+                        font.width("M"),
+                        theme()
+                            .values()
+                            .value(
+                                design.inherent.reform.presentation.ThemeValues.Role
+                                    .MEASURE_READING_COLUMNS)),
+                    2
+                        * theme()
+                            .values()
+                            .value(
+                                design.inherent.reform.presentation.ThemeValues.Role
+                                    .SPACE_SCREEN)));
       editingVisible = !geometry.navigationOverlay();
       panel =
           new FormPanel(
-              minecraft, padding + bounds.x(), bounds.y(), bounds.width(), bounds.height(), false);
+              minecraft,
+              padding + bounds.x(),
+              bounds.y(),
+              bounds.width(),
+              bounds.height(),
+              false,
+              theme());
       if (outerFrame.headerInContent()) {
         header.appendTo(panel, font, locationTrail(), () -> current(token), this::locationMenu);
         if (navigationToggle != null) panel.actions("workspace:categories", navigationToggle);
@@ -1025,7 +1096,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         if (geometry.information().isPresent()) {
           var at = geometry.information().orElseThrow();
           informationPanel =
-              new FormPanel(minecraft, padding + at.x(), at.y(), at.width(), at.height(), false);
+              new FormPanel(
+                  minecraft, padding + at.x(), at.y(), at.width(), at.height(), false, theme());
           addRenderableWidget(informationPanel);
           information.dock(informationPanel, () -> setFocused(informationPanel));
         }
@@ -1103,7 +1175,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                     if (categoriesToggle != null)
                       prefix.actions("workspace:categories", categoriesToggle);
                   }
-                });
+                },
+                theme());
         addRenderableWidget(navigationWidgets.search());
         addRenderableWidget(navigationWidgets.panel());
         for (var control : navigationWidgets.history()) addRenderableWidget(control);
@@ -1623,7 +1696,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private Button button(Object token, Component label, Component document, Runnable action) {
-      return Button.builder(
+      return theme()
+          .buttonBuilder(
               label,
               ignored -> {
                 if (!current(token)) return;

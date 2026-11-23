@@ -7,6 +7,44 @@ import org.junit.jupiter.api.Test;
 
 class FormGeometryTest {
   @Test
+  void themedRegionsAndControlFlowUseTheSameExplicitGaps() {
+    var theme =
+        ThemeScope.root(
+                ThemePatch.empty()
+                    .set(ThemeValues.Role.SPACE_SCREEN, 21)
+                    .set(ThemeValues.Role.SPACE_CONTENT, 13)
+                    .set(ThemeValues.Role.SPACE_INLINE, 17))
+            .values();
+    var frame =
+        FormGeometry.screenFrame(
+            500,
+            400,
+            20,
+            10,
+            12,
+            List.of(new FormGeometry.Size(100, 24), new FormGeometry.Size(90, 24)),
+            theme);
+    assertEquals(21, frame.content().x());
+    assertEquals(64, frame.content().y());
+    assertEquals(117, frame.actionFlow().placements().get(1).x());
+    assertEquals(
+        13,
+        frame.actions().orElseThrow().y()
+            - (frame.status().orElseThrow().y() + frame.status().orElseThrow().height()));
+    var tracks =
+        FormGeometry.fieldTracks(
+            200,
+            0,
+            List.of(new FormGeometry.Size(100, 20), new FormGeometry.Size(90, 20)),
+            13,
+            java.util.Set.of(),
+            17);
+    assertEquals(57, tracks.controls().height());
+    assertEquals(37, tracks.controls().placements().get(1).y());
+    assertEquals(12, FormGeometry.screenFrame(500, 400, 20, 10, 12, List.of()).content().x());
+  }
+
+  @Test
   void explicitControlClustersKeepStepperPairsTogetherAndRefuseInvalidJoins() {
     var sizes =
         List.of(

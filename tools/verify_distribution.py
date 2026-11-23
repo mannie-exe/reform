@@ -119,8 +119,11 @@ def verify(root, version):
         require(mixins == {"required": True, "minVersion": "0.8",
                            "package": "design.inherent.reform.minecraft.mixin",
                            "compatibilityLevel": f"JAVA_{target['java']}",
-                           "client": ["ChatInputMixin", "GraphicRuntimeMixin", "GraphicGuiRendererMixin", "GraphicStateMixin"] + (["GraphicCanvasAccessor"] if target["minecraftVersion"] == "26.3" else []), "injectors": {"defaultRequire": 1}},
+                           "client": ["ChatInputMixin", "ControlStyleMixin", "ScreenMountStateAccessor", "ControlCaptionMixin", "ControlInputFontMixin"] + (["ControlInputColorMixin"] if target["minecraftVersion"] == "1.21.1" else []) + ["GraphicRuntimeMixin", "GraphicGuiRendererMixin", "GraphicStateMixin"] + (["GraphicCanvasAccessor"] if target["minecraftVersion"] == "26.3" else []), "injectors": {"defaultRequire": 1}},
                 "Invocation hook must retain its actual game Java target and client-only admission")
+        for mixin in mixins["client"]:
+            require(OWNED + f"minecraft/mixin/{mixin}.class" in classes,
+                    f"Missing admitted native adapter: {mixin}")
         require(entry + ".class" in classes, "Missing loader entry point")
         require(OWNED + "minecraft/command/SettingsCommands.class" in classes, "Missing shared command API")
         references = OWNED + "minecraft/reference/NativeReferences.class"

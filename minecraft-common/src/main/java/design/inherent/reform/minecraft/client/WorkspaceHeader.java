@@ -20,6 +20,7 @@ final class WorkspaceHeader implements AutoCloseable {
   }
 
   private final ClientWorkspacePresentation presentation;
+  private final ClientTheme theme;
   private ClientHeaderCanvas canvas;
   private OwnerContext canvasOwner;
   private Throwable canvasFailure;
@@ -29,12 +30,13 @@ final class WorkspaceHeader implements AutoCloseable {
       subtitleLines = List.of();
   private FormGeometry.Placement bounds;
 
-  WorkspaceHeader(ClientWorkspacePresentation presentation) {
+  WorkspaceHeader(ClientWorkspacePresentation presentation, ClientTheme theme) {
     this.presentation = presentation;
+    this.theme = Objects.requireNonNull(theme);
   }
 
   int measure(Font font, int width) {
-    var roles = presentation.values();
+    var roles = theme.values();
     var offers =
         new EnumMap<HeaderComposition.Slot, HeaderLayout.Offer>(HeaderComposition.Slot.class);
     offers.put(
@@ -45,18 +47,27 @@ final class WorkspaceHeader implements AutoCloseable {
                 roles.value(ThemeValues.Role.MEASURE_TEXT_MINIMUM),
                 Math.min(
                     roles.value(ThemeValues.Role.MEASURE_TEXT_PREFERRED_LIMIT),
-                    font.width(presentation.identity().title()))),
+                    font.width(
+                        theme.text(ClientTheme.TextRole.TITLE, presentation.identity().title())))),
             w ->
                 Math.max(
                     font.lineHeight,
-                    font.split(presentation.identity().title(), w).size() * font.lineHeight)));
+                    font.split(
+                                theme.text(
+                                    ClientTheme.TextRole.TITLE, presentation.identity().title()),
+                                w)
+                            .size()
+                        * font.lineHeight)));
     offers.put(
         HeaderComposition.Slot.LOCATION,
         new HeaderLayout.Offer(
             roles.value(ThemeValues.Role.CONTROL_MINIMUM_WIDTH),
             roles.value(ThemeValues.Role.MEASURE_INFORMATION_PREFERRED),
             w -> roles.value(ThemeValues.Role.CONTROL_HEIGHT)));
-    if (!presentation.identity().subtitle().getString().isEmpty())
+    if (!theme
+        .text(ClientTheme.TextRole.SUPPORT, presentation.identity().subtitle())
+        .getString()
+        .isEmpty())
       offers.put(
           HeaderComposition.Slot.SUBTITLE,
           new HeaderLayout.Offer(
@@ -65,7 +76,13 @@ final class WorkspaceHeader implements AutoCloseable {
               w ->
                   Math.max(
                       font.lineHeight,
-                      font.split(presentation.identity().subtitle(), w).size() * font.lineHeight)));
+                      font.split(
+                                  theme.text(
+                                      ClientTheme.TextRole.SUPPORT,
+                                      presentation.identity().subtitle()),
+                                  w)
+                              .size()
+                          * font.lineHeight)));
     presentation
         .header()
         .canvas()
@@ -82,11 +99,15 @@ final class WorkspaceHeader implements AutoCloseable {
             roles.value(ThemeValues.Role.SPACE_TEXT));
     titleLines =
         font.split(
-            presentation.identity().title(),
+            theme.text(ClientTheme.TextRole.TITLE, presentation.identity().title()),
             measured.slots().get(HeaderComposition.Slot.IDENTITY).width());
     var sub = measured.slots().get(HeaderComposition.Slot.SUBTITLE);
     subtitleLines =
-        sub == null ? List.of() : font.split(presentation.identity().subtitle(), sub.width());
+        sub == null
+            ? List.of()
+            : font.split(
+                theme.text(ClientTheme.TextRole.SUPPORT, presentation.identity().subtitle()),
+                sub.width());
     return measured.height();
   }
 
@@ -169,16 +190,20 @@ final class WorkspaceHeader implements AutoCloseable {
     for (var row : presentation.header().rows())
       for (var slot : row.slots())
         switch (slot) {
-          case IDENTITY -> panel.heading(presentation.identity().title());
+          case IDENTITY ->
+              panel.heading(
+                  theme.text(ClientTheme.TextRole.TITLE, presentation.identity().title()));
           case SUBTITLE -> {
-            var subtitle = presentation.identity().subtitle();
+            var subtitle =
+                theme.text(ClientTheme.TextRole.SUPPORT, presentation.identity().subtitle());
             if (!subtitle.getString().isEmpty()) panel.row(Component.empty(), subtitle);
           }
           case LOCATION -> {
             if (trail.isEmpty()) continue;
             var location = locationText(trail);
             var button =
-                Button.builder(
+                theme
+                    .buttonBuilder(
                         trail.getLast().title(),
                         ignored -> {
                           if (current.getAsBoolean()) overflow.accept(trail);
@@ -186,8 +211,8 @@ final class WorkspaceHeader implements AutoCloseable {
                     .bounds(
                         0,
                         0,
-                        presentation.values().value(ThemeValues.Role.CONTROL_MINIMUM_WIDTH),
-                        presentation.values().value(ThemeValues.Role.CONTROL_HEIGHT))
+                        theme.values().value(ThemeValues.Role.CONTROL_MINIMUM_WIDTH),
+                        theme.values().value(ThemeValues.Role.CONTROL_HEIGHT))
                     .createNarration(
                         original ->
                             Component.translatableWithFallback(
@@ -234,7 +259,7 @@ final class WorkspaceHeader implements AutoCloseable {
       Consumer<List<Crumb>> overflow) {
     var full = locationText(trail);
     var buttons = new ArrayList<AbstractWidget>();
-    int gap = presentation.values().value(ThemeValues.Role.SPACE_INLINE);
+    int gap = theme.values().value(ThemeValues.Role.SPACE_INLINE);
     int total =
         trail.stream().mapToInt(c -> Math.max(32, font.width(c.title()) + 20)).sum()
             + gap * (trail.size() - 1);
@@ -245,7 +270,8 @@ final class WorkspaceHeader implements AutoCloseable {
         boolean leaf = index + 1 == trail.size();
         var label = crumb.title().copy();
         var button =
-            Button.builder(
+            theme
+                .buttonBuilder(
                     label,
                     ignored -> {
                       if (current.getAsBoolean()) crumb.selected().run();
@@ -269,7 +295,8 @@ final class WorkspaceHeader implements AutoCloseable {
     } else {
       var leaf = trail.getLast().title();
       var button =
-          Button.builder(
+          theme
+              .buttonBuilder(
                   leaf,
                   ignored -> {
                     if (current.getAsBoolean()) overflow.accept(trail);
@@ -289,7 +316,7 @@ final class WorkspaceHeader implements AutoCloseable {
 
   void render(FormCanvas target, Font font) {
     if (bounds == null) return;
-    var values = presentation.values();
+    var values = theme.values();
     var identity = at(HeaderComposition.Slot.IDENTITY);
     int color = values.value(ThemeValues.Role.TEXT);
     for (int i = 0; i < titleLines.size(); i++)
@@ -313,7 +340,7 @@ final class WorkspaceHeader implements AutoCloseable {
     if (canvas != null && canvasFailure == null) {
       target.enableScissor(art.x(), art.y(), art.x() + art.width(), art.y() + art.height());
       try {
-        canvas.render(target, font, art, presentation.values());
+        canvas.render(target, font, art, theme.values());
       } catch (RuntimeException | Error failed) {
         canvasFailure = failed;
         try {
@@ -338,7 +365,7 @@ final class WorkspaceHeader implements AutoCloseable {
             lines.get(i),
             art.x(),
             art.y() + i * font.lineHeight,
-            presentation.values().value(ThemeValues.Role.TEXT_ERROR),
+            theme.values().value(ThemeValues.Role.TEXT_ERROR),
             true);
     }
   }

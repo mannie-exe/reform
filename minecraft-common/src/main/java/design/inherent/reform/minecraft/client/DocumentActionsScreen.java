@@ -65,11 +65,19 @@ final class DocumentActionsScreen extends NativeFormScreen {
     generation = new Object();
     var token = generation;
     var close =
-        ClientControls.action(font, text("back_to_settings", "Back to settings"), this::onClose)
+        ClientControls.action(
+                font, text("back_to_settings", "Back to settings"), this::onClose, theme())
             .build();
     chrome =
         new FormChrome(
-            minecraft, width, height, title, Component.empty(), Component.empty(), List.of(close));
+            minecraft,
+            width,
+            height,
+            title,
+            Component.empty(),
+            Component.empty(),
+            List.of(close),
+            theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     panel.heading(owner);
@@ -99,7 +107,8 @@ final class DocumentActionsScreen extends NativeFormScreen {
                                   left = true;
                                   back.run();
                                   action.run().run();
-                                })
+                                },
+                                theme())
                             .createNarration(
                                 original ->
                                     owner

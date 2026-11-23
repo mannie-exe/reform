@@ -134,13 +134,13 @@ final class CollectionScreen<T, V> extends NativeFormScreen {
     String focus = panel == null ? null : panel.focusKey();
     footer.clear();
     if (filter == null) {
-      filter = new EditBox(font, 0, 0, 180, 20, text("search", "Search choices"));
+      filter = new FormEditBox(font, 0, 0, 180, 20, text("search", "Search choices"));
       filter.setMaxLength(
           source == null
               ? ReferenceLimits.STANDARD.maximumQueryLength()
               : source.limits().maximumQueryLength());
       filter.setResponder(ignored -> rebuildWidgets());
-      raw = new EditBox(font, 0, 0, 180, 20, text("custom", "Custom value"));
+      raw = new FormEditBox(font, 0, 0, 180, 20, text("custom", "Custom value"));
       raw.setMaxLength(32768);
     }
     var refresh = action(text("refresh", "Refresh views"), null, false, this::refresh);
@@ -158,7 +158,8 @@ final class CollectionScreen<T, V> extends NativeFormScreen {
             notice == null
                 ? text("draft_only", "Selections change the draft only. Back retains your work.")
                 : notice,
-            footer);
+            footer,
+            theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     boolean editable = editable();
@@ -554,7 +555,8 @@ final class CollectionScreen<T, V> extends NativeFormScreen {
   private Button action(Component label, Component context, boolean edits, Runnable callback) {
     var generation = widgetGeneration;
     var builder =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (!closed

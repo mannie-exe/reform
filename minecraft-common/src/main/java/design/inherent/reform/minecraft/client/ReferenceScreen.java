@@ -63,10 +63,10 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
     querying.clear();
     nextPage = null;
     if (filter == null) {
-      filter = new EditBox(font, 0, 0, 180, 20, text("filter", "Search"));
+      filter = new FormEditBox(font, 0, 0, 180, 20, text("filter", "Search"));
       filter.setMaxLength(limits.maximumQueryLength());
       filter.setResponder(ignored -> feedback());
-      key = new EditBox(font, 0, 0, 180, 20, text("key", "Reference ID"));
+      key = new FormEditBox(font, 0, 0, 180, 20, text("key", "Reference ID"));
       key.setMaxLength(Math.max(32768, selection.raw().length()));
       key.setValue(selection.raw());
       key.setResponder(ignored -> feedback());
@@ -74,7 +74,8 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
     use = footer(text("use", "Use selection"), this::choose);
     footer(text("refresh", "Refresh source"), this::refresh);
     back = footer(text("back", "Back"), this::onClose);
-    chrome = new FormChrome(minecraft, width, height, title, sourceLabel(), status(), footer);
+    chrome =
+        new FormChrome(minecraft, width, height, title, sourceLabel(), status(), footer, theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     panel.field(
@@ -211,7 +212,8 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
 
   private Button footer(Component label, Runnable action) {
     var button =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (!closed && NativeScreens.current(minecraft) == this) action.run();
@@ -228,7 +230,8 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
 
   private Button queryButton(Component label, Component context, Runnable action) {
     var builder =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (!closed && NativeScreens.current(minecraft) == this && !staging) action.run();

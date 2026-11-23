@@ -195,7 +195,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
     }
     footer.add(button("back", text("back", "Back"), this::finish));
     chrome =
-        new FormChrome(minecraft, width, height, title, contextLabel, Component.empty(), footer);
+        new FormChrome(
+            minecraft, width, height, title, contextLabel, Component.empty(), footer, theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     if (observed == null) {
@@ -265,7 +266,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
     if (pages > 1) {
       var token = generation;
       var previous =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("previous", "Previous details"),
                   ignored -> {
                     if (live(token) && page > 0) {
@@ -276,7 +278,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
               .bounds(0, 0, 125, 20)
               .build();
       var next =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("next", "Next details"),
                   ignored -> {
                     if (live(token) && page + 1 < pages) {
@@ -309,7 +312,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
     if (pages > 1) {
       var token = generation;
       var previous =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("previous_diagnostics", "Previous diagnostics"),
                   ignored -> {
                     if (live(token) && diagnosticPage > 0) {
@@ -320,7 +324,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
               .bounds(0, 0, 150, 20)
               .build();
       var next =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("next_diagnostics", "Next diagnostics"),
                   ignored -> {
                     if (live(token) && diagnosticPage + 1 < pages) {
@@ -359,7 +364,8 @@ public final class OperationScreen<O> extends NativeFormScreen {
   private Button button(String id, Component label, Runnable callback) {
     var token = generation;
     var control =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (live(token)) callback.run();

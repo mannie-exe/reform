@@ -10,25 +10,11 @@ record NativeCanvas(GuiGraphics graphics) implements FormCanvas {
   @Override
   public void drawArgb(
       Font font, FormattedCharSequence text, int x, int y, int argb, boolean shadow) {
-    int alpha = argb >>> 24;
-    if (alpha == 0) return;
-    if (alpha >= 4) {
-      graphics.drawString(font, text, x, y, argb, shadow);
-      return;
-    }
-    // Font's legacy alpha0..3 normalization cannot represent these explicit ARGB values.
-    // Flush both sides so this scoped shader multiplier cannot affect another native batch.
-    graphics.flush();
-    var before = com.mojang.blaze3d.systems.RenderSystem.getShaderColor().clone();
-    try {
-      com.mojang.blaze3d.systems.RenderSystem.setShaderColor(
-          before[0], before[1], before[2], before[3] * alpha / 255.0f);
-      graphics.drawString(font, text, x, y, argb | 0xff000000, shadow);
-      graphics.flush();
-    } finally {
-      com.mojang.blaze3d.systems.RenderSystem.setShaderColor(
-          before[0], before[1], before[2], before[3]);
-    }
+    textColor(graphics, argb, color -> graphics.drawString(font, text, x, y, color, shadow));
+  }
+
+  static void textColor(GuiGraphics graphics, int argb, java.util.function.IntConsumer draw) {
+    NativeTextColors.draw(graphics, argb, draw);
   }
 
   @Override

@@ -186,6 +186,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private final FormPresentation presentation;
+  private ClientTheme documentTheme, fieldTheme;
+
+  @Override
+  protected ClientTheme theme() {
+    return fieldTheme != null ? fieldTheme : documentTheme != null ? documentTheme : super.theme();
+  }
+
   private final FieldEditors<T> fieldEditors;
   private final SubmissionLabels submissionLabels;
   private final FormNavigationIndex catalog;
@@ -416,6 +423,12 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   List<FormGeometry.Size> actionSizes(net.minecraft.client.gui.Font measuredFont) {
+    return actionSizes(measuredFont, super.theme());
+  }
+
+  List<FormGeometry.Size> actionSizes(
+      net.minecraft.client.gui.Font measuredFont, ClientTheme parent) {
+    var theme = parent.child(presentation.theme().root());
     var labels = new ArrayList<Component>();
     labels.add(text("document_actions", "Document actions…"));
     labels.add(text("revert", "Revert"));
@@ -423,7 +436,26 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (actions.view().review().isPresent()) labels.add(text("conflict", "Review conflict…"));
     labels.add(commitLabel());
     return labels.stream()
-        .map(label -> new FormGeometry.Size(Math.max(56, measuredFont.width(label) + 20), 20))
+        .map(
+            label ->
+                new FormGeometry.Size(
+                    Math.max(
+                        theme
+                            .values()
+                            .value(
+                                design.inherent.reform.presentation.ThemeValues.Role
+                                    .CONTROL_MINIMUM_WIDTH),
+                        Math.addExact(
+                            measuredFont.width(theme.text(ClientTheme.TextRole.VALUE, label)),
+                            theme
+                                .values()
+                                .value(
+                                    design.inherent.reform.presentation.ThemeValues.Role
+                                        .CONTROL_CAPTION_PADDING))),
+                    theme
+                        .values()
+                        .value(
+                            design.inherent.reform.presentation.ThemeValues.Role.CONTROL_HEIGHT)))
         .toList();
   }
 
@@ -839,6 +871,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   @Override
   protected void init() {
+    documentTheme = super.theme().child(presentation.theme().root());
+    fieldTheme = null;
     activated = true;
     // Reconcile only acknowledged local input with edits made through another view/service.
     // A refused or still-pending local edit must remain available for explicit recovery.
@@ -932,7 +966,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             title,
             contextLabel,
             status(),
-            footer);
+            footer,
+            theme());
     var content = prepareContent(current);
     var model = content.model();
     var modelError = content.error();
@@ -1008,7 +1043,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (selected.isEmpty()) {
       var generation = widgetGeneration;
       var fallback =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("catalog_all_fields", "Show all fields"),
                   ignored -> {
                     if (closed || !isCurrent() || widgetGeneration != generation) return;
@@ -1042,6 +1078,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void appendComposedRows(EditorActor.View<T> current) {
+    panel = composition.panel();
+    panel.scoped(theme(), () -> appendScopedRows(current));
+  }
+
+  private void appendScopedRows(EditorActor.View<T> current) {
     var content = prepareContent(current);
     panel = composition.panel();
     bodyVisible = true;
@@ -1225,7 +1266,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private Button button(Component label, Runnable action) {
     var generation = widgetGeneration;
     var result =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (!closed && isCurrent() && widgetGeneration == generation) action.run();
@@ -1238,6 +1280,24 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void fields(FormModel.Node field, Component proposedLabel) {
+    var previous = fieldTheme;
+    var metadata = presentation.theme().field(field.path());
+    var next = panel.theme();
+    if (metadata.isPresent()) {
+      var declared = metadata.orElseThrow();
+      if (declared.variant().isPresent())
+        next = next.componentDefaults(declared.variant().orElseThrow().defaults());
+      next = next.child(declared.patch());
+    }
+    fieldTheme = next;
+    try {
+      panel.scoped(next, () -> fieldContents(field, proposedLabel));
+    } finally {
+      fieldTheme = previous;
+    }
+  }
+
+  private void fieldContents(FormModel.Node field, Component proposedLabel) {
     Component label =
         catalog != null && catalog.contains(field.path())
             ? catalog.caption(field.path())
@@ -1249,7 +1309,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (editor.isPresent()) {
       var generation = widgetGeneration;
       var change =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("edit_field", "Edit…"),
                   ignored -> {
                     if (widgetGeneration == generation)
@@ -1259,7 +1320,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
               .createNarration(original -> label.copy().append(": ").append(original.get()))
               .build();
       var raw =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   expandedEditors.contains(path)
                       ? text("hide_fields", "Hide fields")
                       : text("show_fields", "Show fields"),
@@ -1340,7 +1402,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                 || scalar.kind() == ValueShape.ScalarKind.CHOICE)) {
           var generation = widgetGeneration;
           var choose =
-              Button.builder(
+              theme()
+                  .buttonBuilder(
                       text("choose_values", "Choose values…"),
                       ignored -> {
                         if (widgetGeneration == generation) openCollection(path, label);
@@ -1509,7 +1572,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       var source = sources.get(reference.source());
       var generation = widgetGeneration;
       var browse =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   source == null
                       ? text("source_unavailable", "Source unavailable")
                       : text("browse", "Browse…"),
@@ -1544,7 +1608,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     var generation = widgetGeneration;
     var source = sources.get(reference.source());
     var choose =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 Component.empty(),
                 ignored -> {
                   if (widgetGeneration == generation) openReference(path, label, source);
@@ -1553,7 +1618,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             .createNarration(original -> label.copy().append(": ").append(original.get()))
             .build();
     var raw =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 expandedEditors.contains(path)
                     ? text("hide_reference_id", "Hide ID")
                     : text("edit_reference_id", "Edit ID"),
@@ -1715,8 +1781,16 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             .mapToInt(
                 choice ->
                     font.width(caption.apply(choice))
-                        + FormTokens.Control.CAPTION_PADDING
-                        + FormTokens.Control.CHOICE_INDICATOR)
+                        + theme()
+                            .values()
+                            .value(
+                                design.inherent.reform.presentation.ThemeValues.Role
+                                    .CONTROL_CAPTION_PADDING)
+                        + theme()
+                            .values()
+                            .value(
+                                design.inherent.reform.presentation.ThemeValues.Role
+                                    .CONTROL_CHOICE_INDICATOR))
             .max()
             .orElseThrow();
     var button =
@@ -1759,7 +1833,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private Button availabilityButton(FieldPath path, Component label) {
     var generation = widgetGeneration;
     var button =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 text("availability", "Availability"),
                 ignored -> {
                   if (!closed && isCurrent() && widgetGeneration == generation)
@@ -2167,15 +2242,29 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         case design.inherent.reform.presentation.FormComposition.Field field ->
             composedField(field.node());
         case design.inherent.reform.presentation.FormComposition.Box box -> {
-          panel.beginGroup(
-              scoped(box.id()),
-              Component.translatableWithFallback(box.translationKey(), box.label()));
-          if (!box.help().isBlank())
-            panel.row(
-                Component.empty(),
-                Component.translatableWithFallback(box.translationKey() + ".help", box.help()));
-          composed(box.children());
-          panel.endGroup();
+          var scopedTheme = panel.theme();
+          var declared = presentation.theme().section(box.id());
+          if (declared.isPresent()) {
+            var metadata = declared.orElseThrow();
+            if (metadata.variant().isPresent())
+              scopedTheme =
+                  scopedTheme.componentDefaults(metadata.variant().orElseThrow().defaults());
+            scopedTheme = scopedTheme.child(metadata.patch());
+          }
+          panel.scoped(
+              scopedTheme,
+              () -> {
+                panel.beginGroup(
+                    scoped(box.id()),
+                    Component.translatableWithFallback(box.translationKey(), box.label()));
+                if (!box.help().isBlank())
+                  panel.row(
+                      Component.empty(),
+                      Component.translatableWithFallback(
+                          box.translationKey() + ".help", box.help()));
+                composed(box.children());
+                panel.endGroup();
+              });
         }
         case design.inherent.reform.presentation.FormComposition.Row row -> {
           for (var field : row.children()) composedField(field.node());
@@ -2189,7 +2278,17 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           Component.translatableWithFallback(
               "reform.settings.unknown_field", "Unknown field: %s", clip(child.name(), 120));
       var retained =
-          new EditBox(font, 0, 0, FormTokens.Control.TEXT_INPUT, FormTokens.Control.HEIGHT, label);
+          new FormEditBox(
+              font,
+              0,
+              0,
+              theme()
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_TEXT_INPUT),
+              theme()
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_HEIGHT),
+              label);
       String raw = raw(child.input());
       retained.setMaxLength(Math.max(128, raw.length()));
       retained.setValue(raw);
@@ -2272,7 +2371,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       FieldPath path, Component label, Component context, DraftEdit.Action edit) {
     var generation = widgetGeneration;
     var button =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 label,
                 ignored -> {
                   if (widgetGeneration == generation) structural(path, edit);
@@ -2377,13 +2477,25 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                     Math.max(
                         60,
                         Math.min(
-                            FormTokens.Control.UNIT_PREFERRED_LIMIT,
+                            theme()
+                                .values()
+                                .value(
+                                    design.inherent.reform.presentation.ThemeValues.Role
+                                        .CONTROL_UNIT_PREFERRED_LIMIT),
                             choices.stream()
                                 .mapToInt(
                                     value ->
                                         font.width(caption.apply(value))
-                                            + FormTokens.Control.CAPTION_PADDING
-                                            + FormTokens.Control.CHOICE_INDICATOR)
+                                            + theme()
+                                                .values()
+                                                .value(
+                                                    design.inherent.reform.presentation.ThemeValues
+                                                        .Role.CONTROL_CAPTION_PADDING)
+                                            + theme()
+                                                .values()
+                                                .value(
+                                                    design.inherent.reform.presentation.ThemeValues
+                                                        .Role.CONTROL_CHOICE_INDICATOR))
                                 .max()
                                 .orElse(60))),
                     20,
@@ -2407,9 +2519,18 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
               0,
               0,
               scalar.kind() == ValueShape.ScalarKind.TEXT
-                  ? FormTokens.Control.TEXT_INPUT
-                  : FormTokens.Control.NUMERIC_INPUT,
-              FormTokens.Control.HEIGHT,
+                  ? theme()
+                      .values()
+                      .value(
+                          design.inherent.reform.presentation.ThemeValues.Role.CONTROL_TEXT_INPUT)
+                  : theme()
+                      .values()
+                      .value(
+                          design.inherent.reform.presentation.ThemeValues.Role
+                              .CONTROL_NUMERIC_INPUT),
+              theme()
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_HEIGHT),
               label);
       input.setMaxLength(Math.max(raw.length(), inputLimit));
       input.setValue(raw);
@@ -2435,7 +2556,16 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     }
     var unavailable =
         new FormEditBox(
-            font, 0, 0, FormTokens.Control.TEXT_INPUT, FormTokens.Control.HEIGHT, label);
+            font,
+            0,
+            0,
+            theme()
+                .values()
+                .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_TEXT_INPUT),
+            theme()
+                .values()
+                .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_HEIGHT),
+            label);
     unavailable.setMaxLength(Math.max(128, raw.length()));
     unavailable.setValue(
         raw.isEmpty() ? text("unsupported", "Editor unavailable").getString() : raw);
@@ -2456,7 +2586,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                                 unit.translationKey(), unit.fallback()))
                         + 24)
             .max()
-            .orElse(FormTokens.Control.UNIT_MINIMUM);
+            .orElse(
+                theme()
+                    .values()
+                    .value(
+                        design.inherent.reform.presentation.ThemeValues.Role.CONTROL_UNIT_MINIMUM));
     if (input.display().units().stream().noneMatch(unit -> unit.id().equals(input.unit())))
       width =
           Math.max(
@@ -2515,7 +2649,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                 label.copy().append(": ").append(text("unit", "Display unit")),
                 (button, unit) -> changeQuantity(path, token, quantity.input.select(unit), false));
     quantity.less =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 Component.literal("-"),
                 ignored -> changeQuantity(path, token, quantity.input.step(-1), true))
             .bounds(0, 0, 24, 20)
@@ -2523,7 +2658,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                 original -> label.copy().append(": ").append(text("decrease", "Decrease")))
             .build();
     quantity.more =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 Component.literal("+"),
                 ignored -> changeQuantity(path, token, quantity.input.step(1), true))
             .bounds(0, 0, 24, 20)
@@ -3019,9 +3155,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           }
           panel.summary(key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
-            input.setTextColor(
-                FormCanvas.textColor(
-                    issue.isEmpty() ? FormPanel.TITLE_TEXT : FormPanel.ERROR_TEXT));
+            if (input instanceof NativeTextInput themed)
+              themed.valueRole(
+                  issue.isEmpty() ? ClientTheme.TextRole.VALUE : ClientTheme.TextRole.ERROR);
+            else
+              input.setTextColor(
+                  FormCanvas.textColor(
+                      issue.isEmpty() ? FormPanel.TITLE_TEXT : FormPanel.ERROR_TEXT));
             input.setTooltip(issue.isEmpty() && availableHere ? null : Tooltip.create(summary));
           }
         });

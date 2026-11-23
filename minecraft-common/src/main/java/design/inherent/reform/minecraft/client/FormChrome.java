@@ -1,7 +1,7 @@
 package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.presentation.FormGeometry;
-import design.inherent.reform.presentation.FormTokens;
+import design.inherent.reform.presentation.ThemeValues;
 import java.util.List;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
@@ -15,6 +15,7 @@ final class FormChrome {
   private final Component title, context, status;
   private final List<? extends AbstractWidget> actions;
   final FormGeometry.ScreenFrame frame;
+  private final ClientTheme theme;
 
   FormChrome(
       Minecraft client,
@@ -29,20 +30,53 @@ final class FormChrome {
 
   FormChrome(
       Minecraft client,
+      int width,
+      int height,
+      Component title,
+      Component context,
+      Component status,
+      List<? extends AbstractWidget> actions,
+      ClientTheme theme) {
+    this(
+        client,
+        new FormGeometry.Placement(0, 0, width, height),
+        title,
+        context,
+        status,
+        actions,
+        theme);
+  }
+
+  FormChrome(
+      Minecraft client,
       FormGeometry.Placement host,
       Component title,
       Component context,
       Component status,
       List<? extends AbstractWidget> actions) {
+    this(client, host, title, context, status, actions, ClientTheme.standard());
+  }
+
+  FormChrome(
+      Minecraft client,
+      FormGeometry.Placement host,
+      Component title,
+      Component context,
+      Component status,
+      List<? extends AbstractWidget> actions,
+      ClientTheme theme) {
+    this.theme = java.util.Objects.requireNonNull(theme);
     int width = host.width(), height = host.height();
     originX = host.x();
     originY = host.y();
     this.client = client;
-    this.title = title.copy();
-    this.context = context.copy();
-    this.status = status.copy();
+    this.title = theme.text(ClientTheme.TextRole.TITLE, title);
+    this.context = theme.text(ClientTheme.TextRole.SUPPORT, context);
+    this.status = theme.text(ClientTheme.TextRole.SUPPORT, status);
     this.actions = List.copyOf(actions);
-    int gutter = Math.min(FormTokens.Space.SCREEN, (Math.min(width, height) - 1) / 2);
+    int gutter =
+        Math.min(
+            theme.values().value(ThemeValues.Role.SPACE_SCREEN), (Math.min(width, height) - 1) / 2);
     int available = Math.max(1, width - 2 * gutter);
     frame =
         FormGeometry.screenFrame(
@@ -50,16 +84,19 @@ final class FormChrome {
             height,
             title.getString().isEmpty()
                 ? 0
-                : Math.max(FormTokens.Measure.TITLE_MINIMUM_HEIGHT, textHeight(title, available)),
-            textHeight(context, available),
+                : Math.max(
+                    theme.values().value(ThemeValues.Role.MEASURE_TITLE_MINIMUM_HEIGHT),
+                    textHeight(this.title, available)),
+            textHeight(this.context, available),
             status.getString().isEmpty()
                 ? 0
                 : Math.max(
-                    FormTokens.Measure.STATUS_MINIMUM_HEIGHT,
-                    Math.min(2 * client.font.lineHeight, textHeight(status, available))),
+                    theme.values().value(ThemeValues.Role.MEASURE_STATUS_MINIMUM_HEIGHT),
+                    Math.min(2 * client.font.lineHeight, textHeight(this.status, available))),
             actions.stream()
                 .map(widget -> new FormGeometry.Size(widget.getWidth(), widget.getHeight()))
-                .toList());
+                .toList(),
+            theme.values());
   }
 
   private int textHeight(Component text, int width) {
@@ -71,7 +108,8 @@ final class FormChrome {
   FormPanel panel() {
     var at = frame.content();
     var panel =
-        new FormPanel(client, originX + at.x(), originY + at.y(), at.width(), at.height(), false);
+        new FormPanel(
+            client, originX + at.x(), originY + at.y(), at.width(), at.height(), false, theme);
     if (frame.headerInContent()) {
       if (!title.getString().isEmpty()) panel.heading(title);
       if (!context.getString().isEmpty()) panel.row(Component.empty(), context);
@@ -114,44 +152,51 @@ final class FormChrome {
         .ifPresent(
             at -> {
               if (client.font.width(title) <= at.width())
-                canvas.drawCenteredString(
+                theme.draw(
+                    canvas,
                     client.font,
+                    ClientTheme.TextRole.TITLE,
                     title,
-                    originX + at.x() + at.width() / 2,
+                    originX + at.x() + (at.width() - client.font.width(title)) / 2,
                     originY + at.y(),
-                    FormTokens.Color.TEXT);
+                    true);
               else
-                canvas.drawWordWrap(
+                theme.wrap(
+                    canvas,
                     client.font,
+                    ClientTheme.TextRole.TITLE,
                     title,
                     originX + at.x(),
                     originY + at.y(),
-                    at.width(),
-                    FormTokens.Color.TEXT);
+                    at.width());
             });
     frame
         .context()
         .ifPresent(
             at ->
-                canvas.drawWordWrap(
+                theme.wrap(
+                    canvas,
                     client.font,
+                    ClientTheme.TextRole.SUPPORT,
                     context,
                     originX + at.x(),
                     originY + at.y(),
-                    at.width(),
-                    FormTokens.Color.TEXT_SUPPORTING));
+                    at.width()));
     frame
         .status()
         .ifPresent(
             at -> {
-              var lines = client.font.split(currentStatus, at.width());
+              var lines =
+                  client.font.split(
+                      theme.text(ClientTheme.TextRole.SUPPORT, currentStatus), at.width());
               for (int i = 0; i < Math.min(lines.size(), at.height() / client.font.lineHeight); i++)
-                canvas.drawString(
+                canvas.drawArgb(
                     client.font,
                     lines.get(i),
                     originX + at.x(),
                     originY + at.y() + i * client.font.lineHeight,
-                    FormTokens.Color.TEXT_SUPPORTING);
+                    theme.color(ClientTheme.TextRole.SUPPORT),
+                    true);
             });
   }
 }

@@ -3,6 +3,7 @@ package design.inherent.reform.minecraft.client;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.presentation.SectionNavigation;
+import design.inherent.reform.presentation.ThemeValues;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -44,6 +45,14 @@ final class FormPanel extends ScrollFrame {
     private int markerWidth;
     private Boolean expanded;
     private Component context = Component.empty();
+    private ClientTheme theme = ClientTheme.standard();
+
+    void theme(ClientTheme theme) {
+      this.theme = theme;
+      setMessage(
+          theme.text(
+              category ? ClientTheme.TextRole.HEADING : ClientTheme.TextRole.LABEL, getMessage()));
+    }
 
     NavigationButton(
         Component label, int width, boolean category, boolean selected, Runnable action) {
@@ -75,22 +84,33 @@ final class FormPanel extends ScrollFrame {
     protected void renderNavigation(FormCanvas graphics, int mx, int my, float tick) {
       if (selected) {
         graphics.fill(
-            getX(), getY(), getX() + width, getY() + height, FormTokens.Color.LINE_SELECTED);
+            getX(),
+            getY(),
+            getX() + width,
+            getY() + height,
+            theme.values().value(ThemeValues.Role.LINE_SELECTED));
         graphics.fill(
             getX() + 1,
             getY() + 1,
             getX() + width - 1,
             getY() + height - 1,
-            FormTokens.Color.SURFACE_SELECTED);
+            theme.values().value(ThemeValues.Role.SURFACE_SELECTED));
       } else if (isHoveredOrFocused())
         graphics.fill(
-            getX(), getY(), getX() + width, getY() + height, FormTokens.Color.SURFACE_HOVER);
+            getX(),
+            getY(),
+            getX() + width,
+            getY() + height,
+            theme.values().value(ThemeValues.Role.SURFACE_HOVER));
       renderString(
           graphics,
           Minecraft.getInstance().font,
-          selected ? ACTIVE_TEXT : category ? DESCRIPTION_TEXT : TITLE_TEXT);
+          theme.color(
+              selected
+                  ? ClientTheme.TextRole.ACTIVE
+                  : category ? ClientTheme.TextRole.HEADING : ClientTheme.TextRole.LABEL));
       if (isFocused()) {
-        int edge = 0xffffffff;
+        int edge = theme.values().value(ThemeValues.Role.FOCUS);
         graphics.fill(getX(), getY(), getX() + width, getY() + 2, edge);
         graphics.fill(getX(), getY() + height - 2, getX() + width, getY() + height, edge);
         graphics.fill(getX(), getY(), getX() + 2, getY() + height, edge);
@@ -102,9 +122,15 @@ final class FormPanel extends ScrollFrame {
       var lines = font.split(getMessage(), labelWidth());
       int y = getY() + (getHeight() - lines.size() * font.lineHeight) / 2;
       if (expanded != null)
-        graphics.drawString(font, expanded ? "−" : "+", getX() + indent, y, color);
+        graphics.drawArgb(
+            font,
+            Component.literal(expanded ? "−" : "+").getVisualOrderText(),
+            getX() + indent,
+            y,
+            color,
+            true);
       for (var line : lines) {
-        graphics.drawString(font, line, getX() + indent + markerWidth, y, color);
+        graphics.drawArgb(font, line, getX() + indent + markerWidth, y, color, true);
         y += font.lineHeight;
       }
     }
@@ -140,29 +166,63 @@ final class FormPanel extends ScrollFrame {
       boolean field,
       int boundary,
       String relationship,
-      List<FormGeometry.Size> preferred) {
-    Row(
-        String key,
-        Component label,
-        Component summary,
-        List<AbstractWidget> controls,
-        boolean heading,
-        String anchor,
-        boolean field,
-        int boundary,
-        String relationship) {
-      this(
-          key,
-          label,
-          summary,
-          controls,
-          heading,
-          anchor,
-          field,
-          boundary,
-          relationship,
-          controls.stream().map(ControlSizing::preferred).toList());
+      List<FormGeometry.Size> preferred,
+      ClientTheme theme,
+      ClientTheme.TextRole labelRole) {}
+
+  private Row row(
+      String key,
+      Component label,
+      Component summary,
+      List<AbstractWidget> controls,
+      boolean heading,
+      String anchor,
+      boolean field,
+      int boundary,
+      String relationship) {
+    return row(
+        key,
+        label,
+        summary,
+        controls,
+        heading,
+        anchor,
+        field,
+        boundary,
+        relationship,
+        heading ? ClientTheme.TextRole.HEADING : ClientTheme.TextRole.LABEL);
+  }
+
+  private Row row(
+      String key,
+      Component label,
+      Component summary,
+      List<AbstractWidget> controls,
+      boolean heading,
+      String anchor,
+      boolean field,
+      int boundary,
+      String relationship,
+      ClientTheme.TextRole labelRole) {
+    for (var control : controls) {
+      if (!(control instanceof NativeGraphicWidget)) ClientControls.theme(control, currentTheme);
+      if (control instanceof NavigationButton navigationButton)
+        navigationButton.theme(currentTheme);
+      else if (control instanceof InformationButton information) information.theme(currentTheme);
     }
+    return new Row(
+        key,
+        currentTheme.text(labelRole, label),
+        currentTheme.text(ClientTheme.TextRole.SUPPORT, summary),
+        controls,
+        heading,
+        anchor,
+        field,
+        boundary,
+        relationship,
+        controls.stream().map(ControlSizing::preferred).toList(),
+        currentTheme,
+        labelRole);
   }
 
   private record Positioned(AbstractWidget widget, int x, int y, String key) {}
@@ -170,21 +230,21 @@ final class FormPanel extends ScrollFrame {
   private record Layout(
       Row row, int x, int y, int height, int textWidth, int textY, int summaryY, boolean stacked) {}
 
-  private record Outline(int left, int width, int top, int bottom, int labelWidth) {}
+  private record Outline(
+      int left, int width, int top, int bottom, int labelWidth, ClientTheme theme) {}
 
-  private record Frame(int left, int width, int top, int labelWidth) {}
+  private record Frame(int left, int width, int top, int labelWidth, ClientTheme theme) {}
 
   private final List<Outline> outlines = new ArrayList<>();
   private String rememberedFocus;
 
   void beginGroup(String id, Component label) {
-    rows.add(new Row(id, label, Component.empty(), List.of(), true, id, false, 1, null));
+    rows.add(row(id, label, Component.empty(), List.of(), true, id, false, 1, null));
   }
 
   void endGroup() {
     rows.add(
-        new Row(
-            null, Component.empty(), Component.empty(), List.of(), true, null, false, -1, null));
+        row(null, Component.empty(), Component.empty(), List.of(), true, null, false, -1, null));
   }
 
   private final List<Row> rows = new ArrayList<>();
@@ -194,54 +254,81 @@ final class FormPanel extends ScrollFrame {
   private final List<Layout> layout = new ArrayList<>();
   private final Minecraft client;
   private final boolean navigation;
+  private final ClientTheme baseTheme;
+  private ClientTheme currentTheme;
   private int extent;
   private boolean finished;
   private String highlighted;
   private SectionNavigation sections = new SectionNavigation();
 
   FormPanel(Minecraft client, int x, int y, int width, int height, boolean navigation) {
+    this(client, x, y, width, height, navigation, ClientTheme.standard());
+  }
+
+  FormPanel(
+      Minecraft client,
+      int x,
+      int y,
+      int width,
+      int height,
+      boolean navigation,
+      ClientTheme theme) {
     super(width, height, y, x, 6);
+    baseTheme = currentTheme = java.util.Objects.requireNonNull(theme);
     this.client = client;
     this.navigation = navigation;
   }
 
+  ClientTheme theme() {
+    return currentTheme;
+  }
+
+  void scoped(ClientTheme theme, Runnable append) {
+    var before = currentTheme;
+    currentTheme = java.util.Objects.requireNonNull(theme);
+    try {
+      append.run();
+    } finally {
+      currentTheme = before;
+    }
+  }
+
   void heading(Component label) {
     rows.add(
-        new Row(
+        row(
             null,
-            label
-                .copy()
-                .withStyle(net.minecraft.ChatFormatting.BOLD, net.minecraft.ChatFormatting.WHITE),
+            label.copy().withStyle(net.minecraft.ChatFormatting.BOLD),
             Component.empty(),
             List.of(),
             true,
             null,
             false,
             0,
-            null));
+            null,
+            ClientTheme.TextRole.TITLE));
   }
 
   void eyebrow(Component label) {
     rows.add(
-        new Row(
+        row(
             null,
-            label.copy().withStyle(net.minecraft.ChatFormatting.YELLOW),
+            label.copy(),
             Component.empty(),
             List.of(),
             true,
             null,
             false,
             0,
-            null));
+            null,
+            ClientTheme.TextRole.ACTIVE));
   }
 
   void section(String id, Component label) {
-    rows.add(new Row(null, label, Component.empty(), List.of(), true, id, false, 0, null));
+    rows.add(row(null, label, Component.empty(), List.of(), true, id, false, 0, null));
   }
 
   void anchor(String id) {
-    rows.add(
-        new Row(null, Component.empty(), Component.empty(), List.of(), false, id, false, 0, null));
+    rows.add(row(null, Component.empty(), Component.empty(), List.of(), false, id, false, 0, null));
   }
 
   void row(Component label, Component summary, AbstractWidget... controls) {
@@ -249,11 +336,11 @@ final class FormPanel extends ScrollFrame {
   }
 
   void row(String key, Component label, Component summary, AbstractWidget... controls) {
-    rows.add(new Row(key, label, summary, List.of(controls), false, null, false, 0, null));
+    rows.add(row(key, label, summary, List.of(controls), false, null, false, 0, null));
   }
 
   void anchorRow(String key, Component label, Component summary, AbstractWidget... controls) {
-    rows.add(new Row(key, label, summary, List.of(controls), false, key, false, 0, null));
+    rows.add(row(key, label, summary, List.of(controls), false, key, false, 0, null));
   }
 
   void field(String key, Component label, Component summary, AbstractWidget... controls) {
@@ -266,7 +353,7 @@ final class FormPanel extends ScrollFrame {
       Component label,
       Component summary,
       AbstractWidget... controls) {
-    rows.add(new Row(key, label, summary, List.of(controls), false, key, true, 0, relationship));
+    rows.add(row(key, label, summary, List.of(controls), false, key, true, 0, relationship));
   }
 
   /** A measured flow of actual buttons, without repeating their labels beside them. */
@@ -298,20 +385,23 @@ final class FormPanel extends ScrollFrame {
     for (int i = 0; i < rows.size(); i++) {
       var row = rows.get(i);
       if (key.equals(row.key)) {
-        if (row.summary.equals(summary)) return;
+        var nextSummary = row.theme.text(ClientTheme.TextRole.SUPPORT, summary);
+        if (row.summary.equals(nextSummary)) return;
         rows.set(
             i,
             new Row(
                 row.key,
                 row.label,
-                summary,
+                nextSummary,
                 row.controls,
                 row.heading,
                 row.anchor,
                 row.field,
                 row.boundary,
                 row.relationship,
-                row.preferred));
+                row.preferred,
+                row.theme,
+                row.labelRole));
         // Initial reference/dependency summaries can change while groups are still appended.
         // finish() measures the complete tree and retains its group-balance checks.
         if (!finished) return;
@@ -464,23 +554,48 @@ final class FormPanel extends ScrollFrame {
       if (row.boundary == 1) {
         if (frames.size() >= 8) throw new IllegalStateException("Settings groups exceed depth 8");
         y += 4;
-        int edge = Math.min(frames.size() * FormTokens.Space.CONTENT, Math.max(0, (wrap - 1) / 2));
+        int edge =
+            frames.isEmpty()
+                ? 0
+                : Math.min(
+                    Math.addExact(
+                        frames.peek().left,
+                        frames.peek().theme.values().value(ThemeValues.Role.SPACE_CONTENT)),
+                    Math.max(0, (wrap - 1) / 2));
         frames.push(
             new Frame(
                 edge,
                 Math.max(1, wrap - edge * 2),
                 y + 6 + client.font.lineHeight / 2,
-                Math.max(0, Math.min(wrap - edge * 2 - 16, client.font.width(row.label)))));
+                Math.max(0, Math.min(wrap - edge * 2 - 16, client.font.width(row.label))),
+                row.theme));
       }
       if (row.boundary == -1) {
         if (frames.isEmpty()) throw new IllegalStateException("Unmatched settings group");
         y += 2;
         var frame = frames.pop();
-        outlines.add(new Outline(frame.left, frame.width, frame.top, y, frame.labelWidth));
-        y += frames.isEmpty() ? FormTokens.Space.SECTION : FormTokens.Space.NESTED_SECTION;
+        outlines.add(
+            new Outline(frame.left, frame.width, frame.top, y, frame.labelWidth, frame.theme));
+        y =
+            Math.addExact(
+                y,
+                frame
+                    .theme
+                    .values()
+                    .value(
+                        frames.isEmpty()
+                            ? ThemeValues.Role.SPACE_SECTION
+                            : ThemeValues.Role.SPACE_NESTED_SECTION));
         continue;
       }
-      int inset = Math.min(frames.size() * FormTokens.Space.CONTENT, Math.max(0, (wrap - 1) / 2));
+      int inset =
+          frames.isEmpty()
+              ? 0
+              : (int)
+                  Math.min(
+                      (long) frames.peek().left
+                          + frames.peek().theme.values().value(ThemeValues.Role.SPACE_CONTENT),
+                      Math.max(0, (wrap - 1) / 2));
       int available = Math.max(1, wrap - inset * 2);
       var related = new ArrayList<Row>();
       related.add(row);
@@ -495,7 +610,7 @@ final class FormPanel extends ScrollFrame {
               ? FormGeometry.relatedTracks(
                   related.stream().map(this::minimumWidth).toList(),
                   available,
-                  FormTokens.Space.RELATED)
+                  row.theme.values().value(ThemeValues.Role.SPACE_RELATED))
               : List.<FormGeometry.Placement>of();
       if (!tracks.isEmpty()) {
         int shared = 0;
@@ -505,15 +620,26 @@ final class FormPanel extends ScrollFrame {
         }
         for (var member : related) alignControls(member, shared);
         i += related.size() - 1;
-        y += shared + FormTokens.Space.FIELD;
+        y =
+            Math.addExact(
+                y, Math.addExact(shared, row.theme.values().value(ThemeValues.Role.SPACE_FIELD)));
       } else {
         for (var member : related) {
           int measured = measureRow(member, inset, y, available);
-          y +=
-              measured
-                  + (member.heading || measured == 0
-                      ? 0
-                      : navigation ? FormTokens.Space.INLINE : FormTokens.Space.FIELD);
+          y =
+              Math.addExact(
+                  y,
+                  Math.addExact(
+                      measured,
+                      member.heading || measured == 0
+                          ? 0
+                          : member
+                              .theme
+                              .values()
+                              .value(
+                                  navigation
+                                      ? ThemeValues.Role.SPACE_INLINE
+                                      : ThemeValues.Role.SPACE_FIELD)));
         }
         i += related.size() - 1;
       }
@@ -556,8 +682,15 @@ final class FormPanel extends ScrollFrame {
 
   private int minimumWidth(Row row) {
     return Math.max(
-        Math.min(client.font.width(row.label), FormTokens.Measure.LABEL_PREFERRED_LIMIT),
-        Math.max(1, FormGeometry.minimumControlWidth(row.preferred, 4, joins(row))));
+        Math.min(
+            client.font.width(row.label),
+            row.theme.values().value(ThemeValues.Role.MEASURE_LABEL_PREFERRED_LIMIT)),
+        Math.max(
+            1,
+            FormGeometry.minimumControlWidth(
+                row.preferred,
+                row.theme.values().value(ThemeValues.Role.SPACE_INLINE),
+                joins(row))));
   }
 
   private record TextMeasure(int summaryY, int height) {}
@@ -567,7 +700,11 @@ final class FormPanel extends ScrollFrame {
         row.label.getString().isEmpty()
             ? 0
             : client.font.split(row.label, width).size() * client.font.lineHeight;
-    int summary = label + (row.summary.getString().isEmpty() ? 0 : FormTokens.Space.TEXT);
+    int summary =
+        label
+            + (row.summary.getString().isEmpty()
+                ? 0
+                : row.theme.values().value(ThemeValues.Role.SPACE_TEXT));
     int height =
         summary
             + (row.summary.getString().isEmpty()
@@ -590,7 +727,7 @@ final class FormPanel extends ScrollFrame {
       button.setWidth(wrap);
       button.setHeight(
           Math.max(
-              20,
+              row.theme.values().value(ThemeValues.Role.CONTROL_HEIGHT),
               client
                           .font
                           .split(
@@ -609,26 +746,44 @@ final class FormPanel extends ScrollFrame {
         row.label.getString().isEmpty() && row.summary.getString().isEmpty()
             ? 0
             : Math.max(
-                FormTokens.Measure.TEXT_MINIMUM,
+                row.theme.values().value(ThemeValues.Role.MEASURE_TEXT_MINIMUM),
                 Math.min(
-                    FormTokens.Measure.TEXT_PREFERRED_LIMIT,
+                    row.theme.values().value(ThemeValues.Role.MEASURE_TEXT_PREFERRED_LIMIT),
                     Math.max(client.font.width(row.label), client.font.width(row.summary))));
     var joined = joins(row);
     var tracks =
         FormGeometry.fieldTracks(
-            wrap, preferredText, row.preferred, FormTokens.Space.CONTENT, joined);
+            wrap,
+            preferredText,
+            row.preferred,
+            row.theme.values().value(ThemeValues.Role.SPACE_CONTENT),
+            joined,
+            row.theme.values().value(ThemeValues.Role.SPACE_INLINE));
     var text = textMeasure(row, Math.max(1, tracks.textWidth()));
     if (row.field && !tracks.stacked() && !row.controls.isEmpty()) {
       var alternative = textMeasure(row, wrap);
       int controlsHeight =
-          FormGeometry.controls(row.preferred, wrap, FormTokens.Space.INLINE, joined).height();
+          FormGeometry.controls(
+                  row.preferred,
+                  wrap,
+                  row.theme.values().value(ThemeValues.Role.SPACE_INLINE),
+                  joined)
+              .height();
       int stackedHeight =
           alternative.height()
-              + (alternative.height() > 0 && controlsHeight > 0 ? FormTokens.Space.TEXT : 0)
+              + (alternative.height() > 0 && controlsHeight > 0
+                  ? row.theme.values().value(ThemeValues.Role.SPACE_TEXT)
+                  : 0)
               + controlsHeight;
       if (stackedHeight < Math.max(text.height(), tracks.controls().height())) {
         tracks =
-            FormGeometry.fieldTracks(wrap, wrap, row.preferred, FormTokens.Space.CONTENT, joined);
+            FormGeometry.fieldTracks(
+                wrap,
+                wrap,
+                row.preferred,
+                row.theme.values().value(ThemeValues.Role.SPACE_CONTENT),
+                joined,
+                row.theme.values().value(ThemeValues.Role.SPACE_INLINE));
         text = alternative;
       }
     }
@@ -641,11 +796,11 @@ final class FormPanel extends ScrollFrame {
     int controlHeight = controlLayout.height();
     int height =
         stacked && controlHeight > 0 && textHeight > 0
-            ? textHeight + FormTokens.Space.TEXT + controlHeight
+            ? textHeight + row.theme.values().value(ThemeValues.Role.SPACE_TEXT) + controlHeight
             : Math.max(textHeight, controlHeight);
     int actionY =
         stacked && textHeight > 0
-            ? y + textHeight + FormTokens.Space.TEXT
+            ? y + textHeight + row.theme.values().value(ThemeValues.Role.SPACE_TEXT)
             : y + (height - controlHeight) / 2;
     for (int index = 0; index < row.controls.size(); index++) {
       var widget = row.controls.get(index);
@@ -689,7 +844,10 @@ final class FormPanel extends ScrollFrame {
         top,
         right,
         bottom,
-        navigation ? FormTokens.Color.SURFACE_NAVIGATION : FormTokens.Color.SURFACE_FORM);
+        baseTheme
+            .values()
+            .value(
+                navigation ? ThemeValues.Role.SURFACE_NAVIGATION : ThemeValues.Role.SURFACE_FORM));
   }
 
   @Override
@@ -699,7 +857,7 @@ final class FormPanel extends ScrollFrame {
       int x = left + border + outline.left, edge = x + outline.width - 1;
       int y = relativeY + outline.top, end = relativeY + outline.bottom;
       if (end < top || y >= bottom) continue;
-      int color = FormTokens.Color.LINE;
+      int color = outline.theme.values().value(ThemeValues.Role.LINE);
       graphics.vLine(x, y, end, color);
       graphics.vLine(edge, y, end, color);
       graphics.hLine(x, x + 4, y, color);
@@ -714,20 +872,29 @@ final class FormPanel extends ScrollFrame {
       if (navigation && !row.heading && row.controls.size() == 1)
         graphics.widget(row.controls.getFirst(), mx, my, 0);
       else {
+        var theme = row.theme;
         int color =
             row.anchor != null && row.anchor.equals(highlighted)
-                ? ACTIVE_TEXT
-                : row.heading ? DESCRIPTION_TEXT : TITLE_TEXT;
-        graphics.drawWordWrap(
-            client.font, row.label, left + border + at.x, y + at.textY, at.textWidth, color);
-        if (!row.summary.getString().isEmpty())
-          graphics.drawWordWrap(
+                ? theme.color(ClientTheme.TextRole.ACTIVE)
+                : theme.color(row.labelRole);
+        var lines = client.font.split(row.label, at.textWidth);
+        for (int line = 0; line < lines.size(); line++)
+          graphics.drawArgb(
               client.font,
+              lines.get(line),
+              left + border + at.x,
+              y + at.textY + line * client.font.lineHeight,
+              color,
+              true);
+        if (!row.summary.getString().isEmpty())
+          theme.wrap(
+              graphics,
+              client.font,
+              ClientTheme.TextRole.SUPPORT,
               row.summary,
               left + border + at.x,
               y + at.textY + at.summaryY,
-              at.textWidth,
-              DESCRIPTION_TEXT);
+              at.textWidth);
         for (var widget : row.controls)
           if (widget.getY() + widget.getHeight() > top && widget.getY() < bottom)
             graphics.widget(widget, mx, my, 0);

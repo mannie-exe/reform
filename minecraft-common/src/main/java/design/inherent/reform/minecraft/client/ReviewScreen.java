@@ -240,7 +240,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
             });
     edit.active = current() && selected != null && !review.entries().isEmpty() && operation == null;
     button(text("back", "Back"), () -> finish(Optional.empty()));
-    chrome = new FormChrome(minecraft, width, height, title, contextLabel, status(), footer);
+    chrome =
+        new FormChrome(minecraft, width, height, title, contextLabel, status(), footer, theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     narration = title.copy().append(". ").append(contextLabel);
@@ -439,7 +440,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     if (limited) {
       var token = widgets;
       var expand =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   expanded.contains(kind) ? text("collapse", "Collapse") : text("expand", "Expand"),
                   ignored -> {
                     if (closed || widgets != token || NativeScreens.current(minecraft) != this)
@@ -508,7 +510,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     if (pages > 1) {
       var token = widgets;
       var previous =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("previous_changes", "Previous changes"),
                   ignored -> {
                     if (!closed
@@ -522,7 +525,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
               .bounds(0, 0, 125, 20)
               .build();
       var next =
-          Button.builder(
+          theme()
+              .buttonBuilder(
                   text("next_changes", "Next changes"),
                   ignored -> {
                     if (!closed
@@ -590,7 +594,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     issuePage = Math.clamp(issuePage, 0, pages - 1);
     var token = widgets;
     var previous =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 text("previous", "Previous"),
                 ignored -> {
                   if (widgets == token
@@ -605,7 +610,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
             .build();
     previous.active = issuePage > 0;
     var next =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 text("next", "Next"),
                 ignored -> {
                   if (widgets == token
@@ -651,7 +657,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
         location.setTooltip(Tooltip.create(Component.literal(issue.path().toString())));
         links.add(location);
         var go =
-            Button.builder(
+            theme()
+                .buttonBuilder(
                     text("go_to", "Go to field"),
                     ignored -> {
                       if (!closed
@@ -675,7 +682,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
 
   private Button destination(FieldPath path, Component caption, Object token) {
     var result =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 caption,
                 ignored -> {
                   if (widgets == token && current() && NativeScreens.current(minecraft) == this)
@@ -912,7 +920,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private Button button(Component caption, Runnable callback) {
     var token = widgets;
     var control =
-        Button.builder(
+        theme()
+            .buttonBuilder(
                 caption,
                 ignored -> {
                   if (!closed && widgets == token && NativeScreens.current(minecraft) == this)

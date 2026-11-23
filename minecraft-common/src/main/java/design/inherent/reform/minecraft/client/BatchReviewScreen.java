@@ -124,7 +124,14 @@ public final class BatchReviewScreen extends NativeFormScreen {
     String focus = panel == null ? null : panel.focusKey();
     chrome =
         new FormChrome(
-            minecraft, width, height, title, Component.empty(), Component.empty(), controls);
+            minecraft,
+            width,
+            height,
+            title,
+            Component.empty(),
+            Component.empty(),
+            controls,
+            theme());
     panel = chrome.panel();
     chrome.mountActions(this::addRenderableWidget, panel);
     panel.row(
@@ -218,7 +225,8 @@ public final class BatchReviewScreen extends NativeFormScreen {
 
   private Button button(Component caption, Component context, Runnable action) {
     var token = generation;
-    return Button.builder(
+    return theme()
+        .buttonBuilder(
             caption,
             ignored -> {
               if (closed || token != generation || NativeScreens.current(minecraft) != this) return;

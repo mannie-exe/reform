@@ -13,6 +13,30 @@ import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
 
 final class NativeClientProbe {
+  static net.minecraft.client.gui.components.EditBox rawTextAlphaInput(
+      net.minecraft.client.gui.Font font, int x, int y) {
+    var input =
+        new net.minecraft.client.gui.components.EditBox(
+            font,
+            x,
+            y,
+            160,
+            20,
+            net.minecraft.network.chat.Component.literal("Raw native alpha reference"));
+    input.setValue("Example");
+    input.setTextColor(0x03ffffff);
+    input.setFormatter(
+        (text, offset) ->
+            net.minecraft.network.chat.Component.literal(text)
+                .withStyle(net.minecraft.network.chat.Style.EMPTY.withBold(true))
+                .getVisualOrderText());
+    return input;
+  }
+
+  static boolean normalizesSmallTextAlpha() {
+    return true;
+  }
+
   static java.util.concurrent.Executor ioPool() {
     return net.minecraft.Util.ioPool();
   }
