@@ -7,7 +7,7 @@ import sys
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED = {".git", ".gradle", "build", "runs", "node_modules", ".idea"}
+IGNORED = {".git", ".gradle", ".cache", "build", "runs", "node_modules", ".idea"}
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
 

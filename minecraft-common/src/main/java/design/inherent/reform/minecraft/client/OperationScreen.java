@@ -205,7 +205,7 @@ public final class OperationScreen<O> extends NativeFormScreen {
         new FormChrome(
             minecraft, width, height, title, contextLabel, Component.empty(), footer, theme());
     boolean hasDetails =
-        technical
+        observed != null && technical
             || outcome != null && !outcome.details().isEmpty()
             || observed != null && !observed.report().valid()
             || presentationFailure != null
@@ -278,10 +278,6 @@ public final class OperationScreen<O> extends NativeFormScreen {
                         "running",
                         "Work is pending. Returning to the editor leaves it running; no completion percentage is inferred."));
       }
-      report("operation", text("diagnostics", "Operation diagnostics"), observed.report());
-      if (outcome != null) details();
-      if (presentationFailure != null)
-        detail.row("detail:presentation", Component.empty(), presentationFailure);
       panel.actions(
           "primary:technical",
           button(
@@ -293,6 +289,10 @@ public final class OperationScreen<O> extends NativeFormScreen {
                 technical = !technical;
                 rebuildWidgets();
               }));
+      report("operation", text("diagnostics", "Operation diagnostics"), observed.report());
+      if (outcome != null) details();
+      if (presentationFailure != null)
+        detail.row("detail:presentation", Component.empty(), presentationFailure);
       if (technical) {
         detail.row(
             "detail:identity",

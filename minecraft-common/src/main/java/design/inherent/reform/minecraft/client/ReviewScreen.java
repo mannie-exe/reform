@@ -71,6 +71,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private List<Action> reviewActions = List.of();
   private List<Optional<Component>> actionReasons = List.of();
   private final Map<FieldPath, String> searchIndex = new LinkedHashMap<>();
+  private Map<FieldPath, Integer> fieldOrder = Map.of();
   private final EnumSet<Value> expanded = EnumSet.noneOf(Value.class);
   private DocumentReview review;
   private EditorActor.Validation validated;
@@ -88,7 +89,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private Language language;
   private Object widgets;
   private int issuePage, changePage, fieldPage;
-  private boolean activated,
+  private boolean sourceDetails,
+      activated,
       requested,
       validating,
       closed,
@@ -160,6 +162,31 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     if (activated || closed)
       throw new IllegalStateException("Declare review actions before opening the screen");
     reviewActions = List.copyOf(entries);
+  }
+
+  /**
+   * Declare the invoking form's visual field order before mounting. Unlisted captured fields keep
+   * their existing catalogue order. This changes neither the actual capture nor the data codec.
+   */
+  public ReviewScreen<T> withFieldOrder(List<FieldPath> paths) {
+    if (activated || closed)
+      throw new IllegalStateException("Declare review field order before mounting");
+    var order = new LinkedHashMap<FieldPath, Integer>();
+    for (var path : List.copyOf(paths)) {
+      if (actions.fields().field(path).isEmpty() || order.putIfAbsent(path, order.size()) != null)
+        throw new IllegalArgumentException(
+            "Review order requires distinct declared field identities");
+    }
+    fieldOrder = Map.copyOf(order);
+    return this;
+  }
+
+  private List<DocumentReview.Entry> orderedEntries() {
+    return review.entries().stream()
+        .sorted(
+            java.util.Comparator.comparingInt(
+                entry -> fieldOrder.getOrDefault(entry.path(), Integer.MAX_VALUE)))
+        .toList();
   }
 
   private static Component text(String key, String fallback, Object... arguments) {
@@ -255,7 +282,11 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     panels =
         new TaskPanels(
             chrome,
-            taskPresentation(),
+            review != null && !review.entries().isEmpty()
+                ? taskPresentation()
+                : taskPresentation()
+                    .withPreference(
+                        TaskPresentation.Kind.INSPECTION, TaskPresentation.Preference.FOCUSED),
             TaskPresentation.Kind.INSPECTION,
             new TaskPresentation.Offer(
                 new FormGeometry.Size(fieldWidth, minimumHeight), fieldWidth),
@@ -283,45 +314,11 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   }
 
   private void content() {
-    var source =
-        Component.literal(review.source().description())
-            .append(" (" + review.source().kind() + ")");
-    review.source().location().ifPresent(value -> source.append("\n").append(value));
-    panel.row("detail:source", text("source", "Observed source"), source);
-    panel.row(
-        "detail:basis",
-        text("basis", "Capture"),
-        text(
-            "basis_detail",
-            "Draft version %s. Source revision %s. This view does not reread the source.",
-            review.target().version(),
-            review.target().sourceRevision()));
-    narration = narration.copy().append(". ").append(source);
-    review
-        .draftBasis()
-        .ifPresent(
-            basis -> {
-              var selected =
-                  Component.literal(basis.source().description())
-                      .append("\n")
-                      .append(basis.revision());
-              basis
-                  .source()
-                  .location()
-                  .ifPresent(location -> selected.append("\n").append(location));
-              var label = text("recipe_basis", "Draft recipe basis");
-              panel.row("recipe-basis", label, selected);
-              narration = narration.copy().append(". ").append(label).append(". ").append(selected);
-            });
-    if (submission.isPresent()) changes();
-    if (!current())
-      panel.row(
-          "detail:stale",
-          text("stale", "Draft changed after this capture"),
-          text("stale_help", "These details retain their original version. Refresh the view."));
-    if (review.entries().isEmpty()) {
+    var entries = orderedEntries();
+    if (entries.isEmpty()) {
       selected = null;
       panel.row(text("no_fields", "No declared fields"), Component.empty());
+      sourceFacts();
       diagnosis();
       return;
     }
@@ -337,24 +334,29 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     }
     var query = filter.getValue().strip().toLowerCase(Locale.ROOT);
     var matches =
-        review.entries().stream()
+        entries.stream()
             .filter(value -> searchIndex.getOrDefault(value.path(), "").contains(query))
             .toList();
     fieldPanel.row(
         "primary:search",
         text("search", "Find a field"),
-        text("matches", "%s of %s fields match", matches.size(), review.entries().size()),
+        text("matches", "%s of %s fields match", matches.size(), entries.size()),
         filter);
     var entry =
-        review.entries().stream()
+        entries.stream()
             .filter(value -> value.path().equals(selected))
             .findFirst()
-            .orElseGet(() -> review.entries().getFirst());
+            .orElseGet(() -> entries.getFirst());
     selected = entry.path();
     var paths = new ArrayList<>(matches.stream().map(DocumentReview.Entry::path).toList());
     if (!paths.contains(selected)) paths.addFirst(selected);
     if (panels.arrangement() == TaskPresentation.Arrangement.ADJACENT) {
       fieldIndex(paths);
+      if (entry.wholeValue())
+        fieldPanel.row(
+            "primary:whole-value",
+            Component.empty(),
+            text("whole", "Whole value; collection rows are not aligned by position."));
     } else {
       var token = widgets;
       var choice =
@@ -387,6 +389,13 @@ public final class ReviewScreen<T> extends NativeFormScreen {
           "primary:no_matches",
           text("no_matches", "No matching fields"),
           text("selection_retained", "The selected capture remains visible."));
+    if (submission.isPresent()) changes();
+    if (!current())
+      fieldPanel.row(
+          "primary:stale",
+          text("stale", "Draft changed after this capture"),
+          text("stale_help", "These details retain their original version. Refresh the view."));
+    panel.row("detail:selected", text("selected_field", "Selected field"), label(selected));
     actions
         .fields()
         .field(entry.path())
@@ -443,7 +452,69 @@ public final class ReviewScreen<T> extends NativeFormScreen {
               effective.valuesCaptured()));
     }
     narration = narration.copy().append(". ").append(label(selected));
+    sourceFacts();
     diagnosis();
+  }
+
+  private void sourceFacts() {
+    var source = Component.literal(review.source().description());
+    panel.row("detail:source", text("source", "Observed source"), source);
+    panel.row(
+        "detail:capture",
+        text("basis", "Capture"),
+        text("capture_help", "Refresh this view to capture the draft again."));
+    narration = narration.copy().append(". ").append(source);
+    var toggle =
+        indexButton(
+            sourceDetails
+                ? text("hide_source_details", "Hide source details")
+                : text("source_details", "Source details"),
+            widgets,
+            () -> {
+              sourceDetails = !sourceDetails;
+              rebuildWidgets();
+            });
+    panel.actions("detail:source-toggle", toggle);
+    if (!sourceDetails) return;
+    panel.row(
+        "detail:source-kind",
+        text("source_kind", "Source kind"),
+        Component.literal(review.source().kind()));
+    review
+        .source()
+        .location()
+        .ifPresent(
+            location ->
+                panel.row(
+                    "detail:source-location",
+                    text("source_location", "Source location"),
+                    Component.literal(location)));
+    panel.row(
+        "detail:capture-revision",
+        text("basis", "Capture"),
+        text(
+            "basis_detail",
+            "Draft version %s. Source revision %s. This view does not reread the source.",
+            review.target().version(),
+            review.target().sourceRevision()));
+    if (selected != null)
+      panel.row(
+          "detail:field-identity",
+          text("field_identity", "Field identity"),
+          Component.literal(selected.toString()));
+    review
+        .draftBasis()
+        .ifPresent(
+            basis -> {
+              var value =
+                  Component.literal(basis.source().description())
+                      .append("\n")
+                      .append(basis.revision());
+              basis.source().location().ifPresent(location -> value.append("\n").append(location));
+              var caption = text("recipe_basis", "Draft recipe basis");
+              panel.row("detail:recipe-basis", caption, value);
+              narration = narration.copy().append(". ").append(caption).append(". ").append(value);
+            });
   }
 
   private void fieldIndex(List<FieldPath> paths) {

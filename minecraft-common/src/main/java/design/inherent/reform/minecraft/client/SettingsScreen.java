@@ -256,6 +256,11 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     return view.fieldControl(path);
   }
 
+  @Override
+  public List<FieldPath> fieldOrder() {
+    return view.fieldOrder();
+  }
+
   public Optional<FieldPath> selectedSection() {
     return view.selectedSection();
   }

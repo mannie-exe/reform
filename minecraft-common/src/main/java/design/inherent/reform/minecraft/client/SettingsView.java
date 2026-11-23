@@ -1226,6 +1226,38 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     expandedEditors.retainAll(retained);
   }
 
+  @Override
+  public List<FieldPath> fieldOrder() {
+    var declared = SettingsForm.super.fieldOrder();
+    var snapshot = actions.view().snapshot();
+    if (snapshot.isEmpty()) return declared;
+    FormModel tree;
+    try {
+      tree = model(snapshot.orElseThrow().draft());
+    } catch (IllegalArgumentException unavailable) {
+      return declared;
+    }
+    var admitted = new java.util.HashSet<>(declared);
+    var ordered = new java.util.LinkedHashSet<FieldPath>();
+    var pending = new java.util.ArrayDeque<FormModel.Node>();
+    pending.add(tree.root());
+    while (!pending.isEmpty()) {
+      var node = pending.removeFirst();
+      if (admitted.contains(node.path())) {
+        ordered.add(node.path());
+        // A declared whole collection/value is one review field, not a second row projection.
+        continue;
+      }
+      var children =
+          design.inherent.reform.presentation.FormComposition.fields(
+              design.inherent.reform.presentation.FormComposition.resolve(
+                  node.children(), presentation));
+      for (int at = children.size() - 1; at >= 0; at--) pending.addFirst(children.get(at));
+    }
+    ordered.addAll(declared);
+    return List.copyOf(ordered);
+  }
+
   private FormModel model(DraftTree draft) {
     if (draft != modelDraft) {
       modelDraft = draft;
@@ -2132,6 +2164,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                         }))
                 : Optional.empty());
     screen.withActions(reviewActions);
+    screen.withFieldOrder(fieldOrder());
     handoff = true;
     try {
       openScreen(screen);

@@ -25,6 +25,7 @@ import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 
 /** Native input, display-only changes and actual canonical file/runtime roundtrips. */
 final class PlatformNumericChecks implements PlatformFormProbe.Scene {
@@ -778,9 +779,21 @@ final class PlatformNumericChecks implements PlatformFormProbe.Scene {
                   .filter(CycleButton.class::isInstance)
                   .map(CycleButton.class::cast)
                   .filter(button -> NativeNarrationProbe.read(button).contains("Field"))
-                  .findFirst()
-                  .orElseThrow();
-          click(numericReview, choice);
+                  .findFirst();
+          if (choice.isPresent()) click(numericReview, choice.orElseThrow());
+          else {
+            var indexed =
+                button(
+                    numericReview,
+                    Component.translatableWithFallback(
+                            "reform_platform_example:settings/numeric/fields/initialZoom",
+                            "Initial Zoom")
+                        .getString());
+            verify(
+                "numeric captured-field index has a real focusable native destination",
+                focus(numericReview, indexed));
+            click(numericReview, indexed);
+          }
           return false;
         }
         verify(

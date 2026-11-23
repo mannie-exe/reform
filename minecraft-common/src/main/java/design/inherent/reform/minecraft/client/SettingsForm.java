@@ -5,6 +5,7 @@ import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.presentation.FormTarget;
+import java.util.List;
 import java.util.Optional;
 import net.minecraft.client.gui.components.AbstractWidget;
 
@@ -17,6 +18,15 @@ public interface SettingsForm<T> {
 
   /** Cached editing state, not a fresh read or permission to save. */
   EditorActor.View<T> editorView();
+
+  /**
+   * Presentation order for captured field navigation, without changing schema/codec order. This is
+   * cached metadata, not source readiness or authority. Unrepresented fields retain the owner's
+   * declared order; custom forms may supply their actual composition order.
+   */
+  default List<FieldPath> fieldOrder() {
+    return editingActions().fields().fields().stream().map(field -> field.path()).toList();
+  }
 
   /** A currently mounted native control; hidden or retired widgets are not returned. */
   Optional<AbstractWidget> fieldControl(FieldPath path);

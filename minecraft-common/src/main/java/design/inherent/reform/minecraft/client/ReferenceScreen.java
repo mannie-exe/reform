@@ -58,12 +58,15 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
     this.abandoned = Objects.requireNonNull(abandoned);
   }
 
+  private Object generation;
+
   private static Component text(String key, String fallback) {
     return Component.translatableWithFallback("reform.reference." + key, fallback);
   }
 
   @Override
   protected void init() {
+    generation = new Object();
     footer.clear();
     querying.clear();
     nextPage = null;
@@ -90,7 +93,9 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
             footer,
             theme());
     var searchButton = queryButton(text("search", "Search"), () -> search(Optional.empty()));
-    var inspectButton = queryButton(text("inspect", "Inspect"), () -> resolve(key.getValue()));
+    var inspectButton =
+        queryButton(
+            text("inspect", "Inspect"), text("key", "Reference ID"), () -> resolve(key.getValue()));
     int padding = 2 * theme().values().value(ThemeValues.Role.SPACE_CONTENT);
     int inline = theme().values().value(ThemeValues.Role.SPACE_INLINE);
     int primaryMinimum =
@@ -169,6 +174,18 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
             });
     details.actions("detail:source_toggle", technical);
     if (technicalDetails) {
+      selection
+          .page()
+          .ifPresent(
+              page ->
+                  details.row(
+                      "detail:accounting",
+                      text("source_accounting", "Source accounting"),
+                      Component.translatableWithFallback(
+                          "reform.reference.examined",
+                          "%s shown; %s source entries examined on this page",
+                          page.choices().size(),
+                          page.examined())));
       var stamp = selection.stamp();
       details.row(
           "detail:source", text("source", "Source"), Component.literal(stamp.source().toString()));
@@ -214,15 +231,14 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
                   "primary:accounting",
                   Component.empty(),
                   Component.translatableWithFallback(
-                      "reform.reference.examined",
-                      "%s shown; %s source entries examined on this page",
-                      page.choices().size(),
-                      page.examined()));
+                      "reform.reference.page_values",
+                      "%s values on this page",
+                      page.choices().size()));
               for (var choice : page.choices()) {
                 var inspect =
                     queryButton(
-                        text("inspect", "Inspect"),
-                        Component.literal(choice.key()),
+                        Component.literal(choice.label()),
+                        text("inspect_choice", "Inspect choice"),
                         () -> {
                           if (selection.page().filter(current -> current == page).isEmpty()) return;
                           key.setMaxLength(Math.max(32768, choice.key().length()));
@@ -231,13 +247,14 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
                         });
                 inspect.setTooltip(
                     net.minecraft.client.gui.components.Tooltip.create(
-                        Component.literal(choice.key())));
+                        Component.literal(
+                            choice.label().equals(choice.key())
+                                ? choice.label()
+                                : choice.label() + "\n" + choice.key())));
                 target.row(
                     "primary:choice:" + choice.key(),
-                    Component.literal(clip(choice.label(), 160)),
-                    selection.current()
-                        ? ReferencePreview.format(choice.preview())
-                        : Component.empty(),
+                    Component.empty(),
+                    Component.empty(),
                     inspect);
               }
               if (page.exhausted())
@@ -279,12 +296,14 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   }
 
   private Button footer(Component label, Runnable action) {
+    var token = generation;
     var button =
         theme()
             .buttonBuilder(
                 label,
                 ignored -> {
-                  if (!closed && NativeScreens.current(minecraft) == this) action.run();
+                  if (!closed && generation == token && NativeScreens.current(minecraft) == this)
+                    action.run();
                 })
             .bounds(0, 0, Math.max(56, font.width(label) + 20), 20)
             .build();
@@ -297,12 +316,16 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   }
 
   private Button queryButton(Component label, Component context, Runnable action) {
+    var token = generation;
     var builder =
         theme()
             .buttonBuilder(
                 label,
                 ignored -> {
-                  if (!closed && NativeScreens.current(minecraft) == this && !staging) action.run();
+                  if (!closed
+                      && generation == token
+                      && NativeScreens.current(minecraft) == this
+                      && !staging) action.run();
                 })
             .bounds(0, 0, Math.max(56, font.width(label) + 20), 20);
     if (context != null)

@@ -211,6 +211,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformShellChecks shellChecks;
   private PlatformTaskChecks taskChecks;
   private PlatformOperationPresentationChecks operationChecks;
+  private PlatformFieldOrderChecks fieldOrderChecks;
   private PlatformThemeChecks themeChecks;
   private List<design.inherent.reform.minecraft.client.ClientEditor<?>> abandonedEditors =
       List.of();
@@ -595,6 +596,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (operationChecks == null)
           operationChecks = new PlatformOperationPresentationChecks(this::check, capture);
         if (!operationChecks.tick()) return false;
+        if (fieldOrderChecks == null)
+          fieldOrderChecks = new PlatformFieldOrderChecks(this::check, capture);
+        if (!fieldOrderChecks.tick()) return false;
         if (themeChecks == null) themeChecks = new PlatformThemeChecks(this::check, capture);
         if (!themeChecks.tick()) return false;
         jsonBefore = source("workflow_preferences");

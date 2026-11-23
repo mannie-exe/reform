@@ -1174,6 +1174,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             this::close,
             captured.review(),
             report);
+    screen.withFieldOrder(selected.form().fieldOrder());
     NativeScreens.open(Minecraft.getInstance(), screen);
   }
 

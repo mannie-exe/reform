@@ -50,6 +50,7 @@ final class PlatformReferenceChecks implements PlatformFormProbe.Scene {
   private Button retiredBrowse;
   private String original;
   private int stage;
+  private String lastUnknownObservation;
 
   PlatformReferenceChecks(
       boolean reopen, Consumer<String> progress, BiConsumer<String, Runnable> capture) {
@@ -217,6 +218,17 @@ final class PlatformReferenceChecks implements PlatformFormProbe.Scene {
         step("native unknown key inspected");
       }
       case 6 -> {
+        var current = NativeScreens.current(client);
+        String narration = current.getNarrationMessage().getString();
+        report.addProperty("unknownLookupKey", input(current, "Reference ID").getValue());
+        report.addProperty("unknownLookupNarration", narration);
+        report.addProperty("unknownLookupInspectEnabled", button(current, "Inspect").active);
+        report.addProperty(
+            "unknownLookupSelectionEnabled", button(current, "Use selection").active);
+        if (!java.util.Objects.equals(lastUnknownObservation, narration)) {
+          lastUnknownObservation = narration;
+          progress.accept("unknown lookup observed: " + narration);
+        }
         if (!NativeScreens.current(client)
             .getNarrationMessage()
             .getString()
