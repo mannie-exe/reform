@@ -49,6 +49,7 @@ public final class FormTokens {
     public static final int EDITOR_MINIMUM = UNIT * 90;
     public static final int INFORMATION_MINIMUM = UNIT * 90;
     public static final int INFORMATION_PREFERRED = UNIT * 110;
+    public static final int GRAPHIC_PREFERRED = UNIT * 110;
     public static final int CONTENT_MINIMUM_HEIGHT = UNIT * 16;
 
     private Measure() {}

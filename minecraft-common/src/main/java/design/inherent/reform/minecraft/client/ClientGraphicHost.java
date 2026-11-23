@@ -388,10 +388,15 @@ public final class ClientGraphicHost implements AutoCloseable {
               : displayed.camera().orElse(GraphicCamera.STANDARD);
     }
 
-    /** Shared decorative viewport. Preparation and named controls are explicit separate actions. */
+    /** Shared read-only focusable viewport. Preparation and camera controls remain explicit. */
     public AbstractWidget widget(Component description) {
       ClientSettingsRuntime.requireClientThread();
       return new NativeGraphicWidget(description) {
+        @Override
+        protected Component graphicNarration() {
+          return getMessage().copy().append(". ").append(label(state));
+        }
+
         @Override
         protected void drawGraphic(FormCanvas canvas) {
           observeClosedLease();
@@ -418,13 +423,15 @@ public final class ClientGraphicHost implements AutoCloseable {
               closeGraphic();
             }
           }
-          feedback(
-              canvas,
-              report.issues().isEmpty()
-                  ? cleanupReport.issues().isEmpty()
-                      ? label(state)
-                      : cleanupReport.issues().getFirst().fallback()
-                  : report.issues().getFirst().fallback());
+          feedback(canvas, statusText());
+        }
+
+        private String statusText() {
+          return report.issues().isEmpty()
+              ? cleanupReport.issues().isEmpty()
+                  ? label(state)
+                  : cleanupReport.issues().getFirst().fallback()
+              : report.issues().getFirst().fallback();
         }
 
         private void feedback(FormCanvas canvas, String message) {
@@ -784,12 +791,15 @@ public final class ClientGraphicHost implements AutoCloseable {
     return switch (state) {
       case IDLE -> "Prepare a preview";
       case QUEUED -> "Waiting for earlier preview preparation";
+      case READY -> "Preview ready";
       case PREPARING -> "Preparing preview";
       case CANCELLING -> "Cancellation requested; waiting for entered work";
       case STALE -> "Preview is stale; prepare it again";
       case CLOSED -> "Preview closed";
       case CANCELLED -> "Preview preparation cancelled";
-      default -> "Preview unavailable";
+      case REFUSED -> "Preview request refused";
+      case FAILED -> "Preview failed";
+      case UNAVAILABLE -> "Preview unavailable";
     };
   }
 

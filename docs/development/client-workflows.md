@@ -56,6 +56,8 @@ The information action beside each requested value opens the existing guarded fi
 
 The subject selector measures the native localized caption for every declared choice using the active font and theme padding. Its detail-region offer includes the actual viewport and group framing, so adjacent presentation makes room for that control when the complete task fits. Smaller contexts use focused flow and retain native caption scrolling and full narration. Layout reads copied captions rather than repeatedly freezing domain subjects or invoking a provider.
 
+`MEASURE_GRAPHIC_PREFERRED` controls the viewport's preferred size independently of information-pane width. Its height fits the current pane, including in focused flow. **Show preview** reveals and focuses that complete read-only viewport; it does not prepare, select, save, or apply anything. The native focus outline and narration identify the preview and its current state. Resizing can refit native display resources while retaining the same prepared subject, captured draft, and provider work; it does not recapture or recompile the subject.
+
 ## Workspace shell in 0.4 development
 
 The development workflow defaults to Home. Mounting Home lists declared top-level destinations without opening their owners. Select a destination, call `show(route)` or `showPlacement(id)`, or declare an explicit initial destination before expecting that document's controls to be mounted. `openEditor(route)` admits an editor; it does not navigate the body. Standalone settings screens continue to open their document directly.

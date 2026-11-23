@@ -206,7 +206,8 @@ final class FormPanel extends ScrollFrame {
       String relationship,
       ClientTheme.TextRole labelRole) {
     for (var control : controls) {
-      if (!(control instanceof NativeGraphicWidget)) ClientControls.theme(control, currentTheme);
+      if (control instanceof NativeGraphicWidget graphic) graphic.theme(currentTheme);
+      else ClientControls.theme(control, currentTheme);
       if (control instanceof NavigationButton navigationButton)
         navigationButton.theme(currentTheme);
       else if (control instanceof InformationButton information) information.theme(currentTheme);
@@ -575,6 +576,10 @@ final class FormPanel extends ScrollFrame {
 
   private int usableWidth() {
     return Math.max(1, width - 2 * border - SCROLLBAR_GUTTER);
+  }
+
+  int visibleRowHeight() {
+    return Math.max(1, height - 2 * border);
   }
 
   /** Outer offer for content inside this viewport's actual framing and declared group depth. */

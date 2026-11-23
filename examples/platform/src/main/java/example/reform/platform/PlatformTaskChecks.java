@@ -426,7 +426,8 @@ public final class PlatformTaskChecks {
             () -> {
               check.accept(
                   "unprepared preview controls can be focused and revealed",
-                  focus(workflow.screen(), button(workflow.screen(), "Reset view")));
+                  focus(workflow.screen(), button(workflow.screen(), "Show preview")));
+              click(workflow.screen(), button(workflow.screen(), "Show preview"));
               capture.accept(
                   "task-preview-before-prepare.png",
                   () -> {
@@ -452,7 +453,19 @@ public final class PlatformTaskChecks {
                 && Arrays.equals(bytes, source()));
         check.accept(
             "preview camera controls belong to actual native tree",
-            focus(workflow.screen(), button(workflow.screen(), "Reset view")));
+            focus(workflow.screen(), button(workflow.screen(), "Show preview")));
+        click(workflow.screen(), button(workflow.screen(), "Show preview"));
+        assertViewportVisible();
+        var viewport =
+            widgets(workflow.screen()).stream()
+                .filter(widget -> widget.getMessage().getString().equals("Draft preview"))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "read-only preview has current native focus and ready-state narration",
+            viewport.isFocused()
+                && NativeClientProbe.narration(viewport::updateNarration)
+                    .contains("Preview ready"));
         stage = 20;
         capture.accept(
             "task-preview-pre-draw.png",
@@ -467,21 +480,8 @@ public final class PlatformTaskChecks {
         check.accept(
             "registered preview widget actually submits its own prepared graphic",
             draws > 0 && actual == workflow.editor(DEFINITION.id()));
-        stage = 20;
-        capture.accept(
-            "task-preview.png",
-            () -> {
-              assertPreviewPixels();
-              var subject =
-                  widgets(workflow.screen()).stream()
-                      .filter(widget -> widget.getMessage().getString().contains("First subject"))
-                      .findFirst()
-                      .orElseThrow();
-              check.accept(
-                  "task subject can be focused and revealed", focus(workflow.screen(), subject));
-              click(workflow.screen(), subject);
-              stage = 13;
-            });
+        NativeClientProbe.resize(client, 320, 240);
+        stage = 19;
       }
       case 9 -> {
         if (workflow.graphics(LIMITS, 2).nativeOwnership().bytes() != 0
@@ -577,6 +577,17 @@ public final class PlatformTaskChecks {
             observed(
                 ((Map<?, ?>) observed(workflow, "taskViews")).values().iterator().next(), "view");
         var regions = observed(observed(task, "panels"), "regions");
+        var narrowGraphic =
+            widgets(workflow.screen()).stream()
+                .filter(widget -> widget.getMessage().getString().equals("Draft preview"))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "graphic preferred height fits the actual narrow task viewport",
+            narrowGraphic.getHeight()
+                <= ((design.inherent.reform.presentation.TaskPresentation.Regions) regions)
+                    .primary()
+                    .height());
         check.accept(
             "task narrow reflow retains actual query and manual controls",
             input(workflow.screen(), "Search") == retainedQuery
@@ -655,7 +666,58 @@ public final class PlatformTaskChecks {
         click(workflow.screen(), use);
         stage = 4;
       }
+      case 19 -> {
+        if (workflow.screen().width > 400 || workflow.screen().width >= oldWidth) return false;
+        var show = button(workflow.screen(), "Show preview");
+        check.accept(
+            "prepared narrow preview navigation remains keyboard revealable",
+            focus(workflow.screen(), show));
+        click(workflow.screen(), show);
+        assertViewportVisible();
+        check.accept(
+            "narrow preview reflow retains the exact prepared scene without compilation",
+            ((GraphicPreparation.Ready) graphic().preparation().orElseThrow()).graphic() == ready
+                && prepares.get() == 1);
+        stage = 20;
+        capture.accept(
+            "task-preview-small.png",
+            () -> {
+              assertPatternPixels("task-preview-small.png");
+              NativeClientProbe.resize(client, windowWidth[0], windowHeight[0]);
+              stage = 21;
+            });
+      }
       case 20 -> {}
+      case 21 -> {
+        if (workflow.screen().width != oldWidth || workflow.screen().height != oldHeight)
+          return false;
+        var show = button(workflow.screen(), "Show preview");
+        check.accept(
+            "returned preview navigation remains keyboard revealable",
+            focus(workflow.screen(), show));
+        click(workflow.screen(), show);
+        assertViewportVisible();
+        check.accept(
+            "return from narrow preserves image focus and one complete unsaved preparation",
+            ((GraphicPreparation.Ready) graphic().preparation().orElseThrow()).graphic() == ready
+                && prepares.get() == 1
+                && Arrays.equals(bytes, source()));
+        stage = 20;
+        capture.accept(
+            "task-preview.png",
+            () -> {
+              assertPreviewPixels();
+              var subject =
+                  widgets(workflow.screen()).stream()
+                      .filter(widget -> widget.getMessage().getString().contains("First subject"))
+                      .findFirst()
+                      .orElseThrow();
+              check.accept(
+                  "task subject can be focused and revealed", focus(workflow.screen(), subject));
+              click(workflow.screen(), subject);
+              stage = 13;
+            });
+      }
       default -> throw new AssertionError("Unknown registered task stage " + stage);
     }
     return false;
@@ -696,52 +758,10 @@ public final class PlatformTaskChecks {
                 + preparedGlyphs.cardinality()
                 + " draw="
                 + drawnGlyphs.cardinality());
-      int glyphs = 0, changed = 0;
-      double sx = image.getWidth() / (double) workflow.screen().width;
-      double sy = image.getHeight() / (double) workflow.screen().height;
-      for (int y = (int) ((blue.getY() + 3) * sy);
-          y < (blue.getY() + blue.getHeight() - 3) * sy;
-          y++)
-        for (int x = (int) ((blue.getX() + 3) * sx);
-            x < (blue.getX() + blue.getWidth() - 3) * sx;
-            x++) {
-          boolean a = white(before.getRGB(x, y)), b = white(image.getRGB(x, y));
-          if (a) glyphs++;
-          if (a != b) changed++;
-        }
       check.accept(
-          "private preview preserves unrelated native text pixels", glyphs > 10 && changed < 3);
-      var widget =
-          widgets(workflow.screen()).stream()
-              .filter(value -> value.getMessage().getString().equals("Draft preview"))
-              .findFirst()
-              .orElseThrow();
-      double distance = Math.min(widget.getWidth(), widget.getHeight()) * 0.1;
-      var colors = new int[] {0xffff0000, 0xff00ff00, 0xff0000ff, 0xffffff00};
-      for (int i = 0; i < 4; i++) {
-        int x =
-            (int)
-                Math.floor(
-                    (widget.getX() + widget.getWidth() / 2.0 + (i % 2 == 0 ? -distance : distance))
-                        * image.getWidth()
-                        / workflow.screen().width);
-        int y =
-            (int)
-                Math.floor(
-                    (widget.getY() + widget.getHeight() / 2.0 + (i < 2 ? -distance : distance))
-                        * image.getHeight()
-                        / workflow.screen().height);
-        int value = image.getRGB(x, y);
-        for (int shift : new int[] {16, 8, 0})
-          if (Math.abs(((value >>> shift) & 255) - ((colors[i] >>> shift) & 255)) > 4)
-            throw new AssertionError(
-                "Actual task preview pixel mismatch at "
-                    + x
-                    + ","
-                    + y
-                    + ": "
-                    + Integer.toHexString(value));
-      }
+          "private preview preserves unrelated native text pixels",
+          initialGlyphs.cardinality() > 10);
+      assertPatternPixels("task-preview.png");
       check.accept("root-mounted task preview displays all four expected texture quadrants", true);
     } catch (java.io.IOException failed) {
       throw new AssertionError("Task screenshot could not be inspected", failed);
@@ -766,5 +786,59 @@ public final class PlatformTaskChecks {
           x < (widget.getX() + widget.getWidth() - 3) * sx;
           x++) mask.set(offset++, white(image.getRGB(x, y)));
     return mask;
+  }
+
+  private void assertViewportVisible() {
+    var task =
+        observed(((Map<?, ?>) observed(workflow, "taskViews")).values().iterator().next(), "view");
+    var regions =
+        (design.inherent.reform.presentation.TaskPresentation.Regions)
+            observed(observed(task, "panels"), "regions");
+    var bounds = regions.detail().orElse(regions.primary());
+    var widget =
+        widgets(workflow.screen()).stream()
+            .filter(value -> value.getMessage().getString().equals("Draft preview"))
+            .findFirst()
+            .orElseThrow();
+    check.accept(
+        "Show preview reveals the full native viewport in its actual pane",
+        widget.getY() >= bounds.y()
+            && widget.getBottom() <= bounds.y() + bounds.height()
+            && prepares.get() == 1);
+  }
+
+  private void assertPatternPixels(String filename) {
+    try {
+      var image =
+          javax.imageio.ImageIO.read(
+              client.gameDirectory.toPath().resolve("platform-" + filename).toFile());
+      var widget =
+          widgets(workflow.screen()).stream()
+              .filter(value -> value.getMessage().getString().equals("Draft preview"))
+              .findFirst()
+              .orElseThrow();
+      var colors = new int[] {0xffff0000, 0xff00ff00, 0xff0000ff, 0xffffff00};
+      double step = Math.min(widget.getWidth(), widget.getHeight()) * 0.1;
+      for (int i = 0; i < colors.length; i++) {
+        int x =
+            (int)
+                ((widget.getX() + widget.getWidth() / 2.0 + (i % 2 == 0 ? -step : step))
+                    * image.getWidth()
+                    / workflow.screen().width);
+        int y =
+            (int)
+                ((widget.getY() + widget.getHeight() / 2.0 + (i < 2 ? -step : step))
+                    * image.getHeight()
+                    / workflow.screen().height);
+        int observed = image.getRGB(x, y);
+        for (int shift : new int[] {16, 8, 0})
+          if (Math.abs(((observed >>> shift) & 255) - ((colors[i] >>> shift) & 255)) > 4)
+            throw new AssertionError(
+                "Actual fitted graphic pixel differs in " + filename + " at " + x + "," + y);
+      }
+      check.accept("fitted graphic retains actual texture colors in " + filename, true);
+    } catch (java.io.IOException failed) {
+      throw new AssertionError("Native fitted viewport capture unavailable", failed);
+    }
   }
 }

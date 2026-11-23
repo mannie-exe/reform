@@ -602,8 +602,8 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                         view.cancel();
                         rebuildWidgets();
                       }));
-              int size = theme().values().value(ThemeValues.Role.MEASURE_INFORMATION_PREFERRED);
-              ControlSizing.offer(widget, size, size);
+              int size = theme().values().value(ThemeValues.Role.MEASURE_GRAPHIC_PREFERRED);
+              ControlSizing.offer(widget, size, Math.min(size, target.visibleRowHeight()));
               target.row("detail:graphic", Component.empty(), Component.empty(), widget);
               target.actions(
                   "detail:camera",
@@ -611,7 +611,12 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                   button(text("rotate_right", "Rotate right"), () -> view.orbit(15, 0)),
                   button(text("zoom_in", "Zoom in"), () -> view.zoom(1.2)),
                   button(text("zoom_out", "Zoom out"), () -> view.zoom(1 / 1.2)),
-                  button(text("reset_camera", "Reset view"), view::resetCamera));
+                  button(text("reset_camera", "Reset view"), view::resetCamera),
+                  button(
+                      text("show_preview", "Show preview"),
+                      () -> {
+                        if (target.focusRow("detail:graphic")) setFocused(target);
+                      }));
               target.actions(
                   "detail:preview_details",
                   button(
