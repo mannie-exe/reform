@@ -36,7 +36,7 @@ final class PlatformRootImportChecks {
   private Path saved, file;
   private byte[] source;
   private String originalDistance;
-  private int stage;
+  private int stage, afterPreview, previewWait;
 
   PlatformRootImportChecks(
       BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -54,12 +54,26 @@ final class PlatformRootImportChecks {
     return (EditBox) editor.form().fieldControl(path).orElseThrow();
   }
 
+  private boolean mountedField(FieldPath path) {
+    return editor
+        .form()
+        .fieldControl(path)
+        .filter(control -> widgets(workflow.screen()).contains(control))
+        .isPresent();
+  }
+
   private boolean revealed() {
     if (!navigation.isDone()) return false;
     check.accept(
         "root import acknowledges its actual mounted destination: " + navigation.join(),
         navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED);
     return true;
+  }
+
+  private void previewWhenMounted(int next) {
+    afterPreview = next;
+    previewWait = 0;
+    stage = 30;
   }
 
   boolean tick() throws Exception {
@@ -123,7 +137,7 @@ final class PlatformRootImportChecks {
       case 1 -> {
         if (!revealed()) return false;
         editor = workflow.editor(route);
-        if (editor.busy() || editor.form().fieldControl(label).isEmpty()) return false;
+        if (editor.busy() || !mountedField(label)) return false;
         originalDistance = field(distance).getValue();
         replace(workflow.screen(), field(label), "Earlier draft");
         replace(workflow.screen(), field(distance), "bad");
@@ -153,8 +167,7 @@ final class PlatformRootImportChecks {
                 && workflow.editor(route) == editor
                 && Arrays.equals(source, Files.readAllBytes(saved)));
         workflow.screen().onFilesDrop(List.of(file));
-        press(button(workflow.screen(), "Preview import"));
-        stage = 33;
+        previewWhenMounted(33);
       }
       case 33 -> {
         var input = workflow.importInspection().orElseThrow().reviewedInput();
@@ -171,9 +184,8 @@ final class PlatformRootImportChecks {
         stage = 34;
       }
       case 34 -> {
-        if (editor.busy()
-            || workflow.importInspection().isPresent()
-            || editor.form().fieldControl(label).isEmpty()) return false;
+        if (editor.busy() || workflow.importInspection().isPresent() || !mountedField(label))
+          return false;
         check.accept(
             "explicit import repairs the current invalid draft without a source write",
             field(label).getValue().equals("Root imported")
@@ -182,7 +194,7 @@ final class PlatformRootImportChecks {
         stage = 35;
       }
       case 35 -> {
-        if (editor.busy() || editor.form().fieldControl(distance).isEmpty()) return false;
+        if (editor.busy() || !mountedField(distance)) return false;
         check.accept(
             "one import Undo restores the actual invalid value and valid sibling",
             field(distance).getValue().equals("bad")
@@ -215,8 +227,7 @@ final class PlatformRootImportChecks {
         check.accept(
             "explicit native file drop admits a source without an implicit preview",
             inspection.reviewedInput().isEmpty());
-        press(button(workflow.screen(), "Preview import"));
-        stage = 6;
+        previewWhenMounted(6);
       }
       case 6 -> {
         if (inspection.reviewedInput().isEmpty()
@@ -276,6 +287,10 @@ final class PlatformRootImportChecks {
                 && inspection.reviewedInput().orElseThrow() == reviewed
                 && Arrays.equals(source, Files.readAllBytes(saved)));
         press(button(workflow.screen(), "Back to settings"));
+        stage = 101;
+      }
+      case 101 -> {
+        if (!mountedField(label)) return false;
         replace(workflow.screen(), field(label), "Newer draft");
         stage = 11;
       }
@@ -296,8 +311,7 @@ final class PlatformRootImportChecks {
             inspection.reviewedInput().orElseThrow() == reviewed
                 && !button(workflow.screen(), "Stage draft").active
                 && Arrays.equals(source, Files.readAllBytes(saved)));
-        press(button(workflow.screen(), "Preview import"));
-        stage = 13;
+        previewWhenMounted(13);
       }
       case 13 -> {
         var refreshed = inspection.reviewedInput();
@@ -311,9 +325,8 @@ final class PlatformRootImportChecks {
         stage = 14;
       }
       case 14 -> {
-        if (editor.busy()
-            || workflow.importInspection().isPresent()
-            || editor.form().fieldControl(label).isEmpty()) return false;
+        if (editor.busy() || workflow.importInspection().isPresent() || !mountedField(label))
+          return false;
         check.accept(
             "Stage changes only original complete draft and returns to same editor",
             workflow.editor(route) == editor
@@ -324,7 +337,7 @@ final class PlatformRootImportChecks {
         stage = 15;
       }
       case 15 -> {
-        if (editor.busy() || editor.form().fieldControl(label).isEmpty()) return false;
+        if (editor.busy() || !mountedField(label)) return false;
         check.accept(
             "one native Undo restores earlier work after import without saving",
             field(label).getValue().equals("Newer draft")
@@ -333,6 +346,17 @@ final class PlatformRootImportChecks {
         NativeScreens.open(client, parent);
         stage = 16;
         return true;
+      }
+      case 30 -> {
+        var actual = button(workflow.screen(), "Preview import");
+        if (!actual.active) {
+          if (++previewWait > 120)
+            throw new AssertionError(
+                "Import source did not become previewable: " + measuredText(workflow.screen()));
+          return false;
+        }
+        press(actual);
+        stage = afterPreview;
       }
       case 90 -> {
         return false;
