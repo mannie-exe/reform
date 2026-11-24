@@ -322,7 +322,7 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
         text("draft_only", "Import into this draft"),
         text(
             "help",
-            "Review before replacement. One Undo restores earlier work. This does not save, publish resources or apply a world recipe."));
+            "Review the changes before replacing this draft. One Undo restores the previous draft. Nothing is saved or applied."));
     panel.row(
         "target",
         text("target", "Target document"),
@@ -468,7 +468,7 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
     if (!review.comparisonAvailable())
       detail.row(
           "detail:unavailable_compare",
-          text("compare_unavailable", "Typed comparison unavailable"),
+          text("compare_unavailable", "Comparison unavailable"),
           text(
               "compare_help",
               "Invalid data is retained with diagnostics. It is not an empty successful comparison."));
@@ -594,7 +594,7 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
     selectionEpoch = epoch;
     var request = new FileDialogRequest();
     dialogRequest = request;
-    String dialogTitle = text("choose_title", "Import profile").getString();
+    String dialogTitle = text("choose_title", "Import settings").getString();
     notice =
         text(
             "dialog_open",

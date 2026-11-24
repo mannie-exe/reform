@@ -2312,7 +2312,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     var snapshot = view.snapshot().orElseThrow();
     var screen =
         new ImportScreen<>(
-            text("import_title", "Import profile"),
+            text("import_title", "Import settings"),
             contextLabel,
             actions,
             declaredImports == null

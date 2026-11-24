@@ -11,7 +11,7 @@ from tools import native_chooser_driver as driver
 class ChooserIdentityTests(unittest.TestCase):
     def test_different_native_application_is_refused(self):
         reply = SimpleNamespace(returncode=0, stdout=json.dumps(
-            {"status": "performed", "pid": 202, "window": "Import profile"}), stderr="")
+            {"status": "performed", "pid": 202, "window": "Import settings"}), stderr="")
         with patch.object(driver.subprocess, "run", return_value=reply):
             with self.assertRaisesRegex(RuntimeError, "different application identity"):
                 driver.ax_action(101, "visible", "")

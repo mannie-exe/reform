@@ -69,6 +69,16 @@ final class PlatformRootImportChecks {
     check.accept(
         "root import acknowledges its actual mounted destination: " + navigation.join(),
         navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED);
+    if (navigation.join().target() instanceof ClientDestination.Import) {
+      var text = measuredText(workflow.screen());
+      check.accept(
+          "import help describes draft-only effects without unrelated world or publishing claims",
+          text.stream().anyMatch(value -> value.contains("Nothing is saved or applied."))
+              && text.stream()
+                  .noneMatch(
+                      value ->
+                          value.contains("world recipe") || value.contains("publish resources")));
+    }
     return true;
   }
 

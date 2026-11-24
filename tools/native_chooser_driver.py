@@ -196,7 +196,7 @@ def run(timeout, target=None, boots=1, manual_input=False):
         else:
             observed = confirmed_operation(int(value["pid"]), current, value["action"], selected, sdl)
         result = {"request": identity, "action": value["action"], "process": "java/SDL" if sdl else "osascript",
-                  "pid": pid, "window": "Import profile" if sdl else "Choose a File", "observedAction": observed}
+                  "pid": pid, "window": "Import settings" if sdl else "Choose a File", "observedAction": observed}
         result["window"] = observed["window"]
         if target is not None:
             result["session"] = session

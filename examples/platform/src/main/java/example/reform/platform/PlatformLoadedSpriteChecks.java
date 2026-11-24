@@ -31,6 +31,8 @@ public final class PlatformLoadedSpriteChecks {
   private final BiConsumer<String, Boolean> check;
   private final BiConsumer<String, Runnable> capture;
   private ClientEditingWorkflow workflow;
+  private ClientWorkflowLayout layout;
+  private ClientWorkspacePresentation presentation;
   private ClientGraphicHost host;
   private CompletableFuture<NavigationAttempt.Result> entered;
   private volatile GraphicScenePreparation prepared;
@@ -238,7 +240,7 @@ public final class PlatformLoadedSpriteChecks {
                     1048576));
         var category =
             new ClientWorkflowLayout.Category(IMAGE.value(), text("Sprite"), Component.empty());
-        var layout =
+        layout =
             new ClientWorkflowLayout(
                 List.of(new ClientWorkflowLayout.Group(List.of(category), List.of(), List.of())),
                 List.of());
@@ -304,13 +306,26 @@ public final class PlatformLoadedSpriteChecks {
                                   LIMITS,
                                   2)));
                     });
-        var presentation =
+        presentation =
             ClientWorkspacePresentation.standard(
                     new WorkspaceIdentity(
                         DocumentId.parse("fixture:sprite_workspace"), text("Loaded sprites")))
                 .withView(body);
         workflow = ClientEditingWorkflow.open(parent, List.of(), layout, presentation);
         NativeScreens.open(client, workflow.screen());
+        check.accept(
+            "document-free workspace starts at its declared Home without an owner",
+            workflow.documents().isEmpty()
+                && workflow.navigation().current().orElseThrow() instanceof ClientDestination.Home);
+        var missing =
+            workflow
+                .navigation()
+                .open(new ClientDestination.Document(DocumentId.parse("fixture:absent_owner")));
+        check.accept(
+            "document-free workspace refuses a missing owner without changing Home",
+            missing.result().orElseThrow().outcome() == NavigationAttempt.Outcome.MISSING
+                && workflow.documents().isEmpty()
+                && workflow.navigation().current().orElseThrow() instanceof ClientDestination.Home);
         host = workflow.graphics(LIMITS, 2);
         entered =
             workflow
@@ -456,6 +471,31 @@ public final class PlatformLoadedSpriteChecks {
         check.accept(
             "sprite scope closure leaves no owned native or scene allocations",
             !workflow.isOpen() && released());
+        int before = preparations;
+        var noHome =
+            ClientEditingWorkflow.open(parent, List.of(), layout, presentation.withoutHome());
+        NativeScreens.open(client, noHome.screen());
+        check.accept(
+            "document-free workspace without Home selects its actual custom view",
+            noHome.documents().isEmpty()
+                && noHome
+                    .navigation()
+                    .current()
+                    .orElseThrow()
+                    .equals(new ClientDestination.View(IMAGE))
+                && noHome.navigation().inspect(new ClientDestination.Home()).kind()
+                    == DestinationAvailability.Kind.MISSING
+                && preparations == before);
+        noHome.close();
+        var homeOnly = ClientEditingWorkflow.open(parent, text("Home only"), List.of());
+        NativeScreens.open(client, homeOnly.screen());
+        check.accept(
+            "Home-only workspace has no synthetic document or preparation",
+            homeOnly.documents().isEmpty()
+                && homeOnly.navigation().current().orElseThrow() instanceof ClientDestination.Home
+                && preparations == before);
+        homeOnly.close();
+        NativeScreens.open(client, parent);
         active = null;
         stage = 14;
         return true;

@@ -252,6 +252,7 @@ public record ClientWorkspacePresentation(
     for (var id : views.keySet())
       if (!taskCategories.contains(id))
         issues.add(issue("Custom view requires a declared category: " + id));
+    if (ids.isEmpty()) issues.add(issue("A workspace requires a declared destination"));
     design.inherent.reform.presentation.graphics.GraphicLimits graphicLimits = null;
     int graphicViews = 0;
     for (var task : referenceTasks.entrySet()) {

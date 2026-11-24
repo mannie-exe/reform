@@ -987,8 +987,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     var declaration = presentation.validate(forms, layout);
     if (!declaration.valid()) throw new PolicyRefusal(declaration);
     var declared = List.copyOf(forms);
-    if (declared.isEmpty() || declared.size() > MAXIMUM_DOCUMENTS)
-      throw new IllegalArgumentException("A client workflow requires between 1 and 32 documents");
+    if (declared.size() > MAXIMUM_DOCUMENTS)
+      throw new IllegalArgumentException("A client workflow supports at most 32 documents");
     for (var form : declared) {
       var entry = new Entry(form);
       if (entries.putIfAbsent(form.route(), entry) != null
@@ -2541,7 +2541,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private List<ContributionState> displayedOperations = List.of();
     private Language language;
     private List<ClientWorkflowLayout.Category> categoryPath;
-    private DocumentId selectedRoute = entries.keySet().iterator().next();
+    private DocumentId selectedRoute = entries.keySet().stream().findFirst().orElse(null);
     private WorkspaceNavigation.Key selectedKey;
     private WorkspaceNavigation.Key displayedKey;
     private WorkspaceNavigation.Key temporaryReveal;
@@ -2567,10 +2567,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       this.parent = parent;
       categoryPath = layout == null ? List.of() : layout.groups().getFirst().path();
       selectedKey =
-          layout == null
-              ? destination(selectedRoute)
-              : categoryPath.isEmpty() ? groupKey(0) : category(categoryPath.getLast().id());
-      if (presentation.home().isPresent()) selectedKey = homeKey();
+          presentation.home().isPresent()
+              ? homeKey()
+              : layout == null
+                  ? destination(selectedRoute)
+                  : categoryPath.isEmpty() ? groupKey(0) : category(categoryPath.getLast().id());
       presentation
           .initial()
           .ifPresent(

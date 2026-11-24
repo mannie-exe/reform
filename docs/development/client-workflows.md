@@ -12,6 +12,8 @@ The shared root remains visible while asynchronous admission is pending. Its pre
 
 Construct the workflow on the native client thread when entering the UI:
 
+A workspace may contain zero to 32 documents. A Home page, declared custom view, or contributed action does not require an unused settings owner. The standard presentation supplies Home; a presentation without Home needs an actual declared destination. Missing document links still refuse rather than creating an editor. Placements and reference tasks retain their real owner requirements. Loaded-resource views use the same workflow context, graphics budget, and retirement path without admitting a synthetic draft or writer.
+
 ```java
 var workflow = ClientEditingWorkflow.open(parent, title, List.of(
     preferences.form(Component.literal("Preferences")),
