@@ -233,11 +233,21 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
     this.capture = capture;
   }
 
+  @Override
+  public int tickBudget() {
+    // Includes the added loaded-image scene and an actual resource reload; wall deadline is
+    // separate.
+    return 900;
+  }
+
   public String diagnostic() {
     return "workspace stage="
         + stage
         + ", screen="
-        + NativeScreens.current(client).getClass().getSimpleName();
+        + NativeScreens.current(client).getClass().getSimpleName()
+        + (stage == 0 && loadedGraphicChecks != null
+            ? "; " + loadedGraphicChecks.diagnostic()
+            : "");
   }
 
   public JsonObject report() {

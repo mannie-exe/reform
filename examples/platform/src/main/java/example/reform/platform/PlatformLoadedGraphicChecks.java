@@ -141,6 +141,19 @@ public final class PlatformLoadedGraphicChecks {
     return host.nativeOwnership().bytes() == 0 && host.retainedOutput().bytes() == 0;
   }
 
+  String diagnostic() {
+    return "loaded stage="
+        + stage
+        + ", preparations="
+        + preparations
+        + ", draws="
+        + draws
+        + ", provider="
+        + (prepared == null ? "pending" : prepared.getClass().getSimpleName())
+        + ", failure="
+        + failed;
+  }
+
   boolean tick() throws Exception {
     switch (stage) {
       case 0 -> {
@@ -289,7 +302,7 @@ public final class PlatformLoadedGraphicChecks {
         check.accept(
             "Show loaded image settles focus on its actual current viewport", focus == image());
         stage = 90;
-        capture.accept("platform-loaded-texture.png", () -> stage = 4);
+        capture.accept("loaded-texture.png", () -> stage = 4);
       }
       case 4 -> {
         resources = normal.resourceStamp();
@@ -370,7 +383,7 @@ public final class PlatformLoadedGraphicChecks {
                 && image.getX() >= 0
                 && image.getRight() <= workflow.screen().width);
         stage = 90;
-        capture.accept("platform-loaded-texture-small.png", () -> stage = 12);
+        capture.accept("loaded-texture-small.png", () -> stage = 12);
       }
       case 12 -> {
         NativeClientProbe.resize(client, nativeWidth[0], nativeHeight[0]);

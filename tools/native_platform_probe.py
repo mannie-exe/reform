@@ -59,13 +59,15 @@ AUTHORING_CAPTURES = {
 }
 
 
-def retain_native_report(source, reports, reopen):
+def retain_native_report(source, reports, reopen, role="native"):
     """Preserve the actual payload before capture admission or later interpretation can fail."""
     if not source.exists():
         return None
     if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024 * 1024:
         raise ValueError("Native report is not a bounded regular file")
-    saved = reports / ("reopen-native.json" if reopen else "first-native.json")
+    if role not in {"native", "scene-failure"}:
+        raise ValueError("Unrecognized native report role")
+    saved = reports / (("reopen-" if reopen else "first-") + role + ".json")
     shutil.copy2(source, saved)
     return {"file": saved.name, "sha256": hashlib.sha256(saved.read_bytes()).hexdigest()}
 
@@ -244,6 +246,8 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             native = json.loads(output.read_text()) if output.is_file() else {}
             failed_scene = fixture / "platform-scene-failure.json"
             if failed_scene.is_file() and not failed_scene.is_symlink() and failed_scene.stat().st_size <= 131072:
+                report.setdefault("rawSceneFailures", []).append(
+                    retain_native_report(failed_scene, reports, reopen, "scene-failure"))
                 native["sceneFailure"] = json.loads(failed_scene.read_text())
             image = fixture / "platform-form.png"
             if client and image.is_file() and not image.is_symlink():

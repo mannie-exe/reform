@@ -109,6 +109,21 @@ class CaptureRetentionTests(unittest.TestCase):
             self.assertEqual(raw.read_bytes(), (root / saved["file"]).read_bytes())
             self.assertIsNone(retain_native_report(root / "absent.json", root, False))
 
+    def test_scene_failure_payload_survives_capture_admission_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "platform-scene-failure.json"
+            content = b'{"status":"FAIL","failure":"exact native failure","captures":["foreign.png"]}'
+            raw.write_bytes(content)
+            saved = retain_native_report(raw, root, False, "scene-failure")
+            self.assertEqual("first-scene-failure.json", saved["file"])
+            with self.assertRaisesRegex(ValueError, "Unrecognized native capture"):
+                retain_captures(root, root, ["foreign.png"], set(), False)
+            self.assertEqual(content, (root / saved["file"]).read_bytes())
+            self.assertEqual(hashlib.sha256(content).hexdigest(), saved["sha256"])
+            with self.assertRaisesRegex(ValueError, "Unrecognized native report role"):
+                retain_native_report(raw, root, False, "../outside")
+
     def test_foreign_or_unbounded_capture_list_is_refused(self):
         for names in [None, "preview.png", ["preview.png"] * 65,
                       ["../foreign.png"], ["unrequested.png"], [None]]:
