@@ -418,6 +418,10 @@ public final class PlatformLoadedGraphicChecks {
             "loaded slot and original owner close without a write or retained allocation",
             !workflow.isOpen() && released());
         active = null;
+        stage = 16;
+        return true;
+      }
+      case 16 -> {
         return true;
       }
       default -> {}
