@@ -112,10 +112,6 @@ class DistributionRefusals(unittest.TestCase):
     def test_native_shader_state_hook_cannot_run_on_dedicated_server(self):
         self.assert_client_hook_cannot_be_common("GraphicShaderStateAccessor")
 
-    def test_native_item_layer_hook_cannot_run_on_dedicated_server(self):
-        self.binary = self.root / f"neoforge-26_3/build/libs/reform-{self.version}-mc26.3-neoforge.jar"
-        self.assert_client_hook_cannot_be_common("GraphicItemLayerAccessor")
-
     def test_missing_portable_server_owner_refused(self):
         with zipfile.ZipFile(self.binary) as archive:
             entries = [(entry, archive.read(entry)) for entry in archive.infolist()

@@ -40,6 +40,41 @@ public final class PlatformLoadedItemChecks {
   private byte[] source;
   private ItemStack original;
   private ClientItemSubject copied;
+  private ClientGraphicHost.Attempt contextAttempt;
+  private boolean joinedWorld;
+
+  private void contextWorkspace() {
+    workflow = ClientEditingWorkflow.open(parent, text("Item registry context"), List.of());
+    NativeScreens.open(client, workflow.screen());
+    host = workflow.graphics(LIMITS, 2);
+  }
+
+  private void contextRefusal() {
+    contextWorkspace();
+    var empty = ClientItemSubject.copyOf(ItemStack.EMPTY, LIMITS);
+    var wire =
+        ClientItemSubject.type()
+            .codec()
+            .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, empty)
+            .result()
+            .orElseThrow()
+            .getAsJsonObject();
+    // Effect-free wire admission is distinct from native registry decoding. Preserve the actual
+    // captured title context, and ask for an item whose defaults require a joined world.
+    var item = new com.google.gson.JsonObject();
+    item.addProperty("id", "minecraft:stone");
+    item.addProperty("count", 2);
+    wire.add("stack", item);
+    var subject =
+        ClientItemSubject.type()
+            .codec()
+            .parse(com.mojang.serialization.JsonOps.INSTANCE, wire)
+            .result()
+            .orElseThrow();
+    var view = host.openLoaded(ClientLoadedGraphics.items(LIMITS));
+    view.visible(true);
+    contextAttempt = view.request(subject);
+  }
 
   PlatformLoadedItemChecks(
       BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -188,6 +223,11 @@ public final class PlatformLoadedItemChecks {
     switch (stage) {
       case 0 -> {
         active = this;
+        if (NativeItemFixtureContext.requiresWorld() && !joinedWorld) {
+          contextRefusal();
+          stage = 10;
+          return false;
+        }
         try {
           ClientEditingWorkflow.open(
               parent,
@@ -342,11 +382,65 @@ public final class PlatformLoadedItemChecks {
             "returned native resource fits one reservation and releases exactly once",
             releases == 1 && host.releaseFailureCount() == 0);
         unchanged();
+        if (joinedWorld) {
+          NativeWorldProbe.leave();
+          stage = 12;
+          return false;
+        }
         active = null;
         stage = 9;
         return true;
       }
       case 9 -> {
+        return true;
+      }
+      case 10 -> {
+        if (!contextAttempt.completion().toCompletableFuture().isDone() || !released())
+          return false;
+        var result = contextAttempt.completion().toCompletableFuture().join();
+        check.accept(
+            "native item registry absence is Unavailable without binding synthetic components",
+            result.state() == ClientGraphicHost.State.UNAVAILABLE
+                && result.report().issues().stream()
+                    .anyMatch(issue -> issue.code().equals("preview.item_context")));
+        workflow.close();
+        NativeScreens.open(client, parent);
+        NativeWorldProbe.start();
+        stage = 11;
+      }
+      case 11 -> {
+        if (client.level == null
+            || client.player == null
+            || client.getSingleplayerServer() == null
+            || NativeScreens.current(client) != null) return false;
+        check.accept("native item qualification uses an actual joined disposable world", true);
+        joinedWorld = true;
+        stage = 0;
+      }
+      case 12 -> {
+        if (client.level != null
+            || client.player != null
+            || client.getConnection() != null
+            || client.getSingleplayerServer() != null) return false;
+        contextWorkspace();
+        var view = host.openLoaded(ClientLoadedGraphics.items(LIMITS));
+        view.visible(true);
+        contextAttempt = view.request(copied);
+        stage = 13;
+      }
+      case 13 -> {
+        if (!contextAttempt.completion().toCompletableFuture().isDone() || !released())
+          return false;
+        var result = contextAttempt.completion().toCompletableFuture().join();
+        check.accept(
+            "a copied item from the disconnected native registry refuses stale reuse",
+            result.state() == ClientGraphicHost.State.REFUSED
+                && result.report().issues().stream()
+                    .anyMatch(issue -> issue.code().equals("preview.stale")));
+        workflow.close();
+        NativeScreens.open(client, parent);
+        active = null;
+        stage = 9;
         return true;
       }
       default -> {}

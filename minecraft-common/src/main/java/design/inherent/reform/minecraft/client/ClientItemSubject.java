@@ -14,6 +14,7 @@ import design.inherent.reform.value.ValueShape;
 import design.inherent.reform.value.ValueType;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.UUID;
 import net.minecraft.world.item.ItemStack;
 
 /** Native-codec snapshot of a defensive stack copy; retains no inventory, live stack, or level. */
@@ -25,18 +26,41 @@ public final class ClientItemSubject {
                 JsonElement value = input.convert(JsonOps.INSTANCE).getValue();
                 if (!value.isJsonObject())
                   return DataResult.error(() -> "A native item snapshot must be an object");
-                return DataResult.success(new ClientItemSubject(value.toString()));
+                var object = value.getAsJsonObject();
+                if (object.size() != 2
+                    || !object.has("stack")
+                    || !object.get("stack").isJsonObject()
+                    || !object.has("registry")
+                    || !object.get("registry").isJsonPrimitive()
+                    || !object.get("registry").getAsJsonPrimitive().isString())
+                  return DataResult.error(
+                      () -> "A copied item needs its stack and native registry context");
+                var registry =
+                    design.inherent.reform.value.ValueTypes.uuid()
+                        .codec()
+                        .parse(JsonOps.INSTANCE, object.get("registry"));
+                return registry.map(
+                    id -> new ClientItemSubject(object.get("stack").toString(), id));
               },
-              value -> new Dynamic<>(JsonOps.INSTANCE, JsonParser.parseString(value.json))),
+              value -> new Dynamic<>(JsonOps.INSTANCE, value.wire())),
           new ValueShape.Custom("reform:native_item_snapshot"),
           SnapshotPolicy.immutable());
 
   private final String json;
+  private final UUID registry;
   private final long bytes;
 
-  private ClientItemSubject(String json) {
+  private ClientItemSubject(String json, UUID registry) {
     this.json = json;
-    bytes = json.getBytes(StandardCharsets.UTF_8).length;
+    this.registry = registry;
+    bytes = wire().toString().getBytes(StandardCharsets.UTF_8).length;
+  }
+
+  private JsonElement wire() {
+    var result = new com.google.gson.JsonObject();
+    result.addProperty("registry", registry.toString());
+    result.add("stack", JsonParser.parseString(json));
+    return result;
   }
 
   /**
@@ -44,8 +68,8 @@ public final class ClientItemSubject {
    */
   public static ClientItemSubject copyOf(ItemStack stack, GraphicLimits limits) {
     ClientSettingsRuntime.requireClientThread();
-    var encoded = NativeItemSnapshots.encode(Objects.requireNonNull(stack).copy());
-    var result = new ClientItemSubject(encoded.toString());
+    var encoded = NativeItemSnapshots.encode(Objects.requireNonNull(stack));
+    var result = new ClientItemSubject(encoded.toString(), NativeItemContexts.registry());
     if (result.bytes > Objects.requireNonNull(limits).inputBytes())
       throw new PolicyRefusal(
           "preview.budget", "The copied native item exceeds its input allowance");
@@ -64,13 +88,19 @@ public final class ClientItemSubject {
     return json;
   }
 
+  UUID registry() {
+    return registry;
+  }
+
   @Override
   public boolean equals(Object other) {
-    return other instanceof ClientItemSubject value && json.equals(value.json);
+    return other instanceof ClientItemSubject value
+        && json.equals(value.json)
+        && registry.equals(value.registry);
   }
 
   @Override
   public int hashCode() {
-    return json.hashCode();
+    return Objects.hash(json, registry);
   }
 }

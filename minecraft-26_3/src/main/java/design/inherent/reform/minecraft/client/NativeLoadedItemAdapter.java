@@ -2,10 +2,8 @@ package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.minecraft.mixin.GraphicCanvasAccessor;
-import design.inherent.reform.minecraft.mixin.GraphicItemLayerAccessor;
 import design.inherent.reform.presentation.graphics.GraphicCamera;
 import design.inherent.reform.value.ValueType;
-import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.renderer.item.TrackingItemStackRenderState;
 import net.minecraft.client.renderer.state.gui.GuiItemRenderState;
@@ -75,8 +73,8 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
 
   private static final class State extends TrackingItemStackRenderState {
     private final int maximumLayers;
-    private final List<LayerRenderState> owned = new ArrayList<>();
-    private final List<Matrix4f> originals = new ArrayList<>();
+    private int layers;
+    private final Matrix4f rotation = new Matrix4f();
     private List<?> identity = List.of();
     private Object key = identity;
     private GraphicCamera camera;
@@ -87,7 +85,7 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
 
     @Override
     public void ensureCapacity(int requested) {
-      if (requested < 0 || requested > maximumLayers - owned.size())
+      if (requested < 0 || requested > maximumLayers - layers)
         throw new design.inherent.reform.owner.PolicyRefusal(
             "preview.budget", "The native item exceeds its prepared layer allowance");
       super.ensureCapacity(requested);
@@ -96,26 +94,21 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
     @Override
     public LayerRenderState newLayer() {
       var layer = super.newLayer();
-      owned.add(layer);
+      layers++;
       return layer;
     }
 
     void freeze() {
-      for (var layer : owned)
-        originals.add(
-            new Matrix4f(((GraphicItemLayerAccessor) layer).reform$graphicItemTransform()));
       identity = List.copyOf((List<?>) super.getModelIdentity());
       setOversizedInGui(true);
     }
 
     void camera(GraphicCamera value) {
       if (value.equals(camera)) return;
-      var rotation =
-          new Matrix4f()
-              .rotateY((float) Math.toRadians(value.yaw() - GraphicCamera.STANDARD.yaw()))
-              .rotateX((float) Math.toRadians(value.pitch() - GraphicCamera.STANDARD.pitch()));
-      for (int i = 0; i < owned.size(); i++)
-        owned.get(i).setLocalTransform(new Matrix4f(originals.get(i)).mul(rotation));
+      rotation
+          .identity()
+          .rotateY((float) Math.toRadians(value.yaw() - GraphicCamera.STANDARD.yaw()))
+          .rotateX((float) Math.toRadians(value.pitch() - GraphicCamera.STANDARD.pitch()));
       camera = value;
       key = List.of(identity, value.yaw(), value.pitch());
     }
@@ -132,6 +125,28 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
     }
 
     @Override
+    public void submit(
+        com.mojang.blaze3d.vertex.PoseStack pose,
+        net.minecraft.client.renderer.SubmitNodeCollector collector,
+        int light,
+        int overlay,
+        int outline) {
+      pose.pushPose();
+      try {
+        pose.last().mulPose(rotation);
+        super.submit(pose, collector, light, overlay, outline);
+      } finally {
+        pose.popPose();
+      }
+    }
+
+    @Override
+    public void visitExtents(java.util.function.Consumer<org.joml.Vector3fc> output) {
+      var scratch = new org.joml.Vector3f();
+      super.visitExtents(value -> output.accept(scratch.set(value).mulPosition(rotation)));
+    }
+
+    @Override
     public AABB getModelBoundingBox() {
       var bounds = new AABB.Builder();
       visitExtents(bounds::include);
@@ -141,8 +156,8 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
     @Override
     public void clear() {
       super.clear();
-      owned.clear();
-      originals.clear();
+      layers = 0;
+      rotation.identity();
       camera = null;
       identity = List.of();
       key = identity;

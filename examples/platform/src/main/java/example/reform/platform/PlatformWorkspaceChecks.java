@@ -237,9 +237,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
 
   @Override
   public int tickBudget() {
-    // Includes the added loaded-image scene and an actual resource reload; wall deadline is
-    // separate.
-    return 900;
+    // Native item defaults on26.3 additionally require a real owned world join/disconnect.
+    // The bounded launcher wall deadline and all existing assertions remain separate.
+    return NativeItemFixtureContext.requiresWorld() ? 1200 : 900;
   }
 
   public String diagnostic() {

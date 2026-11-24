@@ -5,26 +5,19 @@ import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import design.inherent.reform.minecraft.internal.ClientSettingsRuntime;
 import design.inherent.reform.owner.PolicyRefusal;
-import net.minecraft.client.Minecraft;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.item.ItemStack;
 
 /** The actual native stack codec and available registry context, never a synthesized world. */
 final class NativeItemSnapshots {
-  private static RegistryOps<JsonElement> ops() {
+  private static RegistryOps<JsonElement> ops(boolean empty) {
     ClientSettingsRuntime.requireClientThread();
-    var level = Minecraft.getInstance().level;
-    var registries =
-        level == null
-            ? RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY)
-            : level.registryAccess();
-    return RegistryOps.create(JsonOps.INSTANCE, registries);
+    return RegistryOps.create(JsonOps.INSTANCE, NativeItemRegistries.actual(empty));
   }
 
   static JsonElement encode(ItemStack stack) {
-    var result = ItemStack.OPTIONAL_CODEC.encodeStart(ops(), stack);
+    var ops = ops(stack.isEmpty());
+    var result = ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack.copy());
     if (result.error().isPresent())
       throw new NativeGraphicUnavailable(
           "preview.item_context", "This item needs a registry context that is not available here");
@@ -32,7 +25,12 @@ final class NativeItemSnapshots {
   }
 
   static ItemStack decode(ClientItemSubject subject) {
-    var result = ItemStack.OPTIONAL_CODEC.parse(ops(), JsonParser.parseString(subject.json()));
+    if (!subject.registry().equals(NativeItemContexts.registry()))
+      throw new PolicyRefusal(
+          "preview.stale",
+          "The copied item belongs to an earlier native registry context; copy it again");
+    var json = JsonParser.parseString(subject.json()).getAsJsonObject();
+    var result = ItemStack.OPTIONAL_CODEC.parse(ops(json.entrySet().isEmpty()), json);
     if (result.error().isPresent())
       throw new PolicyRefusal(
           "preview.item_input",

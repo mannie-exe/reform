@@ -48,18 +48,22 @@ public final class ClientLoadedGraphics {
       }
 
       public ReferenceStamp resourceStamp() {
-        return LoadedGraphicResources.snapshot().stamp();
+        return NativeItemContexts.source();
       }
 
       public CompletionStage<GraphicScenePreparation> prepare(
           LoadedGraphicRequest<ClientItemSubject> request, ClientGraphicWork work) {
         work.checkpoint();
         var resources = LoadedGraphicResources.snapshot();
-        if (!resources.stamp().equals(request.stamp().resources()))
+        if (!NativeItemContexts.source().equals(request.stamp().resources()))
           throw new PolicyRefusal(
               "preview.stale", "Loaded resources changed; prepare the item again");
         if (request.subject().inputBytes() > request.limits().inputBytes())
           throw new PolicyRefusal("preview.budget", "The copied item exceeds its input allowance");
+        if (!request.subject().registry().equals(NativeItemContexts.registry()))
+          throw new PolicyRefusal(
+              "preview.stale",
+              "The copied item belongs to an earlier native registry context; copy it again");
         if (!resources.ready())
           return CompletableFuture.completedFuture(
               new GraphicScenePreparation.Unavailable(
