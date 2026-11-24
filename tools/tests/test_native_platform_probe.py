@@ -287,6 +287,9 @@ class PlatformOutcomeTests(unittest.TestCase):
                     self.native[name] = child
                     self.assertFalse(accepted())
                 self.native[name] = {"status": "PASS"}
+                if name == "workspace":
+                    self.assertFalse(accepted())
+                    self.native["nativeItemShutdown"] = NativeItemShutdownTests.complete()
                 if name == "world":
                     self.assertFalse(accepted())
                     self.native[name]["heldStops"] = self.held_stops()
@@ -343,3 +346,41 @@ class PlatformOutcomeTests(unittest.TestCase):
         self.assertFalse(accepted())
         self.native["chooser"]["nativeFileDialogExercised"] = True
         self.assertTrue(accepted())
+
+
+class NativeItemShutdownTests(unittest.TestCase):
+    @staticmethod
+    def complete():
+        return {"status": "PASS", "epilogueConfirmed": True, "workflowOpenAtStop": True,
+                "outstandingUsesAtStop": 1, "nativeBytesAtStop": 1024, "outputBytesAtStop": 64,
+                "rendererReturn": {"releaseCompleted": True, "released": True,
+                                   "workflowClosed": True, "sourceUnchanged": True,
+                                   "outstandingUses": 0, "nativeBytes": 0,
+                                   "nativeResources": 0, "outputBytes": 0}}
+
+    def test_pre_stop_success_cannot_qualify_shutdown(self):
+        complete = self.complete()
+        self.assertTrue(platform.complete_native_item_shutdown(complete))
+        for key in complete:
+            value = self.complete()
+            del value[key]
+            self.assertFalse(platform.complete_native_item_shutdown(value), key)
+        for key in ("workflowOpenAtStop", "epilogueConfirmed"):
+            value = self.complete()
+            value[key] = False
+            self.assertFalse(platform.complete_native_item_shutdown(value), key)
+        value = self.complete()
+        value["status"] = "RUNNING"
+        self.assertFalse(platform.complete_native_item_shutdown(value))
+
+    def test_renderer_return_must_prove_actual_release(self):
+        for key in self.complete()["rendererReturn"]:
+            for wrong in (None, "0", 1 if key in ("outstandingUses", "nativeBytes", "nativeResources", "outputBytes") else False):
+                value = self.complete()
+                value["rendererReturn"][key] = wrong
+                self.assertFalse(platform.complete_native_item_shutdown(value), (key, wrong))
+        for key in ("outstandingUsesAtStop", "nativeBytesAtStop", "outputBytesAtStop"):
+            for wrong in (0, None, True):
+                value = self.complete()
+                value[key] = wrong
+                self.assertFalse(platform.complete_native_item_shutdown(value), (key, wrong))

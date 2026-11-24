@@ -46,6 +46,7 @@ public final class PlatformClient {
   private static ClientRegistration clientRegistration;
   private static java.util.function.Function<Screen, Screen> nativeMenu;
   private static String nativeMenuVersion;
+  private static PlatformNativeItemShutdownChecks nativeItemShutdown;
 
   public static void nativeMenu(
       String version, java.util.function.Function<Screen, Screen> factory) {
@@ -462,15 +463,29 @@ public final class PlatformClient {
               "a fresh native editor is ready before shutdown",
               NativeScreens.current(client) == form);
           report.addProperty("shutdownEditorReady", true);
+          if (workspaceScenario) {
+            nativeItemShutdown = new PlatformNativeItemShutdownChecks(report);
+            stage = 29;
+            return;
+          }
           report.addProperty("status", "PASS");
           finished = true;
           client.stop();
         }
+        case 29 -> nativeItemShutdown.tick();
         default -> throw new AssertionError("Unknown native client stage");
       }
     } catch (Exception | AssertionError failure) {
       fail(failure);
     }
+  }
+
+  static void nativeItemStop(JsonObject facts) {
+    finished = true;
+    report.add("nativeItemShutdown", facts);
+    report.addProperty(
+        "status", "RUNNING"); // Only actual renderer RETURN + JVM epilogue can qualify.
+    Minecraft.getInstance().stop();
   }
 
   private static void beginShutdown() {

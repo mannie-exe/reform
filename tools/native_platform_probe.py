@@ -166,11 +166,28 @@ def complete_held_stops(world):
                     zip(stops, [("PREPARE", 0, 7), ("RETURN", 1, 9)])))
 
 
+def complete_native_item_shutdown(value):
+    if not isinstance(value, dict):
+        return False
+    closed = value.get("rendererReturn")
+    return (value.get("status") == "PASS" and value.get("epilogueConfirmed") is True
+            and value.get("workflowOpenAtStop") is True
+            and all(type(value.get(k)) is int and value[k] > 0
+                    for k in ("outstandingUsesAtStop", "nativeBytesAtStop", "outputBytesAtStop"))
+            and isinstance(closed, dict)
+            and all(closed.get(k) is True
+                    for k in ("releaseCompleted", "released", "workflowClosed", "sourceUnchanged"))
+            and all(type(closed.get(k)) is int and closed[k] == 0
+                    for k in ("outstandingUses", "nativeBytes", "nativeResources", "outputBytes")))
+
+
 def successful_boot(result, native, library, target, loader_version, client=False, required_scenarios=()):
     return (result["exitCode"] == 0 and result["termination"] is None
             and native.get("status") == "PASS" and native.get("shutdownClosed") is True
             and all(isinstance(native.get(name), dict) and native[name].get("status") == "PASS"
                     for name in required_scenarios)
+            and ("workspace" not in required_scenarios
+                 or complete_native_item_shutdown(native.get("nativeItemShutdown")))
             and ("world" not in required_scenarios or complete_held_stops(native["world"]))
             and ("recipe" not in required_scenarios
                  or (isinstance(native["recipe"].get("advanced"), dict)
