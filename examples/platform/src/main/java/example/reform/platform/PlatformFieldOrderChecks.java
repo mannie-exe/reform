@@ -90,6 +90,8 @@ final class PlatformFieldOrderChecks {
       case 1 -> {
         if (form.editorView().availability() != EditorActor.Availability.READY
             || form.fieldControl(VISUAL.getLast()).isEmpty()) return false;
+        // Actor readiness can precede the native form's refreshed action admission.
+        if (!button(form, "Inspect…").active) return false;
         schema =
             form.editingActions().fields().fields().stream().map(field -> field.path()).toList();
         check.accept(
