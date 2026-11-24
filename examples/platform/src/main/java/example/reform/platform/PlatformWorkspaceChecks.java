@@ -214,6 +214,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformFieldOrderChecks fieldOrderChecks;
   private PlatformThemeChecks themeChecks;
   private PlatformCustomViewChecks customViewChecks;
+  private PlatformRootActionsChecks rootActionsChecks;
   private PlatformBorrowedPresentationChecks borrowedPresentationChecks;
   private PlatformRootInspectionChecks rootInspectionChecks;
   private PlatformRootConflictChecks rootConflictChecks;
@@ -595,6 +596,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (!choicesQualified && !entryChoices()) return false;
         if (customViewChecks == null) customViewChecks = new PlatformCustomViewChecks(this::check);
         if (!customViewChecks.tick()) return false;
+        if (rootActionsChecks == null)
+          rootActionsChecks = new PlatformRootActionsChecks(this::check, capture);
+        if (!rootActionsChecks.tick()) return false;
         if (borrowedPresentationChecks == null)
           borrowedPresentationChecks = new PlatformBorrowedPresentationChecks(this::check);
         if (!borrowedPresentationChecks.tick()) return false;
@@ -1621,7 +1625,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         var menu = actionHost(workflow.screen());
         check(
             "document actions retain every actual owner while open",
-            menu != workflow.screen()
+            menu == workflow.screen()
+                && NativeScreens.current(client) == workflow.screen()
+                && workflow.screen().getNarrationMessage().getString().contains("Document actions")
                 && workflow.isOpen()
                 && workflow.documents().stream()
                     .allMatch(ClientEditingWorkflow.DocumentState::opened));

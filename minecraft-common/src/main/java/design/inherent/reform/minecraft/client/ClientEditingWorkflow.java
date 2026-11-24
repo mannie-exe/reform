@@ -1536,6 +1536,40 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private OperationBinding operationInspection;
     private final Map<java.util.UUID, OperationBinding> operationViews = new LinkedHashMap<>();
 
+    private DocumentActionsView documentMenu;
+    private DocumentId documentMenuRoute;
+
+    private void hideDocumentMenu() {
+      if (documentMenu != null) documentMenu.hide();
+      documentMenu = null;
+      documentMenuRoute = null;
+    }
+
+    private boolean adoptDocumentMenu(DocumentActionsScreen screen) {
+      var admitted =
+          entries.values().stream()
+              .filter(
+                  bound ->
+                      bound.editor != null
+                          && bound.editor.isOpen()
+                          && screen.borrows(bound.editor.actions()))
+              .toList();
+      if (admitted.isEmpty()) return false;
+      beforeRebuild();
+      hideInspection();
+      documentMenu = screen.borrowView();
+      documentMenuRoute =
+          admitted.stream()
+              .map(bound -> bound.form.route())
+              .filter(route -> route.equals(actionRoute))
+              .findFirst()
+              .orElse(admitted.getFirst().form.route());
+      information.clear();
+      drawerOpen = false;
+      rebuildWidgets();
+      return true;
+    }
+
     private ConflictView<?> conflict;
     private DocumentId conflictRoute;
     private final Map<DocumentId, ConflictView<?>> conflicts = new LinkedHashMap<>();
@@ -1618,7 +1652,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private MetadataView metadata() {
       return operationInspection != null
           ? operationInspection.view()
-          : conflict != null ? conflict : inspection;
+          : conflict != null ? conflict : inspection != null ? inspection : documentMenu;
     }
 
     private WorkspaceNavigation.Key operationKey(ClientDestination target) {
@@ -1724,6 +1758,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void hideInspection() {
+      hideDocumentMenu();
       hideOperation();
       hideConflict();
       if (inspection != null) inspection.hide();
@@ -1756,6 +1791,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection() {
+      if (documentMenu != null) documentMenu.retireForNavigation();
+      hideDocumentMenu();
       retireOperations(null);
       retireConflicts(null);
       navigation.task(null);
@@ -1766,6 +1803,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection(DocumentId document) {
+      if (documentMenu != null && documentMenu.document().equals(document)) {
+        documentMenu.retireForNavigation();
+        hideDocumentMenu();
+      }
       retireOperations(document);
       retireConflicts(document);
       var retained = inspections.remove(document);
@@ -1780,6 +1821,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     protected boolean managedNavigation(Screen next) {
+      if (next instanceof DocumentActionsScreen actions) return adoptDocumentMenu(actions);
+      if (next == this
+          && NativeScreens.current(Minecraft.getInstance()) == this
+          && documentMenu != null) {
+        beforeRebuild();
+        hideDocumentMenu();
+        resetList = true;
+        rebuildWidgets();
+        return true;
+      }
       if (next instanceof OperationScreen<?> operation) return adoptOperation(operation);
       if (next instanceof ConflictScreen<?> conflict) return adoptConflict(conflict);
       if (next == this
@@ -1957,6 +2008,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (taskDeclaration != null) selected.put(taskDeclaration.route(), List.of());
       if (inspection != null) selected.put(inspectionRoute, List.of());
       if (conflict != null) selected.put(conflictRoute, List.of());
+      if (documentMenu != null) selected.put(documentMenuRoute, List.of());
       for (var route : selected.keySet()) ensureOwner(route);
       var returned = resetList ? navigation.position(selectedKey).orElse(null) : null;
       if (returned != null && selected.containsKey(returned.owner()))
@@ -3043,6 +3095,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var previousInspection = inspection;
       var previousInspectionRoute = inspectionRoute;
       var previousOperation = operationInspection;
+      var previousMenu = documentMenu;
+      var previousMenuRoute = documentMenuRoute;
       var previousConflict = conflict;
       var previousConflictRoute = conflictRoute;
       if (operation == null) {
@@ -3102,6 +3156,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         inspection = previousInspection;
         inspectionRoute = previousInspectionRoute;
         operationInspection = previousOperation;
+        documentMenu = previousMenu;
+        documentMenuRoute = previousMenuRoute;
         conflict = previousConflict;
         conflictRoute = previousConflictRoute;
         navigation.task(

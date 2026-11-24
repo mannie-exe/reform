@@ -1347,6 +1347,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     var owner = title.copy();
     openScreen(
         new DocumentActionsScreen(
+            actions,
             owner,
             contextLabel,
             groups,

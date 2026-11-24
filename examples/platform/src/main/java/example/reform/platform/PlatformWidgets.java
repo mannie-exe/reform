@@ -74,7 +74,14 @@ final class PlatformWidgets {
 
   static void returnToSettings(Screen root) {
     var host = actionHost(root);
-    if (host != root) click(host, button(host, "Back to settings"));
+    var back =
+        widgets(host).stream()
+            .filter(Button.class::isInstance)
+            .map(Button.class::cast)
+            .filter(widget -> widget.getMessage().getString().equals("Back to settings"))
+            .findFirst();
+    // Both the standalone action host and the retained workspace use the actual return control.
+    back.ifPresent(control -> click(host, control));
     if (NativeScreens.current(Minecraft.getInstance()) != root)
       throw new AssertionError("Document actions did not return to their retained owner");
   }
