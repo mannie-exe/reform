@@ -140,15 +140,54 @@ final class PlatformRootImportChecks {
         stage = 3;
       }
       case 3 -> {
-        if (!navigation.isDone()) return false;
+        if (!revealed()) return false;
+        var raw =
+            (design.inherent.reform.edit.DraftNode.Scalar)
+                editor.view().snapshot().orElseThrow().draft().at(distance);
         check.accept(
-            "typed import refuses rejected native text without moving its origin",
-            navigation.join().outcome() == NavigationAttempt.Outcome.REFUSED
-                && navigation.join().report().issues().stream()
-                    .anyMatch(issue -> issue.code().equals("import.input_unaccepted"))
-                && workflow.importInspection().isEmpty()
-                && field(distance).getValue().equals("bad")
+            "import accepts complete invalid actor input rather than treating it as pending native text: "
+                + raw.raw(),
+            raw.raw().equals("bad")
+                && !editor.view().validation().valid()
+                && workflow.importInspection().isPresent()
+                && workflow.editor(route) == editor
+                && Arrays.equals(source, Files.readAllBytes(saved)));
+        workflow.screen().onFilesDrop(List.of(file));
+        press(button(workflow.screen(), "Preview import"));
+        stage = 33;
+      }
+      case 33 -> {
+        var input = workflow.importInspection().orElseThrow().reviewedInput();
+        if (input.isEmpty() || !button(workflow.screen(), "Preview import").active) return false;
+        var compared = input.orElseThrow();
+        check.accept(
+            "invalid current draft remains diagnostic rather than an empty successful typed comparison",
+            !compared.currentValidation().valid()
+                && compared.importedValidation().valid()
+                && !compared.comparisonAvailable()
+                && compared.stageable()
+                && Arrays.equals(source, Files.readAllBytes(saved)));
+        press(button(workflow.screen(), "Stage draft"));
+        stage = 34;
+      }
+      case 34 -> {
+        if (editor.busy()
+            || workflow.importInspection().isPresent()
+            || editor.form().fieldControl(label).isEmpty()) return false;
+        check.accept(
+            "explicit import repairs the current invalid draft without a source write",
+            field(label).getValue().equals("Root imported")
+                && Arrays.equals(source, Files.readAllBytes(saved)));
+        press(ownerAction(workflow.screen(), "Undo"));
+        stage = 35;
+      }
+      case 35 -> {
+        if (editor.busy() || editor.form().fieldControl(distance).isEmpty()) return false;
+        check.accept(
+            "one import Undo restores the actual invalid value and valid sibling",
+            field(distance).getValue().equals("bad")
                 && field(label).getValue().equals("Earlier draft")
+                && !editor.view().validation().valid()
                 && Arrays.equals(source, Files.readAllBytes(saved)));
         replace(workflow.screen(), field(distance), originalDistance);
         stage = 4;
