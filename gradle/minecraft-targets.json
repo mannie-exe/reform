@@ -16,7 +16,10 @@
       "connectorVersionRef": "connector-1_21_1",
       "forgifiedFabricApiVersionRef": "forgified-fabric-api-1_21_1",
       "remapMinecraft": false,
-      "jeiVersionRef": "jei-1_21_1"
+      "jeiVersionRef": "jei-1_21_1",
+      "emiVersionRef": "emi-1_21_1",
+      "emiMinimumVersionRef": "emi-1_21_1-api-floor",
+      "emiUpperBound": "2"
     },
     {
       "project": "fabric-1_21_1",
@@ -34,7 +37,10 @@
       "remapMinecraft": true,
       "developmentNamespace": "named",
       "productionNamespace": "intermediary",
-      "jeiVersionRef": "jei-1_21_1"
+      "jeiVersionRef": "jei-1_21_1",
+      "emiVersionRef": "emi-1_21_1",
+      "emiMinimumVersionRef": "emi-1_21_1-api-floor",
+      "emiUpperBound": "2"
     },
     {
       "project": "neoforge-26_3",

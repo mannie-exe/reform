@@ -3,6 +3,22 @@
   "minVersion": "0.8",
   "package": "design.inherent.reform.minecraft.mixin",
   "compatibilityLevel": "JAVA_${javaVersion}",
-  "client": ["ChatInputMixin", "ControlStyleMixin", "ScreenMountStateAccessor", "ControlCaptionMixin", "ControlInputFontMixin", "ControlInputColorMixin", "GraphicShaderStateAccessor", "GraphicRuntimeMixin", "LoadedGraphicResourcesMixin", "GraphicSpriteContentsAccessor", "GraphicGuiRendererMixin", "GraphicStateMixin"],
-  "injectors": {"defaultRequire": 1}
+  "client": [
+    "ChatInputMixin",
+    "ControlStyleMixin",
+    "ScreenMountStateAccessor",
+    "ControlCaptionMixin",
+    "ControlInputFontMixin",
+    "ControlInputColorMixin",
+    "GraphicShaderStateAccessor",
+    "GraphicRuntimeMixin",
+    "LoadedGraphicResourcesMixin",
+    "GraphicSpriteContentsAccessor",
+    "GraphicGuiRendererMixin",
+    "GraphicStateMixin",
+    "RecipeBookButtonSpritesAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
 }

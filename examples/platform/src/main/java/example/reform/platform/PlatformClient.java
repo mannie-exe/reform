@@ -38,6 +38,7 @@ public final class PlatformClient {
       worldScenario,
       recipeScenario,
       recipeLinksScenario,
+      nativeRecipeScenario,
       commandScenario,
       authoringScenario,
       workspaceScenario,
@@ -81,6 +82,8 @@ public final class PlatformClient {
               .getAsJsonObject();
       reopen = input.get("reopen").getAsBoolean();
       worldScenario = input.has("worldClient") && input.get("worldClient").getAsBoolean();
+      nativeRecipeScenario =
+          input.has("nativeRecipeClient") && input.get("nativeRecipeClient").getAsBoolean();
       recipeLinksScenario =
           input.has("recipeLinksClient") && input.get("recipeLinksClient").getAsBoolean();
       recipeScenario = input.has("recipeClient") && input.get("recipeClient").getAsBoolean();
@@ -137,7 +140,7 @@ public final class PlatformClient {
         PlatformWorkflowExample.register(registration);
         PlatformReviewCommands.register(registration);
       }
-      if (workspaceScenario || workflowScenario || recipeLinksScenario)
+      if (workspaceScenario || workflowScenario || recipeLinksScenario || nativeRecipeScenario)
         PlatformWorkflowExample.register(registration);
       if (workspaceScenario) {
         PlatformWorkspaceChecks.register(registration);
@@ -310,6 +313,11 @@ public final class PlatformClient {
           if (chooserScenario) {
             pending = PlatformChooserChecks.run(clientRegistration).toCompletableFuture();
             stage = 24;
+            return;
+          }
+          if (nativeRecipeScenario) {
+            pending = PlatformNativeRecipeChecks.run(clientRegistration).toCompletableFuture();
+            stage = 30;
             return;
           }
           if (recipeLinksScenario) {
@@ -497,6 +505,11 @@ public final class PlatformClient {
         case 28 -> {
           if (!pending.isDone()) return;
           report.add("recipeLinks", (JsonObject) pending.join());
+          beginShutdown();
+        }
+        case 30 -> {
+          if (!pending.isDone()) return;
+          report.add("nativeRecipes", (JsonObject) pending.join());
           beginShutdown();
         }
         case 29 -> nativeItemShutdown.tick();

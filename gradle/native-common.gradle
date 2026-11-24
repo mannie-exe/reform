@@ -24,11 +24,13 @@ if (target.minecraftVersion == '26.3') {
 
 repositories {
     mavenCentral()
+    maven { url = 'https://maven.terraformersmc.com/releases/'; content { includeGroup 'dev.emi' } }
     maven { url = 'https://maven.blamejared.com/'; content { includeGroup 'mezz.jei' } }
     maven { url = 'https://libraries.minecraft.net/'; content { includeGroup 'com.mojang' } }
 }
 
 dependencies {
+    if (target.emiVersion) compileOnly "dev.emi:emi-xplat-mojmap:${target.emiVersion}"
     compileOnly "mezz.jei:jei-${target.minecraftVersion}-common-api:${target.jeiVersion}"
     compileOnly rootProject.libs.mixinextras.common
     compileOnly project(':core')
@@ -45,9 +47,24 @@ tasks.named('processResources') {
                     loader: target.loaderVersion, javaVersion: target.java,
                     loaderUpperBound: target.loaderUpperBound ?: '', fabricApi: target.fabricApiVersion ?: '',
                     fmlVersionRange: target.fmlVersionRange ?: '', jei: target.jeiVersion,
-                    jeiUpper: (target.jeiVersion.tokenize('.')[0].toInteger() + 1).toString()]
+                    jeiUpper: (target.jeiVersion.tokenize('.')[0].toInteger() + 1).toString(),
+                    emi: target.emiVersion ?: '', emiMinimum: target.emiMinimumVersion ?: '', emiUpper: target.emiUpperBound ?: '']
     inputs.properties metadata
     filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json', 'reform.client.mixins.json']) { expand metadata }
+    doLast {
+        if (target.emiVersion) {
+            def fabricMetadata = destinationDir.toPath().resolve('fabric.mod.json').toFile()
+            if (fabricMetadata.isFile()) {
+                def value = new groovy.json.JsonSlurper().parse(fabricMetadata)
+                value.entrypoints.emi = ['design.inherent.reform.minecraft.optional.emi.ReformEmiPlugin']
+                value.breaks.emi = ['<' + target.emiMinimumVersion, '>=' + target.emiUpperBound]
+                fabricMetadata.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(value)) + '\n', 'UTF-8')
+            }
+            def neoMetadata = destinationDir.toPath().resolve('META-INF/neoforge.mods.toml').toFile()
+            if (neoMetadata.isFile()) neoMetadata.append("\n[[dependencies.reform]]\nmodId=\"emi\"\ntype=\"optional\"\nversionRange=\"[${target.emiMinimumVersion},${target.emiUpperBound})\"\nside=\"CLIENT\"\n", 'UTF-8')
+        }
+    }
+
 }
 
 tasks.named('jar', Jar) {

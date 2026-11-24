@@ -13,6 +13,7 @@ import mezz.jei.api.IModPlugin;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.category.IRecipeCategory;
+import mezz.jei.api.runtime.IJeiFeatures;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -20,8 +21,14 @@ import net.minecraft.client.gui.screens.Screen;
 /** Loaded by JEI's own optional client plugin admission, never by shared or server entry points. */
 public abstract class ReformJeiPluginBase implements IModPlugin {
   private volatile IJeiRuntime runtime;
+  private volatile IJeiFeatures features;
   private volatile Object generation = new Object();
   private AutoCloseable registration;
+
+  @Override
+  public void configureJei(IJeiFeatures features) {
+    this.features = features;
+  }
 
   @Override
   public void onRuntimeAvailable(IJeiRuntime runtime) {
@@ -88,6 +95,11 @@ public abstract class ReformJeiPluginBase implements IModPlugin {
     @Override
     public Optional<PolicyRefusal> unavailable(Screen origin) {
       var client = Minecraft.getInstance();
+      if (features != null && !features.isJeiGuiEnabled())
+        return Optional.of(
+            refusal(
+                "recipe.viewer_disabled",
+                "JEI's recipe screen is disabled in this installation. Choose another viewer explicitly."));
       return runtime != expected
               || generation != token
               || client.level == null

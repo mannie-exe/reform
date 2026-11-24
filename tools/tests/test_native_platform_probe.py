@@ -12,6 +12,15 @@ from tools.native_platform_probe import retain_captures, retain_native_report, s
 
 
 class OptionalAdmissionTests(unittest.TestCase):
+    def test_native_recipe_context_requires_separate_declared_target(self):
+        for target, options in [("fabric-26_3", {"client": True, "native_recipe_client": True, "recipe_viewer": "emi"}),
+                                ("neoforge-1_21_1", {"native_recipe_client": True}),
+                                ("neoforge-1_21_1", {"client": True, "native_recipe_client": True, "world_client": True})]:
+            with self.subTest(target=target, options=options), patch.object(platform, "select_library") as resolve:
+                with self.assertRaises(ValueError):
+                    platform.run(target, None, 1, **options)
+                resolve.assert_not_called()
+
     def test_recipe_links_require_separate_client_before_resolving_inputs(self):
         for options in [{}, {"client": True, "world_client": True},
                         {"client": True, "authoring_client": True}]:
@@ -22,7 +31,7 @@ class OptionalAdmissionTests(unittest.TestCase):
 
     def test_viewer_cannot_be_added_to_unrelated_client_scenario(self):
         with patch.object(platform, "select_library") as resolve:
-            with self.assertRaisesRegex(ValueError, "requires its own recipe-links client"):
+            with self.assertRaisesRegex(ValueError, "requires its own declared recipe client target"):
                 platform.run("neoforge-1_21_1", None, 1, client=True, workspace_client=True, recipe_viewer="jei")
             resolve.assert_not_called()
 

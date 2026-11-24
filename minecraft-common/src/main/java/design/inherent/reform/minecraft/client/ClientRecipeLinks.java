@@ -4,18 +4,83 @@ import design.inherent.reform.minecraft.internal.ClientSettingsRuntime;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.RecipeLinkPolicy;
 import design.inherent.reform.presentation.RecipeLinkRequest;
+import design.inherent.reform.reference.ReferenceStamp;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 
 /** Optional client adapters. Shared entry points never resolve a viewer's classes. */
 public final class ClientRecipeLinks {
   private ClientRecipeLinks() {}
+
+  /**
+   * Actual world/connection and resource generation, without retaining native owners or granting
+   * authority.
+   */
+  public record Context(UUID registry, ReferenceStamp resources, boolean resourcesReady) {
+    public Context {
+      Objects.requireNonNull(registry);
+      Objects.requireNonNull(resources);
+    }
+  }
+
+  public static Context context() {
+    ClientSettingsRuntime.requireClientThread();
+    var resources = LoadedGraphicResources.snapshot();
+    return new Context(NativeItemContexts.registry(), resources.stamp(), resources.ready());
+  }
+
+  /** Explicit real native container entry; this never manufactures an inventory or world. */
+  public static NavigationAttempt openContainer(
+      AbstractContainerScreen<?> origin, ClientDestination.Recipe destination) {
+    ClientSettingsRuntime.requireClientThread();
+    Objects.requireNonNull(origin);
+    Objects.requireNonNull(destination);
+    var attempt = new NavigationAttempt(destination);
+    var client = Minecraft.getInstance();
+    try {
+      if (NativeScreens.current(client) != origin
+          || client.player == null
+          || client.level == null
+          || client.getConnection() == null
+          || client.player.containerMenu != origin.getMenu())
+        throw refusal(
+            "recipe.container_context",
+            "Open this link from its current native inventory or crafting screen.");
+      var prepared = prepare(destination, origin);
+      try {
+        prepared.open();
+        if (NativeScreens.current(client) == origin || !prepared.hasParent(origin))
+          throw refusal(
+              "recipe.return_unavailable",
+              "This viewer did not preserve the native screen's return path.");
+      } catch (RuntimeException | Error failure) {
+        NativeScreens.open(client, origin);
+        throw failure;
+      }
+      attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
+    } catch (RuntimeException failure) {
+      attempt.finish(
+          failure instanceof PolicyRefusal
+              ? NavigationAttempt.Outcome.REFUSED
+              : NavigationAttempt.Outcome.FAILED,
+          failure instanceof PolicyRefusal refused
+              ? refused.report()
+              : refusal(
+                      "recipe.open_failed",
+                      "The recipe viewer could not open. Return to the native screen and try again.")
+                  .report(),
+          failure);
+    }
+    return attempt;
+  }
 
   /** Implemented only by explicitly admitted optional client integrations. */
   public interface Adapter {

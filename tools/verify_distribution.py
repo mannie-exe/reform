@@ -56,14 +56,18 @@ def metadata(archive, target, version):
         require(value["license"] == "Apache-2.0", "Unexpected mod license")
         require(value["loaderVersion"] == target["fmlVersionRange"], "FML ABI family differs")
         dependencies = value["dependencies"]["reform"]
-        require({d["modId"] for d in dependencies} == {"minecraft", "neoforge", "jei"},
+        require({d["modId"] for d in dependencies} == ({"minecraft", "neoforge", "jei"} | ({"emi"} if target.get("emiVersion") else set())),
                 "Unexpected mod dependency")
-        require(all(d["type"] == "required" and d["side"] == "BOTH" for d in dependencies if d["modId"] != "jei"),
+        require(all(d["type"] == "required" and d["side"] == "BOTH" for d in dependencies if d["modId"] not in {"jei", "emi"}),
                 "Unexpected dependency authority/side")
         by_id = {d["modId"]: d for d in dependencies}
         require(by_id["jei"]["type"] == "optional" and by_id["jei"]["side"] == "CLIENT"
                 and by_id["jei"]["versionRange"] == f"[{target['jeiVersion']},{int(target['jeiVersion'].split('.')[0]) + 1})",
                 "Optional JEI dependency authority/side/version differs")
+        if target.get("emiVersion"):
+            require(by_id["emi"]["type"] == "optional" and by_id["emi"]["side"] == "CLIENT"
+                    and by_id["emi"]["versionRange"] == f"[{target['emiMinimumVersion']},{target['emiUpperBound']})",
+                    "Optional EMI dependency authority/side/version differs")
         require(by_id["minecraft"]["versionRange"] == f"[{target['minecraftVersion']}]", "Minecraft pin differs")
         require(by_id["neoforge"]["versionRange"] ==
                 f"[{target['loaderVersion']},{target['loaderUpperBound']})", "NeoForge baseline differs")
@@ -88,6 +92,12 @@ def metadata(archive, target, version):
             "Optional JEI client plugin differs")
     require(value.get("breaks", {}).get("jei") == ["<" + target["jeiVersion"], ">=" + str(int(target["jeiVersion"].split('.')[0]) + 1)],
             "Optional JEI API admission differs")
+    if target.get("emiVersion"):
+        require(value["entrypoints"].get("emi") == ["design.inherent.reform.minecraft.optional.emi.ReformEmiPlugin"]
+                and value["breaks"].get("emi") == ["<" + target["emiMinimumVersion"], ">=" + target["emiUpperBound"]],
+                "Optional EMI client admission differs")
+    else:
+        require("emi" not in value["entrypoints"] and "emi" not in value["breaks"], "Unselected EMI adapter admitted")
     require(value["mixins"] == ["reform.client.mixins.json"], "Client invocation mixin admission differs")
     declaration = archive.read(value["accessWidener"]).decode("utf-8")
     namespace = target["productionNamespace"]
@@ -118,6 +128,8 @@ def verify(root, version):
         for name, data in core_classes.items():
             require(classes.get(name) == data, f"Core class absent/changed in combined JAR: {name}")
         for name, data in classes.items():
+            if b"dev/emi/" in data:
+                require(target.get("emiVersion") and name.startswith(OWNED + "minecraft/optional/emi/"), "EMI linkage outside selected optional client adapter")
             if b"mezz/jei/" in data:
                 require(name.startswith(OWNED + "minecraft/optional/jei/"), "JEI linkage outside optional client adapter")
             require(name in core_classes or struct.unpack(">H", data[6:8])[0] == native_major,
@@ -128,7 +140,7 @@ def verify(root, version):
         require(mixins == {"required": True, "minVersion": "0.8",
                            "package": "design.inherent.reform.minecraft.mixin",
                            "compatibilityLevel": f"JAVA_{target['java']}",
-                           "client": ["ChatInputMixin", "ControlStyleMixin", "ScreenMountStateAccessor", "ControlCaptionMixin", "ControlInputFontMixin"] + (["ControlInputColorMixin", "GraphicShaderStateAccessor"] if target["minecraftVersion"] == "1.21.1" else []) + ["GraphicRuntimeMixin", "LoadedGraphicResourcesMixin", "GraphicSpriteContentsAccessor", "GraphicGuiRendererMixin", "GraphicStateMixin"] + (["GraphicCanvasAccessor", "GraphicBlockResolverAccessor", "GraphicEquipmentAssetsAccessor"] if target["minecraftVersion"] == "26.3" else []), "injectors": {"defaultRequire": 1}},
+                           "client": ["ChatInputMixin", "ControlStyleMixin", "ScreenMountStateAccessor", "ControlCaptionMixin", "ControlInputFontMixin"] + (["ControlInputColorMixin", "GraphicShaderStateAccessor"] if target["minecraftVersion"] == "1.21.1" else []) + ["GraphicRuntimeMixin", "LoadedGraphicResourcesMixin", "GraphicSpriteContentsAccessor", "GraphicGuiRendererMixin", "GraphicStateMixin"] + (["GraphicCanvasAccessor", "GraphicBlockResolverAccessor", "GraphicEquipmentAssetsAccessor"] if target["minecraftVersion"] == "26.3" else []) + ["RecipeBookButtonSpritesAccessor"], "injectors": {"defaultRequire": 1}},
                 "Invocation hook must retain its actual game Java target and client-only admission")
         for mixin in mixins["client"]:
             require(OWNED + f"minecraft/mixin/{mixin}.class" in classes,

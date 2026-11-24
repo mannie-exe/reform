@@ -52,6 +52,23 @@ class DistributionRefusals(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Optional JEI dependency authority/side/version"):
                     VERIFY.verify(self.root, self.version)
 
+    def test_emi_admission_cannot_become_required_or_common(self):
+        with zipfile.ZipFile(self.binary) as archive:
+            entries = [(entry, archive.read(entry)) for entry in archive.infolist()]
+        for replacement in [b'modId="emi"\ntype="required"', b'modId="emi"\ntype="optional"\nversionRange="[1.1.24,2)"\nside="BOTH"']:
+            with self.subTest(replacement=replacement):
+                with zipfile.ZipFile(self.binary, "w") as archive:
+                    for entry, data in entries:
+                        if entry.filename == "META-INF/neoforge.mods.toml":
+                            start = data.index(b'modId="emi"')
+                            if b'type="required"' in replacement:
+                                data = data[:start] + data[start:].replace(b'type="optional"', b'type="required"', 1)
+                            else:
+                                data = data[:start] + data[start:].replace(b'side="CLIENT"', b'side="BOTH"', 1)
+                        archive.writestr(entry, data)
+                with self.assertRaisesRegex(ValueError, "Optional EMI dependency authority/side/version"):
+                    VERIFY.verify(self.root, self.version)
+
     def test_old_license_text_refused(self):
         with zipfile.ZipFile(self.binary) as archive:
             entries = [(entry, archive.read(entry)) for entry in archive.infolist()]
@@ -120,6 +137,9 @@ class DistributionRefusals(unittest.TestCase):
 
     def test_loaded_resource_hook_cannot_run_on_dedicated_server(self):
         self.assert_client_hook_cannot_be_common("LoadedGraphicResourcesMixin")
+
+    def test_native_recipe_book_identity_hook_cannot_run_on_dedicated_server(self):
+        self.assert_client_hook_cannot_be_common("RecipeBookButtonSpritesAccessor")
 
     def test_sprite_contents_hook_cannot_run_on_dedicated_server(self):
         self.assert_client_hook_cannot_be_common("GraphicSpriteContentsAccessor")
