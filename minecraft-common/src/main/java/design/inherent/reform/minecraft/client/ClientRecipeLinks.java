@@ -47,7 +47,7 @@ public final class ClientRecipeLinks {
     }
 
     public boolean ready() {
-      return report.issues().isEmpty();
+      return report.valid();
     }
   }
 
@@ -107,7 +107,7 @@ public final class ClientRecipeLinks {
                     () ->
                         refusal(
                                 "recipe.viewer_unavailable",
-                                "No admitted recipe viewer is ready. Install a compatible viewer or return to editing.")
+                                "No recipe viewer is ready. Install a compatible viewer or return to editing.")
                             .report());
     return new Resolution(
         chosen,

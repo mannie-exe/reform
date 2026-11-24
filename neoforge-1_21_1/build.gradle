@@ -44,3 +44,13 @@ tasks.register('nativeCameraRegression', JavaExec) {
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
 tasks.named('check') { dependsOn 'nativeCameraRegression' }
+
+tasks.register('nativeRecipePolicyRegression', JavaExec) {
+    group = 'verification'
+    description = 'Check optional-viewer readiness without a client or a foreign API.'
+    dependsOn 'nativeProbeClasses'
+    classpath = sourceSets.nativeProbe.runtimeClasspath + project(':core').sourceSets.main.output
+    mainClass = 'design.inherent.reform.minecraft.client.NativeRecipePolicyRegression'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.named('check') { dependsOn 'nativeRecipePolicyRegression' }

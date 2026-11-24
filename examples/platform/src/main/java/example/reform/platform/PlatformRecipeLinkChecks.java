@@ -33,6 +33,15 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
     result.addProperty("status", "PASS");
     result.add("checks", checks);
     result.addProperty("optionalViewerInstalled", installed);
+    result.addProperty("simulatedViewerOpenCalls", simulatedOpens);
+    if (recipeAttempt != null)
+      result.addProperty(
+          "simulatedLookupOutcome",
+          recipeAttempt.result().map(r -> r.outcome().name()).orElse("PENDING"));
+    if (replacement != null)
+      result.addProperty(
+          "replacementOutcome",
+          replacement.result().map(r -> r.outcome().name()).orElse("PENDING"));
     return result;
   }
 
@@ -51,6 +60,9 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
   private CompletableFuture<NavigationAttempt.Result> entered;
   private byte[] source;
   private long revision;
+  private AutoCloseable simulated;
+  private int simulatedOpens;
+  private NavigationAttempt replacement, recipeAttempt;
   private boolean installed;
   private int stage, mode;
   private static final List<RecipeLinkRequest> REQUESTS =
@@ -79,6 +91,19 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
         + mode
         + ",screen="
         + String.valueOf(NativeScreens.current(client));
+  }
+
+  @Override
+  public void close() {
+    if (simulated != null) {
+      try {
+        simulated.close();
+      } catch (Exception failed) {
+        throw new IllegalStateException("Simulated provider cleanup failed", failed);
+      }
+      simulated = null;
+    }
+    if (workflow != null && workflow.isOpen()) workflow.close();
   }
 
   private static RecipeLinkRequest request(RecipeLinkRequest.Kind kind, String id) {
@@ -125,7 +150,8 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
           check.accept(
               "absent recipe inspection creates no settings write",
               Arrays.equals(source, Files.readAllBytes(path())));
-          return true;
+          stage = 20;
+          return false;
         }
         NativeWorldProbe.start();
         stage = 1;
@@ -265,6 +291,80 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
         check.accept(
             "viewer world departure preserves source bytes",
             Arrays.equals(source, Files.readAllBytes(path())));
+        return true;
+      }
+      case 20 -> {
+        workflow =
+            ClientEditingWorkflow.open(
+                parent,
+                Component.literal("Recipe lookup supersession"),
+                List.of(
+                    PlatformWorkflowExample.settings()
+                        .form(Component.literal("Recipe preferences"))));
+        NativeScreens.open(client, workflow.screen());
+        entered =
+            workflow
+                .navigation()
+                .open(new ClientDestination.Document(route))
+                .completion()
+                .toCompletableFuture();
+        stage = 21;
+      }
+      case 21 -> {
+        if (!entered.isDone()) return false;
+        editor = workflow.editor(route);
+        if (editor.busy() || editor.form().fieldControl(label).isEmpty()) return false;
+        simulated =
+            ClientRecipeLinks.register(
+                RecipeLinkPolicy.Provider.JEI,
+                new ClientRecipeLinks.Adapter() {
+                  public Set<RecipeLinkRequest.Kind> kinds() {
+                    return Set.of(RecipeLinkRequest.Kind.PRODUCING);
+                  }
+
+                  public Optional<design.inherent.reform.owner.PolicyRefusal> unavailable(
+                      Screen origin) {
+                    return Optional.empty();
+                  }
+
+                  public ClientRecipeLinks.Prepared prepare(
+                      RecipeLinkRequest request, Screen origin) {
+                    replacement =
+                        workflow.navigation().open(new ClientDestination.Field(route, label));
+                    return new ClientRecipeLinks.Prepared() {
+                      public void open() {
+                        simulatedOpens++;
+                        throw new design.inherent.reform.owner.PolicyRefusal(
+                            "fixture.viewer_opened",
+                            "Simulated viewer was entered after lookup selected a newer destination");
+                      }
+
+                      public boolean hasParent(Screen origin) {
+                        return false;
+                      }
+                    };
+                  }
+                });
+        recipeAttempt = workflow.navigation().open(link(REQUESTS.getFirst()));
+        stage = 22;
+      }
+      case 22 -> {
+        if (replacement == null
+            || replacement.result().isEmpty()
+            || recipeAttempt.result().isEmpty()) return false;
+        check.accept(
+            "simulated lookup newer native destination reveals successfully",
+            replacement.result().orElseThrow().outcome() == NavigationAttempt.Outcome.REVEALED);
+        check.accept(
+            "superseded simulated recipe lookup never enters viewer",
+            simulatedOpens == 0
+                && recipeAttempt.result().orElseThrow().outcome()
+                    == NavigationAttempt.Outcome.SUPERSEDED);
+        check.accept(
+            "superseded simulated lookup preserves actual owner and source",
+            workflow.editor(route) == editor && Arrays.equals(source, Files.readAllBytes(path())));
+        close();
+        NativeScreens.open(client, parent);
         return true;
       }
       default -> {}

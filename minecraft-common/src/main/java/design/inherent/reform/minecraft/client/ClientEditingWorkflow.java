@@ -721,7 +721,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     try {
       requireOverview();
       if (target instanceof ClientDestination.Recipe recipe) {
-        openRecipe(attempt, recipe);
+        pendingNavigation = attempt;
+        try {
+          openRecipe(attempt, recipe);
+        } finally {
+          if (pendingNavigation == attempt) pendingNavigation = null;
+        }
         return attempt;
       }
       var available = inspectDestination(target);
@@ -781,6 +786,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   private void openRecipe(NavigationAttempt attempt, ClientDestination.Recipe destination) {
     var inspected = ClientRecipeLinks.inspect(destination);
+    if (!recipeCurrent(attempt)) return;
     if (inspected.selected().isEmpty()) {
       attempt.finish(NavigationAttempt.Outcome.UNAVAILABLE, inspected.report(), null);
       var alternatives =
@@ -815,22 +821,27 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       return;
     }
     var prepared = ClientRecipeLinks.prepare(destination, overview);
+    // Public viewer lookup may invoke a provider extension that selects a newer destination.
+    if (!recipeCurrent(attempt)) return;
     // Preserve native raw input/focus before the viewer itself replaces the actual root.
     navigationBookmark();
     if (overview.activeTask != null) overview.activeTask.visible(false);
     for (var custom : customViews.values()) custom.view().hide();
     try {
-      overview.externalHandoff(
-          () -> {
-            prepared.open();
-            if (NativeScreens.current(Minecraft.getInstance()) == overview
-                || !prepared.hasParent(overview))
-              throw new PolicyRefusal(
-                  "recipe.return_unavailable",
-                  "This viewer did not preserve the settings return path.");
-            return null;
-          });
-      attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
+      boolean handedOff =
+          overview.externalHandoff(
+              () -> {
+                if (!recipeCurrent(attempt)) return false;
+                prepared.open();
+                if (NativeScreens.current(Minecraft.getInstance()) == overview
+                    || !prepared.hasParent(overview))
+                  throw new PolicyRefusal(
+                      "recipe.return_unavailable",
+                      "This viewer did not preserve the settings return path.");
+                return true;
+              });
+      if (handedOff)
+        attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
     } catch (RuntimeException | Error failure) {
       // A failed public viewer call may already have changed screens. Restore the retained root.
       overview.externalHandoff(
@@ -840,6 +851,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           });
       throw failure;
     }
+  }
+
+  private boolean recipeCurrent(NavigationAttempt attempt) {
+    if (pendingNavigation == attempt && isOpen() && overview.navigationRequest == attempt.id())
+      return true;
+    attempt.finish(
+        isOpen() ? NavigationAttempt.Outcome.SUPERSEDED : NavigationAttempt.Outcome.CLOSED,
+        new PolicyRefusal(
+                isOpen() ? "navigation.superseded" : "navigation.closed",
+                isOpen() ? "A newer destination was selected." : "This workflow is closed.")
+            .report(),
+        null);
+    return false;
   }
 
   private void finishReveal(
