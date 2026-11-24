@@ -14,7 +14,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.events.ContainerEventHandler;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -74,6 +76,22 @@ final class PlatformRootImportChecks {
     afterPreview = next;
     previewWait = 0;
     stage = 30;
+  }
+
+  private CycleButton<?> formatControl() {
+    return widgets(workflow.screen()).stream()
+        .filter(CycleButton.class::isInstance)
+        .map(widget -> (CycleButton<?>) widget)
+        .filter(widget -> widget.getMessage().getString().contains("JSON"))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("Missing actual import format control"));
+  }
+
+  private Object focusedLeaf() {
+    Object focused = workflow.screen();
+    while (focused instanceof ContainerEventHandler container && container.getFocused() != null)
+      focused = container.getFocused();
+    return focused;
   }
 
   boolean tick() throws Exception {
@@ -257,7 +275,23 @@ final class PlatformRootImportChecks {
             labels.equals(List.of("Display name", "Feature enabled", "Travel distance")));
         geometry(workflow.screen());
         NativeClientProbe.size(client, width, height);
+        check.accept(
+            "import format is in actual focus tree", focus(workflow.screen(), formatControl()));
         bookmark = workflow.navigation().bookmark();
+        check.accept(
+            "import footer is in actual focus tree",
+            focus(workflow.screen(), button(workflow.screen(), "Stage draft")));
+        navigation = workflow.navigation().restore(bookmark).completion().toCompletableFuture();
+        stage = 61;
+      }
+      case 61 -> {
+        if (!revealed()) return false;
+        check.accept(
+            "import bookmark restores actual mounted format focus without replacing comparison",
+            focusedLeaf() == formatControl()
+                && inspection.reviewedInput().orElseThrow() == reviewed
+                && workflow.editor(route) == editor
+                && Arrays.equals(source, Files.readAllBytes(saved)));
         stage = 90;
         capture.accept("form-root-import-wide.png", () -> stage = 7);
       }

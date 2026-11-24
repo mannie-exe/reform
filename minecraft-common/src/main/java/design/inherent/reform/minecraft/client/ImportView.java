@@ -98,6 +98,7 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
   record Bookmark(TaskPanels.State panels, int footer) {}
 
   private int retainedFooter = -1;
+  private boolean focusReviewOnMount, previewWantsFocus, restoringPresentation;
 
   Bookmark bookmark() {
     preserve();
@@ -105,9 +106,14 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
   }
 
   void restore(Bookmark state) {
-    retained = state.panels();
-    retainedFooter = state.footer();
-    super.rebuildWidgets();
+    restoringPresentation = true;
+    try {
+      retained = state.panels();
+      retainedFooter = state.footer();
+      super.rebuildWidgets();
+    } finally {
+      restoringPresentation = false;
+    }
   }
 
   void withFieldOrder(java.util.List<design.inherent.reform.definition.FieldPath> paths) {
@@ -160,7 +166,7 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
 
   @Override
   void preserve() {
-    if (panels != null && visible) {
+    if (panels != null && visible && !restoringPresentation) {
       retained = panels.remember(getFocused());
       if (footer.contains(getFocused())) retainedFooter = footer.indexOf(getFocused());
       else if (getFocused() == panel || getFocused() == detail) retainedFooter = -1;
@@ -171,6 +177,8 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
   void hide() {
     preserve();
     visible = false;
+    focusReviewOnMount = false;
+    previewWantsFocus = false;
     widgetGeneration = new Object();
     selectionEpoch = new Object();
     if (dialogRequest != null) dialogRequest.abandonQueued();
@@ -424,8 +432,12 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
     var focus = panels.finish();
     addRenderableWidget(panel);
     if (detail != panel) addRenderableWidget(detail);
-    if (retainedFooter >= 0 && retainedFooter < footer.size() && footer.get(retainedFooter).active)
-      setFocused(footer.get(retainedFooter));
+    if (focusReviewOnMount && review != null && readable) {
+      focusReviewOnMount = false;
+      focusReview();
+    } else if (retainedFooter >= 0
+        && retainedFooter < footer.size()
+        && footer.get(retainedFooter).active) setFocused(footer.get(retainedFooter));
     else focus.ifPresent(this::setFocused);
   }
 
@@ -629,7 +641,9 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
     staging = false;
     try {
       operation = imports.preview(EntryPoint.GUI, format.id());
+      previewWantsFocus = true;
     } catch (RuntimeException refused) {
+      previewWantsFocus = false;
       notice = failure(refused);
     }
     rebuildWidgets();
@@ -680,8 +694,9 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
           review = preview;
         notice = result.result().isPresent() ? null : operationFailure(result);
         wasCurrent = currentReview();
+        focusReviewOnMount = review != null && readable && previewWantsFocus;
+        previewWantsFocus = false;
         rebuildWidgets();
-        if (review != null && readable) focusReview();
       }
     }
     boolean current = review == null || currentReview();
@@ -712,11 +727,10 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
 
   @Override
   protected void setInitialFocus() {
-    if (review != null && readable) focusReview();
-    else {
-      setFocused(panel);
-      panel.focusVisibleControl();
-    }
+    var region = retained.focused() == null ? retained.viewport() : retained.focused();
+    var target = region == TaskPanels.Region.DETAIL ? detail : panel;
+    setFocused(target);
+    target.focusVisibleControl();
   }
 
   private void focusReview() {
