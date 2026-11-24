@@ -298,12 +298,6 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
       prefix.accept(panel);
       panel.heading(title);
     }
-    panel.row(
-        "scope",
-        Component.empty(),
-        text(
-            "scope",
-            "Documents save in the displayed order. Earlier completed saves remain saved if a later document fails. Clean documents are checked without writing."));
     if (notice != null) panel.row("notice", text("status", "Review status"), notice);
     if (!readable)
       panel.row(
@@ -318,16 +312,15 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
           Component.empty(),
           text("pending", "Preparing complete candidate and source checks…"));
     else {
-      panel.row(
-          "validation",
-          text("validation", "Review checks"),
+      var status =
           review.valid()
               ? text(
                   "valid",
                   "All document and cross-document checks passed. Sources and authority are rechecked on submission.")
               : text(
                   "invalid",
-                  "Review checks did not pass. Inspect the affected document before saving."));
+                  "Review checks did not pass. Inspect the affected document before saving.");
+      if (!review.valid()) panel.row("validation", text("validation", "Review checks"), status);
       if (!readiness.valid())
         panel.row(
             "readiness",
@@ -354,6 +347,13 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
                 : text("check_only", "Check only; no write"),
             choose);
       }
+      if (review.valid()) panel.row("validation", text("validation", "Review checks"), status);
+      panel.row(
+          "scope",
+          Component.empty(),
+          text(
+              "scope",
+              "Documents save in the displayed order. Earlier completed saves remain saved if a later document fails. Clean documents are checked without writing."));
       chosen().ifPresent(this::details);
     }
     if (composed) suffix.accept(detail);
@@ -715,13 +715,21 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
     target.focusVisibleControl();
   }
 
+  Component contextStatus() {
+    return mayRead()
+        ? chosen()
+            .map(entry -> title.copy().append(": ").append(label.apply(entry.document())))
+            .orElseGet(() -> title.copy())
+        : title.copy();
+  }
+
   @Override
   public Component getNarrationMessage() {
     var description =
         text(
             "scope",
             "Documents save separately in the displayed order; inspect each owner's requirements.");
-    return composed ? description : title.copy().append("\n").append(description);
+    return composed ? description : contextStatus().copy().append("\n").append(description);
   }
 
   @Override

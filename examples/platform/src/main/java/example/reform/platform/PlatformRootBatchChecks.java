@@ -207,6 +207,13 @@ final class PlatformRootBatchChecks {
                 && inspection.selectedDocument().orElseThrow().equals(TWIN)
                 && inspection.submission().isEmpty());
         unchanged();
+        check.accept(
+            "narrow batch names its selected owner outside the scrollable detail",
+            workflow
+                .screen()
+                .getNarrationMessage()
+                .getString()
+                .contains("Tick target preferences"));
         stage = 90;
         capture.accept("form-root-batch-narrow.png", () -> stage = 9);
       }
@@ -284,6 +291,21 @@ final class PlatformRootBatchChecks {
             "explicit repair and refresh issue a new complete valid review",
             reviewed.valid() && reviewed.entries().get(1).intent() == DocumentBatch.Intent.CHECK);
         unchanged();
+        press("Edited preferences");
+        stage = 170;
+      }
+      case 170 -> {
+        check.accept(
+            "changing the selected comparison does not recapture or submit",
+            inspection.reviewedInput().orElseThrow() == reviewed
+                && inspection.selectedDocument().orElseThrow().equals(route)
+                && inspection.submission().isEmpty()
+                && reviewed.entries().getFirst().review().comparison().changes().size() == 1);
+        unchanged();
+        stage = 90;
+        capture.accept("form-root-batch-changes.png", () -> stage = 171);
+      }
+      case 171 -> {
         press("Save reviewed documents");
         stage = 18;
       }

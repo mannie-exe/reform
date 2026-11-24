@@ -3942,7 +3942,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private Component scopeStatus() {
       if (closeDecision != null) return closeDecision.contextStatus();
       if (operationInspection != null) return operationInspection.view().context();
-      if (batched != null && metadata() == batched) return batched.caption();
+      if (batched != null && metadata() == batched) return batched.contextStatus();
       if (isHome())
         return Component.translatableWithFallback(
             "reform.workspace.home_status",
