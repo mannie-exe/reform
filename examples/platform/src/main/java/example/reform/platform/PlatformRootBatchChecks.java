@@ -121,12 +121,20 @@ final class PlatformRootBatchChecks {
       }
       case 3 -> {
         var current = NativeScreens.current(client);
-        check.accept(
-            "complete batch review keeps original native root: "
-                + current.getClass().getSimpleName(),
-            current == workflow.screen() && button(current, "Save reviewed documents") != null);
+        if (current != workflow.screen())
+          check.accept(
+              "complete batch review keeps original native root: "
+                  + current.getClass().getSimpleName(),
+              false);
+        // Review-all explicitly admits the previously unopened owner asynchronously.
+        // Observe the real capture rather than assuming that one tick admits the complete scope.
         inspection = workflow.batchInspection().orElse(null);
         if (inspection == null || inspection.reviewedInput().isEmpty()) return false;
+        check.accept(
+            "complete batch review keeps original native root", current == workflow.screen());
+        check.accept(
+            "complete batch mounts its actual submission control",
+            button(current, "Save reviewed documents") != null);
         reviewed = inspection.reviewedInput().orElseThrow();
         twin = workflow.editor(TWIN);
         if (editor.busy() || twin.busy()) return false;

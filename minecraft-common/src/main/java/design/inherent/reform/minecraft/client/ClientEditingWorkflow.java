@@ -1509,8 +1509,28 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     var admission =
         entries.keySet().stream()
             .filter(included)
-            .filter(route -> entry(route).form.asynchronous() && entry(route).editor == null)
+            .filter(
+                route -> {
+                  var retained = entry(route).editor;
+                  return retained == null
+                      || retained.view().availability() == EditorActor.Availability.LOADING;
+                })
             .map(this::openEditor)
+            .map(
+                opening ->
+                    opening.thenCompose(
+                        selected ->
+                            DocumentActions.result(selected.actions().ensureLoaded(EntryPoint.GUI))
+                                .thenApply(
+                                    observed -> {
+                                      if (observed.availability() != EditorActor.Availability.READY)
+                                        throw observed.validation().valid()
+                                            ? new PolicyRefusal(
+                                                "client.review_unavailable",
+                                                "This document's editing baseline is unavailable. Return to the document to inspect or reload it.")
+                                            : new PolicyRefusal(observed.validation());
+                                      return selected;
+                                    })))
             .map(CompletionStage::toCompletableFuture)
             .toArray(CompletableFuture<?>[]::new);
     if (admission.length > 0) {
