@@ -14,17 +14,54 @@ final class CustomView {
   private RuntimeException failure;
   private Runnable rebuild;
   private Object generation;
+  private final java.util.function.BiFunction<
+          design.inherent.reform.presentation.graphics.GraphicLimits, Integer, ClientGraphicHost>
+      graphics;
+  private final java.util.function.Consumer<FormPanel> focus;
+  private final java.util.Map<String, LoadedGraphicView<?>> loaded =
+      new java.util.LinkedHashMap<>();
 
-  CustomView(ClientViewContext context, Supplier<ClientViewContent> source) {
+  CustomView(
+      ClientViewContext context,
+      Supplier<ClientViewContent> source,
+      java.util.function.BiFunction<
+              design.inherent.reform.presentation.graphics.GraphicLimits,
+              Integer,
+              ClientGraphicHost>
+          graphics,
+      java.util.function.Consumer<FormPanel> focus) {
     this.context = context;
     this.source = source;
+    this.graphics = graphics;
+    this.focus = focus;
+    context.onClose(this::closeGraphics);
+    var ticking =
+        design.inherent.reform.minecraft.internal.ClientSettingsRuntime.onTick(this::tick);
+    context.onClose(ticking::close);
     content = Objects.requireNonNull(source.get()); // Reject failed admission before caching.
   }
 
   void refresh() {
     context.requireCurrent();
     try {
-      content = Objects.requireNonNull(source.get());
+      var next = Objects.requireNonNull(source.get());
+      var declarations = new java.util.LinkedHashMap<String, ClientViewContent.LoadedGraphic<?>>();
+      graphicDeclarations(next.entries(), declarations);
+      Throwable cleanupFailure = null;
+      for (var entry : java.util.List.copyOf(loaded.entrySet())) {
+        var declaration = declarations.get(entry.getKey());
+        if (declaration != null && entry.getValue().matches(declaration)) continue;
+        loaded.remove(entry.getKey());
+        try {
+          entry.getValue().close();
+        } catch (RuntimeException | Error failed) {
+          if (cleanupFailure == null) cleanupFailure = failed;
+          else cleanupFailure.addSuppressed(failed);
+        }
+      }
+      if (cleanupFailure instanceof RuntimeException failed) throw failed;
+      if (cleanupFailure instanceof Error failed) throw failed;
+      content = next;
       failure = null;
     } catch (RuntimeException failed) {
       failure = failed;
@@ -33,6 +70,7 @@ final class CustomView {
 
   void hide() {
     generation = null;
+    for (var view : loaded.values()) view.hide();
   }
 
   void append(FormPanel panel, ClientTheme theme, ClientNavigation navigation, Runnable rebuild) {
@@ -91,6 +129,8 @@ final class CustomView {
                         guarded(token, action.invoke()),
                         theme)
                     .build());
+        case ClientViewContent.LoadedGraphic<?> graphic ->
+            appendGraphic(panel, theme, graphic, token);
         case ClientViewContent.Link link -> {
           var button =
               ClientControls.action(
@@ -108,5 +148,55 @@ final class CustomView {
         }
       }
     }
+  }
+
+  private <S> void appendGraphic(
+      FormPanel panel, ClientTheme theme, ClientViewContent.LoadedGraphic<S> spec, Object token) {
+    @SuppressWarnings("unchecked")
+    var view =
+        (LoadedGraphicView<S>)
+            loaded.computeIfAbsent(
+                spec.id(),
+                ignored ->
+                    new LoadedGraphicView<>(
+                        spec, graphics.apply(spec.aggregateLimits(), spec.maximumViews())));
+    view.append(panel, theme, effect -> guarded(token, effect), rebuild);
+  }
+
+  private void tick() {
+    if (!context.isOpen() || generation == null) return;
+    for (var view : loaded.values()) {
+      if (view.changed()) {
+        rebuild.run();
+        return;
+      }
+      view.focus(focus);
+    }
+  }
+
+  private static void graphicDeclarations(
+      List<ClientViewContent.Entry> entries,
+      java.util.Map<String, ClientViewContent.LoadedGraphic<?>> result) {
+    for (var entry : entries) {
+      if (entry instanceof ClientViewContent.LoadedGraphic<?> graphic)
+        result.put(graphic.id(), graphic);
+      else if (entry instanceof ClientViewContent.Group group)
+        graphicDeclarations(group.entries(), result);
+    }
+  }
+
+  private void closeGraphics() {
+    Throwable failed = null;
+    for (var view : loaded.values()) {
+      try {
+        view.close();
+      } catch (RuntimeException | Error cleanup) {
+        if (failed == null) failed = cleanup;
+        else failed.addSuppressed(cleanup);
+      }
+    }
+    loaded.clear();
+    if (failed instanceof RuntimeException cleanup) throw cleanup;
+    if (failed instanceof Error cleanup) throw cleanup;
   }
 }

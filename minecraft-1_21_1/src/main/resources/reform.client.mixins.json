@@ -3,6 +3,6 @@
   "minVersion": "0.8",
   "package": "design.inherent.reform.minecraft.mixin",
   "compatibilityLevel": "JAVA_${javaVersion}",
-  "client": ["ChatInputMixin", "ControlStyleMixin", "ScreenMountStateAccessor", "ControlCaptionMixin", "ControlInputFontMixin", "ControlInputColorMixin", "GraphicRuntimeMixin", "GraphicGuiRendererMixin", "GraphicStateMixin"],
+  "client": ["ChatInputMixin", "ControlStyleMixin", "ScreenMountStateAccessor", "ControlCaptionMixin", "ControlInputFontMixin", "ControlInputColorMixin", "GraphicRuntimeMixin", "LoadedGraphicResourcesMixin", "GraphicGuiRendererMixin", "GraphicStateMixin"],
   "injectors": {"defaultRequire": 1}
 }

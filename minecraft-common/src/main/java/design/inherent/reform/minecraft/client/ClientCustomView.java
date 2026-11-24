@@ -30,9 +30,17 @@ public final class ClientCustomView<S> {
     return key;
   }
 
-  CustomView open(ClientViewContext context, Runnable changed) {
+  CustomView open(
+      ClientViewContext context,
+      Runnable changed,
+      java.util.function.BiFunction<
+              design.inherent.reform.presentation.graphics.GraphicLimits,
+              Integer,
+              ClientGraphicHost>
+          graphics,
+      java.util.function.Consumer<FormPanel> focus) {
     var state = new ClientViewState<>(initial, context, changed);
     var content = Objects.requireNonNull(factory.open(context, state));
-    return new CustomView(context, content);
+    return new CustomView(context, content, graphics, focus);
   }
 }

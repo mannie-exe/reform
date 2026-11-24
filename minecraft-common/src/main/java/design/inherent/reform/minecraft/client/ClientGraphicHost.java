@@ -35,7 +35,7 @@ public final class ClientGraphicHost implements AutoCloseable {
 
   public record Result(
       State state,
-      Optional<GraphicRequest.Stamp> stamp,
+      Optional<GraphicSourceStamp> stamp,
       List<GraphicSceneData.Fact> facts,
       Optional<GraphicCamera> camera,
       ValidationReport report,
@@ -173,7 +173,17 @@ public final class ClientGraphicHost implements AutoCloseable {
       throw new IllegalArgumentException("Use this workflow's actual retained editor");
     if (views.size() >= maximumViews)
       throw new PolicyRefusal("preview.budget", "The workflow preview-view allowance is full");
-    var view = new View<T, S>(editor, Objects.requireNonNull(provider));
+    var view = new View<T, S>(editor, Objects.requireNonNull(provider), null);
+    views.put(view.id, view);
+    return view;
+  }
+
+  /** Read-only loaded resources, with no hidden document admission or synthetic draft. */
+  public <S> View<Void, S> openLoaded(ClientLoadedGraphicProvider<S> provider) {
+    requireOpen();
+    if (views.size() >= maximumViews)
+      throw new PolicyRefusal("preview.budget", "The workflow preview-view allowance is full");
+    var view = new View<Void, S>(null, null, Objects.requireNonNull(provider));
     views.put(view.id, view);
     return view;
   }
@@ -182,6 +192,8 @@ public final class ClientGraphicHost implements AutoCloseable {
     private final UUID id = UUID.randomUUID();
     private final ClientEditor<T> editor;
     private final ClientGraphicProvider<T, S> provider;
+    private final ClientLoadedGraphicProvider<S> loadedProvider;
+    private final ClientGraphicSource<S> source;
     private final DocumentId providerId;
     private final GraphicLedger ledger;
     private final OwnerContext.Access access;
@@ -197,13 +209,18 @@ public final class ClientGraphicHost implements AutoCloseable {
     private ValidationReport cleanupReport = ValidationReport.VALID;
     private Throwable failure;
 
-    private View(ClientEditor<T> editor, ClientGraphicProvider<T, S> provider) {
+    private View(
+        ClientEditor<T> editor,
+        ClientGraphicProvider<T, S> provider,
+        ClientLoadedGraphicProvider<S> loadedProvider) {
       this.editor = editor;
       this.provider = provider;
-      providerId = Objects.requireNonNull(provider.id());
-      ledger = nativeLedger.child(Objects.requireNonNull(provider.limits()));
-      var subjectType = Objects.requireNonNull(provider.subjectType());
-      access = context.access(() -> editor.isOpen() && editor.actions().mayInspect(), () -> false);
+      this.loadedProvider = loadedProvider;
+      source = provider == null ? Objects.requireNonNull(loadedProvider) : provider;
+      providerId = Objects.requireNonNull(source.id());
+      ledger = nativeLedger.child(Objects.requireNonNull(source.limits()));
+      var subjectType = Objects.requireNonNull(source.subjectType());
+      access = context.access(this::readable, () -> false);
       operations =
           new OperationScope(
               context,
@@ -216,7 +233,7 @@ public final class ClientGraphicHost implements AutoCloseable {
               OwnerContext.Right.READ,
               Set.of(OperationDescriptor.Effect.INSPECT),
               Set.of(OperationDescriptor.EntryPoint.GUI),
-              Optional.of(editor.document()));
+              editor == null ? Optional.empty() : Optional.of(editor.document()));
       operations.register(
           descriptor,
           (execution, subject) -> {
@@ -226,6 +243,11 @@ public final class ClientGraphicHost implements AutoCloseable {
             return request.prepare(execution, subject);
           });
       operations.freeze();
+    }
+
+    private boolean readable() {
+      return context.isOpen()
+          && (editor == null || editor.isOpen() && editor.actions().mayInspect());
     }
 
     public Snapshot snapshot() {
@@ -240,7 +262,7 @@ public final class ClientGraphicHost implements AutoCloseable {
     /** Current native result; historical operation receipts contain metadata, never this lease. */
     public Optional<GraphicPreparation> preparation() {
       ClientSettingsRuntime.requireClientThread();
-      if (!editor.isOpen() || !editor.actions().mayInspect())
+      if (!readable())
         return Optional.of(
             new GraphicPreparation.Unavailable(
                 problem("owner.permission", "Read access to this preview is unavailable")));
@@ -272,13 +294,13 @@ public final class ClientGraphicHost implements AutoCloseable {
 
     public List<GraphicSceneData.Fact> facts() {
       ClientSettingsRuntime.requireClientThread();
-      if (!editor.isOpen() || !editor.actions().mayInspect()) return List.of();
+      if (!readable()) return List.of();
       return displayed == null ? List.of() : displayed.facts();
     }
 
-    public Optional<GraphicRequest.Stamp> displayedStamp() {
+    public Optional<GraphicSourceStamp> displayedStamp() {
       ClientSettingsRuntime.requireClientThread();
-      if (!editor.isOpen() || !editor.actions().mayInspect()) return Optional.empty();
+      if (!readable()) return Optional.empty();
       return displayed == null ? Optional.empty() : displayed.stamp();
     }
 
@@ -286,18 +308,21 @@ public final class ClientGraphicHost implements AutoCloseable {
       requireOpen();
       if (ended || !visible)
         throw new PolicyRefusal("preview.closed", "This preview is closed or hidden");
-      var revision =
-          DraftRevision.of(
-              editor
-                  .view()
-                  .snapshot()
-                  .orElseThrow(
-                      () ->
-                          new PolicyRefusal(
-                              "editor.unavailable", "No current draft is available")));
-      var input = editor.presentation().previewInputStamp(revision);
+      PreviewInputStamp input = null;
+      if (editor != null) {
+        var revision =
+            DraftRevision.of(
+                editor
+                    .view()
+                    .snapshot()
+                    .orElseThrow(
+                        () ->
+                            new PolicyRefusal(
+                                "editor.unavailable", "No current draft is available")));
+        input = editor.presentation().previewInputStamp(revision);
+      }
       var frozen = descriptor.input().freeze(Objects.requireNonNull(subject));
-      var resources = Objects.requireNonNull(provider.resourceStamp());
+      var resources = Objects.requireNonNull(source.resourceStamp());
       var request = new Request<T, S>(this, input, resources, frozen);
       var old = latest;
       var previous = pending.put(id, request);
@@ -529,7 +554,8 @@ public final class ClientGraphicHost implements AutoCloseable {
       this.initial = initial;
       this.resources = resources;
       this.subject = subject;
-      observedReferences = view.editor.presentation().previewReferenceStamps();
+      observedReferences =
+          view.editor == null ? Map.of() : view.editor.presentation().previewReferenceStamps();
     }
 
     @Override
@@ -544,14 +570,15 @@ public final class ClientGraphicHost implements AutoCloseable {
           || view.ended
           || !view.visible
           || view.latest != this
-          || !view.editor.isOpen()) return false;
+          || !view.readable()) return false;
       try {
-        return resources.equals(view.provider.resourceStamp())
-            && (captured == null
-                ? (initial.equals(view.editor.presentation().previewInputStamp(initial.draft()))
-                    && observedReferences.equals(
-                        view.editor.presentation().previewReferenceStamps()))
-                : view.editor.isPreviewCurrent(captured));
+        return resources.equals(view.source.resourceStamp())
+            && (view.editor == null
+                || (captured == null
+                    ? (initial.equals(view.editor.presentation().previewInputStamp(initial.draft()))
+                        && observedReferences.equals(
+                            view.editor.presentation().previewReferenceStamps()))
+                    : view.editor.isPreviewCurrent(captured)));
       } catch (RuntimeException unavailable) {
         failure = unavailable;
         return false;
@@ -612,6 +639,22 @@ public final class ClientGraphicHost implements AutoCloseable {
     private CompletionStage<Result> prepare(OperationScope.Execution execution, S frozen) {
       requireCurrent();
       execution.checkpoint();
+      if (view.editor == null) {
+        var stamp =
+            new LoadedGraphicRequest.Stamp(view.providerId, view.id, id, context.id(), resources);
+        var work = new ClientGraphicWork(context, execution, view.ledger, this::requireCurrent);
+        try {
+          return prepareResult(
+              stamp,
+              Objects.requireNonNull(
+                  view.loadedProvider.prepare(
+                      new LoadedGraphicRequest<>(stamp, frozen, view.ledger.limits()), work)),
+              execution);
+        } catch (RuntimeException | Error failed) {
+          failure = failed;
+          throw failed;
+        }
+      }
       capturing = view.editor.capturePreview(OperationDescriptor.EntryPoint.GUI, initial.draft());
       return capturing
           .completion()
@@ -631,78 +674,86 @@ public final class ClientGraphicHost implements AutoCloseable {
                 var request = new GraphicRequest<T, S>(stamp, input, frozen, view.ledger.limits());
                 var work =
                     new ClientGraphicWork(context, execution, view.ledger, this::requireCurrent);
-                return Objects.requireNonNull(view.provider.prepare(request, work))
-                    .thenCompose(
-                        result ->
-                            context.onOwner(
-                                () -> {
-                                  requireCurrent();
-                                  execution.checkpoint();
-                                  if (result instanceof GraphicScenePreparation.Cancelled)
-                                    throw new PolicyRefusal(
-                                        "operation.cancelled",
-                                        "Preview preparation was cancelled after entered work drained");
-                                  if (result instanceof GraphicScenePreparation.Ready ready) {
-                                    var prepared = ready.graphic();
-                                    if (!stamp.equals(prepared.stamp()))
-                                      throw new PolicyRefusal(
-                                          "preview.stale",
-                                          "The provider returned a different preview identity");
-                                    prepared.scene().requireBudget(view.ledger.limits());
-                                    if (prepared.outputBytes() > view.ledger.limits().outputBytes())
-                                      throw new PolicyRefusal(
-                                          "preview.budget",
-                                          "The prepared scene and facts exceed the provider output allowance");
-                                    var output = outputLedger.reserve(prepared.outputBytes(), 1);
-                                    var observed = new java.util.concurrent.atomic.AtomicBoolean();
-                                    try {
-                                      var nativeGraphic =
-                                          ClientMeshGraphic.prepare(
-                                              prepared.scene(),
-                                              view.ledger,
-                                              8,
-                                              this::current,
-                                              lifetime -> {
-                                                observed.set(true);
-                                                lifetime
-                                                    .releaseCompletion()
-                                                    .thenAccept(
-                                                        release -> {
-                                                          if (release.released()) {
-                                                            try {
-                                                              output.close();
-                                                            } catch (RuntimeException
-                                                                | Error failed) {
-                                                              view.recordReleaseFailure(id, failed);
-                                                            }
-                                                          } else {
-                                                            view.recordReleaseFailure(
-                                                                id,
-                                                                release
-                                                                    .releaseFailure()
-                                                                    .orElseGet(
-                                                                        () ->
-                                                                            new IllegalStateException(
-                                                                                "Native preview release did not complete")));
-                                                          }
-                                                        });
-                                              });
-                                      enteredGraphic = new PreparedGraphic(prepared, nativeGraphic);
-                                    } catch (RuntimeException | Error failed) {
-                                      if (!observed.get()) output.close();
-                                      throw failed;
-                                    }
-                                    try {
-                                      requireCurrent();
-                                      execution.checkpoint();
-                                    } catch (RuntimeException | Error failed) {
-                                      enteredGraphic.close();
-                                      throw failed;
-                                    }
-                                  }
-                                  return Result.from(result);
-                                }));
+                return prepareResult(
+                    stamp, Objects.requireNonNull(view.provider.prepare(request, work)), execution);
               })
+          .whenComplete((ignored, failed) -> failure = failed);
+    }
+
+    private CompletionStage<Result> prepareResult(
+        GraphicSourceStamp stamp,
+        CompletionStage<GraphicScenePreparation> preparation,
+        OperationScope.Execution execution) {
+      return preparation
+          .thenCompose(
+              result ->
+                  context.onOwner(
+                      () -> {
+                        requireCurrent();
+                        execution.checkpoint();
+                        if (result instanceof GraphicScenePreparation.Cancelled)
+                          throw new PolicyRefusal(
+                              "operation.cancelled",
+                              "Preview preparation was cancelled after entered work drained");
+                        if (result instanceof GraphicScenePreparation.Ready ready) {
+                          var prepared = ready.graphic();
+                          if (!stamp.equals(prepared.stamp()))
+                            throw new PolicyRefusal(
+                                "preview.stale",
+                                "The provider returned a different preview identity");
+                          prepared.scene().requireBudget(view.ledger.limits());
+                          if (prepared.outputBytes() > view.ledger.limits().outputBytes())
+                            throw new PolicyRefusal(
+                                "preview.budget",
+                                "The prepared scene and facts exceed the provider output allowance");
+                          var output = outputLedger.reserve(prepared.outputBytes(), 1);
+                          var observed = new java.util.concurrent.atomic.AtomicBoolean();
+                          try {
+                            var nativeGraphic =
+                                ClientMeshGraphic.prepare(
+                                    prepared.scene(),
+                                    view.ledger,
+                                    8,
+                                    this::current,
+                                    lifetime -> {
+                                      observed.set(true);
+                                      lifetime
+                                          .releaseCompletion()
+                                          .thenAccept(
+                                              release -> {
+                                                if (release.released()) {
+                                                  try {
+                                                    output.close();
+                                                  } catch (RuntimeException | Error failed) {
+                                                    view.recordReleaseFailure(id, failed);
+                                                  }
+                                                } else {
+                                                  view.recordReleaseFailure(
+                                                      id,
+                                                      release
+                                                          .releaseFailure()
+                                                          .orElseGet(
+                                                              () ->
+                                                                  new IllegalStateException(
+                                                                      "Native preview release did not complete")));
+                                                }
+                                              });
+                                    });
+                            enteredGraphic = new PreparedGraphic(prepared, nativeGraphic);
+                          } catch (RuntimeException | Error failed) {
+                            if (!observed.get()) output.close();
+                            throw failed;
+                          }
+                          try {
+                            requireCurrent();
+                            execution.checkpoint();
+                          } catch (RuntimeException | Error failed) {
+                            enteredGraphic.close();
+                            throw failed;
+                          }
+                        }
+                        return Result.from(result);
+                      }))
           .whenComplete((ignored, failed) -> failure = failed);
     }
 
@@ -765,7 +816,7 @@ public final class ClientGraphicHost implements AutoCloseable {
     if (closed) return;
     for (var view : List.copyOf(views.values())) {
       view.observeClosedLease();
-      if (!view.editor.isOpen()) {
+      if (!context.isOpen() || view.editor != null && !view.editor.isOpen()) {
         view.close();
         continue;
       }

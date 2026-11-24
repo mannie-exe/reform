@@ -13,8 +13,40 @@ public record ClientViewContent(List<Entry> entries) {
     admit(entries, new HashSet<>(), 0, new int[1]);
   }
 
-  public sealed interface Entry permits Text, Action, Link, Group {
+  public sealed interface Entry permits Text, Action, Link, Group, LoadedGraphic {
     String id();
+  }
+
+  /** An explicit loaded-image slot; constructing content never prepares or opens a document. */
+  public record LoadedGraphic<S>(
+      String id,
+      Component title,
+      Component help,
+      ClientLoadedGraphicProvider<S> provider,
+      S subject,
+      design.inherent.reform.presentation.graphics.GraphicLimits aggregateLimits,
+      int maximumViews)
+      implements Entry {
+    public LoadedGraphic {
+      id = identity(id);
+      title = caption(title);
+      help = caption(help);
+      Objects.requireNonNull(provider);
+      subject = provider.subjectType().freeze(Objects.requireNonNull(subject));
+      Objects.requireNonNull(aggregateLimits);
+      if (maximumViews < 1 || maximumViews > 16)
+        throw new IllegalArgumentException("A workflow supports between 1 and 16 graphic views");
+    }
+
+    @Override
+    public Component title() {
+      return title.copy();
+    }
+
+    @Override
+    public Component help() {
+      return help.copy();
+    }
   }
 
   public record Text(String id, Component title, Component body) implements Entry {

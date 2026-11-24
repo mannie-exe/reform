@@ -14,7 +14,13 @@ public record GraphicRequest<T, S>(
       UUID request,
       UUID context,
       PreviewInputStamp input,
-      ReferenceStamp resources) {
+      ReferenceStamp resources)
+      implements GraphicSourceStamp {
+    @Override
+    public Kind kind() {
+      return Kind.DRAFT;
+    }
+
     public Stamp {
       Objects.requireNonNull(provider);
       Objects.requireNonNull(view);

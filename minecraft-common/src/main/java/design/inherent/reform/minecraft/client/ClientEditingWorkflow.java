@@ -140,7 +140,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                     && overview.selectedKey != null
                     && overview.selectedKey.equals(overview.category(id.value()))
                     && NativeScreens.current(client) == overview) overview.rebuildWidgets();
-              });
+              },
+              this::graphics,
+              overview::setFocused);
       requireOpen();
       owner.requireOwner();
       customViews.put(id, new CustomEntry(owner, view));

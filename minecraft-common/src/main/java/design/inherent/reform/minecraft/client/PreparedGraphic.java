@@ -10,7 +10,7 @@ import java.util.concurrent.CompletionStage;
  * One prepared view interest; close revokes drawing and actual native retirement completes later.
  */
 public final class PreparedGraphic implements AutoCloseable {
-  private final GraphicRequest.Stamp stamp;
+  private final GraphicSourceStamp stamp;
   private final List<GraphicSceneData.Fact> facts;
   private final GraphicCamera camera;
   private final CompletionStage<RenderLifetime.State> release;
@@ -27,7 +27,7 @@ public final class PreparedGraphic implements AutoCloseable {
     release.thenAccept(state -> observed = state);
   }
 
-  public GraphicRequest.Stamp stamp() {
+  public GraphicSourceStamp stamp() {
     return stamp;
   }
 

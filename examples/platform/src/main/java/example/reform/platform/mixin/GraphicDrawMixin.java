@@ -19,5 +19,6 @@ abstract class GraphicDrawMixin {
   @Inject(method = "draw", at = @At("RETURN"))
   private void observe(CallbackInfoReturnable<Object> result) {
     PlatformTaskChecks.recordDraw(this, result.getReturnValue());
+    example.reform.platform.PlatformLoadedGraphicChecks.recordDraw(this, result.getReturnValue());
   }
 }

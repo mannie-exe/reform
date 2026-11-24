@@ -1,6 +1,6 @@
 # Preview preparation
 
-The 0.4 development API supplies read-only input capture, bounded graphics data, and private native mesh adapters. The mesh adapters are undergoing native qualification; provider hosting and complete workflow integration remain under implementation. These foundations do not qualify an isolated consumer preview. The [presentation contract](../design/presentation-0.4-api.md) owns the complete selected behavior.
+The 0.4 development API supplies read-only input capture, bounded graphics data, a shared workflow host, and private native mesh adapters. Exact native and consumer qualification belongs in [verification](verification.md); implementation alone does not qualify every provider or the complete system. The [presentation contract](../design/presentation-0.4-api.md) owns the complete selected behavior.
 
 ## Capture the actual draft
 
@@ -37,6 +37,20 @@ Minecraft 1.21.1 uses a private OpenGL program, buffers, textures, and framebuff
 Use a ledger shared across the workflow's entered preparations and retiring graphics. Its counters describe known native image/buffer payload and owned object counts, not total process or graphics-driver memory. Closing the view revokes new submissions immediately. Actual completion controls release, and failures remain observable through the lifetime state. A supplied freshness guard must reflect the actual source, native input, and resource generation; it is checked before preparation and submission. A predicate that always returns true does not establish owner freshness.
 
 ## Hosted preparation
+
+### Loaded resources
+
+`host.openLoaded(provider)` opens a read-only loaded-resource view without admitting a settings document. `ClientLoadedGraphicProvider<S>` receives a `LoadedGraphicRequest<S>` under the workflow's actual READ operation and context. It receives no edited settings, fabricated draft revision, or write capability. `ClientGraphicProvider<T, S>` retains its separate complete-draft capture and native-input guards. Both kinds use the same bounded lane, worker/native stages, ledgers, visibility, cancellation, and actual-use retirement.
+
+`GraphicSourceStamp` distinguishes `DRAFT` from `LOADED`. The existing `GraphicRequest.Stamp` retains its exact `PreviewInputStamp`; `LoadedGraphicRequest.Stamp` carries the actual loaded resource identity instead. `GraphicSceneData`, `PreparedGraphic`, and host results expose that common source stamp. A caller inspecting draft-only data must first match the actual draft subtype. A loaded image is never evidence that edited settings compiled or applied.
+
+`ClientLoadedGraphics.textures(limits, metadataLimits)` prepares one exact local PNG resource from the loaded client packs. It reads bounded image bytes and metadata from the same contributing pack, closes its streams, and uses the shared still decoder and native allocation ledger. The first declared frame is fitted at its own aspect ratio, with nearest filtering, alpha, and unlit reference presentation. Missing assets are Unavailable; malformed data and budget exhaustion remain explicit failures or refusals. It neither browses a filesystem nor accepts remote URLs.
+
+The client-only reload adapter observes the actual Minecraft resource manager, before replacement and after its real completion. Start, completion, and closure change the snapshot identity even when the human revision text is unchanged. Late completion cannot make a newer reload ready. Separate server-data or mod-owned managers do not change this source. Reload retires old images; returning to a view does not prepare another image automatically. A failed or unfinished reload keeps resources unavailable.
+
+`ClientViewContent.LoadedGraphic<S>` adds a shared loaded-image slot to an authored custom body. Supply a readable title/help, the typed provider and frozen subject, and the workflow's explicit aggregate limits/view bound. It admits no editor and performs no preparation during projection. **Prepare loaded image** is explicit; camera controls change only the view. **Show loaded image** focuses and reveals the current native viewport after dispatch. Unchanged slots survive ordinary custom-state refresh/reflow; replaced, removed, hidden, and closed slots retire their actual interests. A draft catalogue task continues to use `ClientTaskGraphic`, with its actual document input.
+
+### Draft providers
 
 The development host is obtained through `workflow.graphics(limits, maximumViews)`. The workflow fixes this aggregate budget and view bound once. Open a typed view with `host.open(workflow.editor(definition), provider)`, using the exact owner definition. This does not load another editor, prepare a subject, or grant READ permission.
 

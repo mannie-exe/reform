@@ -74,6 +74,28 @@ class GraphicScenePreparationTest {
   }
 
   @Test
+  void loadedSourcesRetainRealResourceIdentityWithoutADraftStamp() {
+    var draft = stamp();
+    var loaded =
+        new LoadedGraphicRequest.Stamp(
+            draft.provider(), draft.view(), draft.request(), UUID.randomUUID(), draft.resources());
+    assertEquals(GraphicSourceStamp.Kind.DRAFT, draft.kind());
+    assertEquals(GraphicSourceStamp.Kind.LOADED, loaded.kind());
+    assertNotEquals(draft, loaded);
+    var input =
+        new LoadedGraphicRequest<>(
+            loaded, "test:textures/image.png", new GraphicLimits(1024, 1024, 256, 8, 1024));
+    assertSame(loaded, input.stamp());
+    assertSame(
+        loaded, new GraphicSceneData(loaded, empty(), GraphicCamera.STANDARD, List.of()).stamp());
+    assertThrows(
+        NullPointerException.class,
+        () ->
+            new LoadedGraphicRequest.Stamp(
+                loaded.provider(), loaded.view(), loaded.request(), loaded.context(), null));
+  }
+
+  @Test
   void unavailableAndInvalidAreDistinctAndCannotCarryAReadyLease() {
     var reason =
         new ValidationReport(

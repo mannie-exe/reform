@@ -6,7 +6,7 @@ import java.util.Objects;
 
 /** Frozen CPU/native-preparation output; private GPU allocation belongs to the shared host. */
 public record GraphicSceneData(
-    GraphicRequest.Stamp stamp, GraphicScene scene, GraphicCamera camera, List<Fact> facts) {
+    GraphicSourceStamp stamp, GraphicScene scene, GraphicCamera camera, List<Fact> facts) {
   /**
    * Stable machine identity and readable facts, retained alongside the exact subject provenance.
    */

@@ -88,6 +88,21 @@ class DistributionRefusals(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "client-only admission"):
             VERIFY.verify(self.root, self.version)
 
+    def test_loaded_resource_hook_cannot_run_on_dedicated_server(self):
+        import json
+        with zipfile.ZipFile(self.binary) as archive:
+            entries = [(entry, archive.read(entry)) for entry in archive.infolist()]
+        with zipfile.ZipFile(self.binary, "w") as archive:
+            for entry, data in entries:
+                if entry.filename == "reform.client.mixins.json":
+                    value = json.loads(data)
+                    value["client"].remove("LoadedGraphicResourcesMixin")
+                    value["mixins"] = ["LoadedGraphicResourcesMixin"]
+                    data = json.dumps(value).encode("utf-8")
+                archive.writestr(entry, data)
+        with self.assertRaisesRegex(ValueError, "client-only admission"):
+            VERIFY.verify(self.root, self.version)
+
     def test_missing_portable_server_owner_refused(self):
         with zipfile.ZipFile(self.binary) as archive:
             entries = [(entry, archive.read(entry)) for entry in archive.infolist()
