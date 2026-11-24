@@ -83,6 +83,20 @@ The focused native worker controls check two-resource admission, the combined en
 
 This accounting measures known native image and encoded-buffer payload. Native decoder scratch space, allocator overhead, catastrophic process failure, every possible cleanup fault, and the other two native client runtimes are not qualified by these pairs. Original Maven artifacts, the dev.60 negative, tested sources, and the earlier positive receipts remain unchanged. The complete selected 0.4 scope remains open.
 
+## 0.4 development: loaded atlas frames
+
+Dev.62 passes all four builds and packaged consumer compilations. Focused NeoForge 1.21.1 and Fabric 26.3 workspace initial/reopen pairs pass with four normal exits, fixture removal, and 859/655 assertion records per target. The actual authored loaded slot captures independent GUI and block-atlas physical frames, preserves their exact pixels and aspect ratio, retires replaced native and scene ownership, and refuses missing entries, invalid frames, and insufficient input allowances. An actual one-MiB native viewport refusal is followed by release and an explicit wider-budget retry. Independent ImageIO checks verify the visible red/green frame rectangles and square aspect in the retained focused captures. An earlier partial capture remains separately attributed.
+
+A later NeoForge two-boot control records 861/657 assertions and captures the same navigation before preparation, with native drawing suppressed, and after actual submission. An initial visual interpretation suggested missing navigation labels. Decoded PNG evidence disproved it: foreground coordinates and RGBA match across those phases and the original focused capture, including 272 fully opaque selected-label pixels. The visual finding is withdrawn; no rendering correction was justified. Original observations and their correction remain retained separately.
+
+This qualifies explicit static source frames, not live atlas animation, nine-slice GUI components, every texture or alpha case, or the other two native client runtimes. Items, blocks, block entities, curated entities, further customization and integrations, and final combined consumer acceptance remain selected work.
+
+## 0.4 development: operation facts and draw refusals
+
+Dev.63 passes all four builds and packaged consumer compilations. Actual NeoForge 1.21.1 and Fabric 26.3 initial/reopen pairs pass with four normal exits and fixture removal, recording 866/662 and 865/661 assertion records respectively. The operation fixture retains 36 captured facts while ordinary presentation hides 16 owner-classified technical rows. Showing details exposes them and the additional page; hiding them restores ordinary pagination without another projection or operation. Handle identity, bookmark disclosure, responsive regions, and the existing result-navigation controls remain intact.
+
+The loaded-sprite fixture causes an actual native viewport budget refusal after preparation. The hosted status retains Refused and the specific native allowance reason, confirms the lease released and both ledgers reached zero, then succeeds through explicit wider-budget preparation. This tests report propagation and the existing cleanup path, not a new allocation policy or an implicit retry. Other draw exceptions retain their existing failure handling. The other two native runtimes are compile-only at this checkpoint; no new consumer adoption or full 0.4 acceptance follows from these library pairs.
+
 ## Stable 0.3.0 release qualification
 
 The 0.3.0 build passes `mise run check` and `mise run check:security`. It retains 590 core tests on each codec runtime, four packaged native consumers, eight public consumer inputs, tooling, Markdown, and workflow checks. Security review reports no release-blocking findings or source secrets; 31 explicitly classified supplied-runtime advisories remain visible. This is not a whole-game security certification.
