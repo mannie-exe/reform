@@ -22,6 +22,58 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 
 
+WORKSPACE_CAPTURES = {
+    'platform-field-order.png',
+    'platform-form-root-actions-narrow.png',
+    'platform-form-root-actions-wide.png',
+    'platform-form-root-batch-changes.png',
+    'platform-form-root-batch-narrow.png',
+    'platform-form-root-batch-wide.png',
+    'platform-form-root-close-narrow.png',
+    'platform-form-root-close-wide.png',
+    'platform-form-root-conflict.png',
+    'platform-form-root-import-narrow.png',
+    'platform-form-root-import-wide.png',
+    'platform-form-root-inspection-narrow.png',
+    'platform-form-root-inspection-wide.png',
+    'platform-form-root-review-choices-narrow.png',
+    'platform-form-root-review-choices-wide.png',
+    'platform-form-workspace-actions-lifetime.png',
+    'platform-form-workspace-chooser-adjacent.png',
+    'platform-form-workspace-chooser-focused.png',
+    'platform-form-workspace-chooser-return.png',
+    'platform-form-workspace-defaults.png',
+    'platform-form-workspace-information-inline.png',
+    'platform-form-workspace-information-wide.png',
+    'platform-form-workspace-long-navigation.png',
+    'platform-form-workspace-narrow.png',
+    'platform-form-workspace-reference-invalid.png',
+    'platform-form-workspace-reference-manual-id.png',
+    'platform-form-workspace-reference-titles.png',
+    'platform-form-workspace-wide.png',
+    'platform-loaded-sprite-block.png',
+    'platform-loaded-sprite-gui.png',
+    'platform-loaded-texture-small.png',
+    'platform-loaded-texture.png',
+    'platform-operation-small.png',
+    'platform-operation-wide.png',
+    'platform-shell-canvas-failure.png',
+    'platform-shell-document.png',
+    'platform-shell-home.png',
+    'platform-shell-maximum-hierarchy.png',
+    'platform-task-catalogue.png',
+    'platform-task-preview-before-prepare.png',
+    'platform-task-preview-pre-draw.png',
+    'platform-task-preview-small.png',
+    'platform-task-preview.png',
+    'platform-theme-input-alpha-0.png',
+    'platform-theme-input-alpha-128.png',
+    'platform-theme-input-alpha-255.png',
+    'platform-theme-input-alpha-3.png',
+    'platform-theme-input-native-alpha-3.png',
+}
+
+
 AUTHORING_CAPTURES = {
     'platform-form-catalog-localized.png',
     'platform-form-catalog-narrow.png',
@@ -260,13 +312,11 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             if workspace_client and isinstance(native.get("workspace"), dict):
                 native["workspace"]["captures"] = retain_captures(
                     fixture, reports, native["workspace"].get("captures", []),
-                    {"platform-loaded-texture.png", "platform-loaded-texture-small.png", "platform-theme-input-alpha-128.png", "platform-theme-input-native-alpha-3.png", "platform-theme-input-alpha-0.png", "platform-theme-input-alpha-3.png", "platform-theme-input-alpha-255.png", "platform-shell-home.png", "platform-shell-document.png", "platform-shell-canvas-failure.png", "platform-shell-maximum-hierarchy.png", "platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png", "platform-form-workspace-chooser-adjacent.png", "platform-form-workspace-chooser-focused.png", "platform-form-workspace-chooser-return.png", "platform-form-workspace-reference-manual-id.png", "platform-task-catalogue.png", "platform-task-preview.png", "platform-task-preview-pre-draw.png", "platform-task-preview-before-prepare.png", "platform-task-preview-small.png", "platform-operation-wide.png", "platform-operation-small.png", "platform-field-order.png", "platform-form-root-inspection-wide.png",
-                "platform-form-root-review-choices-wide.png", "platform-form-root-review-choices-narrow.png", "platform-form-root-batch-changes.png", "platform-form-root-batch-wide.png", "platform-form-root-batch-narrow.png", "platform-form-root-close-wide.png", "platform-form-root-close-narrow.png", "platform-form-root-conflict.png", "platform-form-root-import-wide.png", "platform-form-root-import-narrow.png", "platform-form-root-actions-wide.png", "platform-form-root-actions-narrow.png", "platform-form-root-inspection-narrow.png"}, reopen)
+                    WORKSPACE_CAPTURES, reopen)
             if workspace_client and isinstance(native.get("sceneFailure"), dict):
                 native["sceneFailure"]["captures"] = retain_captures(
                     fixture, reports, native["sceneFailure"].get("captures", []),
-                    {"platform-loaded-texture.png", "platform-loaded-texture-small.png", "platform-theme-input-alpha-128.png", "platform-theme-input-native-alpha-3.png", "platform-theme-input-alpha-0.png", "platform-theme-input-alpha-3.png", "platform-theme-input-alpha-255.png", "platform-shell-home.png", "platform-shell-document.png", "platform-shell-canvas-failure.png", "platform-shell-maximum-hierarchy.png", "platform-form-workspace-actions-lifetime.png", "platform-form-workspace-wide.png", "platform-form-workspace-narrow.png", "platform-form-workspace-information-wide.png", "platform-form-workspace-information-inline.png", "platform-form-workspace-defaults.png", "platform-form-workspace-long-navigation.png", "platform-form-workspace-reference-titles.png", "platform-form-workspace-reference-invalid.png", "platform-form-workspace-chooser-adjacent.png", "platform-form-workspace-chooser-focused.png", "platform-form-workspace-chooser-return.png", "platform-form-workspace-reference-manual-id.png", "platform-task-catalogue.png", "platform-task-preview.png", "platform-task-preview-pre-draw.png", "platform-task-preview-before-prepare.png", "platform-task-preview-small.png", "platform-operation-wide.png", "platform-operation-small.png", "platform-field-order.png", "platform-form-root-inspection-wide.png",
-                "platform-form-root-review-choices-wide.png", "platform-form-root-review-choices-narrow.png", "platform-form-root-batch-changes.png", "platform-form-root-batch-wide.png", "platform-form-root-batch-narrow.png", "platform-form-root-close-wide.png", "platform-form-root-close-narrow.png", "platform-form-root-conflict.png", "platform-form-root-import-wide.png", "platform-form-root-import-narrow.png", "platform-form-root-actions-wide.png", "platform-form-root-actions-narrow.png", "platform-form-root-inspection-narrow.png"}, reopen)
+                    WORKSPACE_CAPTURES, reopen)
             if workflow_client and isinstance(native.get("workflow"), dict):
                 native["workflow"]["captures"] = retain_captures(
                     fixture, reports, native["workflow"].get("captures", []),
