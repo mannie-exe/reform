@@ -49,6 +49,16 @@ public final class PlatformClient {
   private static String nativeMenuVersion;
   private static PlatformNativeItemShutdownChecks nativeItemShutdown;
 
+  private static java.util.Map<String, String> recipeViewers = java.util.Map.of();
+
+  public static void nativeRecipeViewers(java.util.Map<String, String> actual) {
+    recipeViewers = java.util.Map.copyOf(actual);
+  }
+
+  static java.util.Map<String, String> recipeViewers() {
+    return recipeViewers;
+  }
+
   public static void nativeMenu(
       String version, java.util.function.Function<Screen, Screen> factory) {
     nativeMenuVersion = java.util.Objects.requireNonNull(version);
@@ -87,6 +97,9 @@ public final class PlatformClient {
       check(
           "optional native Mod Menu has the selected presence",
           expectedMenu == (nativeMenu != null));
+      var viewerFacts = new JsonObject();
+      recipeViewers.forEach(viewerFacts::addProperty);
+      report.add("recipeViewers", viewerFacts);
       report.addProperty("modMenuPresent", nativeMenu != null);
       if (nativeMenu != null) report.addProperty("modMenuVersion", nativeMenuVersion);
       report.addProperty("status", "RUNNING");

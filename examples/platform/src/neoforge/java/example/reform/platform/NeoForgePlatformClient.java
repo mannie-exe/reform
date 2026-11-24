@@ -12,6 +12,12 @@ import net.neoforged.neoforge.event.GameShuttingDownEvent;
 final class NeoForgePlatformClient {
   static void register(IEventBus bus, ModContainer container) {
     NeoForgeRegisteredChecks.register(bus, container);
+    var viewers = new java.util.LinkedHashMap<String, String>();
+    for (var id : java.util.List.of("jei", "emi"))
+      ModList.get()
+          .getModContainerById(id)
+          .ifPresent(mod -> viewers.put(id, mod.getModInfo().getVersion().toString()));
+    PlatformClient.nativeRecipeViewers(viewers);
     NeoForge.EVENT_BUS.addListener(
         (ClientChatReceivedEvent event) -> PlatformWorldChecks.received(event.getMessage()));
     var registration = NeoForgeClientRegistration.of(bus, container);

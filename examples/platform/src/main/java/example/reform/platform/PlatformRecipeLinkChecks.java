@@ -108,6 +108,12 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
             input.has("recipeViewer")
                 && !input.get("recipeViewer").isJsonNull()
                 && input.get("recipeViewer").getAsString().equals("jei");
+        check.accept(
+            "actual loader recipe-viewer admission matches fixture input",
+            installed
+                ? PlatformClient.recipeViewers().containsKey("jei")
+                    && !PlatformClient.recipeViewers().containsKey("emi")
+                : PlatformClient.recipeViewers().isEmpty());
         source = Files.readAllBytes(path());
         if (!installed) {
           var resolution = ClientRecipeLinks.inspect(link(REQUESTS.getFirst()));

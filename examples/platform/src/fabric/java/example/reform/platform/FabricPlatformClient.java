@@ -10,6 +10,12 @@ public final class FabricPlatformClient implements ClientModInitializer {
   @Override
   public void onInitializeClient() {
     var loader = FabricLoader.getInstance();
+    var viewers = new java.util.LinkedHashMap<String, String>();
+    for (var id : java.util.List.of("jei", "emi"))
+      loader
+          .getModContainer(id)
+          .ifPresent(mod -> viewers.put(id, mod.getMetadata().getVersion().getFriendlyString()));
+    PlatformClient.nativeRecipeViewers(viewers);
     if (loader.isModLoaded("modmenu"))
       PlatformClient.nativeMenu(
           loader
