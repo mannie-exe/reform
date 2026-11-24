@@ -493,10 +493,15 @@ public final class PlatformTaskChecks {
       }
       case 4 -> {
         if (actual.busy() || !raw("models").equals("fixture:blue")) return false;
+        var inherited = button(workflow.screen(), "Inherited");
+        if (!inherited.active || !inherited.visible) return false;
         check.accept(
             "choosing Models preserves independent Artwork and original file",
             raw("artwork").equals("fixture:default") && Arrays.equals(bytes, source()));
-        click(workflow.screen(), button(workflow.screen(), "Inherited"));
+        check.accept(
+            "next independent choice is natively focusable and revealed",
+            focus(workflow.screen(), inherited));
+        click(workflow.screen(), inherited);
         stage++;
       }
       case 5 -> {
