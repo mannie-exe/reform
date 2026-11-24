@@ -86,6 +86,65 @@ final class ReviewView<T> extends FormView implements ClientInspection {
     return actions == actual;
   }
 
+  /** Data-only return position; never owns a capture, writer, or native control. */
+  record Bookmark(
+      TaskPanels.State panels,
+      int footer,
+      String query,
+      int cursor,
+      int selection,
+      FieldPath field,
+      java.util.Set<Value> expanded,
+      boolean sourceDetails,
+      int issuePage,
+      int changePage,
+      int fieldPage) {
+    Bookmark {
+      expanded = java.util.Set.copyOf(expanded);
+    }
+  }
+
+  private boolean restoringPresentation;
+
+  Bookmark bookmark() {
+    rememberPresentation();
+    return new Bookmark(
+        retained,
+        retainedFooter,
+        filter == null ? "" : filter.getValue(),
+        filter == null ? 0 : filter.getCursorPosition(),
+        filter == null ? 0 : filter.selection(),
+        selected,
+        expanded,
+        sourceDetails,
+        issuePage,
+        changePage,
+        fieldPage);
+  }
+
+  void restore(Bookmark state) {
+    restoringPresentation = true;
+    try {
+      retained = state.panels();
+      retainedFooter = state.footer();
+      selected = state.field();
+      expanded.clear();
+      expanded.addAll(state.expanded());
+      sourceDetails = state.sourceDetails();
+      issuePage = state.issuePage();
+      changePage = state.changePage();
+      fieldPage = state.fieldPage();
+      if (filter != null) {
+        filter.setValue(state.query());
+        filter.setCursorPosition(state.cursor());
+        filter.setHighlightPos(state.selection());
+      }
+      super.rebuildWidgets();
+    } finally {
+      restoringPresentation = false;
+    }
+  }
+
   void preserve() {
     rememberPresentation();
   }
@@ -292,6 +351,7 @@ final class ReviewView<T> extends FormView implements ClientInspection {
   protected void init() {
     activated = true;
     visible = true;
+    if (composed) returning = false;
     widgets = new Object();
     language = Language.getInstance();
     wasCurrent = current();
@@ -404,6 +464,7 @@ final class ReviewView<T> extends FormView implements ClientInspection {
       filter.setHint(text("search", "Find a field"));
       filter.setResponder(
           ignored -> {
+            if (restoringPresentation) return;
             fieldPage = 0;
             if (!closed && currentHost()) rebuildWidgets();
           });
@@ -1183,7 +1244,7 @@ final class ReviewView<T> extends FormView implements ClientInspection {
   }
 
   private void rememberPresentation() {
-    if (!activated) return;
+    if (!activated || restoringPresentation) return;
     if (panels != null) retained = panels.remember(getFocused());
     retainedFooter = footer.indexOf(getFocused());
   }
@@ -1236,7 +1297,8 @@ final class ReviewView<T> extends FormView implements ClientInspection {
 
   private void finish(Optional<FieldPath> path) {
     returning = true;
-    release();
+    if (composed) hide();
+    else release();
     returned.accept(path);
   }
 

@@ -273,6 +273,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   NavigationBookmark navigationBookmark() {
     requireOverview();
     overview.beforeRebuild();
+    var inspected = overview.inspection == null ? null : overview.inspection.bookmark();
     var position = overview.navigation.position(overview.selectedKey).orElse(null);
     return new NavigationBookmark(
         navigationIdentity,
@@ -281,7 +282,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         Optional.ofNullable(position == null ? null : position.focus()),
         Optional.of(
             new NavigationBookmark.NavigationState(
-                overview.selectedFilter.name(), overview.navigation.uiState())));
+                overview.selectedFilter.name(), overview.navigation.uiState(), inspected)));
   }
 
   NavigationAttempt restoreBookmark(NavigationBookmark bookmark) {
@@ -2625,9 +2626,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void restorePosition(NavigationBookmark bookmark) {
       if (panel == null) return;
-      bookmark.viewport().ifPresent(panel::restore);
-      bookmark.focus().ifPresent(panel::restoreFocus);
-      if (panel.getFocused() != null) setFocused(panel);
+      var captured = bookmark.navigation().map(NavigationBookmark.NavigationState::inspection);
+      if (inspection != null && captured.isPresent()) {
+        inspection.restore(captured.orElseThrow());
+      } else {
+        bookmark.viewport().ifPresent(panel::restore);
+        bookmark.focus().ifPresent(panel::restoreFocus);
+        if (panel.getFocused() != null) setFocused(panel);
+      }
       if (bookmark.navigation().isPresent() && navigationWidgets != null) {
         if (bookmark.navigation().orElseThrow().searchFocused() && navigation.focusSearch())
           setFocused(navigationWidgets.search());
@@ -2636,10 +2642,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           if (navigationWidgets.panel().getFocused() != null) setFocused(navigationWidgets.panel());
         }
       }
-      navigation.remember(
-          selectedKey,
-          new WorkspaceNavigation.Position(
-              panel.bookmark(), panel.rememberedFocusKey(), actionRoute));
+      if (inspection == null)
+        navigation.remember(
+            selectedKey,
+            new WorkspaceNavigation.Position(
+                panel.bookmark(), panel.rememberedFocusKey(), actionRoute));
     }
 
     private void mountDestination(

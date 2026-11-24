@@ -131,9 +131,14 @@ final class PlatformRootInspectionChecks {
       }
       case 32 -> {
         var query = input(workflow.screen(), "Find a field");
+        replace(workflow.screen(), query, "a");
+        query.setCursorPosition(1);
+        query.setHighlightPos(0);
         check.accept(
-            "root inspection query is a native focus target", focus(workflow.screen(), query));
+            "root inspection field is a non-default native focus target",
+            focus(workflow.screen(), button(workflow.screen(), "Label")));
         bookmark = workflow.navigation().bookmark();
+        replace(workflow.screen(), query, "");
         check.accept(
             "root inspection footer is a distinct native focus target",
             focus(workflow.screen(), button(workflow.screen(), "Validate")));
@@ -150,7 +155,9 @@ final class PlatformRootInspectionChecks {
             && container.getFocused() != null) focused = container.getFocused();
         check.accept(
             "inspection bookmark restores its own actual mounted field focus",
-            focused == input(workflow.screen(), "Find a field"));
+            focused == button(workflow.screen(), "Label")
+                && input(workflow.screen(), "Find a field").getValue().equals("a")
+                && input(workflow.screen(), "Find a field").getCursorPosition() == 1);
         stage = 4;
       }
       case 4 -> {
