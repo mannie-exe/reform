@@ -18,7 +18,6 @@ import design.inherent.reform.minecraft.client.NativeNavigationButton;
 import design.inherent.reform.minecraft.client.NativeScreens;
 import design.inherent.reform.minecraft.client.NavigationAttempt;
 import design.inherent.reform.minecraft.client.SettingsForm;
-import design.inherent.reform.minecraft.client.UnsavedChangesScreen;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.ApplicationEffects;
@@ -668,8 +667,10 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
       case 20 -> {
         check(
             "dirty workflow exit requests an explicit decision",
-            NativeScreens.current(client) instanceof UnsavedChangesScreen);
-        var decision = (UnsavedChangesScreen) NativeScreens.current(client);
+            NativeScreens.current(client) == workflow.screen()
+                && button(workflow.screen(), "Discard draft").active
+                && button(workflow.screen(), "Keep editing").active);
+        var decision = NativeScreens.current(client);
         waiting = DocumentActions.result(keys.actions().load(EntryPoint.GUI)).toCompletableFuture();
         check(
             "public native source load remains active during a close decision",
@@ -686,7 +687,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
         if (!waiting.isDone()) return false;
         waiting.join();
         press(workflow.screen(), "Done");
-        var decision = (UnsavedChangesScreen) NativeScreens.current(client);
+        var decision = NativeScreens.current(client);
         press(decision, "Keep editing");
         check(
             "keep editing preserves same overview and actor",

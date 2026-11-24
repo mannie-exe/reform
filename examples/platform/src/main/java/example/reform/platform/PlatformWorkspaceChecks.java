@@ -1197,7 +1197,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
       case 12 -> {
         check(
             "dirty close requests a real decision",
-            NativeScreens.current(client) instanceof UnsavedChangesScreen);
+            NativeScreens.current(client) == workflow.screen()
+                && button(workflow.screen(), "Keep editing").active
+                && button(workflow.screen(), "Discard draft").active);
         click(NativeScreens.current(client), button(NativeScreens.current(client), "Keep editing"));
         check(
             "keep editing retains root and owners",
