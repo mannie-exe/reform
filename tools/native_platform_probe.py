@@ -214,6 +214,9 @@ def runtime_artifacts_match(native, library, target, viewer_input=None):
             or not set(viewers).issubset({"jei", "emi"})
             or set(artifacts) != {"reform"} | set(viewers)):
         return False
+    originals = [] if viewer_input is None else viewer_input.get("inputs", [viewer_input])
+    if {original["provider"] for original in originals} != set(viewers):
+        return False
     for identity, fact in artifacts.items():
         if (not isinstance(fact, dict) or not isinstance(fact.get("path"), str)
                 or not Path(fact["path"]).is_absolute() or not fact["path"].endswith(".jar")
@@ -229,8 +232,8 @@ def runtime_artifacts_match(native, library, target, viewer_input=None):
     if target.get("remapMinecraft") is True:
         return True
     return (artifacts["reform"]["sha256"] == library.sha256
-            and (viewer_input is None
-                 or artifacts.get(viewer_input["provider"], {}).get("sha256") == viewer_input["sha256"]))
+            and all(artifacts.get(original["provider"], {}).get("sha256") == original["sha256"]
+                    for original in originals))
 
 
 def retain_runtime_artifacts(native, store):
@@ -329,11 +332,11 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
         raise ValueError("Recipe links require their own native client scenario")
     if native_recipe_client and (not client or any((workspace_client, workflow_client, world_client, recipe_client, authoring_client, chooser_client, command_client, mod_menu, recipe_links_client))):
         raise ValueError("Native recipes require their own native client scenario")
-    if recipe_viewer and not ((recipe_viewer == "jei" and recipe_links_client) or (recipe_viewer == "emi" and native_recipe_client and target.get("emiVersion"))):
+    if recipe_viewer and not ((recipe_viewer == "jei" and recipe_links_client) or (recipe_viewer in ("emi", "both") and native_recipe_client and target.get("emiVersion"))):
         raise ValueError("The selected viewer requires its own declared recipe client target")
-    viewer_input = None
-    if recipe_viewer:
-        if recipe_viewer == "jei":
+    viewer_inputs = []
+    for provider in (("jei", "emi") if recipe_viewer == "both" else (recipe_viewer,) if recipe_viewer else ()):
+        if provider == "jei":
             viewer_version = target["jeiVersion"]
             module = "jei-" + target["minecraftVersion"] + "-" + target["loader"]
             url = "https://maven.blamejared.com/mezz/jei/" + module + "/" + viewer_version + "/" + module + "-" + viewer_version + ".jar"
@@ -350,8 +353,10 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             saved.write_bytes(payload)
         if saved.is_symlink() or not saved.is_file() or saved.stat().st_size > 64 * 1024 * 1024:
             raise ValueError("Recipe viewer input is not a bounded original file")
-        viewer_input = {"provider": recipe_viewer, "module": module, "version": viewer_version, "url": url,
-                        "sha256": hashlib.sha256(saved.read_bytes()).hexdigest(), "path": str(saved.relative_to(ROOT))}
+        viewer_inputs.append({"provider": provider, "module": module, "version": viewer_version, "url": url,
+                              "sha256": hashlib.sha256(saved.read_bytes()).hexdigest(), "path": str(saved.relative_to(ROOT))})
+    viewer_input = ({"provider": "both", "inputs": viewer_inputs} if recipe_viewer == "both"
+                    else viewer_inputs[0] if viewer_inputs else None)
     library = select_library(ROOT, project, version)
     example = ROOT / "examples/platform"
     fixture = example / "runs" / (project + ("-client" if client else ""))
@@ -399,7 +404,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     "-PwithConnector=" + str(connector).lower(),
                     "-PclientMode=" + str(client).lower(), "runClient" if client else "runServer"])
     if viewer_input:
-        command.extend(["-PwithRecipeViewer=" + recipe_viewer, "-PviewerSha256=" + viewer_input["sha256"]])
+        hashes = (json.dumps({value["provider"]: value["sha256"] for value in viewer_inputs})
+                  if recipe_viewer == "both" else viewer_input["sha256"])
+        command.extend(["-PwithRecipeViewer=" + recipe_viewer, "-PviewerSha256=" + hashes])
     report = {"nativeRecipeClient": native_recipe_client, "recipeLinksClient": recipe_links_client, "recipeViewer": viewer_input, "status": "FAIL", "target": target, "version": library.version, "sha256": library.sha256,
               "launch": "Independent addon source container; verified Maven library; no library source roots",
               "loaderRole": role, "loaderVersion": loader_version, "mode": "client" if client else "dedicated", "syncedWorldOverride": synced_override, "worldClient": world_client, "recipeClient": recipe_client, "authoringClient": authoring_client, "chooserClient": chooser_client, "commandClient": command_client, "workspaceClient": workspace_client, "workflowClient": workflow_client, "modMenu": mod_menu, "connector": connector, "initializationFailure": initialization_failure, "boots": [],
@@ -443,9 +450,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                 native["authoring"]["captures"] = retain_captures(
                     fixture, reports, native["authoring"].get("captures", []), AUTHORING_CAPTURES, reopen)
             if native_recipe_client and isinstance(native.get("nativeRecipes"), dict):
-                native["nativeRecipes"]["captures"] = retain_captures(fixture, reports, native["nativeRecipes"].get("captures", []), {"platform-native-recipe-book.png", "platform-native-emi-viewer.png"}, reopen)
+                native["nativeRecipes"]["captures"] = retain_captures(fixture, reports, native["nativeRecipes"].get("captures", []), {"platform-native-recipe-book.png", "platform-native-emi-viewer.png", "platform-native-dual-viewer.png"}, reopen)
             if native_recipe_client and isinstance(native.get("sceneFailure"), dict):
-                native["sceneFailure"]["captures"] = retain_captures(fixture, reports, native["sceneFailure"].get("captures", []), {"platform-native-recipe-book.png", "platform-native-emi-viewer.png"}, reopen)
+                native["sceneFailure"]["captures"] = retain_captures(fixture, reports, native["sceneFailure"].get("captures", []), {"platform-native-recipe-book.png", "platform-native-emi-viewer.png", "platform-native-dual-viewer.png"}, reopen)
             if recipe_links_client and isinstance(native.get("recipeLinks"), dict):
                 native["recipeLinks"]["captures"] = retain_captures(
                     fixture, reports, native["recipeLinks"].get("captures", []), {"platform-recipe-viewer.png"}, reopen)
@@ -501,7 +508,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native-recipe-client", action="store_true", help="Actual owner-supplied native book and optional inventory viewer context")
     parser.add_argument("--recipe-links-client", action="store_true", help="Separate optional recipe-viewer and exact parent-return qualification")
-    parser.add_argument("--recipe-viewer", choices=["jei", "emi"], help="Workspace client with exact optional runtime and original-input hash verification")
+    parser.add_argument("--recipe-viewer", choices=["jei", "emi", "both"], help="Recipe client with exact optional runtimes and original-input hash verification")
     parser.add_argument("--target", required=True, choices=[t["project"] for t in load_targets(ROOT)])
     parser.add_argument("--java-home", type=Path, help="Build JDK; game uses its declared target toolchain")
     parser.add_argument("--timeout", type=int, default=240, help="Each bounded build/server boot, 1..600 seconds")

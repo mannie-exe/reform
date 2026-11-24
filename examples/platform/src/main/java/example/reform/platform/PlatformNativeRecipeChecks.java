@@ -29,6 +29,8 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
   private byte[] source;
   private CompletableFuture<Void> survival;
   private boolean emi;
+  private boolean both;
+  private final JsonObject dualReadiness = new JsonObject();
   private int stage, mode;
   private ClientNativeRecipeBook.Result bookResult;
   private AutoCloseable simulated;
@@ -82,6 +84,8 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
           "simulatedContainerOutcome",
           simulatedAttempt.result().map(r -> r.outcome().name()).orElse("PENDING"));
     result.addProperty("emiRequested", emi);
+    result.addProperty("bothRequested", both);
+    result.add("dualReadiness", dualReadiness.deepCopy());
     result.addProperty("knownRecipeCount", unlocked == null ? -1 : unlocked.size());
     return result;
   }
@@ -129,15 +133,19 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
         var input =
             JsonParser.parseString(Files.readString(Path.of("platform-input.json")))
                 .getAsJsonObject();
-        emi =
-            input.has("recipeViewer")
-                && !input.get("recipeViewer").isJsonNull()
-                && input.get("recipeViewer").getAsString().equals("emi");
+        var viewer =
+            input.has("recipeViewer") && !input.get("recipeViewer").isJsonNull()
+                ? input.get("recipeViewer").getAsString()
+                : "";
+        both = viewer.equals("both");
+        emi = viewer.equals("emi") || both;
         check(
             "actual native recipe fixture optional admission",
-            emi
-                ? PlatformClient.recipeViewers().keySet().equals(Set.of("emi"))
-                : PlatformClient.recipeViewers().isEmpty());
+            both
+                ? PlatformClient.recipeViewers().keySet().equals(Set.of("jei", "emi"))
+                : emi
+                    ? PlatformClient.recipeViewers().keySet().equals(Set.of("emi"))
+                    : PlatformClient.recipeViewers().isEmpty());
         source = Files.readAllBytes(source());
         check(
             "native book title context unavailable without manufacturing a world",
@@ -225,7 +233,7 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
                   && !bookResult.changed()
                   && NativeScreens.current(client) == inventory);
           unchanged();
-          stage = 6;
+          stage = both ? 11 : 6;
           break;
         }
         check(
@@ -368,6 +376,75 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
             "native recipe fixture departure leaves file unchanged",
             Arrays.equals(source, Files.readAllBytes(source())));
         return true;
+      }
+      case 11 -> {
+        var request =
+            new RecipeLinkRequest(
+                RecipeLinkRequest.Kind.PRODUCING, DocumentId.parse("minecraft:crafting_table"));
+        var preferred =
+            new ClientDestination.Recipe(
+                request, RecipeLinkPolicy.standard().choosing(RecipeLinkPolicy.Provider.JEI));
+        var jei = ClientRecipeLinks.inspect(preferred);
+        boolean jeiReady = jei.selected().isPresent();
+        dualReadiness.addProperty("jeiReady", jeiReady);
+        var reasons = new JsonArray();
+        jei.report().issues().forEach(issue -> reasons.add(issue.code() + ": " + issue.fallback()));
+        dualReadiness.add("jeiIssues", reasons);
+        var emiStatus =
+            ClientRecipeLinks.inspect(
+                new ClientDestination.Recipe(
+                    request, RecipeLinkPolicy.standard().choosing(RecipeLinkPolicy.Provider.EMI)));
+        if (emiStatus.selected().isEmpty()) return false;
+        dualReadiness.addProperty("emiReady", true);
+        var automatic = new ClientDestination.Recipe(request);
+        var expected = jeiReady ? RecipeLinkPolicy.Provider.JEI : RecipeLinkPolicy.Provider.EMI;
+        check(
+            "dual viewers choose the first ready provider without opening during inspection",
+            ClientRecipeLinks.inspect(automatic).selected().orElseThrow() == expected
+                && NativeScreens.current(client) == inventory);
+        check(
+            "explicit JEI preference never silently falls through",
+            jeiReady
+                || (jei.selected().isEmpty()
+                    && jei.alternatives().stream()
+                        .anyMatch(
+                            value ->
+                                value.provider() == RecipeLinkPolicy.Provider.EMI
+                                    && value.ready())));
+        if (!jeiReady) {
+          var refused =
+              ClientRecipeLinks.openContainer(inventory, preferred).result().orElseThrow();
+          check(
+              "installed but unready JEI refuses actual activation without opening EMI",
+              refused.outcome() == NavigationAttempt.Outcome.REFUSED
+                  && NativeScreens.current(client) == inventory);
+        }
+        var unsupported = link(RecipeLinkRequest.Kind.WORKSTATION, "minecraft:crafting_table");
+        check(
+            "configured unsupported EMI never falls through to installed JEI",
+            ClientRecipeLinks.inspect(unsupported).selected().isEmpty()
+                && ClientRecipeLinks.openContainer(inventory, unsupported)
+                        .result()
+                        .orElseThrow()
+                        .outcome()
+                    == NavigationAttempt.Outcome.REFUSED
+                && NativeScreens.current(client) == inventory);
+        var opened = ClientRecipeLinks.openContainer(inventory, automatic).result().orElseThrow();
+        check(
+            "dual viewer automatic choice performs one actual public handoff",
+            opened.outcome() == NavigationAttempt.Outcome.HANDED_OFF
+                && NativeScreens.current(client) != inventory);
+        dualReadiness.addProperty("automaticProvider", expected.name());
+        capture.accept("native-dual-viewer.png", () -> NativeScreens.current(client).onClose());
+        stage = 12;
+      }
+      case 12 -> {
+        if (NativeScreens.current(client) != inventory) return false;
+        check(
+            "dual viewer automatic return keeps same real owner and menu",
+            client.player.containerMenu == inventory.getMenu());
+        unchanged();
+        stage = 6;
       }
       default -> {}
     }

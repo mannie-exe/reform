@@ -35,6 +35,15 @@ class OptionalAdmissionTests(unittest.TestCase):
                 platform.run("neoforge-1_21_1", None, 1, client=True, workspace_client=True, recipe_viewer="jei")
             resolve.assert_not_called()
 
+    def test_dual_viewers_require_declared_native_container_target(self):
+        for target, options in [("fabric-26_3", {"client": True, "native_recipe_client": True}),
+                                ("neoforge-1_21_1", {"client": True, "recipe_links_client": True}),
+                                ("neoforge-1_21_1", {})]:
+            with self.subTest(target=target, options=options), patch.object(platform, "select_library") as resolve:
+                with self.assertRaises(ValueError):
+                    platform.run(target, None, 1, recipe_viewer="both", **options)
+                resolve.assert_not_called()
+
     def test_workspace_requires_its_own_client_scenario(self):
         for options in [{}, {"client": True, "world_client": True},
                         {"client": True, "recipe_client": True},
@@ -332,6 +341,24 @@ class PlatformOutcomeTests(unittest.TestCase):
         self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
         original["sha256"] = "c" * 64
         self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+
+    def test_both_runtime_viewers_require_both_selected_identities(self):
+        originals = []
+        for provider, witness, digest in [("jei", "mezz/jei/api/IModPlugin.class", "c" * 64),
+                                           ("emi", "dev/emi/emi/api/EmiApi.class", "d" * 64)]:
+            fact = dict(self.native["runtimeArtifacts"]["reform"])
+            fact.update(path="/actual/" + provider + ".jar", witness=witness, sha256=digest)
+            self.native["runtimeArtifacts"][provider] = fact
+            originals.append({"provider": provider, "sha256": digest})
+        self.native["recipeViewers"] = {"jei": "19", "emi": "1"}
+        inputs = {"provider": "both", "inputs": originals}
+        self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, inputs))
+        originals[1]["sha256"] = "e" * 64
+        self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, inputs))
+        self.target["remapMinecraft"] = True
+        self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, inputs))
+        inputs["inputs"] = originals[:1]
+        self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, inputs))
 
     def test_runtime_archive_rejects_invalid_or_unbounded_facts(self):
         fact = self.native["runtimeArtifacts"]["reform"]

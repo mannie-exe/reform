@@ -54,7 +54,10 @@ final class PlatformFormProbe {
     private String captureName;
     private Runnable afterCapture;
     private CompletableFuture<Void> capture;
-    private int ticks, frames;
+    private int ticks;
+    private long captureBaseline;
+    private net.minecraft.client.gui.screens.Screen captureScreen;
+    private final JsonObject captureFrames = new JsonObject();
 
     private Driver(String label) {
       this.label = label;
@@ -68,7 +71,9 @@ final class PlatformFormProbe {
       if (captureName != null) throw new AssertionError("Overlapping native capture");
       captureName = "platform-" + name;
       afterCapture = action;
-      frames = 0;
+      captureBaseline = PlatformFrameObservations.sequence();
+      captureScreen =
+          design.inherent.reform.minecraft.client.NativeScreens.current(Minecraft.getInstance());
     }
 
     private void tick() {
@@ -78,25 +83,36 @@ final class PlatformFormProbe {
         if (++ticks > scene.tickBudget())
           throw new AssertionError("Native form timed out: " + scene.diagnostic());
         if (!NativeClientProbe.ready(Minecraft.getInstance())) {
-          frames = 0;
+          captureBaseline = PlatformFrameObservations.sequence();
           return;
         }
         if (captureName != null) {
-          if (++frames < 4) return;
+          if (design.inherent.reform.minecraft.client.NativeScreens.current(Minecraft.getInstance())
+              != captureScreen)
+            throw new AssertionError("Native capture screen changed: " + captureName);
+          if (PlatformFrameObservations.sequence() - captureBaseline < 4) return;
           if (capture == null)
             capture = NativeClientProbe.capture(Minecraft.getInstance(), Path.of(captureName));
           if (!capture.isDone()) return;
           capture.join();
           captures.add(captureName);
+          var observation = new JsonObject();
+          observation.addProperty("requestedAfterFrame", captureBaseline);
+          observation.addProperty("capturedAfterFrame", PlatformFrameObservations.sequence());
+          observation.addProperty(
+              "screen", captureScreen == null ? "none" : captureScreen.getClass().getName());
+          captureFrames.add(captureName, observation);
           var action = afterCapture;
           captureName = null;
           afterCapture = null;
           capture = null;
+          captureScreen = null;
           action.run();
         }
         if (scene.tick()) {
           var report = scene.report();
           report.add("captures", captures);
+          report.add("captureFrames", captureFrames.deepCopy());
           scene.close();
           subscription.close();
           result.complete(report);
@@ -118,6 +134,7 @@ final class PlatformFormProbe {
         failure.addProperty("failure", failed.toString());
         failure.add("partial", scene.report());
         failure.add("captures", captures);
+        failure.add("captureFrames", captureFrames.deepCopy());
         var screen =
             design.inherent.reform.minecraft.client.NativeScreens.current(Minecraft.getInstance());
         if (screen != null) {

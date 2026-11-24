@@ -24,8 +24,8 @@ def loader = providers.gradleProperty('testedLoader').getOrElse('false').toBoole
 def libraryVersion = providers.gradleProperty('reformVersion').get()
 def bareLibrary = providers.gradleProperty('bareLibrary').getOrElse('false').toBoolean()
 def withRecipeViewer = providers.gradleProperty('withRecipeViewer').getOrElse('')
-if (withRecipeViewer && !(withRecipeViewer in ['jei', 'emi'])) throw new GradleException('Select an admitted recipe viewer')
-if (withRecipeViewer == 'emi' && !target.emiVersionRef) throw new GradleException('No selected EMI input for this target')
+if (withRecipeViewer && !(withRecipeViewer in ['jei', 'emi', 'both'])) throw new GradleException('Select an admitted recipe viewer')
+if (withRecipeViewer in ['emi', 'both'] && !target.emiVersionRef) throw new GradleException('No selected EMI input for this target')
 def withConnector = providers.gradleProperty('withConnector').getOrElse('false').toBoolean()
 if (withConnector && !target.connectorVersionRef)
     throw new GradleException('No qualified Connector input is declared for this target')
@@ -133,17 +133,25 @@ if (target.loader == 'neoforge') {
 }
 
 if (withRecipeViewer) {
-    def viewer = withRecipeViewer == 'jei' ? "mezz.jei:jei-${game}-${target.loader}:${pin(target.jeiVersionRef)}" : "dev.emi:emi-${target.loader}:${pin(target.emiVersionRef)}"
-    dependencies.add(target.loader == 'fabric' && target.remapMinecraft ? 'modRuntimeOnly' : 'runtimeOnly', viewer)
+    def viewers = (withRecipeViewer == 'both' ? ['jei', 'emi'] : [withRecipeViewer]).collectEntries { provider ->
+        [(provider): provider == 'jei' ? "mezz.jei:jei-${game}-${target.loader}:${pin(target.jeiVersionRef)}" : "dev.emi:emi-${target.loader}:${pin(target.emiVersionRef)}"]
+    }
+    viewers.each { provider, viewer ->
+        dependencies.add(target.loader == 'fabric' && target.remapMinecraft ? 'modRuntimeOnly' : 'runtimeOnly', viewer)
+    }
     tasks.register('verifyRecipeViewer') {
         doLast {
-            def original = configurations.detachedConfiguration(dependencies.create(viewer))
-            original.transitive = false
-            def actual = java.security.MessageDigest.getInstance('SHA-256').digest(original.singleFile.bytes).encodeHex().toString()
-            if (actual != providers.gradleProperty('viewerSha256').get())
-                throw new GradleException('Recipe viewer differs from the selected original runtime')
+            def expected = withRecipeViewer == 'both' ? new groovy.json.JsonSlurper().parseText(providers.gradleProperty('viewerSha256').get()) : [(withRecipeViewer): providers.gradleProperty('viewerSha256').get()]
+            if (expected.keySet() != viewers.keySet()) throw new GradleException('Viewer input identities do not match the selected runtime set')
+            viewers.each { provider, viewer ->
+                def original = configurations.detachedConfiguration(dependencies.create(viewer))
+                original.transitive = false
+                def actual = java.security.MessageDigest.getInstance('SHA-256').digest(original.singleFile.bytes).encodeHex().toString()
+                if (actual != expected[provider])
+                    throw new GradleException('Recipe viewer differs from the selected original runtime: ' + provider)
+                println "Native recipe viewer ${provider} SHA-256: ${actual}"
+            }
             configurations.runtimeClasspath.resolve()
-            println "Native recipe viewer SHA-256: ${actual}"
         }
     }
     tasks.matching { it.name in ['runClient', 'compileJava'] }.configureEach { dependsOn 'verifyRecipeViewer' }
