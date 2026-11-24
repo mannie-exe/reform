@@ -27,5 +27,9 @@ final class NativeGraphicImages {
     return (abgr & 0xff00ff00) | ((abgr & 0xff) << 16) | ((abgr >>> 16) & 0xff);
   }
 
+  static int[] abgr(NativeImage image) {
+    return image.getPixelsRGBA();
+  }
+
   private NativeGraphicImages() {}
 }

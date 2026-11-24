@@ -29,5 +29,9 @@ final class NativeGraphicImages {
     return image.getPixel(x, y);
   }
 
+  static int[] abgr(NativeImage image) {
+    return image.getPixelsABGR();
+  }
+
   private NativeGraphicImages() {}
 }

@@ -4125,6 +4125,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             documents().stream().filter(DocumentState::opened).count(),
             documents().stream().filter(DocumentState::dirty).count());
       if (!isOpen()) return text("context_ended", "This editing context ended.");
+      if (metadata() == null
+          && selectedKey != null
+          && presentation.views().containsKey(new DestinationId(selectedKey.placement())))
+        return Component.empty();
       if (actionRoute == null
           || entry(actionRoute).editor == null
           || !entry(actionRoute).editor.isOpen())

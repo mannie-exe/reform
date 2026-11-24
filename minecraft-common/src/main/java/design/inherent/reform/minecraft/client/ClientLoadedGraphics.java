@@ -24,6 +24,7 @@ import java.util.concurrent.CompletionStage;
  */
 public final class ClientLoadedGraphics {
   private static final DocumentId TEXTURE = DocumentId.parse("reform:loaded_texture");
+  private static final DocumentId SPRITE = DocumentId.parse("reform:loaded_sprite");
   private static final DocumentId MATERIAL = DocumentId.parse("reform:loaded_texture_surface");
 
   /** Exact local PNG resource ID, with paired pack metadata and its first declared still frame. */
@@ -31,13 +32,14 @@ public final class ClientLoadedGraphics {
       GraphicLimits limits, JsonLimits metadataLimits) {
     Objects.requireNonNull(limits);
     Objects.requireNonNull(metadataLimits);
+    var subjects = NativeReferences.type(TEXTURE, false, 512);
     return new ClientLoadedGraphicProvider<>() {
       public DocumentId id() {
         return TEXTURE;
       }
 
       public ValueType<String> subjectType() {
-        return NativeReferences.type(TEXTURE, false, 512);
+        return subjects;
       }
 
       public GraphicLimits limits() {
@@ -78,6 +80,113 @@ public final class ClientLoadedGraphics {
                             () -> capture(request, source.orElseThrow(), metadataLimits, work)));
       }
     };
+  }
+
+  /** Explicit static physical source frame; it is not the atlas's current animation state. */
+  public static ClientLoadedGraphicProvider<ClientSpriteSubject> sprites(GraphicLimits limits) {
+    Objects.requireNonNull(limits);
+    return new ClientLoadedGraphicProvider<>() {
+      public DocumentId id() {
+        return SPRITE;
+      }
+
+      public ValueType<ClientSpriteSubject> subjectType() {
+        return ClientSpriteSubject.type();
+      }
+
+      public GraphicLimits limits() {
+        return limits;
+      }
+
+      public ReferenceStamp resourceStamp() {
+        return LoadedGraphicResources.snapshot().stamp();
+      }
+
+      public CompletionStage<GraphicScenePreparation> prepare(
+          LoadedGraphicRequest<ClientSpriteSubject> request, ClientGraphicWork work) {
+        var resources = LoadedGraphicResources.snapshot();
+        if (!resources.stamp().equals(request.stamp().resources()))
+          throw new PolicyRefusal(
+              "preview.stale", "Loaded resources changed; prepare the sprite again");
+        if (!resources.ready()) {
+          var report =
+              problem(
+                  "preview.resources_unavailable",
+                  "Loaded resources are unavailable; finish or retry the resource reload");
+          return CompletableFuture.completedFuture(
+              resources.failure() == null
+                  ? new GraphicScenePreparation.Unavailable(report)
+                  : new GraphicScenePreparation.Failed(report, resources.failure()));
+        }
+        return work.onClient(
+                () -> NativeLoadedSpriteAccess.capture(request.subject(), request.limits()))
+            .thenCompose(
+                source ->
+                    source.isEmpty()
+                        ? CompletableFuture.completedFuture(
+                            new GraphicScenePreparation.Unavailable(
+                                problem(
+                                    "preview.asset_missing",
+                                    "The selected sprite is not in this loaded atlas")))
+                        : work.onWorker(() -> sprite(request, source.orElseThrow(), work)));
+      }
+    };
+  }
+
+  private static GraphicScenePreparation sprite(
+      LoadedGraphicRequest<ClientSpriteSubject> request,
+      LoadedSpriteSource source,
+      ClientGraphicWork work) {
+    work.checkpoint();
+    var frame =
+        ClientGraphicImages.frame(
+            source.stripWidth(),
+            source.stripHeight(),
+            source.width(),
+            source.height(),
+            request.subject().sourceFrame());
+    var argb = new int[Math.multiplyExact(frame.width(), frame.height())];
+    for (int y = 0; y < frame.height(); y++) {
+      work.checkpoint();
+      for (int x = 0; x < frame.width(); x++) {
+        int abgr = source.abgr()[(frame.y() + y) * source.stripWidth() + frame.x() + x];
+        argb[y * frame.width() + x] =
+            (abgr & 0xff00ff00) | ((abgr & 0xff) << 16) | ((abgr >>> 16) & 0xff);
+      }
+    }
+    var pixels = new GraphicPixels(request.limits(), SPRITE, frame.width(), frame.height(), argb);
+    var scene =
+        new GraphicScene(
+            plane(request.limits(), MATERIAL, frame.width(), frame.height()),
+            Map.of(
+                MATERIAL,
+                new GraphicMaterial(
+                    SPRITE,
+                    GraphicMaterial.Alpha.TRANSLUCENT,
+                    0,
+                    GraphicMaterial.Cull.NONE,
+                    GraphicMaterial.Filter.NEAREST,
+                    GraphicMaterial.Wrap.CLAMP)),
+            Map.of(SPRITE, pixels));
+    scene.requireBudget(request.limits());
+    return new GraphicScenePreparation.Ready(
+        new GraphicSceneData(
+            request.stamp(),
+            scene,
+            new GraphicCamera(0, 0, 0.9, 0, 0),
+            List.of(
+                new GraphicSceneData.Fact(
+                    DocumentId.parse("reform:graphic/source"), "Source", "Loaded client atlas"),
+                new GraphicSceneData.Fact(
+                    DocumentId.parse("reform:graphic/atlas"), "Atlas", source.atlas()),
+                new GraphicSceneData.Fact(
+                    DocumentId.parse("reform:graphic/resource"), "Sprite", source.sprite()),
+                new GraphicSceneData.Fact(
+                    DocumentId.parse("reform:graphic/frame"),
+                    "Image",
+                    "Physical source frame "
+                        + request.subject().sourceFrame()
+                        + "; static reference, without animation or world lighting"))));
   }
 
   private static GraphicScenePreparation capture(
@@ -143,9 +252,7 @@ public final class ClientLoadedGraphics {
                 new GraphicSceneData.Fact(
                     DocumentId.parse("reform:graphic/resource"), "Texture", source.id()),
                 new GraphicSceneData.Fact(
-                    DocumentId.parse("reform:graphic/pack"),
-                    "Source pack",
-                    source.resource().sourcePackId()),
+                    DocumentId.parse("reform:graphic/pack"), "Source pack", source.packId()),
                 new GraphicSceneData.Fact(
                     DocumentId.parse("reform:graphic/frame"),
                     "Image",

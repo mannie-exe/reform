@@ -7,4 +7,4 @@ import net.minecraft.server.packs.resources.Resource;
 
 /** Borrowed only during explicit preparation; never closes the game's resource owner. */
 record LoadedTextureSource(
-    String id, Resource resource, Optional<IoSupplier<InputStream>> metadata) {}
+    String id, String packId, Resource resource, Optional<IoSupplier<InputStream>> metadata) {}

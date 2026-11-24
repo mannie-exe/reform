@@ -20,6 +20,7 @@ final class NativeLoadedResourceAccess {
             resource ->
                 new LoadedTextureSource(
                     id.toString(),
+                    resource.sourcePackId(),
                     resource,
                     Optional.ofNullable(
                         resource
