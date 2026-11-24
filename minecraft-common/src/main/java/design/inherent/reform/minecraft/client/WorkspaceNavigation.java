@@ -35,6 +35,7 @@ final class WorkspaceNavigation {
     CATEGORY,
     DESTINATION,
     SECTION,
+    INSPECTION,
     FIELD
   }
 
@@ -99,6 +100,12 @@ final class WorkspaceNavigation {
   private NavigationHistory<Key> history;
   private int maximumHistory;
   private Key observedSelection;
+  private Key task;
+
+  void task(Key task) {
+    this.task = task;
+  }
+
   private boolean restoring;
   private Key historyOrigin, historyTarget, temporaryReveal;
   private boolean historyForward, mounting;
@@ -186,6 +193,7 @@ final class WorkspaceNavigation {
 
   void visit(Key selected, FormCatalog.Limits limits) {
     if (selected == null || mounting) return;
+    if (task != null) selected = task;
     if (historyTarget != null) {
       if (selected.equals(historyOrigin)) return;
       if (selected.equals(historyTarget)) {

@@ -212,6 +212,38 @@ final class PlatformRootInspectionChecks {
             workflow.inspection().orElseThrow() == inspection
                 && inspection.reviewedInput().orElseThrow() == reviewed
                 && Arrays.equals(source, source()));
+        var back =
+            widgets(workflow.screen()).stream()
+                .filter(Button.class::isInstance)
+                .map(Button.class::cast)
+                .filter(w -> w.getMessage().getString().equals("Back"))
+                .min(Comparator.comparingInt(Button::getY))
+                .orElseThrow();
+        check.accept(
+            "inspection has an admitted native history Back",
+            back.active && focus(workflow.screen(), back));
+        click(workflow.screen(), back);
+        stage = 81;
+      }
+      case 81 -> {
+        if (workflow.inspection().isPresent()) return false;
+        check.accept(
+            "native history Back returns to the same editing actor",
+            workflow.editor(route) == editor && editor.form() == retainedForm && editor.dirty());
+        var forward = button(workflow.screen(), "Forward");
+        check.accept(
+            "inspection return remains in native forward history",
+            forward.active && focus(workflow.screen(), forward));
+        click(workflow.screen(), forward);
+        stage = 82;
+      }
+      case 82 -> {
+        if (workflow.inspection().isEmpty()) return false;
+        check.accept(
+            "native history Forward restores the original capture without another read",
+            workflow.inspection().orElseThrow() == inspection
+                && inspection.reviewedInput().orElseThrow() == reviewed
+                && Arrays.equals(source, source()));
         pending = workflow.navigation().up().orElseThrow().completion().toCompletableFuture();
         stage = 9;
       }

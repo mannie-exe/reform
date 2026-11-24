@@ -224,6 +224,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   }
 
   private ClientDestination destinationFor(WorkspaceNavigation.Key key) {
+    if (key.kind() == WorkspaceNavigation.Kind.INSPECTION)
+      return new ClientDestination.Inspection(key.placement());
     if (key.kind() == WorkspaceNavigation.Kind.HOME) return new ClientDestination.Home();
     if (key.kind() == WorkspaceNavigation.Kind.CATEGORY) {
       var id = new DestinationId(key.placement());
@@ -636,7 +638,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           selected,
           editor,
           restoring,
-          bookmark == null ? null : bookmark.navigation().orElse(null));
+          bookmark == null ? null : bookmark.navigation().orElse(null),
+          attempt.target() instanceof ClientDestination.Inspection);
       if (attempt.target() instanceof ClientDestination.Inspection requested) {
         overview.revealInspection(requested.route(), Objects.requireNonNull(editor));
       }
@@ -1415,6 +1418,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (inspection != null) inspection.hide();
       inspection = null;
       inspectionRoute = null;
+      navigation.task(null);
+    }
+
+    private WorkspaceNavigation.Key inspectionKey(DocumentId route) {
+      return new WorkspaceNavigation.Key(
+          WorkspaceNavigation.Kind.INSPECTION, route, Optional.empty());
     }
 
     private void revealInspection(DocumentId route, ClientEditor<?> editor) {
@@ -1424,6 +1433,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         hideInspection();
         inspection = retained;
         inspectionRoute = route;
+        navigation.task(inspectionKey(route));
         information.clear();
         drawerOpen = false;
         rebuildWidgets();
@@ -1477,6 +1487,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         if (replaced != null) replaced.retireForNavigation();
         inspection = borrowed;
         inspectionRoute = route;
+        navigation.task(inspectionKey(route));
         information.clear();
         drawerOpen = false;
         rebuildWidgets();
@@ -2659,9 +2670,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         ClientEditor<?> editor,
         boolean restoring,
         NavigationBookmark.NavigationState navigationState) {
+      mountDestination(selected, editor, restoring, navigationState, false);
+    }
+
+    private void mountDestination(
+        NavigationSelection selected,
+        ClientEditor<?> editor,
+        boolean restoring,
+        NavigationBookmark.NavigationState navigationState,
+        boolean inspecting) {
       // Retain the old page before assigning new identity, including a focusless viewport.
       beforeRebuild();
       hideInspection();
+      if (inspecting) navigation.task(inspectionKey(selected.route().orElseThrow()));
       var previousUi = navigation.uiState();
       var previousFilter = selectedFilter;
       if (navigationState != null) {
@@ -2702,6 +2723,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         navigation.visit(
             selectedKey, design.inherent.reform.presentation.FormCatalog.Limits.STANDARD);
       } catch (RuntimeException | Error failed) {
+        navigation.task(null);
         navigation.restoreUi(previousUi);
         selectedFilter = previousFilter;
         selectedKey = previousKey;
