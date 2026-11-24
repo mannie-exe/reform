@@ -412,15 +412,40 @@ public final class PlatformLoadedGraphicChecks {
                     .anyMatch(i -> i.code().equals("preview.budget"))
                 && released());
         unchanged();
+        press("Select test image");
+        PlatformDecodedCloseFault.armed = true;
+        press("Prepare loaded image");
+        stage = 17;
+      }
+      case 17 -> {
+        if (failed == null || !NativeNarrationProbe.read(image()).contains("Preview failed"))
+          return false;
+        Throwable cause = failed;
+        while (cause instanceof CompletionException && cause.getCause() != null)
+          cause = cause.getCause();
+        while (cause != PlatformDecodedCloseFault.expected && cause.getCause() != null)
+          cause = cause.getCause();
+        check.accept(
+            "one-shot native decoder fault follows actual native image release",
+            PlatformDecodedCloseFault.actualImageFreed
+                && cause == PlatformDecodedCloseFault.expected);
+        check.accept(
+            "failed decoder close retains its uncertain reservation: actual="
+                + host.nativeOwnership().bytes(),
+            host.nativeOwnership().bytes() >= 4L * 4 * 2 && host.retainedOutput().bytes() == 0);
+        check.accept(
+            "decoder cleanup failure retains its exact cause once",
+            host.releaseFailureCount() == 1
+                && host.releaseFailure().orElse(null) == PlatformDecodedCloseFault.expected);
+        unchanged();
         workflow.close();
         NativeScreens.open(client, parent);
-        stage = 15;
+        stage = 18;
       }
-      case 15 -> {
-        if (!released()) return false;
+      case 18 -> {
         check.accept(
-            "loaded slot and original owner close without a write or retained allocation",
-            !workflow.isOpen() && released());
+            "closed decoder-failure scope does not silently refund uncertain bytes",
+            !workflow.isOpen() && host.nativeOwnership().bytes() >= 32);
         active = null;
         stage = 16;
         return true;
