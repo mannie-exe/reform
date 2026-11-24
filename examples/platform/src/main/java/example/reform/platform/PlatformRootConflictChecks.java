@@ -102,7 +102,8 @@ final class PlatformRootConflictChecks {
             JsonParser.parseString(new String(original, java.nio.charset.StandardCharsets.UTF_8))
                 .getAsJsonObject();
         json.getAsJsonObject("values").addProperty("label", "External replacement");
-        json.getAsJsonObject("values").addProperty("distance", 256);
+        int previousDistance = json.getAsJsonObject("values").get("distance").getAsInt();
+        json.getAsJsonObject("values").addProperty("distance", previousDistance == 256 ? 255 : 256);
         external = json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
         Files.write(path, external);
         press(ownerAction(workflow.screen(), "Reload saved"));
@@ -132,8 +133,11 @@ final class PlatformRootConflictChecks {
                     .equals(new ClientDestination.Conflict(route))
                 && Arrays.equals(external, Files.readAllBytes(path)));
         check.accept(
-            "root conflict requires an explicit choice for every actual field",
-            conflict.reviewedInput().orElseThrow().entries().size() == 3
+            "root conflict requires an explicit choice for exactly the compared fields",
+            conflict.reviewedInput().orElseThrow().entries().stream()
+                    .map(entry -> entry.path())
+                    .collect(java.util.stream.Collectors.toSet())
+                    .equals(Set.of(label, FieldPath.ROOT.field("distance")))
                 && !button(workflow.screen(), "Resolve draft").active);
         choose(label);
         check.accept(
