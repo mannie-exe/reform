@@ -157,6 +157,7 @@ tasks.named('processResources') {
     inputs.properties([game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: '', javaVersion: target.java])
     filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json', 'reform-platform-client.mixins.json']) {
         expand game: game, loader: loader, libraryVersion: libraryVersion, fmlVersionRange: target.fmlVersionRange ?: '', javaVersion: target.java,
+            nativeItemMixins: game == '26.3' ? ', "NativeItemConsumptionMixin", "NativeItemFeatureMixin"' : '',
             probeAccessWidener: game == '1.21.1' ? '"accessWidener": "platform-probe.accesswidener",' : ''
     }
 }

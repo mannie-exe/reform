@@ -46,6 +46,56 @@ public final class PlatformLoadedItemChecks {
   private final int[] nativeWidth = new int[1], nativeHeight = new int[1];
   private int screenWidth, screenHeight;
   private PreparedGraphic retainedGraphic;
+  private int nativeEntries, pendingControl, nativeEntriesBefore;
+  private boolean resetObserved, faultObserved, deferredChecked, pendingCloseObserved, resetChecked;
+  private static final IllegalStateException NATIVE_FAULT =
+      new IllegalStateException("fixture native item feature fault");
+
+  /**
+   * Verification-only control at actual GUI consumption, after extraction and before feature work.
+   */
+  public static void beforeNativeConsumption(Runnable reset) {
+    if (active != null && active.pendingControl == 1) {
+      active.pendingControl = 0;
+      active.check.accept(
+          "native reset starts with an outstanding extracted item use",
+          active.graphic != null && active.graphic.state().outstandingUses() > 0);
+      active.nativeEntriesBefore = active.nativeEntries;
+      reset.run();
+      active.resetObserved = true;
+    } else if (active != null && active.pendingControl == 3) {
+      active.pendingControl = 0;
+      active.check.accept(
+          "workflow close starts with an outstanding extracted native item use",
+          active.graphic != null && active.graphic.state().outstandingUses() > 0);
+      active.workflow.close();
+      NativeScreens.open(active.client, active.parent);
+      active.pendingCloseObserved = true;
+    }
+  }
+
+  /**
+   * Exact call-return observation; subsequent frames may legitimately recover before the next tick.
+   */
+  public static void afterNativeConsumption() {
+    if (active != null && active.resetObserved && !active.resetChecked) {
+      active.check.accept(
+          "actual reset GUI consumption never enters its discarded native callback",
+          active.nativeEntries == active.nativeEntriesBefore);
+      active.resetChecked = true;
+    }
+  }
+
+  /** Observes the actual native item feature callback, never a copied rendering implementation. */
+  public static void nativeFeatureEntered() {
+    if (active == null) return;
+    active.nativeEntries++;
+    if (active.pendingControl == 2) {
+      active.pendingControl = 0;
+      active.faultObserved = true;
+      throw NATIVE_FAULT;
+    }
+  }
 
   private void contextWorkspace() {
     workflow = ClientEditingWorkflow.open(parent, text("Item registry context"), List.of());
@@ -220,7 +270,15 @@ public final class PlatformLoadedItemChecks {
         + ", failure="
         + failed
         + ", draw="
-        + drawFailure;
+        + drawFailure
+        + ", nativeEntries="
+        + nativeEntries
+        + ", before="
+        + nativeEntriesBefore
+        + ", reset="
+        + resetObserved
+        + "/"
+        + resetChecked;
   }
 
   boolean tick() throws Exception {
@@ -275,7 +333,7 @@ public final class PlatformLoadedItemChecks {
                 new ViewKey<>(
                     ITEM,
                     new ViewStateKey<>(
-                        DocumentId.parse("fixture:item_choice"), ValueTypes.integer(0, 4))),
+                        DocumentId.parse("fixture:item_choice"), ValueTypes.integer(0, 5))),
                 0,
                 (context, state) -> {
                   selection = state;
@@ -287,7 +345,7 @@ public final class PlatformLoadedItemChecks {
                                   text("Loaded test item"),
                                   text("Prepared native GUI model"),
                                   state.value() == 4 ? one : normal,
-                                  choices.get(Math.min(3, state.value())),
+                                  choices.get(state.value() == 5 ? 2 : Math.min(3, state.value())),
                                   LIMITS,
                                   2)));
                 });
@@ -336,7 +394,15 @@ public final class PlatformLoadedItemChecks {
             prepared instanceof NativeGraphicContribution<?> && preparations == mode + 1);
         if (!showing) {
           showing = true;
+          if (mode == 5) {
+            pendingControl = 3;
+            nativeEntriesBefore = nativeEntries;
+          }
           press("Show loaded image");
+          return false;
+        }
+        if (mode == 5) {
+          if (pendingCloseObserved) stage = 40;
           return false;
         }
         if (submissions <= before) return false;
@@ -375,13 +441,22 @@ public final class PlatformLoadedItemChecks {
           stage = 20;
           return false;
         }
+        if (mode == 2 && NativeItemFixtureContext.requiresWorld() && !deferredChecked) {
+          nativeEntriesBefore = nativeEntries;
+          pendingControl = 1;
+          resetObserved = false;
+          press("Rotate right");
+          press("Show loaded image");
+          stage = 30;
+          return false;
+        }
         if (mode == 1 || mode == 2) {
           stage = 90;
           capture.accept("loaded-item-" + mode + ".png", () -> stage = 7);
         } else stage = 7;
       }
       case 7 -> {
-        if (mode == 4) {
+        if (mode == 4 && !NativeItemFixtureContext.requiresWorld()) {
           workflow.close();
           NativeScreens.open(client, parent);
           stage = 8;
@@ -457,6 +532,54 @@ public final class PlatformLoadedItemChecks {
         active = null;
         stage = 9;
         return true;
+      }
+      case 40 -> {
+        if (!released()) return false;
+        check.accept(
+            "closed workflow skips deferred native item feature and drains its actual use",
+            !workflow.isOpen()
+                && nativeEntries == nativeEntriesBefore
+                && graphic.releaseCompletion().toCompletableFuture().isDone()
+                && graphic.state().released()
+                && graphic.state().outstandingUses() == 0);
+        unchanged();
+        stage = 8;
+      }
+      case 30 -> {
+        if (!resetObserved) return false;
+        check.accept(
+            "actual native GUI reset discards pending item feature work",
+            resetChecked && drawFailure == null);
+        before = submissions;
+        stage = 31;
+      }
+      case 31 -> {
+        if (nativeEntries <= nativeEntriesBefore || submissions <= before) return false;
+        check.accept(
+            "reset item target is rendered again before its frame is cached",
+            preparations == 3
+                && graphic.releaseCompletion().toCompletableFuture().isDone() == false);
+        stage = 90;
+        capture.accept("loaded-item-2.png", () -> stage = 33);
+      }
+      case 33 -> {
+        nativeEntriesBefore = nativeEntries;
+        pendingControl = 2;
+        press("Rotate right");
+        stage = 32;
+      }
+      case 32 -> {
+        if (!faultObserved || drawFailure == null) return false;
+        check.accept(
+            "deferred feature fault is retained through the actual native draw guard",
+            nativeEntries == nativeEntriesBefore + 1
+                && drawFailure instanceof design.inherent.reform.owner.PolicyRefusal
+                && drawFailure.getCause() == NATIVE_FAULT);
+        deferredChecked = true;
+        drawFailure = null;
+        mode++;
+        selection.replace(mode);
+        stage = 2;
       }
       case 20 -> {
         if (workflow.screen().width > 340) return false;
