@@ -209,6 +209,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private final ClientNavigation navigation = new ClientNavigation(this);
   private final UUID navigationIdentity = UUID.randomUUID();
   private NavigationAttempt pendingNavigation;
+  private final Map<UUID, NavigationBookmark> navigationBookmarks = new LinkedHashMap<>();
 
   /** Typed presentation links over this workflow's exact retained owners. */
   public ClientNavigation navigation() {
@@ -283,19 +284,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           null);
       return refused;
     }
-    NavigationSelection selected;
-    try {
-      selected = resolveDestination(bookmark.destination());
-    } catch (PolicyRefusal missing) {
-      return openDestination(bookmark.destination());
-    }
-    return overview.navigation.restorePosition(
-        selected.key(),
-        new WorkspaceNavigation.Position(
-            bookmark.viewport().orElse(null),
-            bookmark.focus().orElse(null),
-            selected.route().orElse(null)),
-        () -> openDestination(bookmark.destination()));
+    return openDestination(bookmark.destination(), bookmark);
   }
 
   private record NavigationSelection(
@@ -505,12 +494,17 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   }
 
   NavigationAttempt openDestination(ClientDestination target) {
+    return openDestination(target, null);
+  }
+
+  private NavigationAttempt openDestination(ClientDestination target, NavigationBookmark bookmark) {
     ClientSettingsRuntime.requireClientThread();
     var attempt = new NavigationAttempt(target);
     attempt
         .completion()
         .thenAccept(
             result -> {
+              navigationBookmarks.remove(attempt.id());
               if (!isOpen() || overview.navigationRequest != attempt.id()) return;
               if (result.outcome() == NavigationAttempt.Outcome.REVEALED
                   || result.outcome() == NavigationAttempt.Outcome.HANDED_OFF) return;
@@ -533,6 +527,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           null);
       return attempt;
     }
+    if (bookmark != null) navigationBookmarks.put(attempt.id(), bookmark);
     try {
       requireOverview();
       var available = inspectDestination(target);
@@ -615,6 +610,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               .presentation()
               .navigationTargetExists(selected.target().orElseThrow())) throw missingDestination();
       overview.mountDestination(selected, editor, restoring);
+      var bookmark = navigationBookmarks.get(attempt.id());
+      if (bookmark != null) overview.restorePosition(bookmark);
       attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
     } catch (RuntimeException failed) {
       finishNavigationFailure(attempt, failed);
@@ -2469,6 +2466,17 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void mountDestination(NavigationSelection selected, ClientEditor<?> editor) {
       mountDestination(selected, editor, false);
+    }
+
+    private void restorePosition(NavigationBookmark bookmark) {
+      if (panel == null) return;
+      bookmark.viewport().ifPresent(panel::restore);
+      bookmark.focus().ifPresent(panel::restoreFocus);
+      if (panel.getFocused() != null) setFocused(panel);
+      navigation.remember(
+          selectedKey,
+          new WorkspaceNavigation.Position(
+              panel.bookmark(), panel.rememberedFocusKey(), actionRoute));
     }
 
     private void mountDestination(
