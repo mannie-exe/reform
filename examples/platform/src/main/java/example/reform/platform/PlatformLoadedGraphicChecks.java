@@ -39,6 +39,7 @@ public final class PlatformLoadedGraphicChecks {
   private ClientLoadedGraphicProvider<String> normal, tiny;
   private CompletableFuture<NavigationAttempt.Result> entered;
   private CompletableFuture<Void> reload;
+  private CompletableFuture<Map<String, Boolean>> decoderChecks;
   private volatile GraphicScenePreparation prepared;
   private volatile Throwable failed;
   private volatile int preparations;
@@ -157,6 +158,17 @@ public final class PlatformLoadedGraphicChecks {
   boolean tick() throws Exception {
     switch (stage) {
       case 0 -> {
+        if (decoderChecks == null) {
+          PlatformGraphicImageChecks.run(check);
+          decoderChecks =
+              CompletableFuture.supplyAsync(
+                  PlatformGraphicImageChecks::batchWorker,
+                  design.inherent.reform.minecraft.internal.ClientSettingsRuntime.workers());
+          return false;
+        }
+        if (!decoderChecks.isDone()) return false;
+        decoderChecks.join().forEach(check);
+
         active = this;
         source =
             Files.readAllBytes(
