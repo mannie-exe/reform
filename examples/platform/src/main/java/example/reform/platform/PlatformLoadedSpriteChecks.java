@@ -16,6 +16,8 @@ import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.events.ContainerEventHandler;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -136,13 +138,25 @@ public final class PlatformLoadedSpriteChecks {
     if (prepared == null) return false;
     if (!(prepared instanceof GraphicScenePreparation.Ready ready))
       throw new AssertionError("Expected ready loaded sprite; actual=" + prepared);
-    if (draws <= before) {
-      if (!showing) {
-        showing = true;
-        press("Show loaded image");
-      }
+    if (!showing) {
+      showing = true;
+      before = draws;
+      press("Show loaded image");
       return false;
     }
+    GuiEventListener focused = workflow.screen().getFocused();
+    while (focused instanceof ContainerEventHandler container && container.getFocused() != null)
+      focused = container.getFocused();
+    if (draws <= before
+        || focused
+            != widgets(workflow.screen()).stream()
+                .filter(
+                    w ->
+                        !(w instanceof Button)
+                            && w.getMessage().getString().equals("Loaded test sprite"))
+                .findFirst()
+                .orElseThrow()) return false;
+    check.accept("sprite capture follows settled native viewport focus and a new draw", true);
     var pixels = ready.graphic().scene().textures().values().iterator().next();
     check.accept(
         "native atlas frame has independent expected colors and extent",
