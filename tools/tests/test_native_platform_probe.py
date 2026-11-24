@@ -88,6 +88,26 @@ class CaptureRetentionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unrecognized native capture"):
                 retain_captures(fixture, reports, ["platform-loaded-sprite-foreign.png"], platform.WORKSPACE_CAPTURES, False)
 
+    def test_workspace_item_capture_roles_are_bounded_and_retained(self):
+        import tools.native_platform_probe as platform
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture, reports = root / "fixture", root / "reports"
+            fixture.mkdir()
+            reports.mkdir()
+            names = ["platform-loaded-item-stone.png", "platform-loaded-item-stone-orbit.png",
+                     "platform-loaded-item-1.png", "platform-loaded-item-2.png"]
+            for name in names:
+                (fixture / name).write_bytes(b"actual item capture stand-in")
+            for reopen in [False, True]:
+                kept = retain_captures(fixture, reports, names, platform.WORKSPACE_CAPTURES, reopen)
+                self.assertEqual(len(kept), len(names))
+                for source, saved in zip(names, kept):
+                    self.assertEqual((fixture / source).read_bytes(), (reports / saved["file"]).read_bytes())
+            with self.assertRaisesRegex(ValueError, "Unrecognized native capture"):
+                retain_captures(fixture, reports, ["platform-loaded-item-foreign.png"],
+                                platform.WORKSPACE_CAPTURES, False)
+
     def test_checked_capture_is_retained_and_hashed_for_each_boot(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

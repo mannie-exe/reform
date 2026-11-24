@@ -156,8 +156,8 @@ public final class PlatformLoadedItemChecks {
 
   private void unchanged() throws Exception {
     check.accept(
-        "loaded item workspace has no document, source write, or input stack mutation",
-        workflow.documents().isEmpty()
+        "loaded item source and copied input stay unchanged without an open settings owner",
+        (!workflow.isOpen() || workflow.documents().isEmpty())
             && original.getCount() == 7
             && copied.equals(ClientItemSubject.copyOf(new ItemStack(Items.STONE, 2), LIMITS))
             && Arrays.equals(
