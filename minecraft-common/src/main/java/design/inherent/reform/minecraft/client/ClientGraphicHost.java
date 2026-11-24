@@ -780,6 +780,12 @@ public final class ClientGraphicHost implements AutoCloseable {
                 outcome.state() == OperationSnapshot.State.REFUSED ? State.REFUSED : State.FAILED,
                 outcome.report(),
                 failure);
+      var cleanup = GraphicCleanupFailure.find(result.cause().orElse(failure));
+      if (cleanup != null) {
+        view.recordReleaseFailure(id, cleanup.getCause());
+        if (result.state() == State.FAILED)
+          result = Result.plain(State.FAILED, view.cleanupReport, cleanup.getCause());
+      }
       boolean current = current();
       var nativeResult = enteredGraphic;
       enteredGraphic = null;

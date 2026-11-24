@@ -10,13 +10,14 @@ import design.inherent.reform.presentation.graphics.GraphicTexture;
 import design.inherent.reform.serialization.JsonInput;
 import design.inherent.reform.serialization.JsonInputException;
 import design.inherent.reform.serialization.JsonLimits;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.lwjgl.system.MemoryUtil;
 
 /** Explicit CPU preparation; no live resource manager, texture publication, or GPU allocation. */
 public final class ClientGraphicImages {
@@ -68,23 +69,17 @@ public final class ClientGraphicImages {
       if (remaining < 4)
         throw new PolicyRefusal(
             "preview.budget", "The decoded frames exceed the remaining geometry/output allowance");
-      var temporary =
-          ledger.reserve((long) texture.encodedWidth() * texture.encodedHeight() * 4, 1);
-      GraphicPixels pixels;
-      try {
-        pixels =
-            decodeStill(
-                texture,
-                new GraphicLimits(
-                    limits.inputBytes(),
-                    remaining,
-                    limits.decodedPixels(),
-                    limits.resources(),
-                    limits.nativeBytes()),
-                metadataLimits);
-      } finally {
-        temporary.close();
-      }
+      GraphicPixels pixels =
+          decodeStill(
+              texture,
+              new GraphicLimits(
+                  limits.inputBytes(),
+                  remaining,
+                  limits.decodedPixels(),
+                  limits.resources(),
+                  limits.nativeBytes()),
+              metadataLimits,
+              ledger);
       checkpoint.run();
       result.put(texture.id(), pixels);
       remaining -= pixels.bytes();
@@ -98,6 +93,14 @@ public final class ClientGraphicImages {
    */
   public static GraphicPixels decodeStill(
       GraphicTexture texture, GraphicLimits limits, JsonLimits metadataLimits) {
+    return decodeStill(texture, limits, metadataLimits, new GraphicLedger(limits));
+  }
+
+  private static GraphicPixels decodeStill(
+      GraphicTexture texture,
+      GraphicLimits limits,
+      JsonLimits metadataLimits,
+      GraphicLedger ledger) {
     Objects.requireNonNull(texture);
     Objects.requireNonNull(limits);
     Objects.requireNonNull(metadataLimits);
@@ -131,7 +134,27 @@ public final class ClientGraphicImages {
     long pixels = (long) frame.width() * frame.height();
     if (pixels > Integer.MAX_VALUE || pixels * Integer.BYTES > limits.outputBytes())
       throw new PolicyRefusal("preview.budget", "The still frame exceeds its output-byte budget");
-    try (var image = NativeImage.read(new ByteArrayInputStream(texture.png()))) {
+    // Own the exact encoded buffer as well as the decoded image. The InputStream overload
+    // internally grows a native buffer whose allocation is otherwise invisible to our ledger.
+    byte[] png = texture.png();
+    var decoded = ledger.reserve(stripPixels * Integer.BYTES, 1);
+    GraphicLedger.Allocation encoded;
+    try {
+      encoded = ledger.reserve(png.length, 1);
+    } catch (RuntimeException | Error failed) {
+      decoded.close(); // No native allocation has entered yet.
+      throw failed;
+    }
+    ByteBuffer buffer = null;
+    NativeImage image = null;
+    boolean decodeEntered = false, decodeReturned = false;
+    Throwable bodyFailure = null;
+    try {
+      buffer = MemoryUtil.memAlloc(png.length);
+      buffer.put(png).flip();
+      decodeEntered = true;
+      image = NativeImage.read(buffer);
+      decodeReturned = true;
       if (image.getWidth() != texture.encodedWidth()
           || image.getHeight() != texture.encodedHeight())
         throw new IllegalArgumentException("The native PNG decoder returned a different extent");
@@ -141,8 +164,45 @@ public final class ClientGraphicImages {
           argb[y * frame.width() + x] =
               NativeGraphicImages.argb(image, frame.x() + x, frame.y() + y);
       return new GraphicPixels(limits, texture.id(), frame.width(), frame.height(), argb);
-    } catch (IOException | IllegalArgumentException failed) {
-      throw invalid("The captured PNG could not be decoded", failed);
+    } catch (IOException failed) {
+      // NativeImage.read(ByteBuffer) throws IOException when STB returned no image.
+      decodeReturned = true;
+      var refusal = invalid("The captured PNG could not be decoded", failed);
+      bodyFailure = refusal;
+      throw refusal;
+    } catch (IllegalArgumentException failed) {
+      var refusal = invalid("The captured PNG could not be decoded", failed);
+      bodyFailure = refusal;
+      throw refusal;
+    } catch (RuntimeException | Error failed) {
+      bodyFailure = failed;
+      throw failed;
+    } finally {
+      Throwable cleanupFailure = null;
+      if (image != null) {
+        try {
+          image.close();
+          decoded.close();
+        } catch (RuntimeException | Error failed) {
+          cleanupFailure = failed;
+        }
+      } else if (!decodeEntered || decodeReturned) decoded.close();
+      else {
+        // An unexpected failure after entering the native decoder gives no release observation.
+        cleanupFailure = bodyFailure;
+      }
+      try {
+        if (buffer != null) MemoryUtil.memFree(buffer);
+        encoded.close();
+      } catch (RuntimeException | Error failed) {
+        if (cleanupFailure == null) cleanupFailure = failed;
+        else if (failed != cleanupFailure) cleanupFailure.addSuppressed(failed);
+      }
+      if (cleanupFailure != null) {
+        var failed = new GraphicCleanupFailure(cleanupFailure);
+        if (bodyFailure != null && bodyFailure != cleanupFailure) failed.addSuppressed(bodyFailure);
+        throw failed;
+      }
     }
   }
 

@@ -167,10 +167,12 @@ final class PlatformGraphicImageChecks {
               && pixels.get(ID).pixel(0, 0) == SECOND
               && pixels.get(second.id()).pixel(0, 0) == FIRST);
       check.accept(
-          "batch closes native strip allocations before delivery",
+          "batch closes encoded buffer and native strip before delivery",
           ledger.state().bytes() == 0
               && ledger.state().resources() == 0
-              && ledger.state().peakBytes() == 32);
+              && ledger.state().peakBytes()
+                  == 32 + Math.max(first.png().length, second.png().length)
+              && ledger.state().peakResources() == 2);
       try {
         pixels.clear();
         throw new AssertionError("Batch result was mutable");
@@ -204,7 +206,10 @@ final class PlatformGraphicImageChecks {
           () -> ClientGraphicImages.decodeStills(inputs, ledger, JSON, 9, () -> {}),
           "preview.budget");
       check.accept("later frame refusal releases earlier strips", ledger.state().bytes() == 0);
-      var occupied = new GraphicLedger(new GraphicLimits(4096, 4096, 1024, 4, 32));
+      var occupied =
+          new GraphicLedger(
+              new GraphicLimits(
+                  4096, 4096, 1024, 4, 32 + Math.max(first.png().length, second.png().length)));
       var old = occupied.reserve(1, 1);
       try {
         refuses(
@@ -220,6 +225,43 @@ final class PlatformGraphicImageChecks {
           "batch retries after actual prior release",
           ClientGraphicImages.decodeStills(inputs, occupied, JSON, 0, () -> {}).size() == 2
               && occupied.state().bytes() == 0);
+      for (var allowance :
+          List.of(
+              new GraphicLimits(4096, 4096, 1024, 4, 32 + first.png().length - 1),
+              new GraphicLimits(4096, 4096, 1024, 1, 4096))) {
+        var bounded = new GraphicLedger(allowance);
+        refuses(
+            check,
+            "complete native decoder allowance: " + allowance,
+            () -> ClientGraphicImages.decodeStills(List.of(first), bounded, JSON, 0, () -> {}),
+            "preview.budget");
+        check.accept(
+            "failed encoded-buffer admission leaves no reservation: " + allowance,
+            bounded.state().bytes() == 0 && bounded.state().resources() == 0);
+      }
+      // Keep a complete PNG container and valid CRCs while corrupting its compressed pixels.
+      var corrupt = first.png();
+      var chunks = java.nio.ByteBuffer.wrap(corrupt);
+      for (int offset = 8; offset < corrupt.length; ) {
+        int length = chunks.getInt(offset), kind = chunks.getInt(offset + 4);
+        if (kind == 0x49444154) {
+          java.util.Arrays.fill(corrupt, offset + 8, offset + 8 + length, (byte) 0);
+          var crc = new java.util.zip.CRC32();
+          crc.update(corrupt, offset + 4, length + 4);
+          chunks.putInt(offset + 8 + length, (int) crc.getValue());
+        }
+        offset += length + 12;
+      }
+      var undecodable = texture(corrupt, null);
+      undecodable.validatePng();
+      refuses(
+          check,
+          "native decoder rejects damaged pixels after container admission",
+          () -> ClientGraphicImages.decodeStills(List.of(undecodable), ledger, JSON, 0, () -> {}),
+          "preview.texture_invalid");
+      check.accept(
+          "native decode refusal closes its encoded buffer and empty image reservation",
+          ledger.state().bytes() == 0 && ledger.state().resources() == 0);
       var checkpoints = new AtomicInteger();
       try {
         ClientGraphicImages.decodeStills(
