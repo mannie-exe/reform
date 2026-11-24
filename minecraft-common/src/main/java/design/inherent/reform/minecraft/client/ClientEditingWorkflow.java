@@ -2064,7 +2064,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       supersedeNavigation();
       beforeRebuild();
       retireReviewChoices();
-      navigation.task(null);
+      hideInspection();
       rebuildWidgets();
     }
 
@@ -2103,7 +2103,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void showReviewChoices() {
       beforeRebuild();
-      hideInspection();
+      var retained = metadata();
+      if (retained != null) retained.hide();
+      retireReviewChoices();
       var choices = new ArrayList<ClientChoiceScreen.Choice>();
       for (var scope : reviews.values()) {
         choices.add(

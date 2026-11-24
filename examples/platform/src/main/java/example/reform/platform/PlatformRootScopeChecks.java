@@ -37,6 +37,7 @@ final class PlatformRootScopeChecks {
   private ClientEditingWorkflow workflow;
   private ClientEditor<?> editor;
   private DocumentBatch.Review reviewed;
+  private design.inherent.reform.operation.DocumentReview inspected;
   private CompletableFuture<NavigationAttempt.Result> pending;
   private OperationHandle<?> reverting;
   private Button retired;
@@ -245,6 +246,45 @@ final class PlatformRootScopeChecks {
                 && !dependencyOpened()
                 && workflow.batchInspection().isEmpty());
         unchanged();
+        inspected = workflow.inspection().orElseThrow().reviewedInput().orElseThrow();
+        press("Done");
+        stage = 80;
+      }
+      case 80 -> {
+        press("Review changes");
+        stage = 81;
+      }
+      case 81 -> {
+        check.accept(
+            "review picker retains originating inspection and SAME captured input: "
+                + workflow.navigation().current(),
+            workflow
+                    .navigation()
+                    .current()
+                    .orElseThrow()
+                    .equals(
+                        new ClientDestination.Inspection(PlatformWorkflowExample.DEFINITION.id()))
+                && workflow.inspection().flatMap(ClientInspection::reviewedInput).orElse(null)
+                    == inspected);
+        unchanged();
+        press("Back");
+        stage = 82;
+      }
+      case 82 -> {
+        check.accept(
+            "transient picker creates no history visit over its inspection origin",
+            !(workflow.navigation().current().orElseThrow()
+                instanceof ClientDestination.Inspection));
+        press("Forward");
+        stage = 83;
+      }
+      case 83 -> {
+        if (!(workflow.navigation().current().orElseThrow()
+            instanceof ClientDestination.Inspection)) return false;
+        check.accept(
+            "Forward restores SAME inspection after leaving transient picker",
+            workflow.inspection().orElseThrow().reviewedInput().orElseThrow() == inspected);
+        unchanged();
         pending = workflow.navigation().up().orElseThrow().completion().toCompletableFuture();
         stage = 9;
       }
@@ -310,6 +350,47 @@ final class PlatformRootScopeChecks {
             instanceof ClientDestination.BatchReview)) return false;
         check.accept(
             "history returns SAME issued scope capture without rechecking or saving",
+            workflow.batchInspection().orElseThrow().reviewedInput().orElseThrow() == reviewed
+                && workflow.batchInspection().orElseThrow().submission().isEmpty());
+        unchanged();
+        press("Done");
+        stage = 150;
+      }
+      case 150 -> {
+        press("Review changes");
+        stage = 151;
+      }
+      case 151 -> {
+        check.accept(
+            "review picker retains originating Batch and SAME captured vector: "
+                + workflow.navigation().current(),
+            workflow
+                    .navigation()
+                    .current()
+                    .orElseThrow()
+                    .equals(new ClientDestination.BatchReview(REVIEW))
+                && workflow
+                        .batchInspection()
+                        .flatMap(ClientBatchInspection::reviewedInput)
+                        .orElse(null)
+                    == reviewed);
+        unchanged();
+        press("Back");
+        stage = 152;
+      }
+      case 152 -> {
+        check.accept(
+            "transient picker creates no history visit over its Batch origin",
+            !(workflow.navigation().current().orElseThrow()
+                instanceof ClientDestination.BatchReview));
+        press("Forward");
+        stage = 153;
+      }
+      case 153 -> {
+        if (!(workflow.navigation().current().orElseThrow()
+            instanceof ClientDestination.BatchReview)) return false;
+        check.accept(
+            "Forward restores SAME Batch capture after leaving transient picker",
             workflow.batchInspection().orElseThrow().reviewedInput().orElseThrow() == reviewed
                 && workflow.batchInspection().orElseThrow().submission().isEmpty());
         unchanged();
