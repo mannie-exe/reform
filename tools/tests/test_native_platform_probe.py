@@ -12,6 +12,15 @@ from tools.native_platform_probe import retain_captures, retain_native_report, s
 
 
 class OptionalAdmissionTests(unittest.TestCase):
+    def test_isolated_scene_refuses_unknown_or_mixed_scope_before_resolution(self):
+        for scene, options in [("unknown", {"client": True}), ("operations", {}),
+                               ("operations", {"client": True, "workspace_client": True}),
+                               ("operations", {"client": True, "recipe_viewer": "jei"})]:
+            with self.subTest(scene=scene, options=options), patch.object(platform, "select_library") as resolve:
+                with self.assertRaisesRegex(ValueError, "separate admitted isolated"):
+                    platform.run("neoforge-1_21_1", None, 1, isolated_scene=scene, **options)
+                resolve.assert_not_called()
+
     def test_native_recipe_context_requires_separate_declared_target(self):
         for target, options in [("fabric-26_3", {"client": True, "native_recipe_client": True, "recipe_viewer": "emi"}),
                                 ("neoforge-1_21_1", {"native_recipe_client": True}),

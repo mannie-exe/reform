@@ -48,6 +48,7 @@ public final class PlatformClient {
   private static ClientRegistration clientRegistration;
   private static java.util.function.Function<Screen, Screen> nativeMenu;
   private static String nativeMenuVersion;
+  private static String isolatedScene;
   private static PlatformNativeItemShutdownChecks nativeItemShutdown;
 
   private static java.util.Map<String, String> recipeViewers = java.util.Map.of();
@@ -96,6 +97,10 @@ public final class PlatformClient {
       chooserScenario = input.has("chooserClient") && input.get("chooserClient").getAsBoolean();
       initializationFailure =
           input.has("initializationFailure") && input.get("initializationFailure").getAsBoolean();
+      isolatedScene =
+          input.has("isolatedScene") && !input.get("isolatedScene").isJsonNull()
+              ? input.get("isolatedScene").getAsString()
+              : null;
       boolean expectedMenu = input.has("modMenu") && input.get("modMenu").getAsBoolean();
       check(
           "optional native Mod Menu has the selected presence",
@@ -141,8 +146,11 @@ public final class PlatformClient {
         PlatformWorkflowExample.register(registration);
         PlatformReviewCommands.register(registration);
       }
-      if (workspaceScenario || workflowScenario || recipeLinksScenario || nativeRecipeScenario)
-        PlatformWorkflowExample.register(registration);
+      if (workspaceScenario
+          || workflowScenario
+          || recipeLinksScenario
+          || nativeRecipeScenario
+          || "operations".equals(isolatedScene)) PlatformWorkflowExample.register(registration);
       if (workspaceScenario) {
         PlatformWorkspaceChecks.register(registration);
         PlatformTaskChecks.register(registration);
@@ -311,6 +319,12 @@ public final class PlatformClient {
         case 7 -> {
           if (!pending.isDone()) return;
           report.add("nativeKeys", (JsonObject) pending.join());
+          if ("operations".equals(isolatedScene)) {
+            pending =
+                PlatformOperationPresentationChecks.run(clientRegistration).toCompletableFuture();
+            stage = 31;
+            return;
+          }
           if (chooserScenario) {
             pending = PlatformChooserChecks.run(clientRegistration).toCompletableFuture();
             stage = 24;
@@ -511,6 +525,11 @@ public final class PlatformClient {
         case 30 -> {
           if (!pending.isDone()) return;
           report.add("nativeRecipes", (JsonObject) pending.join());
+          beginShutdown();
+        }
+        case 31 -> {
+          if (!pending.isDone()) return;
+          report.add("operations", (JsonObject) pending.join());
           beginShutdown();
         }
         case 29 -> nativeItemShutdown.tick();

@@ -35,6 +35,56 @@ final class PlatformOperationPresentationChecks {
   private OperationHandle<String> latest;
   private CompletableFuture<NavigationAttempt.Result> navigation;
   private OperationScreen.Outcome described;
+  private long terminalFrame = -1;
+  private boolean pendingCloseObserved, terminalCloseCleared, unrelatedNoticeRetained;
+
+  static java.util.concurrent.CompletionStage<com.google.gson.JsonObject> run(
+      ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration,
+        "OPERATIONS",
+        driver ->
+            new PlatformFormProbe.Scene() {
+              final com.google.gson.JsonArray checks = new com.google.gson.JsonArray();
+              final PlatformOperationPresentationChecks operation =
+                  new PlatformOperationPresentationChecks(
+                      (label, accepted) -> {
+                        if (!accepted) throw new AssertionError(label);
+                        checks.add(label);
+                      },
+                      driver::capture);
+
+              public boolean tick() throws Exception {
+                return operation.tick();
+              }
+
+              public String diagnostic() {
+                return "operations stage=" + operation.stage;
+              }
+
+              public com.google.gson.JsonObject report() {
+                var value = new com.google.gson.JsonObject();
+                value.addProperty("status", "PASS");
+                value.add("checks", checks.deepCopy());
+                value.addProperty("pendingCloseObserved", operation.pendingCloseObserved);
+                value.addProperty("terminalCloseCleared", operation.terminalCloseCleared);
+                value.addProperty("unrelatedNoticeRetained", operation.unrelatedNoticeRetained);
+                value.addProperty("starts", operation.starts);
+                value.addProperty("entered", operation.entered);
+                if (operation.latest != null) {
+                  var snapshot = operation.latest.snapshot();
+                  value.addProperty("operationId", snapshot.id().toString());
+                  value.addProperty("operationState", snapshot.state().name());
+                  value.addProperty("terminal", snapshot.terminal());
+                }
+                return value;
+              }
+
+              public void close() {
+                operation.close();
+              }
+            });
+  }
 
   private OperationScreen.Outcome describe(String value) {
     var details = new ArrayList<OperationScreen.Detail>();
@@ -365,15 +415,48 @@ final class PlatformOperationPresentationChecks {
         check.accept(
             "cancellation request retains pending work until its provider drains",
             !state.terminal());
-        result.complete("Drained");
-        stage = 12;
+        press(operation(), button(operation(), "Done"));
+        check.accept(
+            "pending operation blocks close with a current notice and retained handle",
+            workflow.isOpen()
+                && observed().orElseThrow().id().equals(state.id())
+                && operation()
+                    .getNarrationMessage()
+                    .getString()
+                    .contains("Wait for pending operations"));
+        pendingCloseObserved = true;
+        capture.accept(
+            "operation-close-pending.png",
+            () -> {
+              result.complete("Drained");
+              stage = 12;
+            });
+        stage = 19;
       }
       case 12 -> {
         var state = observed().orElseThrow();
         if (!state.terminal()) return false;
+        if (terminalFrame < 0) {
+          terminalFrame = PlatformFrameObservations.sequence();
+          return false;
+        }
+        if (PlatformFrameObservations.sequence() <= terminalFrame) return false;
         check.accept(
             "cancelled operation remains an actual cancellation rather than a save receipt",
             state.state() == OperationSnapshot.State.CANCELLED && starts == 2);
+        capture.accept("operation-close-terminal.png", () -> stage = 123);
+        stage = 19;
+      }
+      case 123 -> {
+        check.accept(
+            "pending-close notice clears after actual work is terminal without losing result",
+            workflow.isOpen()
+                && observed().orElseThrow().terminal()
+                && !operation()
+                    .getNarrationMessage()
+                    .getString()
+                    .contains("Wait for pending operations"));
+        terminalCloseCleared = true;
         press(operation(), back(operation()));
         observable = false;
         press(workflow.screen(), button(workflow.screen(), "Inspect values"));
@@ -397,6 +480,15 @@ final class PlatformOperationPresentationChecks {
         stage = 14;
       }
       case 14 -> {
+        if (!latest.snapshot().terminal()) return false;
+        check.accept(
+            "an unrelated request refusal notice survives terminal work",
+            workflow
+                .screen()
+                .getNarrationMessage()
+                .getString()
+                .contains("operation was requested"));
+        unrelatedNoticeRetained = true;
         var inspect =
             widgets(workflow.screen()).stream()
                 .filter(Button.class::isInstance)
@@ -471,5 +563,13 @@ final class PlatformOperationPresentationChecks {
       default -> throw new AssertionError("Unknown operation presentation stage " + stage);
     }
     return false;
+  }
+
+  void close() {
+    if (result != null && !result.isDone())
+      result.completeExceptionally(new java.util.concurrent.CancellationException("Fixture ended"));
+    if (workflow != null) workflow.close();
+    if (owner != null) owner.close();
+    NativeScreens.open(client, parent);
   }
 }

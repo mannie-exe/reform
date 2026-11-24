@@ -2650,6 +2650,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private Filter selectedFilter = Filter.ALL;
     private final Map<DocumentId, Throwable> openingFailures = new LinkedHashMap<>();
     private Component notice;
+    private Component pendingCloseNotice;
     private Object generation;
     private Object navigationRequest;
     private boolean drawerOpen, resetList, restoringDestination;
@@ -2707,6 +2708,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     @Override
     protected void init() {
       if (!isOpen()) return;
+      clearSettledCloseNotice();
       navigation.visit(
           selectedKey, design.inherent.reform.presentation.FormCatalog.Limits.STANDARD);
       suspendView();
@@ -4026,14 +4028,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       if (!isOpen() || NativeScreens.current(minecraft) != this) return;
       var current = documents();
-      if (current.stream().anyMatch(DocumentState::busy)
-          || batch != null && batch.hasActiveOperations()
-          || contributions.values().stream().anyMatch(Contributed::busy)) {
-        notice =
-            text(
-                "wait",
-                "Wait for pending operations and reconcile unknown results before closing.");
-        rebuildWidgets();
+      if (hasPendingCloseWork(current)) {
+        showPendingCloseNotice();
         return;
       }
       if (current.stream()
@@ -4081,19 +4077,34 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void finish() {
       // A domain/custom view may have started work after the decision was displayed.
-      if (documents().stream().anyMatch(DocumentState::busy)
-          || batch != null && batch.hasActiveOperations()
-          || contributions.values().stream().anyMatch(Contributed::busy)) {
+      if (hasPendingCloseWork(documents())) {
         if (NativeScreens.current(minecraft) != this) NativeScreens.open(minecraft, this);
-        notice =
-            text(
-                "wait",
-                "Wait for pending operations and reconcile unknown results before closing.");
-        rebuildWidgets();
+        showPendingCloseNotice();
         return;
       }
       close();
       NativeScreens.open(minecraft, parent);
+    }
+
+    private boolean hasPendingCloseWork(List<DocumentState> current) {
+      return current.stream().anyMatch(DocumentState::busy)
+          || batch != null && batch.hasActiveOperations()
+          || contributions.values().stream().anyMatch(Contributed::busy);
+    }
+
+    private void showPendingCloseNotice() {
+      pendingCloseNotice =
+          text("wait", "Wait for pending operations and reconcile unknown results before closing.");
+      notice = pendingCloseNotice;
+      rebuildWidgets();
+    }
+
+    private boolean clearSettledCloseNotice() {
+      if (pendingCloseNotice == null || hasPendingCloseWork(documents())) return false;
+      boolean changed = notice == pendingCloseNotice;
+      if (changed) notice = null;
+      pendingCloseNotice = null;
+      return changed;
     }
 
     @Override
@@ -4125,6 +4136,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (!isOpen()) return;
       super.tick();
       if (!isOpen() || NativeScreens.current(minecraft) != this) return;
+      boolean closeNoticeChanged = clearSettledCloseNotice();
       if (information.tick()) rebuildWidgets();
       var focused = focusedView();
       DocumentId focusRoute = null;
@@ -4134,7 +4146,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             focusRoute = bound.form.route();
             break;
           }
-      if (language != Language.getInstance()
+      if (closeNoticeChanged
+          || language != Language.getInstance()
           || !displayed.equals(documents())
           || !displayedOperations.equals(contributionStates())
           || focusRoute != null && !focusRoute.equals(actionRoute)) rebuildWidgets();
