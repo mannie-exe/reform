@@ -154,6 +154,17 @@ abstract class FormHostScreen extends NativeFormScreen {
     return handingOff;
   }
 
+  /** A foreign public API may replace the native screen itself. Keep every composed owner. */
+  protected final <T> T externalHandoff(java.util.function.Supplier<T> open) {
+    beforeRebuild();
+    handingOff = true;
+    try {
+      return open.get();
+    } finally {
+      handingOff = false;
+    }
+  }
+
   protected boolean closeMountedView(FormView view) {
     return false;
   }

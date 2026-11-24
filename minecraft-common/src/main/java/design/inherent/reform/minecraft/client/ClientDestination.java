@@ -12,6 +12,21 @@ import java.util.UUID;
  * Explicit presentation identities in one workflow; none discovers a source or grants authority.
  */
 public sealed interface ClientDestination {
+  /** Open one admitted optional viewer, retaining this workflow as its actual native parent. */
+  record Recipe(
+      design.inherent.reform.presentation.RecipeLinkRequest request,
+      design.inherent.reform.presentation.RecipeLinkPolicy policy)
+      implements ClientDestination {
+    public Recipe(design.inherent.reform.presentation.RecipeLinkRequest request) {
+      this(request, design.inherent.reform.presentation.RecipeLinkPolicy.standard());
+    }
+
+    public Recipe {
+      Objects.requireNonNull(request);
+      Objects.requireNonNull(policy);
+    }
+  }
+
   record Home() implements ClientDestination {}
 
   record Category(DestinationId id) implements ClientDestination {

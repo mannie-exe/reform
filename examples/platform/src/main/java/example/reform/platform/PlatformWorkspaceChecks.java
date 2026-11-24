@@ -223,6 +223,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformLoadedBlockChecks loadedBlockChecks;
   private PlatformChestChecks chestChecks;
   private PlatformEntityChecks entityChecks;
+  private PlatformRecipeLinkChecks recipeLinkChecks;
   private PlatformRootCloseChecks rootCloseChecks;
   private PlatformRootActionsChecks rootActionsChecks;
   private PlatformBorrowedPresentationChecks borrowedPresentationChecks;
@@ -255,7 +256,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         + (stage == 0 && loadedBlockChecks != null ? "; " + loadedBlockChecks.diagnostic() : "")
         + (stage == 0 && loadedItemChecks != null ? "; " + loadedItemChecks.diagnostic() : "")
         + (stage == 0 && chestChecks != null ? "; " + chestChecks.diagnostic() : "")
-        + (stage == 0 && entityChecks != null ? "; " + entityChecks.diagnostic() : "");
+        + (stage == 0 && entityChecks != null ? "; " + entityChecks.diagnostic() : "")
+        + (stage == 0 && recipeLinkChecks != null ? "; " + recipeLinkChecks.diagnostic() : "");
   }
 
   public JsonObject report() {
@@ -617,6 +619,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
             || PlatformWorkflowExample.keys().definition().isEmpty()
             || !PlatformWorkflowSources.ready()) return false;
         if (!choicesQualified && !entryChoices()) return false;
+        if (recipeLinkChecks == null)
+          recipeLinkChecks = new PlatformRecipeLinkChecks(this::check, capture);
+        if (!recipeLinkChecks.tick()) return false;
         if (loadedGraphicChecks == null)
           loadedGraphicChecks = new PlatformLoadedGraphicChecks(this::check, capture);
         if (!loadedGraphicChecks.tick()) return false;

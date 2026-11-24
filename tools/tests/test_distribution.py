@@ -37,6 +37,21 @@ class DistributionRefusals(unittest.TestCase):
     def test_real_distribution_accepted(self):
         self.assertEqual(VERIFY.verify(self.root, self.version)["version"], self.version)
 
+    def test_optional_recipe_viewer_cannot_become_required_or_server_admitted(self):
+        with zipfile.ZipFile(self.binary) as archive:
+            entries = [(entry, archive.read(entry)) for entry in archive.infolist()]
+        for before, after in [(b'type="optional"', b'type="required"'),
+                              (b'side="CLIENT"', b'side="BOTH"')]:
+            with self.subTest(after=after):
+                with zipfile.ZipFile(self.binary, "w") as archive:
+                    for entry, data in entries:
+                        if entry.filename == "META-INF/neoforge.mods.toml":
+                            self.assertIn(before, data)
+                            data = data.replace(before, after)
+                        archive.writestr(entry, data)
+                with self.assertRaisesRegex(ValueError, "Optional JEI dependency authority/side/version"):
+                    VERIFY.verify(self.root, self.version)
+
     def test_old_license_text_refused(self):
         with zipfile.ZipFile(self.binary) as archive:
             entries = [(entry, archive.read(entry)) for entry in archive.infolist()]

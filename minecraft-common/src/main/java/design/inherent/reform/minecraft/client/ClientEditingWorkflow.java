@@ -492,6 +492,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (!isOpen())
       return availability(
           DestinationAvailability.Kind.CLOSED, "navigation.closed", "This workflow is closed.");
+    if (target instanceof ClientDestination.Recipe recipe) {
+      var inspected = ClientRecipeLinks.inspect(recipe);
+      return new DestinationAvailability(
+          inspected.selected().isPresent()
+              ? DestinationAvailability.Kind.READY
+              : DestinationAvailability.Kind.UNAVAILABLE,
+          inspected.report(),
+          java.util.Set.of(
+              DestinationAvailability.Recovery.BACK, DestinationAvailability.Recovery.RETRY));
+    }
     if (target instanceof ClientDestination.BatchReview
         || target instanceof ClientDestination.BatchResult) {
       var scope =
@@ -710,6 +720,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (bookmark != null) navigationBookmarks.put(attempt.id(), bookmark);
     try {
       requireOverview();
+      if (target instanceof ClientDestination.Recipe recipe) {
+        openRecipe(attempt, recipe);
+        return attempt;
+      }
       var available = inspectDestination(target);
       if (available.kind() == DestinationAvailability.Kind.MISSING
           || available.kind() == DestinationAvailability.Kind.UNAVAILABLE
@@ -763,6 +777,69 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       finishNavigationFailure(attempt, failed);
     }
     return attempt;
+  }
+
+  private void openRecipe(NavigationAttempt attempt, ClientDestination.Recipe destination) {
+    var inspected = ClientRecipeLinks.inspect(destination);
+    if (inspected.selected().isEmpty()) {
+      attempt.finish(NavigationAttempt.Outcome.UNAVAILABLE, inspected.report(), null);
+      var alternatives =
+          inspected.alternatives().stream().filter(ClientRecipeLinks.Availability::ready).toList();
+      if (!alternatives.isEmpty()) {
+        var choices =
+            alternatives.stream()
+                .map(
+                    status ->
+                        new ClientChoiceScreen.Choice(
+                            status.provider().name().toLowerCase(java.util.Locale.ROOT),
+                            Component.literal("Open with " + status.provider()),
+                            Component.empty(),
+                            Optional::empty,
+                            () -> {
+                              NativeScreens.open(Minecraft.getInstance(), overview);
+                              openDestination(
+                                  new ClientDestination.Recipe(
+                                      destination.request(),
+                                      destination.policy().choosing(status.provider())));
+                            }))
+                .toList();
+        overview.navigate(
+            new ClientChoiceScreen(
+                overview,
+                text("recipe_viewer", "Recipe viewer"),
+                ClientStatusScreen.reason(
+                    inspected.report(),
+                    text("recipe_unavailable", "This recipe viewer is unavailable.")),
+                choices));
+      }
+      return;
+    }
+    var prepared = ClientRecipeLinks.prepare(destination, overview);
+    // Preserve native raw input/focus before the viewer itself replaces the actual root.
+    navigationBookmark();
+    if (overview.activeTask != null) overview.activeTask.visible(false);
+    for (var custom : customViews.values()) custom.view().hide();
+    try {
+      overview.externalHandoff(
+          () -> {
+            prepared.open();
+            if (NativeScreens.current(Minecraft.getInstance()) == overview
+                || !prepared.hasParent(overview))
+              throw new PolicyRefusal(
+                  "recipe.return_unavailable",
+                  "This viewer did not preserve the settings return path.");
+            return null;
+          });
+      attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
+    } catch (RuntimeException | Error failure) {
+      // A failed public viewer call may already have changed screens. Restore the retained root.
+      overview.externalHandoff(
+          () -> {
+            NativeScreens.open(Minecraft.getInstance(), overview);
+            return null;
+          });
+      throw failure;
+    }
   }
 
   private void finishReveal(

@@ -3,6 +3,7 @@
 - [Architecture](architecture.md) owns modules and implementation boundaries.
 - [Native targets](platform-targets.md) owns version-specific names, pins, remapping capabilities and target update procedures.
 - [Native client bindings](native-bindings.md) owns loader registration, optional menus, command origins and the portable source migration.
+- [Recipe links](recipe-links.md) owns optional view-only viewer selection, request identities, and native parent return.
 - [Core API](api.md) owns implemented definition/decoding/snapshot contracts.
 - [Editing](editing.md) owns raw drafts, history, submissions and conflict review.
 - [Owned storage](storage.md) owns bounded file and typed JSON backend behavior.

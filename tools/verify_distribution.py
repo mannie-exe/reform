@@ -56,11 +56,14 @@ def metadata(archive, target, version):
         require(value["license"] == "Apache-2.0", "Unexpected mod license")
         require(value["loaderVersion"] == target["fmlVersionRange"], "FML ABI family differs")
         dependencies = value["dependencies"]["reform"]
-        require({d["modId"] for d in dependencies} == {"minecraft", "neoforge"},
+        require({d["modId"] for d in dependencies} == {"minecraft", "neoforge", "jei"},
                 "Unexpected mod dependency")
-        require(all(d["type"] == "required" and d["side"] == "BOTH" for d in dependencies),
+        require(all(d["type"] == "required" and d["side"] == "BOTH" for d in dependencies if d["modId"] != "jei"),
                 "Unexpected dependency authority/side")
         by_id = {d["modId"]: d for d in dependencies}
+        require(by_id["jei"]["type"] == "optional" and by_id["jei"]["side"] == "CLIENT"
+                and by_id["jei"]["versionRange"] == f"[{target['jeiVersion']},{int(target['jeiVersion'].split('.')[0]) + 1})",
+                "Optional JEI dependency authority/side/version differs")
         require(by_id["minecraft"]["versionRange"] == f"[{target['minecraftVersion']}]", "Minecraft pin differs")
         require(by_id["neoforge"]["versionRange"] ==
                 f"[{target['loaderVersion']},{target['loaderUpperBound']})", "NeoForge baseline differs")
@@ -81,6 +84,10 @@ def metadata(archive, target, version):
             "Fabric entry point differs")
     require(value["entrypoints"]["modmenu"] == ["design.inherent.reform.fabric.client.ReformModMenu"],
             "Optional Mod Menu entry point differs")
+    require(value["entrypoints"].get("jei_mod_plugin") == ["design.inherent.reform.minecraft.optional.jei.ReformJeiPlugin"],
+            "Optional JEI client plugin differs")
+    require(value.get("breaks", {}).get("jei") == ["<" + target["jeiVersion"], ">=" + str(int(target["jeiVersion"].split('.')[0]) + 1)],
+            "Optional JEI API admission differs")
     require(value["mixins"] == ["reform.client.mixins.json"], "Client invocation mixin admission differs")
     declaration = archive.read(value["accessWidener"]).decode("utf-8")
     namespace = target["productionNamespace"]
@@ -111,6 +118,8 @@ def verify(root, version):
         for name, data in core_classes.items():
             require(classes.get(name) == data, f"Core class absent/changed in combined JAR: {name}")
         for name, data in classes.items():
+            if b"mezz/jei/" in data:
+                require(name.startswith(OWNED + "minecraft/optional/jei/"), "JEI linkage outside optional client adapter")
             require(name in core_classes or struct.unpack(">H", data[6:8])[0] == native_major,
                     f"Wrong native Java baseline: {name}")
         with zipfile.ZipFile(binary) as archive:

@@ -28,3 +28,9 @@ side="BOTH"
 
 [features.reform]
 javaVersion="[${javaVersion},)"
+
+[[dependencies.reform]]
+modId="jei"
+type="optional"
+versionRange="[${jei},${jeiUpper})"
+side="CLIENT"

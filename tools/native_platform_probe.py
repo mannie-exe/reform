@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import shutil
 import uuid
+import urllib.request
 
 if __package__:
     from .native_config_probe import execute
@@ -24,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 WORKSPACE_CAPTURES = {
     'platform-field-order.png',
+    'platform-recipe-viewer.png',
     'platform-form-root-actions-narrow.png',
     'platform-form-root-actions-wide.png',
     'platform-form-root-batch-changes.png',
@@ -245,7 +247,7 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                                 and len(native["imageSha256"]) == 64)))
 
 
-def run(project, java_home, timeout, version=None, tested_loader=False, client=False, synced_override=False, world_client=False, mod_menu=False, initialization_failure=False, recipe_client=False, authoring_client=False, chooser_client=False, connector=False, command_client=False, workspace_client=False, workflow_client=False):
+def run(project, java_home, timeout, version=None, tested_loader=False, client=False, synced_override=False, world_client=False, mod_menu=False, initialization_failure=False, recipe_client=False, authoring_client=False, chooser_client=False, connector=False, command_client=False, workspace_client=False, workflow_client=False, recipe_viewer=None):
     target = next((t for t in load_targets(ROOT) if t["project"] == project), None)
     if target is None:
         raise ValueError("Select an admitted native target")
@@ -273,6 +275,24 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
         raise ValueError("The OS chooser requires a separate native client and external desktop driver")
     if mod_menu and (not client or target["loader"] != "fabric"):
         raise ValueError("Mod Menu qualification requires a Fabric native client")
+    if recipe_viewer and (recipe_viewer != "jei" or not client or not workspace_client):
+        raise ValueError("The JEI runtime fixture requires its own workspace client")
+    viewer_input = None
+    if recipe_viewer:
+        viewer_version = target["jeiVersion"]
+        module = "jei-" + target["minecraftVersion"] + "-" + target["loader"]
+        url = "https://maven.blamejared.com/mezz/jei/" + module + "/" + viewer_version + "/" + module + "-" + viewer_version + ".jar"
+        saved = ROOT / ".cache/recipe-viewers" / (module + "-" + viewer_version + ".jar")
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        if not saved.exists():
+            with urllib.request.urlopen(url, timeout=60) as response:
+                payload = response.read(64 * 1024 * 1024 + 1)
+            if len(payload) > 64 * 1024 * 1024: raise ValueError("Recipe viewer input exceeds its bound")
+            saved.write_bytes(payload)
+        if saved.is_symlink() or not saved.is_file() or saved.stat().st_size > 64 * 1024 * 1024:
+            raise ValueError("Recipe viewer input is not a bounded original file")
+        viewer_input = {"module": module, "version": viewer_version, "url": url,
+                        "sha256": hashlib.sha256(saved.read_bytes()).hexdigest(), "file": str(saved.relative_to(ROOT))}
     library = select_library(ROOT, project, version)
     example = ROOT / "examples/platform"
     fixture = example / "runs" / (project + ("-client" if client else ""))
@@ -284,6 +304,8 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
     loader_version = target["testedLoaderVersion" if tested_loader else "loaderVersion"]
     if client:
         mode = "client-workflow" if workflow_client else "client-workspace" if workspace_client else "client-commands" if command_client else "client-chooser" if chooser_client else "client-authoring" if authoring_client else "client-recipe" if recipe_client else "client-world" if world_client else "client"
+        if recipe_viewer:
+            mode += "-" + recipe_viewer
         if mod_menu:
             mode += "-modmenu"
         if initialization_failure:
@@ -317,7 +339,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     "-PwithModMenu=" + str(mod_menu).lower(),
                     "-PwithConnector=" + str(connector).lower(),
                     "-PclientMode=" + str(client).lower(), "runClient" if client else "runServer"])
-    report = {"status": "FAIL", "target": target, "version": library.version, "sha256": library.sha256,
+    if viewer_input:
+        command.extend(["-PwithRecipeViewer=jei", "-PviewerSha256=" + viewer_input["sha256"]])
+    report = {"recipeViewer": viewer_input, "status": "FAIL", "target": target, "version": library.version, "sha256": library.sha256,
               "launch": "Independent addon source container; verified Maven library; no library source roots",
               "loaderRole": role, "loaderVersion": loader_version, "mode": "client" if client else "dedicated", "syncedWorldOverride": synced_override, "worldClient": world_client, "recipeClient": recipe_client, "authoringClient": authoring_client, "chooserClient": chooser_client, "commandClient": command_client, "workspaceClient": workspace_client, "workflowClient": workflow_client, "modMenu": mod_menu, "connector": connector, "initializationFailure": initialization_failure, "boots": [],
               "sources": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -335,7 +359,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                 source = fixture / "config/reform_platform_example/future_invalid.json"
                 source.parent.mkdir(parents=True, exist_ok=True)
                 source.write_text("{invalid future defaults")
-            (fixture / "platform-input.json").write_text(json.dumps({"reopen": reopen, "librarySha256": library.sha256, "syncedWorldOverride": synced_override, "worldClient": world_client, "recipeClient": recipe_client, "authoringClient": authoring_client, "chooserClient": chooser_client, "commandClient": command_client, "workspaceClient": workspace_client, "workflowClient": workflow_client, "modMenu": mod_menu, "connector": connector, "initializationFailure": initialization_failure}))
+            (fixture / "platform-input.json").write_text(json.dumps({"recipeViewer": recipe_viewer, "reopen": reopen, "librarySha256": library.sha256, "syncedWorldOverride": synced_override, "worldClient": world_client, "recipeClient": recipe_client, "authoringClient": authoring_client, "chooserClient": chooser_client, "commandClient": command_client, "workspaceClient": workspace_client, "workflowClient": workflow_client, "modMenu": mod_menu, "connector": connector, "initializationFailure": initialization_failure}))
             log = reports / ("reopen.log" if reopen else "first.log")
             result = execute(command, example, log, timeout,
                              chooser_report=output if chooser_client else None)
@@ -403,6 +427,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--recipe-viewer", choices=["jei"], help="Workspace client with exact optional runtime and original-input hash verification")
     parser.add_argument("--target", required=True, choices=[t["project"] for t in load_targets(ROOT)])
     parser.add_argument("--java-home", type=Path, help="Build JDK; game uses its declared target toolchain")
     parser.add_argument("--timeout", type=int, default=240, help="Each bounded build/server boot, 1..600 seconds")
@@ -423,4 +448,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.target, args.java_home, args.timeout, args.library_version, args.tested_loader, args.client, args.synced_world_override, args.world_client, args.mod_menu, args.init_failure, args.recipe_client, args.authoring_client, args.chooser_client, args.connector, args.commands_client, args.workspace_client, args.workflow_client))
+    raise SystemExit(run(args.target, args.java_home, args.timeout, args.library_version, args.tested_loader, args.client, args.synced_world_override, args.world_client, args.mod_menu, args.init_failure, args.recipe_client, args.authoring_client, args.chooser_client, args.connector, args.commands_client, args.workspace_client, args.workflow_client, args.recipe_viewer))

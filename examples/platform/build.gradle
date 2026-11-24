@@ -23,6 +23,8 @@ def loader = providers.gradleProperty('testedLoader').getOrElse('false').toBoole
     pin(target.loaderVersionRef)
 def libraryVersion = providers.gradleProperty('reformVersion').get()
 def bareLibrary = providers.gradleProperty('bareLibrary').getOrElse('false').toBoolean()
+def withRecipeViewer = providers.gradleProperty('withRecipeViewer').getOrElse('')
+if (withRecipeViewer && withRecipeViewer != 'jei') throw new GradleException('Select an admitted recipe viewer')
 def withConnector = providers.gradleProperty('withConnector').getOrElse('false').toBoolean()
 if (withConnector && !target.connectorVersionRef)
     throw new GradleException('No qualified Connector input is declared for this target')
@@ -34,6 +36,7 @@ layout.buildDirectory = file("build/${targetId}${bareLibrary ? '-bare' : ''}")
 repositories {
     maven { url = uri('../../build/repository'); content { includeGroup 'design.inherent' } }
     mavenCentral()
+    maven { url = 'https://maven.blamejared.com/'; content { includeGroup 'mezz.jei' } }
     maven { url = 'https://libraries.minecraft.net/'; content { includeGroup 'com.mojang' } }
     maven {
         url = 'https://api.modrinth.com/maven'
@@ -125,6 +128,22 @@ if (target.loader == 'neoforge') {
                 runtimeOnly "maven.modrinth:modmenu:${pin(target.modMenuVersionRef)}"
         }
     }
+}
+
+if (withRecipeViewer) {
+    def viewer = "mezz.jei:jei-${game}-${target.loader}:${pin(target.jeiVersionRef)}"
+    dependencies.add(target.loader == 'fabric' && target.remapMinecraft ? 'modRuntimeOnly' : 'runtimeOnly', viewer)
+    tasks.register('verifyRecipeViewer') {
+        doLast {
+            def original = configurations.detachedConfiguration(dependencies.create(viewer))
+            original.transitive = false
+            def actual = java.security.MessageDigest.getInstance('SHA-256').digest(original.singleFile.bytes).encodeHex().toString()
+            if (actual != providers.gradleProperty('viewerSha256').get())
+                throw new GradleException('Recipe viewer differs from the selected original runtime')
+            println "Native recipe viewer SHA-256: ${actual}"
+        }
+    }
+    tasks.matching { it.name in ['runClient', 'compileJava'] }.configureEach { dependsOn 'verifyRecipeViewer' }
 }
 
 tasks.register('verifyLibrary') {

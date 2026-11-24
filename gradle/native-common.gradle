@@ -24,10 +24,12 @@ if (target.minecraftVersion == '26.3') {
 
 repositories {
     mavenCentral()
+    maven { url = 'https://maven.blamejared.com/'; content { includeGroup 'mezz.jei' } }
     maven { url = 'https://libraries.minecraft.net/'; content { includeGroup 'com.mojang' } }
 }
 
 dependencies {
+    compileOnly "mezz.jei:jei-${target.minecraftVersion}-common-api:${target.jeiVersion}"
     compileOnly rootProject.libs.mixinextras.common
     compileOnly project(':core')
     api "com.mojang:datafixerupper:${target.dfuVersion}"
@@ -42,7 +44,8 @@ tasks.named('processResources') {
     def metadata = [version: project.version.toString(), minecraft: target.minecraftVersion,
                     loader: target.loaderVersion, javaVersion: target.java,
                     loaderUpperBound: target.loaderUpperBound ?: '', fabricApi: target.fabricApiVersion ?: '',
-                    fmlVersionRange: target.fmlVersionRange ?: '']
+                    fmlVersionRange: target.fmlVersionRange ?: '', jei: target.jeiVersion,
+                    jeiUpper: (target.jeiVersion.tokenize('.')[0].toInteger() + 1).toString()]
     inputs.properties metadata
     filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json', 'reform.client.mixins.json']) { expand metadata }
 }

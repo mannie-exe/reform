@@ -4,14 +4,25 @@
   "version": "${version}",
   "name": "re:form",
   "description": "Native configuration editing and command services for Minecraft mods.",
-  "authors": ["inherent.design contributors"],
+  "authors": [
+    "inherent.design contributors"
+  ],
   "license": "Apache-2.0",
   "environment": "*",
   "accessWidener": "reform.accesswidener",
-  "mixins": ["reform.client.mixins.json"],
+  "mixins": [
+    "reform.client.mixins.json"
+  ],
   "entrypoints": {
-    "main": ["design.inherent.reform.fabric.ReformFabric"],
-    "modmenu": ["design.inherent.reform.fabric.client.ReformModMenu"]
+    "main": [
+      "design.inherent.reform.fabric.ReformFabric"
+    ],
+    "modmenu": [
+      "design.inherent.reform.fabric.client.ReformModMenu"
+    ],
+    "jei_mod_plugin": [
+      "design.inherent.reform.minecraft.optional.jei.ReformJeiPlugin"
+    ]
   },
   "depends": {
     "fabricloader": ">=${loader}",
@@ -22,5 +33,11 @@
   "contact": {
     "homepage": "https://github.com/mannie-exe/reform",
     "issues": "https://github.com/mannie-exe/reform/issues"
+  },
+  "breaks": {
+    "jei": [
+      "<${jei}",
+      ">=${jeiUpper}"
+    ]
   }
 }
