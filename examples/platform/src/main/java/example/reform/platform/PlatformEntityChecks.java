@@ -31,6 +31,7 @@ public final class PlatformEntityChecks {
   private ClientGraphicHost.Attempt attempt;
   private PreparedGraphic graphic;
   private Throwable drawFailure;
+  private ClientGraphicHost.Result lastResult;
   private String drawOutcome;
   private int stage, mode, draws, before, nativeEntries, nativeBefore, preparations;
   private byte[] source;
@@ -166,7 +167,9 @@ public final class PlatformEntityChecks {
         + ",draws="
         + draws
         + ",failure="
-        + drawFailure;
+        + drawFailure
+        + ",attempt="
+        + lastResult;
   }
 
   boolean tick() throws Exception {
@@ -264,6 +267,11 @@ public final class PlatformEntityChecks {
       case 3 -> {
         if (attempt == null || !attempt.completion().toCompletableFuture().isDone()) return false;
         var result = attempt.completion().toCompletableFuture().join();
+        lastResult = result;
+        if (joinedWorld && mode < 4 && result.state() != ClientGraphicHost.State.READY)
+          throw new AssertionError(
+              "Native animal preparation: " + result.state() + ": " + result.report().issues(),
+              result.cause().orElse(null));
         check.accept(
             "animal request reaches exactly one actual native preparation: " + mode,
             nativeEntries == nativeBefore + 1 && preparations == mode + 1);

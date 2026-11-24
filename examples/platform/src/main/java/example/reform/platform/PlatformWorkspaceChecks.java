@@ -253,7 +253,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         + (stage == 0 && loadedGraphicChecks != null ? "; " + loadedGraphicChecks.diagnostic() : "")
         + (stage == 0 && loadedSpriteChecks != null ? "; " + loadedSpriteChecks.diagnostic() : "")
         + (stage == 0 && loadedBlockChecks != null ? "; " + loadedBlockChecks.diagnostic() : "")
-        + (stage == 0 && loadedItemChecks != null ? "; " + loadedItemChecks.diagnostic() : "");
+        + (stage == 0 && loadedItemChecks != null ? "; " + loadedItemChecks.diagnostic() : "")
+        + (stage == 0 && chestChecks != null ? "; " + chestChecks.diagnostic() : "")
+        + (stage == 0 && entityChecks != null ? "; " + entityChecks.diagnostic() : "");
   }
 
   public JsonObject report() {
