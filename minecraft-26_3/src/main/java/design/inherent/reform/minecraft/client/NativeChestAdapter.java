@@ -36,7 +36,8 @@ final class NativeChestAdapter implements NativeGraphicAdapter<ClientChestSubjec
         new ChestRenderer<ChestBlockEntity>(
             new BlockEntityRendererProvider.Context(
                 client.getBlockEntityRenderDispatcher(),
-                ((design.inherent.reform.minecraft.mixin.GraphicBlockResolverAccessor) client)
+                ((design.inherent.reform.minecraft.mixin.GraphicBlockResolverAccessor)
+                        client.getBlockEntityRenderDispatcher())
                     .reform$blockModelResolver(),
                 client.getItemModelResolver(),
                 client.getEntityRenderDispatcher(),
