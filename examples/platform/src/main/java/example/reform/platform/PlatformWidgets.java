@@ -364,9 +364,16 @@ final class PlatformWidgets {
 
   static Object observed(Object instance, String field) {
     try {
-      var declared = instance.getClass().getDeclaredField(field);
-      declared.setAccessible(true);
-      return declared.get(instance);
+      for (Class<?> type = instance.getClass(); type != null; type = type.getSuperclass()) {
+        try {
+          var declared = type.getDeclaredField(field);
+          declared.setAccessible(true);
+          return declared.get(instance);
+        } catch (NoSuchFieldException inherited) {
+          // Native viewport geometry is declared on the shared base class.
+        }
+      }
+      throw new NoSuchFieldException(field);
     } catch (ReflectiveOperationException failed) {
       throw new AssertionError("Native geometry observation is unavailable: " + field, failed);
     }
