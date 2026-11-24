@@ -93,7 +93,12 @@ final class PlatformRootImportChecks {
         values.addProperty("enabled", !values.get("enabled").getAsBoolean());
         values.addProperty("distance", values.get("distance").getAsInt() == 7 ? 8 : 7);
         values.addProperty("label", "Root imported");
-        file = client.gameDirectory.toPath().resolve("import-fixture/root-values.json");
+        file =
+            client
+                .gameDirectory
+                .toPath()
+                .toAbsolutePath()
+                .resolve("import-fixture/root-values.json");
         Files.createDirectories(file.getParent());
         Files.writeString(file, values.toString());
         var visual = List.of(label, FieldPath.ROOT.field("enabled"), distance);
