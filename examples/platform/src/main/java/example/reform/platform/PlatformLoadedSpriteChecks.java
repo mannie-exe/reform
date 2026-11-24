@@ -401,9 +401,8 @@ public final class PlatformLoadedSpriteChecks {
                       .anyMatch(issue -> issue.code().equals("preview.budget"))
                   && draws == 0);
           unchanged();
-          smallNativeQualified = true;
-          press("GUI first frame");
-          stage = 21;
+          press("Image details");
+          stage = 22;
           return false;
         }
 
@@ -432,6 +431,23 @@ public final class PlatformLoadedSpriteChecks {
         observeNavigation("after-native-draw");
         stage = 90;
         capture.accept("loaded-sprite-gui.png", () -> stage = 20);
+      }
+      case 22 -> {
+        if (!released()) return false;
+        var text = measuredText(workflow.screen());
+        check.accept(
+            "hosted native budget refusal retains its specific public status and reason",
+            text.contains("Preparation refused")
+                && text.stream()
+                    .anyMatch(
+                        value -> value.contains("The native viewport exceeds its image allowance"))
+                && graphic != null
+                && graphic.state().released()
+                && host.nativeOwnership().bytes() == 0
+                && host.retainedOutput().bytes() == 0);
+        smallNativeQualified = true;
+        press("GUI first frame");
+        stage = 21;
       }
       case 21 -> {
         if (!released()) return false;

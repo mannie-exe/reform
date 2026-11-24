@@ -34,6 +34,21 @@ final class PlatformOperationPresentationChecks {
   private boolean blocked, navigateAtStart, observable = true;
   private OperationHandle<String> latest;
   private CompletableFuture<NavigationAttempt.Result> navigation;
+  private OperationScreen.Outcome described;
+
+  private OperationScreen.Outcome describe(String value) {
+    var details = new ArrayList<OperationScreen.Detail>();
+    for (int i = 0; i < 20; i++)
+      details.add(
+          new OperationScreen.Detail(
+              Component.literal("Value " + i), Component.literal("Captured " + i)));
+    for (int i = 0; i < 16; i++)
+      details.add(
+          OperationScreen.Detail.technical(
+              Component.literal("Owner code " + i), Component.literal("technical-value-" + i)));
+    described = new OperationScreen.Outcome(Component.literal(value), details);
+    return described;
+  }
 
   PlatformOperationPresentationChecks(
       BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -145,16 +160,7 @@ final class PlatformOperationPresentationChecks {
                   return latest;
                 },
                 () -> observable,
-                value ->
-                    new OperationScreen.Outcome(
-                        Component.literal(value),
-                        java.util.stream.IntStream.range(0, 20)
-                            .mapToObj(
-                                i ->
-                                    new OperationScreen.Detail(
-                                        Component.literal("Value " + i),
-                                        Component.literal("Captured " + i)))
-                            .toList()));
+                this::describe);
         var form = PlatformWorkflowExample.settings().form(Component.literal("Unused preferences"));
         var layout =
             new ClientWorkflowLayout(
@@ -223,8 +229,19 @@ final class PlatformOperationPresentationChecks {
                 && !screen.getNarrationMessage().getString().contains(identity.toString()));
         check.accept(
             "wide operation separates summary from captured details", taskPanels(screen) == 2);
+        check.accept(
+            "ordinary operation hides owner technical rows without deleting captured facts",
+            described.details().size() == 36
+                && described.details().stream().filter(OperationScreen.Detail::technical).count()
+                    == 16
+                && measuredText(screen).stream().noneMatch(text -> text.contains("Owner code")));
         geometry(screen);
         press(screen, button(screen, "Next details"));
+        check.accept(
+            "hidden technical rows do not create extra ordinary pages",
+            !button(screen, "Next details").active
+                && measuredText(screen).contains("Value 19")
+                && measuredText(screen).stream().noneMatch(text -> text.contains("Owner code")));
         oldWidth = screen.width;
         oldHeight = screen.height;
         NativeClientProbe.size(client, windowWidth, windowHeight);
@@ -266,9 +283,20 @@ final class PlatformOperationPresentationChecks {
         press(screen, button(screen, "Show technical details"));
         check.accept(
             "technical disclosure exposes the same operation identity without another effect",
-            screen.getNarrationMessage().getString().contains(identity.toString()) && starts == 1);
+            screen.getNarrationMessage().getString().contains(identity.toString())
+                && measuredText(screen).contains("Owner code 0")
+                && button(screen, "Next details").active
+                && described.details().size() == 36
+                && starts == 1);
         var bookmark = workflow.navigation().bookmark();
         press(screen, button(screen, "Hide technical details"));
+        check.accept(
+            "hiding owner technical facts restores ordinary pagination and retains outcome",
+            measuredText(screen).stream().noneMatch(text -> text.contains("Owner code"))
+                && !button(screen, "Next details").active
+                && described.details().size() == 36
+                && observed().orElseThrow().id().equals(identity)
+                && starts == 1);
         navigation = workflow.navigation().restore(bookmark).completion().toCompletableFuture();
         stage = 51;
       }

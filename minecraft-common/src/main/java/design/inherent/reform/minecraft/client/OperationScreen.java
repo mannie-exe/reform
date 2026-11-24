@@ -12,7 +12,16 @@ import net.minecraft.network.chat.Component;
 
 /** Borrowed, identified operation feedback. Back leaves work running; cancellation is explicit. */
 public final class OperationScreen<O> extends FormHostScreen implements ClientOperationInspection {
-  public record Detail(Component label, Component value) {
+  /** A captured fact; technical facts remain in the outcome but require explicit disclosure. */
+  public record Detail(Component label, Component value, boolean technical) {
+    public Detail(Component label, Component value) {
+      this(label, value, false);
+    }
+
+    public static Detail technical(Component label, Component value) {
+      return new Detail(label, value, true);
+    }
+
     public Detail {
       label = Objects.requireNonNull(label).copy();
       value = Objects.requireNonNull(value).copy();

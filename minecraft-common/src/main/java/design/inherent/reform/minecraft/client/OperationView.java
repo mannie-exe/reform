@@ -212,7 +212,8 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
     footer.add(button("back", backCaption(text("back", "Back")), this::finish));
     boolean hasDetails =
         observed != null && technical
-            || outcome != null && !outcome.details().isEmpty()
+            || outcome != null
+                && outcome.details().stream().anyMatch(item -> technical || !item.technical())
             || observed != null && !observed.report().valid()
             || presentationFailure != null
             || notice != null
@@ -349,7 +350,11 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
 
   private void details() {
     var details = outcome.details();
-    int pages = Math.max(1, (details.size() + PAGE_SIZE - 1) / PAGE_SIZE);
+    var visible =
+        java.util.stream.IntStream.range(0, details.size())
+            .filter(i -> technical || !details.get(i).technical())
+            .toArray();
+    int pages = Math.max(1, (visible.length + PAGE_SIZE - 1) / PAGE_SIZE);
     page = Math.clamp(page, 0, pages - 1);
     if (pages > 1) {
       var token = generation;
@@ -386,9 +391,9 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
           previous,
           next);
     }
-    for (int i = page * PAGE_SIZE; i < Math.min(details.size(), (page + 1) * PAGE_SIZE); i++) {
-      var item = details.get(i);
-      detail.row("detail:value:" + i, item.label(), item.value());
+    for (int i = page * PAGE_SIZE; i < Math.min(visible.length, (page + 1) * PAGE_SIZE); i++) {
+      var item = details.get(visible[i]);
+      detail.row("detail:value:" + visible[i], item.label(), item.value());
     }
   }
 

@@ -442,9 +442,15 @@ public final class ClientGraphicHost implements AutoCloseable {
               return;
             } catch (RuntimeException failed) {
               failure = failed;
-              report =
-                  problem("preview.prepare_failed", "The native preview failed; prepare it again");
-              state = State.FAILED;
+              if (failed instanceof PolicyRefusal refused) {
+                report = refused.report();
+                state = State.REFUSED;
+              } else {
+                report =
+                    problem(
+                        "preview.prepare_failed", "The native preview failed; prepare it again");
+                state = State.FAILED;
+              }
               closeGraphic();
             }
           }
