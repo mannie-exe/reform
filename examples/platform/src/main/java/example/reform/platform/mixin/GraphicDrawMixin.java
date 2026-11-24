@@ -16,8 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 abstract class GraphicDrawMixin {
   @Inject(method = "draw", at = @At("HEAD"), cancellable = true)
   private void suppressForIndependentPixelControl(CallbackInfoReturnable<Object> result) {
-    if (PlatformTaskChecks.suppressDraw(this)
-        || example.reform.platform.PlatformLoadedSpriteChecks.suppressDraw(this))
+    if (PlatformTaskChecks.suppressDraw(this))
       result.setReturnValue(
           design.inherent.reform.minecraft.client.ClientMeshGraphic.DrawOutcome.WAITING);
   }

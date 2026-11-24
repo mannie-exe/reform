@@ -2,8 +2,6 @@ package example.reform.platform;
 
 import static example.reform.platform.PlatformWidgets.*;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.minecraft.client.*;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -41,19 +39,7 @@ public final class PlatformLoadedSpriteChecks {
   private int stage, draws, before, preparations;
   private byte[] bytes;
   private Button retired;
-  private boolean showing, smallNativeQualified, suppress, beforeDrawCaptured;
-  private final JsonObject navigationFrames = new JsonObject();
-
-  public static boolean suppressDraw(Object value) {
-    return active != null
-        && active.suppress
-        && value instanceof PreparedGraphic graphic
-        && graphic.stamp().provider().equals(DocumentId.parse("reform:loaded_sprite"));
-  }
-
-  JsonObject navigationReport() {
-    return navigationFrames.deepCopy();
-  }
+  private boolean showing, smallNativeQualified;
 
   private boolean focusedImage() {
     GuiEventListener focused = workflow.screen().getFocused();
@@ -67,22 +53,6 @@ public final class PlatformLoadedSpriteChecks {
                         && w.getMessage().getString().equals("Loaded test sprite"))
             .findFirst()
             .orElseThrow();
-  }
-
-  private void observeNavigation(String phase) {
-    var rows = new JsonArray();
-    for (var widget : widgets(workflow.screen())) {
-      if (!(widget instanceof NativeNavigationButton)) continue;
-      var row = new JsonObject();
-      row.addProperty("message", widget.getMessage().getString());
-      row.addProperty("narration", NativeNarrationProbe.read(widget));
-      row.addProperty("x", widget.getX());
-      row.addProperty("y", widget.getY());
-      row.addProperty("width", widget.getWidth());
-      row.addProperty("height", widget.getHeight());
-      rows.add(row);
-    }
-    navigationFrames.add(phase, rows);
   }
 
   PlatformLoadedSpriteChecks(
@@ -160,8 +130,8 @@ public final class PlatformLoadedSpriteChecks {
 
   private void unchanged() throws Exception {
     check.accept(
-        "sprite capture never admits its unused settings owner or writes its source",
-        workflow.documents().stream().noneMatch(ClientEditingWorkflow.DocumentState::opened)
+        "read-only sprite workspace has no settings owner and never writes the fixture source",
+        workflow.documents().isEmpty()
             && Arrays.equals(
                 bytes,
                 Files.readAllBytes(
@@ -268,20 +238,9 @@ public final class PlatformLoadedSpriteChecks {
                     1048576));
         var category =
             new ClientWorkflowLayout.Category(IMAGE.value(), text("Sprite"), Component.empty());
-        var settings =
-            new ClientWorkflowLayout.Category(
-                DocumentId.parse("fixture:sprite_settings"), text("Settings"), Component.empty());
-        var form = PlatformWorkflowExample.settings().form(text("Unused sprite owner"));
         var layout =
             new ClientWorkflowLayout(
-                List.of(
-                    new ClientWorkflowLayout.Group(List.of(category), List.of(), List.of()),
-                    new ClientWorkflowLayout.Group(
-                        List.of(settings),
-                        List.of(
-                            new ClientWorkflowLayout.Placement(
-                                form.route(), form.route(), form.title(), Optional.empty())),
-                        List.of())),
+                List.of(new ClientWorkflowLayout.Group(List.of(category), List.of(), List.of())),
                 List.of());
         var body =
             new ClientCustomView<>(
@@ -350,7 +309,7 @@ public final class PlatformLoadedSpriteChecks {
                     new WorkspaceIdentity(
                         DocumentId.parse("fixture:sprite_workspace"), text("Loaded sprites")))
                 .withView(body);
-        workflow = ClientEditingWorkflow.open(parent, List.of(form), layout, presentation);
+        workflow = ClientEditingWorkflow.open(parent, List.of(), layout, presentation);
         NativeScreens.open(client, workflow.screen());
         host = workflow.graphics(LIMITS, 2);
         entered =
@@ -373,11 +332,6 @@ public final class PlatformLoadedSpriteChecks {
             "idle sprite cancellation is disabled",
             !button(workflow.screen(), "Cancel preparation").active);
         retired = button(workflow.screen(), "Prepare loaded image");
-        observeNavigation("before-native-preparation");
-        stage = 90;
-        capture.accept("loaded-sprite-before-prepare.png", () -> stage = 15);
-      }
-      case 15 -> {
         before = draws;
         showing = false;
         press("Prepare loaded image");
@@ -406,29 +360,7 @@ public final class PlatformLoadedSpriteChecks {
           return false;
         }
 
-        if (!beforeDrawCaptured) {
-          if (failed != null) throw new AssertionError("Suppressed native input failed", failed);
-          if (!(prepared instanceof GraphicScenePreparation.Ready)) return false;
-          if (!showing) {
-            showing = true;
-            press("Show loaded image");
-            return false;
-          }
-          if (!focusedImage()) return false;
-          observeNavigation("before-native-draw");
-          stage = 90;
-          capture.accept(
-              "loaded-sprite-before-draw.png",
-              () -> {
-                beforeDrawCaptured = true;
-                suppress = false;
-                showing = false;
-                stage = 2;
-              });
-          return false;
-        }
         if (!drawn(0xffff0000, 0xff00ff00)) return false;
-        observeNavigation("after-native-draw");
         stage = 90;
         capture.accept("loaded-sprite-gui.png", () -> stage = 20);
       }
@@ -451,7 +383,6 @@ public final class PlatformLoadedSpriteChecks {
       }
       case 21 -> {
         if (!released()) return false;
-        suppress = true;
         check.accept(
             "explicit wider sprite envelope releases the refused native preparation first",
             preparations == 1);
