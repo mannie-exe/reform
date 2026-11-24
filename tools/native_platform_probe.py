@@ -146,12 +146,17 @@ def retain_native_report(source, reports, reopen, role="native"):
 
 
 def retain_captures(fixture, reports, names, allowed, reopen):
-    if not isinstance(names, list) or len(names) > 64:
+    if not isinstance(names, list) or len(names) > len(allowed):
         raise ValueError("Native capture list exceeds its bound")
-    captures = []
+    seen = set()
     for name in names:
         if not isinstance(name, str) or name not in allowed:
             raise ValueError("Unrecognized native capture")
+        if name in seen:
+            raise ValueError("Duplicate native capture")
+        seen.add(name)
+    captures = []
+    for name in names:
         source = fixture / name
         if source.is_symlink() or not source.is_file() or source.stat().st_size > 8 * 1024 * 1024:
             raise ValueError("Native capture is absent or exceeds its bound")

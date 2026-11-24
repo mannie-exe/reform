@@ -55,6 +55,22 @@ class OptionalAdmissionTests(unittest.TestCase):
 
 
 class CaptureRetentionTests(unittest.TestCase):
+    def test_complete_declared_workspace_roles_survive_retention(self):
+        names = sorted(platform.WORKSPACE_CAPTURES)
+        with tempfile.TemporaryDirectory() as directory:
+            fixture, reports = Path(directory) / "fixture", Path(directory) / "reports"
+            fixture.mkdir()
+            reports.mkdir()
+            for name in names:
+                (fixture / name).write_bytes(name.encode())
+            kept = retain_captures(fixture, reports, names, platform.WORKSPACE_CAPTURES, False)
+            self.assertEqual(["first-" + name for name in names], [item["file"] for item in kept])
+            for item, name in zip(kept, names):
+                self.assertEqual((fixture / name).read_bytes(), (reports / item["file"]).read_bytes())
+            with self.assertRaises(ValueError):
+                retain_captures(fixture, reports, [names[0], names[0]],
+                                platform.WORKSPACE_CAPTURES, True)
+
     def test_authoring_retains_its_embedded_workflow_graphics_only(self):
         names = ["platform-form-graphic-texture.png", "platform-form-graphic-layers.png",
                  "platform-form-graphic-orbit.png"]
