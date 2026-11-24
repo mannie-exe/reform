@@ -57,10 +57,8 @@ public final class ClientBlockSubject {
   /** Client-stage native codec capture, not arbitrary block-entity/NBT text. */
   public static ClientBlockSubject copyOf(BlockState state, GraphicLimits limits) {
     ClientSettingsRuntime.requireClientThread();
-    var encoded = BlockState.CODEC.encodeStart(JsonOps.INSTANCE, Objects.requireNonNull(state));
-    if (encoded.error().isPresent())
-      throw new PolicyRefusal("preview.block_input", "The native block state cannot be copied");
-    var subject = new ClientBlockSubject(encoded.result().orElseThrow().toString());
+    var encoded = NativeBlockSnapshots.encode(Objects.requireNonNull(state));
+    var subject = new ClientBlockSubject(encoded.toString());
     if (subject.bytes > Objects.requireNonNull(limits).inputBytes())
       throw new PolicyRefusal(
           "preview.budget", "The copied block state exceeds its input allowance");
@@ -78,14 +76,13 @@ public final class ClientBlockSubject {
   BlockState decode() {
     ClientSettingsRuntime.requireClientThread();
     var input = JsonParser.parseString(json);
-    var decoded = BlockState.CODEC.parse(JsonOps.INSTANCE, input);
+    var decoded = NativeBlockSnapshots.decode(input);
     if (decoded.error().isPresent()) throw invalid();
     var state = decoded.result().orElseThrow();
-    var canonical = BlockState.CODEC.encodeStart(JsonOps.INSTANCE, state);
+    var canonical = NativeBlockSnapshots.encode(state);
     // Some native property codecs tolerate unknown/invalid properties by retaining defaults.
     // A copied snapshot must never silently render another state after that recovery.
-    if (canonical.error().isPresent() || !canonical.result().orElseThrow().equals(input))
-      throw invalid();
+    if (!canonical.equals(input)) throw invalid();
     return state;
   }
 
