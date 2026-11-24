@@ -29,7 +29,7 @@ import org.lwjgl.system.MemoryUtil;
 
 /** Private OpenGL 3.2 renderer, the actual Minecraft 1.21.1 native graphics baseline. */
 @SuppressWarnings("try") // Scoped GL resources restore state on close; no body read is needed.
-final class NativeMeshGraphic implements AutoCloseable {
+final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
   private static final String VERTEX =
       """
       #version 150
@@ -93,6 +93,7 @@ final class NativeMeshGraphic implements AutoCloseable {
   }
 
   private final GraphicScene scene;
+  private NativeFrame nativeFrame;
   private final GraphicLedger ledger;
   private final RenderLifetime lifetime;
   private final int maximumUses;
@@ -101,6 +102,31 @@ final class NativeMeshGraphic implements AutoCloseable {
   private int program, vao, buffer, cutoff, opaque;
   private int framebuffer, colorTexture, frameWidth, frameHeight;
   private GraphicCamera renderedCamera;
+
+  @FunctionalInterface
+  interface NativeFrame {
+    void render(int width, int height, GraphicCamera camera);
+  }
+
+  /** Same owned framebuffer/compositor, attached to the native contribution's parent lifetime. */
+  static NativeMeshGraphic surface(NativeGraphicPreparationContext context, NativeFrame frame) {
+    var surface = new NativeMeshGraphic(context);
+    context.own(
+        release -> {
+          if (release.rendererDestroyed()) surface.contextDestroyed();
+          else surface.release();
+        });
+    surface.nativeFrame = java.util.Objects.requireNonNull(frame);
+    surface.initialize();
+    return surface;
+  }
+
+  private NativeMeshGraphic(NativeGraphicPreparationContext context) {
+    scene = null;
+    ledger = context.ledger();
+    lifetime = context.lifetime();
+    maximumUses = Integer.MAX_VALUE; // Admission belongs to the enclosing native contribution.
+  }
 
   NativeMeshGraphic(
       GraphicScene scene,
@@ -205,7 +231,9 @@ final class NativeMeshGraphic implements AutoCloseable {
     GL20.glUniform1i(GL20.glGetUniformLocation(program, "Diffuse"), 0);
     vao = create(0, GL30::glGenVertexArrays, GL30::glDeleteVertexArrays).id;
     long vertexBytes =
-        Math.max(6L * GraphicProjection.VERTEX_BYTES, GraphicProjection.vertexBytes(scene.mesh()));
+        Math.max(
+            6L * GraphicProjection.VERTEX_BYTES,
+            scene == null ? 0 : GraphicProjection.vertexBytes(scene.mesh()));
     if (vertexBytes > Integer.MAX_VALUE)
       throw new PolicyRefusal(
           "preview.budget", "The native vertex buffer exceeds its bounded extent");
@@ -224,6 +252,7 @@ final class NativeMeshGraphic implements AutoCloseable {
     GL20.glVertexAttribPointer(2, 4, GL11.GL_UNSIGNED_BYTE, true, 24, 20L);
     GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
     GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+    if (scene == null) return;
     for (var entry : scene.textures().entrySet()) {
       var pixels = entry.getValue();
       int texture = create(pixels.bytes(), GL11::glGenTextures, GL11::glDeleteTextures).id;
@@ -376,10 +405,43 @@ final class NativeMeshGraphic implements AutoCloseable {
     frameHeight = height;
   }
 
-  private void render(GraphicCamera camera) {
-    var data =
-        GraphicProjection.project(
-            scene, camera, (double) frameWidth / frameHeight, ledger.limits());
+  ClientMeshGraphic.DrawOutcome drawSurface(NativeGraphicDrawContext context) {
+    int width = context.width(), height = context.height();
+    if (width < 1 || height < 1) return ClientMeshGraphic.DrawOutcome.WAITING;
+    double scale = net.minecraft.client.Minecraft.getInstance().getWindow().getGuiScale();
+    long w = Math.round(width * scale), h = Math.round(height * scale);
+    if (w < 1
+        || h < 1
+        || w > Integer.MAX_VALUE
+        || h > Integer.MAX_VALUE
+        || w > ledger.limits().nativeBytes() / 8 / h)
+      throw new PolicyRefusal("preview.budget", "The native viewport exceeds its image allowance");
+    boolean changed =
+        frameWidth != w || frameHeight != h || !context.camera().equals(renderedCamera);
+    // The enclosing submission has already entered one use for this callback.
+    if (changed && lifetime.state().outstandingUses() > 1)
+      return ClientMeshGraphic.DrawOutcome.WAITING;
+    if (changed) {
+      try (var state = new NativeGuiGraphicState()) {
+        if (frameWidth != w || frameHeight != h) {
+          // Raw target allocation must not leave a texture binding which Minecraft's cached
+          // native shader state mistakes for its already-bound atlas.
+          try (var allocationState = new NativeGraphicGlState()) {
+            frame((int) w, (int) h);
+          }
+        }
+        beginFrame();
+        nativeFrame.render(frameWidth, frameHeight, context.camera());
+      }
+      renderedCamera = context.camera();
+    }
+    try (var state = new NativeGraphicGlState()) {
+      composite(new NativeCanvas(context.graphics()), context.x(), context.y(), width, height);
+    }
+    return ClientMeshGraphic.DrawOutcome.RENDERED;
+  }
+
+  private void beginFrame() {
     NativeGraphicGlState.ordinaryTriangles();
     GL11.glDisable(GL11.GL_SCISSOR_TEST);
     GL11.glEnable(GL11.GL_DEPTH_TEST);
@@ -391,6 +453,13 @@ final class NativeMeshGraphic implements AutoCloseable {
     GL11.glClearColor(0, 0, 0, 0);
     GL11.glClearDepth(1);
     GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+  }
+
+  private void render(GraphicCamera camera) {
+    var data =
+        GraphicProjection.project(
+            scene, camera, (double) frameWidth / frameHeight, ledger.limits());
+    beginFrame();
     GL20.glUseProgram(program);
     GL30.glBindVertexArray(vao);
     GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, buffer);
@@ -522,10 +591,11 @@ final class NativeMeshGraphic implements AutoCloseable {
     resources.clear();
     frameResources.clear();
     textures.clear();
-    NativeMeshGraphicRuntime.released(this);
+    if (scene != null) NativeMeshGraphicRuntime.released(this);
   }
 
-  void contextDestroyed() {
+  @Override
+  public void contextDestroyed() {
     for (var owned : resources) {
       owned.allocation.close();
       owned.closed = true;
@@ -533,7 +603,7 @@ final class NativeMeshGraphic implements AutoCloseable {
     resources.clear();
     frameResources.clear();
     textures.clear();
-    NativeMeshGraphicRuntime.released(this);
+    if (scene != null) NativeMeshGraphicRuntime.released(this);
   }
 
   @Override

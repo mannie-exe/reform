@@ -15,6 +15,13 @@ sourceSets.main.java.srcDir rootProject.file("platform/${target.loader}/src/main
 sourceSets.main.java.srcDir rootProject.file("platform/${target.loader}/${versionDirectory}/src/main/java")
 sourceSets.main.resources.srcDir rootProject.file("platform/${target.loader}/src/main/resources")
 
+if (target.minecraftVersion == '26.3') {
+    // Native matrix APIs complete JOML1.10.9 classes whose Java2 headers contain Java8 type
+    // annotations. javac's dependency-completion warning cannot be suppressed on our caller.
+    // Keep all other lint and Werror; recheck this exact native dependency on target upgrades.
+    tasks.withType(JavaCompile).configureEach { options.compilerArgs.add('-Xlint:-classfile') }
+}
+
 repositories {
     mavenCentral()
     maven { url = 'https://libraries.minecraft.net/'; content { includeGroup 'com.mojang' } }

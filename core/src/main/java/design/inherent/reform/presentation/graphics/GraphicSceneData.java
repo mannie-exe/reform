@@ -25,16 +25,27 @@ public record GraphicSceneData(
     Objects.requireNonNull(stamp);
     Objects.requireNonNull(scene);
     Objects.requireNonNull(camera);
+    facts = freezeFacts(facts);
+  }
+
+  /** The same bounded metadata contract applies to mesh and platform-native contributions. */
+  public static List<Fact> freezeFacts(List<Fact> facts) {
     if (facts.size() > 64) throw new IllegalArgumentException("Too many graphic facts");
-    facts = List.copyOf(facts);
+    var frozen = List.copyOf(facts);
     var ids = new java.util.HashSet<DocumentId>();
-    for (var fact : facts)
+    for (var fact : frozen)
       if (!ids.add(fact.id())) throw new IllegalArgumentException("Duplicate graphic fact");
+    return frozen;
   }
 
   public long outputBytes() {
     long bytes = scene.mesh().geometryBytes();
     for (var texture : scene.textures().values()) bytes = Math.addExact(bytes, texture.bytes());
+    return Math.addExact(bytes, factBytes(facts));
+  }
+
+  public static long factBytes(List<Fact> facts) {
+    long bytes = 0;
     for (var fact : facts) {
       bytes =
           Math.addExact(

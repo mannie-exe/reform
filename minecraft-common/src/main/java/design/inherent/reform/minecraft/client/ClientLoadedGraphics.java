@@ -26,6 +26,68 @@ public final class ClientLoadedGraphics {
   private static final DocumentId TEXTURE = DocumentId.parse("reform:loaded_texture");
   private static final DocumentId SPRITE = DocumentId.parse("reform:loaded_sprite");
   private static final DocumentId MATERIAL = DocumentId.parse("reform:loaded_texture_surface");
+  private static final DocumentId ITEM = DocumentId.parse("reform:loaded_item");
+
+  /**
+   * Explicit copied native item with its loaded GUI model. Captures no inventory capability, does
+   * not tick a world, and never substitutes this loaded subject for an edited domain preview.
+   */
+  public static ClientLoadedGraphicProvider<ClientItemSubject> items(GraphicLimits limits) {
+    Objects.requireNonNull(limits);
+    return new ClientLoadedGraphicProvider<>() {
+      public DocumentId id() {
+        return ITEM;
+      }
+
+      public ValueType<ClientItemSubject> subjectType() {
+        return ClientItemSubject.type();
+      }
+
+      public GraphicLimits limits() {
+        return limits;
+      }
+
+      public ReferenceStamp resourceStamp() {
+        return LoadedGraphicResources.snapshot().stamp();
+      }
+
+      public CompletionStage<GraphicScenePreparation> prepare(
+          LoadedGraphicRequest<ClientItemSubject> request, ClientGraphicWork work) {
+        work.checkpoint();
+        var resources = LoadedGraphicResources.snapshot();
+        if (!resources.stamp().equals(request.stamp().resources()))
+          throw new PolicyRefusal(
+              "preview.stale", "Loaded resources changed; prepare the item again");
+        if (request.subject().inputBytes() > request.limits().inputBytes())
+          throw new PolicyRefusal("preview.budget", "The copied item exceeds its input allowance");
+        if (!resources.ready())
+          return CompletableFuture.completedFuture(
+              new GraphicScenePreparation.Unavailable(
+                  problem(
+                      "preview.resources_unavailable",
+                      "Loaded resources are unavailable; finish or retry the resource reload")));
+        return CompletableFuture.completedFuture(
+            new NativeGraphicContribution<>(
+                NativeLoadedItemAdapter.INSTANCE,
+                request.subject(),
+                request.stamp(),
+                GraphicCamera.STANDARD,
+                List.of(
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/source"),
+                        "Source",
+                        "Copied item and loaded client GUI model"),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/lighting"),
+                        "Rendering",
+                        "Native GUI lighting; prepared model, without world ticking or inventory changes"),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/animation"),
+                        "Animation",
+                        "Static prepared geometry; loaded shader and atlas effects follow the native renderer"))));
+      }
+    };
+  }
 
   /** Exact local PNG resource ID, with paired pack metadata and its first declared still frame. */
   public static ClientLoadedGraphicProvider<String> textures(

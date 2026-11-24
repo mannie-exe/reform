@@ -48,6 +48,8 @@ tasks.withType(JavaCompile).configureEach {
     options.release = target.java as int
     options.encoding = 'UTF-8'
     options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+    if (game == '26.3')
+        options.compilerArgs.add('-Xlint:-classfile') // Same actual JOML1.10.9 native matrix seam.
 }
 sourceSets.main.java.srcDir "src/${target.loader}/java"
 sourceSets.main.java.srcDir "src/minecraft-${game.replace('.', '_')}/java"

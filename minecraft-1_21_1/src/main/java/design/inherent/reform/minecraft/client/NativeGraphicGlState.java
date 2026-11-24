@@ -42,7 +42,7 @@ final class NativeGraphicGlState implements AutoCloseable {
       cull = GL11.glGetInteger(GL11.GL_CULL_FACE_MODE),
       front = GL11.glGetInteger(GL11.GL_FRONT_FACE);
   private final boolean depthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
-  private final int[] viewport = new int[4], polygon = new int[2];
+  private final int[] viewport = new int[4], polygon = new int[2], scissor = new int[4];
   private final float[] clear = new float[4];
   private final double[] range = new double[2], clearDepth = new double[1];
   private final int rowLength = GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH),
@@ -55,6 +55,7 @@ final class NativeGraphicGlState implements AutoCloseable {
     for (int i = 0; i < CAPABILITIES.length; i++) enabled[i] = GL11.glIsEnabled(CAPABILITIES[i]);
     for (int i = 0; i < clip.length; i++) clip[i] = GL11.glIsEnabled(GL30.GL_CLIP_DISTANCE0 + i);
     GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
+    GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, scissor);
     GL11.glGetIntegerv(GL11.GL_POLYGON_MODE, polygon);
     GL11.glGetFloatv(GL11.GL_COLOR_CLEAR_VALUE, clear);
     GL11.glGetDoublev(GL11.GL_DEPTH_RANGE, range);
@@ -96,6 +97,7 @@ final class NativeGraphicGlState implements AutoCloseable {
     GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, read);
     GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, renderbuffer);
     GL11.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    GL11.glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
     GL11.glClearColor(clear[0], clear[1], clear[2], clear[3]);
     GL11.glClearDepth(clearDepth[0]);
     GL11.glDepthRange(range[0], range[1]);
@@ -129,5 +131,32 @@ final class NativeGraphicGlState implements AutoCloseable {
     for (int i = 0; i < CAPABILITIES.length; i++)
       if (enabled[i]) GL11.glEnable(CAPABILITIES[i]);
       else GL11.glDisable(CAPABILITIES[i]);
+  }
+
+  /** Native game renderers update Minecraft's cache; restore it as well as actual GL state. */
+  void closeTracked() {
+    try {
+      if (enabled[0]) com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+      else com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+      if (enabled[1]) com.mojang.blaze3d.systems.RenderSystem.enableCull();
+      else com.mojang.blaze3d.systems.RenderSystem.disableCull();
+      if (enabled[2]) com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
+      else com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
+      if (enabled[3])
+        com.mojang.blaze3d.systems.RenderSystem.enableScissor(
+            scissor[0], scissor[1], scissor[2], scissor[3]);
+      else com.mojang.blaze3d.systems.RenderSystem.disableScissor();
+      if (enabled[5]) com.mojang.blaze3d.systems.RenderSystem.enableColorLogicOp();
+      else com.mojang.blaze3d.systems.RenderSystem.disableColorLogicOp();
+      if (enabled[6]) com.mojang.blaze3d.systems.RenderSystem.enablePolygonOffset();
+      else com.mojang.blaze3d.systems.RenderSystem.disablePolygonOffset();
+      com.mojang.blaze3d.systems.RenderSystem.depthFunc(depth);
+      com.mojang.blaze3d.systems.RenderSystem.depthMask(depthMask);
+      com.mojang.blaze3d.systems.RenderSystem.colorMask(
+          colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+      com.mojang.blaze3d.systems.RenderSystem.blendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha);
+    } finally {
+      close();
+    }
   }
 }

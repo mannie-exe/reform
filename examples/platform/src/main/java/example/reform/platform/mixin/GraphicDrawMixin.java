@@ -34,6 +34,7 @@ abstract class GraphicDrawMixin {
       return original.call(canvas, x, y, width, height, camera);
     } catch (RuntimeException | Error failed) {
       example.reform.platform.PlatformLoadedSpriteChecks.recordFailure(this, failed);
+      example.reform.platform.PlatformLoadedItemChecks.recordFailure(this, failed);
       throw failed;
     }
   }
@@ -42,6 +43,7 @@ abstract class GraphicDrawMixin {
   private void observe(CallbackInfoReturnable<Object> result) {
     PlatformTaskChecks.recordDraw(this, result.getReturnValue());
     example.reform.platform.PlatformLoadedSpriteChecks.recordDraw(this, result.getReturnValue());
+    example.reform.platform.PlatformLoadedItemChecks.recordDraw(this, result.getReturnValue());
     example.reform.platform.PlatformLoadedGraphicChecks.recordDraw(this, result.getReturnValue());
   }
 }

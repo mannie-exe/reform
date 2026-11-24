@@ -50,8 +50,9 @@ public final class ClientGraphicHost implements AutoCloseable {
     }
 
     static Result from(GraphicScenePreparation value) {
-      if (value instanceof GraphicScenePreparation.Ready ready) {
-        var graphic = ready.graphic();
+      if (value instanceof GraphicScenePreparation.Contribution graphic
+          && (graphic instanceof GraphicScenePreparation.Ready
+              || graphic instanceof NativeGraphicContribution<?>)) {
         return new Result(
             State.READY,
             Optional.of(graphic.stamp()),
@@ -66,7 +67,13 @@ public final class ClientGraphicHost implements AutoCloseable {
         return plain(State.REFUSED, refused.report(), null);
       if (value instanceof GraphicScenePreparation.Failed failed)
         return plain(State.FAILED, failed.report(), failed.cause());
-      return plain(State.CANCELLED, ValidationReport.VALID, null);
+      if (value instanceof GraphicScenePreparation.Cancelled)
+        return plain(State.CANCELLED, ValidationReport.VALID, null);
+      return plain(
+          State.UNAVAILABLE,
+          problem(
+              "preview.provider_unavailable", "This native contribution has no admitted adapter"),
+          null);
     }
 
     static Result plain(State state, ValidationReport report, Throwable cause) {
@@ -701,13 +708,16 @@ public final class ClientGraphicHost implements AutoCloseable {
                           throw new PolicyRefusal(
                               "operation.cancelled",
                               "Preview preparation was cancelled after entered work drained");
-                        if (result instanceof GraphicScenePreparation.Ready ready) {
-                          var prepared = ready.graphic();
+                        if (result instanceof GraphicScenePreparation.Contribution prepared) {
+                          if (!(prepared instanceof GraphicScenePreparation.Ready)
+                              && !(prepared instanceof NativeGraphicContribution<?>))
+                            return Result.from(result);
                           if (!stamp.equals(prepared.stamp()))
                             throw new PolicyRefusal(
                                 "preview.stale",
                                 "The provider returned a different preview identity");
-                          prepared.scene().requireBudget(view.ledger.limits());
+                          if (prepared instanceof GraphicScenePreparation.Ready ready)
+                            ready.graphic().scene().requireBudget(view.ledger.limits());
                           if (prepared.outputBytes() > view.ledger.limits().outputBytes())
                             throw new PolicyRefusal(
                                 "preview.budget",
@@ -715,12 +725,9 @@ public final class ClientGraphicHost implements AutoCloseable {
                           var output = outputLedger.reserve(prepared.outputBytes(), 1);
                           var observed = new java.util.concurrent.atomic.AtomicBoolean();
                           try {
-                            var nativeGraphic =
-                                ClientMeshGraphic.prepare(
-                                    prepared.scene(),
-                                    view.ledger,
-                                    8,
-                                    this::current,
+                            java.util.function.Consumer<
+                                    design.inherent.reform.presentation.graphics.RenderLifetime>
+                                observe =
                                     lifetime -> {
                                       observed.set(true);
                                       lifetime
@@ -744,8 +751,26 @@ public final class ClientGraphicHost implements AutoCloseable {
                                                                       "Native preview release did not complete")));
                                                 }
                                               });
-                                    });
-                            enteredGraphic = new PreparedGraphic(prepared, nativeGraphic);
+                                    };
+                            if (prepared instanceof GraphicScenePreparation.Ready ready) {
+                              var nativeGraphic =
+                                  ClientMeshGraphic.prepare(
+                                      ready.graphic().scene(),
+                                      view.ledger,
+                                      8,
+                                      this::current,
+                                      observe);
+                              enteredGraphic = new PreparedGraphic(ready.graphic(), nativeGraphic);
+                            } else {
+                              var contribution = (NativeGraphicContribution<?>) prepared;
+                              var nativeGraphic =
+                                  ClientNativeGraphic.prepare(
+                                      contribution, view.ledger, 8, this::current, observe);
+                              enteredGraphic = new PreparedGraphic(contribution, nativeGraphic);
+                            }
+                          } catch (NativeGraphicUnavailable unavailable) {
+                            if (!observed.get()) output.close();
+                            return Result.plain(State.UNAVAILABLE, unavailable.report(), null);
                           } catch (RuntimeException | Error failed) {
                             if (!observed.get()) output.close();
                             throw failed;

@@ -11,6 +11,22 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class GraphicScenePreparationTest {
+  @Test
+  void readyContributionKeepsTheSameMeshMetadataWithoutAllocatingALease() {
+    var data =
+        new GraphicSceneData(
+            stamp(),
+            empty(),
+            GraphicCamera.STANDARD,
+            List.of(
+                new GraphicSceneData.Fact(DocumentId.parse("test:subject"), "Subject", "Empty")));
+    GraphicScenePreparation.Contribution contribution = new GraphicScenePreparation.Ready(data);
+    assertSame(data.stamp(), contribution.stamp());
+    assertSame(data.camera(), contribution.camera());
+    assertSame(data.facts(), contribution.facts());
+    assertEquals(data.outputBytes(), contribution.outputBytes());
+  }
+
   private static GraphicRequest.Stamp stamp() {
     var context = UUID.randomUUID();
     return new GraphicRequest.Stamp(

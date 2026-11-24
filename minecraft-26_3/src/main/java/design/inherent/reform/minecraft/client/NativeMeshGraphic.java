@@ -48,7 +48,7 @@ import org.lwjgl.system.MemoryUtil;
 /**
  * Actual RenderPearl private textures, pipelines, and commands; no OpenGL or asset-manager swap.
  */
-final class NativeMeshGraphic implements AutoCloseable {
+final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
   private static final String VERTEX =
       """
       #version 330

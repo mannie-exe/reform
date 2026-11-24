@@ -219,6 +219,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformRootScopeChecks rootScopeChecks;
   private PlatformLoadedGraphicChecks loadedGraphicChecks;
   private PlatformLoadedSpriteChecks loadedSpriteChecks;
+  private PlatformLoadedItemChecks loadedItemChecks;
   private PlatformRootCloseChecks rootCloseChecks;
   private PlatformRootActionsChecks rootActionsChecks;
   private PlatformBorrowedPresentationChecks borrowedPresentationChecks;
@@ -247,7 +248,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         + ", screen="
         + NativeScreens.current(client).getClass().getSimpleName()
         + (stage == 0 && loadedGraphicChecks != null ? "; " + loadedGraphicChecks.diagnostic() : "")
-        + (stage == 0 && loadedSpriteChecks != null ? "; " + loadedSpriteChecks.diagnostic() : "");
+        + (stage == 0 && loadedSpriteChecks != null ? "; " + loadedSpriteChecks.diagnostic() : "")
+        + (stage == 0 && loadedItemChecks != null ? "; " + loadedItemChecks.diagnostic() : "");
   }
 
   public JsonObject report() {
@@ -615,6 +617,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (loadedSpriteChecks == null)
           loadedSpriteChecks = new PlatformLoadedSpriteChecks(this::check, capture);
         if (!loadedSpriteChecks.tick()) return false;
+        if (loadedItemChecks == null)
+          loadedItemChecks = new PlatformLoadedItemChecks(this::check, capture);
+        if (!loadedItemChecks.tick()) return false;
         if (customViewChecks == null) customViewChecks = new PlatformCustomViewChecks(this::check);
         if (!customViewChecks.tick()) return false;
         if (rootScopeChecks == null)

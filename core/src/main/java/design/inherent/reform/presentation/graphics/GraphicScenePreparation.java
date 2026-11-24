@@ -8,9 +8,43 @@ import java.util.Objects;
  * drains.
  */
 public sealed interface GraphicScenePreparation {
-  record Ready(GraphicSceneData graphic) implements GraphicScenePreparation {
+  /**
+   * A platform contribution contains frozen preparation data, never a submitted native lease. Hosts
+   * must explicitly support its concrete kind before preparing it.
+   */
+  non-sealed interface Contribution extends GraphicScenePreparation {
+    GraphicSourceStamp stamp();
+
+    GraphicCamera camera();
+
+    java.util.List<GraphicSceneData.Fact> facts();
+
+    long outputBytes();
+  }
+
+  record Ready(GraphicSceneData graphic) implements Contribution {
     public Ready {
       Objects.requireNonNull(graphic);
+    }
+
+    @Override
+    public GraphicSourceStamp stamp() {
+      return graphic.stamp();
+    }
+
+    @Override
+    public GraphicCamera camera() {
+      return graphic.camera();
+    }
+
+    @Override
+    public java.util.List<GraphicSceneData.Fact> facts() {
+      return graphic.facts();
+    }
+
+    @Override
+    public long outputBytes() {
+      return graphic.outputBytes();
     }
   }
 

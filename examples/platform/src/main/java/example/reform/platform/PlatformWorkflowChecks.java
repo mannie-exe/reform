@@ -13,13 +13,11 @@ import design.inherent.reform.minecraft.client.ClientEditingWorkflow;
 import design.inherent.reform.minecraft.client.ClientEditor;
 import design.inherent.reform.minecraft.client.ClientRegistration;
 import design.inherent.reform.minecraft.client.ClientWorkflowLayout;
-import design.inherent.reform.minecraft.client.ClientWorkspacePresentation;
 import design.inherent.reform.minecraft.client.KeyBindingScreen;
 import design.inherent.reform.minecraft.client.NativeNavigationButton;
 import design.inherent.reform.minecraft.client.NativeScreens;
 import design.inherent.reform.minecraft.client.NavigationAttempt;
 import design.inherent.reform.minecraft.client.SettingsForm;
-import design.inherent.reform.minecraft.client.WorkspaceIdentity;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.owner.ApplicationEffects;
@@ -248,20 +246,6 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
           } catch (IllegalArgumentException | PolicyRefusal expected) {
             check("duplicate/over-budget workflows refuse before opening sources", true);
           }
-        }
-        try {
-          var empty =
-              ClientWorkspacePresentation.standard(
-                      new WorkspaceIdentity(
-                          DocumentId.parse("fixture:no_destination"), Component.literal("Empty")))
-                  .withoutHome();
-          ClientEditingWorkflow.open(parent, List.of(), empty);
-          throw new AssertionError("Destination-free workflow admitted");
-        } catch (PolicyRefusal expected) {
-          check(
-              "a document-free workflow still requires an actual declared destination",
-              expected.report().issues().stream()
-                  .anyMatch(issue -> issue.code().equals("presentation.invalid_declaration")));
         }
         var metadata =
             java.util.stream.IntStream.range(0, ClientEditingWorkflow.MAXIMUM_DOCUMENTS)

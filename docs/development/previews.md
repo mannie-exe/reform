@@ -36,6 +36,18 @@ Minecraft 1.21.1 uses a private OpenGL program, buffers, textures, and framebuff
 
 Use a ledger shared across the workflow's entered preparations and retiring graphics. Its counters describe known native image/buffer payload and owned object counts, not total process or graphics-driver memory. Closing the view revokes new submissions immediately. Actual completion controls release, and failures remain observable through the lifetime state. A supplied freshness guard must reflect the actual source, native input, and resource generation; it is checked before preparation and submission. A predicate that always returns true does not establish owner freshness.
 
+## Typed native contributions
+
+`GraphicScenePreparation.Contribution` is the core metadata boundary for platform preparation data. Existing `Ready(GraphicSceneData)` remains the mesh contribution. The Minecraft host also accepts `NativeGraphicContribution<I>`: a snapshot-policy-frozen input, cached typed `NativeGraphicAdapter<I>`, actual source stamp, default camera, and the same bounded facts. Encoded input and UTF-8 facts count against retained output admission. Unknown contribution kinds are Unavailable; they cannot become a lease merely by implementing the metadata interface.
+
+The host calls `NativeGraphicAdapter.prepare` on the client thread after admission, through the existing native runtime. `NativeGraphicPreparationContext` exposes the actual client, source stamp, and shared ledger. Register an owned attachment with `context.own(resource)` **before** allocating its handles, and reserve its known payload before allocation. Returned `Prepared` content is retained automatically using a binding reservation made before preparation; it does not need a second object reservation after allocation. Borrowed game assets remain game-owned. Partial failure attempts every registered attachment. A failed release keeps its charge and actual cause.
+
+`Prepared.draw` receives the game-specific native GUI context, measured viewport, and camera. Preparation and submission use the same exact native-use tickets as mesh graphics. Camera changes wait for earlier uses before mutating retained native state. Release runs after actual uses retire; `NativeGraphicReleaseContext.rendererDestroyed()` is an observed teardown fact, not a timeout. Adapters must balance their native scopes, never replace global resource managers, and explicitly report unavailable context or unsupported capabilities. The wrapper preserves the native GUI state it owns; it is not a sandbox for arbitrary foreign renderer side effects.
+
+`ClientLoadedGraphics.items(limits)` uses `ClientItemSubject.copyOf(stack, limits)` to capture a defensive stack copy through the actual native optional item codec and available registries. The immutable subject retains JSON, not an inventory, level, or live stack. Native registry decoding and model preparation happen explicitly on the client; wire serialization is effect-free. Missing required registry context is Unavailable, and invalid copied input refuses. The ordinary slot never reads an inventory or ticks a world.
+
+The 1.21.1 implementation caches the native GUI model and renders it into the same owned framebuffer/compositor used by mesh views, attached to the enclosing native lifetime. The 26.3 implementation caches native item layers once and submits them through the actual GUI extraction pipeline. Camera rotation changes three-dimensional native transforms. Prepared geometry is static; borrowed atlas, foil, and shader effects follow the native renderer. Game-owned GUI caches are not host-owned allocations and must not be reported as released host memory. The viewport has an explicit image allowance, and the prepared 26.3 layer count is bounded. These implementations and their scoped native-state restoration still require the actual-client checks recorded in verification; compilation alone is not native qualification.
+
 ## Hosted preparation
 
 Obtain the host with `workflow.graphics(limits, maximumViews)`. The workflow fixes this explicit aggregate budget and view bound once, across both source kinds. Opening a view alone does not prepare it.
@@ -84,7 +96,7 @@ The host observes each actual release completion even after the view closes or l
 
 Draft, native-input, permission, or resource-identity changes prevent old native submission and cancel obsolete preparation. Hiding or closing a view does the same. Showing it again does not silently prepare, save, or reload anything. The prior result's bounded facts and provenance can remain available as historical information while its status is Stale. No result with another view/request/source stamp can mount.
 
-The host and provider APIs remain under native qualification and are not yet integrated into the complete 0.4 shell. Consumers should adopt the shared composition when available rather than creating a private production screen or coordinator around the development viewport widget.
+The host is integrated with authored loaded-resource slots and registered draft tasks. Exact native and consumer checks remain attributed to their tested candidates in verification. Consumers should use these shared compositions rather than create a private production screen or coordinator around the viewport widget.
 
 ## Native ownership
 

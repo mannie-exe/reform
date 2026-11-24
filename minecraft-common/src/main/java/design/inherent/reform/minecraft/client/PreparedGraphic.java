@@ -14,13 +14,25 @@ public final class PreparedGraphic implements AutoCloseable {
   private final List<GraphicSceneData.Fact> facts;
   private final GraphicCamera camera;
   private final CompletionStage<RenderLifetime.State> release;
-  private ClientMeshGraphic graphic;
+  private ClientGraphicLease graphic;
   private RenderLifetime.State observed;
 
   PreparedGraphic(GraphicSceneData data, ClientMeshGraphic graphic) {
-    stamp = data.stamp();
-    facts = data.facts();
-    camera = data.camera();
+    this(data.stamp(), data.facts(), data.camera(), graphic);
+  }
+
+  PreparedGraphic(NativeGraphicContribution<?> data, ClientNativeGraphic graphic) {
+    this(data.stamp(), data.facts(), data.camera(), graphic);
+  }
+
+  private PreparedGraphic(
+      GraphicSourceStamp stamp,
+      List<GraphicSceneData.Fact> facts,
+      GraphicCamera camera,
+      ClientGraphicLease graphic) {
+    this.stamp = stamp;
+    this.facts = facts;
+    this.camera = camera;
     this.graphic = graphic;
     observed = graphic.state();
     release = graphic.releaseCompletion();

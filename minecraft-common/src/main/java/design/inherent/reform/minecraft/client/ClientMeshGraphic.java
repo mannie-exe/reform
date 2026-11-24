@@ -15,7 +15,7 @@ import net.minecraft.network.chat.Component;
 /**
  * Private native mesh resources, ready for a shared viewport; never registered as live game assets.
  */
-public final class ClientMeshGraphic implements AutoCloseable {
+public final class ClientMeshGraphic implements ClientGraphicLease {
   public enum DrawOutcome {
     RENDERED,
     EMPTY,

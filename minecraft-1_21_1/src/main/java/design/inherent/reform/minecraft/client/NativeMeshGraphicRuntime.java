@@ -17,7 +17,7 @@ public final class NativeMeshGraphicRuntime {
   private static final int MAXIMUM_GRAPHICS = 128, MAXIMUM_USES = 512;
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(NativeMeshGraphicRuntime.class);
-  private static final Set<NativeMeshGraphic> LIVE =
+  private static final Set<NativeOwnedGraphic> LIVE =
       Collections.newSetFromMap(new IdentityHashMap<>());
   private static final List<Ticket> USES = new ArrayList<>();
   private static ClientRegistration.Subscription subscription;
@@ -27,7 +27,7 @@ public final class NativeMeshGraphicRuntime {
     return destroyed;
   }
 
-  static void register(NativeMeshGraphic graphic) {
+  static void register(NativeOwnedGraphic graphic) {
     RenderSystem.assertOnRenderThread();
     if (closing || LIVE.size() >= MAXIMUM_GRAPHICS)
       throw new PolicyRefusal("preview.budget", "Native graphic admission is closed or full");
@@ -36,7 +36,7 @@ public final class NativeMeshGraphicRuntime {
     LIVE.add(graphic);
   }
 
-  static void released(NativeMeshGraphic graphic) {
+  static void released(NativeOwnedGraphic graphic) {
     LIVE.remove(graphic);
     unsubscribeIfIdle();
   }

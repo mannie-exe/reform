@@ -2,6 +2,8 @@
 
 Portable client APIs use `design.inherent.reform.minecraft.client`. A `ClientRegistration` binds them to the actual owning loader container, configuration root, setup callback, command source and menu entry. It supplies no configuration schema, serializer, gameplay authority or settings override layer.
 
+The 26.3 native matrix APIs complete JOML 1.10.9 classes whose class-file version is 46 while containing Java 8 type annotations. Actual `Matrix3x2fStack` use triggers javac's external `classfile` warning; caller-level suppression does not suppress that dependency-completion warning. Only the 26.3 native projects and their independent platform consumer disable `classfile` lint. All other lint and `-Werror` remain enabled. Recheck this exception against the actual JOML input when changing game targets or native dependencies; it is not permission to suppress unrelated compiler warnings.
+
 NeoForge consumers create `NeoForgeClientRegistration.of(modBus, container)` from `design.inherent.reform.neoforge.client`. Fabric consumers create `FabricClientRegistration.of(container)` from `design.inherent.reform.fabric.client`, using their actual Fabric Loader container. Construct these on the physical client before native setup. The Fabric binding checks that its supplied container is the actual registered instance. Neither binding selects itself from foreign classes; Connector cannot cause a second bootstrap.
 
 Pass the registration to the ordinary factories:
