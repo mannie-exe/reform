@@ -19,7 +19,7 @@ final class ChoiceView extends MetadataView {
   private boolean backFocused;
   private net.minecraft.locale.Language language;
   private Object generation;
-  private float scroll;
+  private design.inherent.reform.presentation.SectionNavigation.Bookmark viewport;
   private String focus;
   private boolean closed;
   private Component notice;
@@ -59,7 +59,7 @@ final class ChoiceView extends MetadataView {
   void preserve() {
     if (panel == null || !visible) return;
     backFocused = getFocused() == back || getFocused() == panel && panel.getFocused() == back;
-    scroll = panel.scroll();
+    viewport = panel.bookmark();
     focus = panel.focusKey();
   }
 
@@ -175,7 +175,8 @@ final class ChoiceView extends MetadataView {
     }
     if (composed) suffix.accept(panel);
     chrome.mountActions(this::addRenderableWidget, panel);
-    panel.finish(scroll);
+    panel.finish(0);
+    if (viewport != null) panel.restore(viewport);
     addRenderableWidget(panel);
     if (backFocused) {
       if (panel.children().contains(back)) {
