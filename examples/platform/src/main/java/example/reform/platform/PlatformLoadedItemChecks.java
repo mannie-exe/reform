@@ -406,7 +406,7 @@ public final class PlatformLoadedItemChecks {
         if (!released()) return false;
         showing = false;
         before = submissions;
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 3;
       }
       case 3 -> {
@@ -422,7 +422,7 @@ public final class PlatformLoadedItemChecks {
             pendingControl = mode == 5 ? 4 : 3;
             nativeEntriesBefore = nativeEntries;
           }
-          press("Show loaded image");
+          press("Show loaded preview");
           return false;
         }
         if (mode == 5) {
@@ -447,7 +447,7 @@ public final class PlatformLoadedItemChecks {
         before = submissions;
         press("Rotate right");
         press("Zoom in");
-        press("Show loaded image");
+        press("Show loaded preview");
         stage = 5;
       }
       case 5 -> {
@@ -474,7 +474,7 @@ public final class PlatformLoadedItemChecks {
           pendingControl = 1;
           resetObserved = false;
           press("Rotate right");
-          press("Show loaded image");
+          press("Show loaded preview");
           stage = 30;
           return false;
         }
@@ -627,7 +627,7 @@ public final class PlatformLoadedItemChecks {
       }
       case 20 -> {
         if (workflow.screen().width > 340) return false;
-        press("Show loaded image");
+        press("Show loaded preview");
         stage = 21;
       }
       case 21 -> {
@@ -661,7 +661,7 @@ public final class PlatformLoadedItemChecks {
       case 23 -> {
         if (workflow.screen().width != screenWidth || workflow.screen().height != screenHeight)
           return false;
-        press("Show loaded image");
+        press("Show loaded preview");
         stage = 24;
       }
       case 24 -> {

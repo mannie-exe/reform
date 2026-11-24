@@ -157,7 +157,7 @@ public final class PlatformLoadedSpriteChecks {
     if (!showing) {
       showing = true;
       before = draws;
-      press("Show loaded image");
+      press("Show loaded preview");
       return false;
     }
     if (draws <= before || !focusedImage()) return false;
@@ -346,10 +346,10 @@ public final class PlatformLoadedSpriteChecks {
         check.accept(
             "idle sprite cancellation is disabled",
             !button(workflow.screen(), "Cancel preparation").active);
-        retired = button(workflow.screen(), "Prepare loaded image");
+        retired = button(workflow.screen(), "Prepare loaded preview");
         before = draws;
         showing = false;
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 2;
       }
       case 2 -> {
@@ -359,7 +359,7 @@ public final class PlatformLoadedSpriteChecks {
           if (drawFailure == null) {
             if (prepared instanceof GraphicScenePreparation.Ready && !showing) {
               showing = true;
-              press("Show loaded image");
+              press("Show loaded preview");
             }
             return false;
           }
@@ -370,7 +370,7 @@ public final class PlatformLoadedSpriteChecks {
                       .anyMatch(issue -> issue.code().equals("preview.budget"))
                   && draws == 0);
           unchanged();
-          press("Image details");
+          press("Preview details");
           stage = 22;
           return false;
         }
@@ -403,7 +403,7 @@ public final class PlatformLoadedSpriteChecks {
             preparations == 1);
         before = draws;
         showing = false;
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 2;
       }
       case 20 -> {
@@ -421,14 +421,14 @@ public final class PlatformLoadedSpriteChecks {
         check.accept(
             "sprite mode changes never implicitly prepare", preparations == (stage - 1) / 2 + 1);
         if (stage == 3) {
-          if (button(workflow.screen(), "Prepare loaded image") == retired) return false;
+          if (button(workflow.screen(), "Prepare loaded preview") == retired) return false;
           NativeClientProbe.pressRetired(retired);
           check.accept(
               "retired sprite callback cannot prepare its replaced slot", preparations == 2);
         }
         before = draws;
         showing = false;
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage++;
       }
       case 4 -> {

@@ -103,15 +103,15 @@ public final class PlatformNativeItemShutdownChecks {
     } else if (stage == 2 && entered.isDone()) {
       if (entered.join().outcome() != NavigationAttempt.Outcome.REVEALED)
         throw new AssertionError("Shutdown item view refused");
-      press("Prepare loaded image");
+      press("Prepare loaded preview");
       stage = 3;
     } else if (stage == 3) {
       var show =
           PlatformWidgets.widgets(workflow.screen()).stream()
-              .filter(w -> w.active && w.getMessage().getString().equals("Show loaded image"))
+              .filter(w -> w.active && w.getMessage().getString().equals("Show loaded preview"))
               .findFirst();
       if (show.isEmpty()) return;
-      press("Show loaded image");
+      press("Show loaded preview");
       stage = 4;
     }
   }

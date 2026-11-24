@@ -286,7 +286,7 @@ public final class PlatformLoadedGraphicChecks {
                   : "separate server resource-manager construction/close cannot replace loaded-client source",
               originalResources.equals(normal.resourceStamp()));
         }
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 2;
       }
       case 2 -> {
@@ -307,7 +307,7 @@ public final class PlatformLoadedGraphicChecks {
                             f.title().equals("Source")
                                 && f.value().equals("Loaded client resources")));
         unchanged();
-        press("Show loaded image");
+        press("Show loaded preview");
         stage = 3;
       }
       case 3 -> {
@@ -316,7 +316,7 @@ public final class PlatformLoadedGraphicChecks {
           focus = container.getFocused();
         if (focus != image()) return false;
         check.accept(
-            "Show loaded image settles focus on its actual current viewport", focus == image());
+            "Show loaded preview settles focus on its actual current viewport", focus == image());
         stage = 90;
         capture.accept("loaded-texture.png", () -> stage = 4);
       }
@@ -340,12 +340,12 @@ public final class PlatformLoadedGraphicChecks {
                 && preparations == before);
         unchanged();
         before = draws;
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 6;
       }
       case 6 -> {
         if (draws <= before) return false;
-        retired = button(workflow.screen(), "Prepare loaded image");
+        retired = button(workflow.screen(), "Prepare loaded preview");
         before = preparations;
         press("Select missing image");
         stage = 7;
@@ -356,7 +356,7 @@ public final class PlatformLoadedGraphicChecks {
         check.accept(
             "replaced loaded slot cannot replay a retired preparation callback",
             preparations == before);
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 8;
       }
       case 8 -> {
@@ -368,7 +368,7 @@ public final class PlatformLoadedGraphicChecks {
                 && released());
         unchanged();
         press("Select test image");
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         before = draws;
         stage = 9;
       }
@@ -383,7 +383,7 @@ public final class PlatformLoadedGraphicChecks {
       }
       case 10 -> {
         if (workflow.screen().width > 340) return false;
-        press("Show loaded image");
+        press("Show loaded preview");
         stage = 11;
       }
       case 11 -> {
@@ -409,7 +409,7 @@ public final class PlatformLoadedGraphicChecks {
       case 13 -> {
         if (workflow.screen().width != width || workflow.screen().height != height) return false;
         press("Use tiny input allowance");
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 14;
       }
       case 14 -> {
@@ -426,7 +426,7 @@ public final class PlatformLoadedGraphicChecks {
         unchanged();
         press("Select test image");
         PlatformDecodedCloseFault.armed = true;
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 17;
       }
       case 17 -> {

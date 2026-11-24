@@ -55,7 +55,7 @@ final class LoadedGraphicView<S> implements AutoCloseable {
         prefix + ":prepare",
         button(
             "prepare_loaded",
-            "Prepare loaded image",
+            "Prepare loaded preview",
             () -> view.request(spec.subject()),
             theme,
             guard),
@@ -73,12 +73,12 @@ final class LoadedGraphicView<S> implements AutoCloseable {
         cameraButton("zoom_in", "Zoom in", () -> view.zoom(1.2), theme, guard),
         cameraButton("zoom_out", "Zoom out", () -> view.zoom(1 / 1.2), theme, guard),
         cameraButton("reset_camera", "Reset view", view::resetCamera, theme, guard),
-        button("show_loaded", "Show loaded image", () -> show = true, theme, guard));
+        button("show_loaded", "Show loaded preview", () -> show = true, theme, guard));
     panel.actions(
         prefix + ":details",
         button(
             details ? "hide_details" : "details",
-            details ? "Hide image details" : "Image details",
+            details ? "Hide preview details" : "Preview details",
             () -> {
               details = !details;
               rebuild.run();
@@ -92,14 +92,14 @@ final class LoadedGraphicView<S> implements AutoCloseable {
               stamp -> {
                 panel.row(
                     prefix + ":provenance",
-                    text("provenance", "Prepared image"),
+                    text("provenance", "Prepared preview"),
                     text(
                         observed.state() == ClientGraphicHost.State.READY
                             ? "current_image"
                             : "previous_image",
                         observed.state() == ClientGraphicHost.State.READY
-                            ? "Current image"
-                            : "Earlier image; not a current result"));
+                            ? "Current preview"
+                            : "Earlier preview; not a current result"));
                 panel.row(
                     prefix + ":source",
                     text("source", "Source"),
@@ -154,7 +154,7 @@ final class LoadedGraphicView<S> implements AutoCloseable {
       panel.row(
           prefix + ":status",
           Component.empty(),
-          ClientStatusScreen.reason(observed.report(), text("unavailable", "Image unavailable")));
+          ClientStatusScreen.reason(observed.report(), text("unavailable", "Preview unavailable")));
     panel.endGroup();
   }
 
@@ -169,17 +169,17 @@ final class LoadedGraphicView<S> implements AutoCloseable {
   private static Component stateText(ClientGraphicHost.State state) {
     String fallback =
         switch (state) {
-          case IDLE -> "No image prepared";
+          case IDLE -> "No preview prepared";
           case QUEUED -> "Waiting for earlier preparation";
-          case PREPARING -> "Preparing image";
+          case PREPARING -> "Preparing preview";
           case CANCELLING -> "Waiting for cancellation to finish";
-          case READY -> "Image ready";
-          case STALE -> "Image is out of date; prepare it again";
-          case CLOSED -> "Image closed";
+          case READY -> "Preview ready";
+          case STALE -> "Preview is out of date; prepare it again";
+          case CLOSED -> "Preview closed";
           case CANCELLED -> "Preparation cancelled";
           case REFUSED -> "Preparation refused";
           case FAILED -> "Preparation failed";
-          case UNAVAILABLE -> "Image unavailable";
+          case UNAVAILABLE -> "Preview unavailable";
         };
     return text("state_" + state.name().toLowerCase(java.util.Locale.ROOT), fallback);
   }

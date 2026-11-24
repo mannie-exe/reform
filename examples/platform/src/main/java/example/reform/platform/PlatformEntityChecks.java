@@ -265,7 +265,7 @@ public final class PlatformEntityChecks {
         before = draws;
         attempt = null;
         drawFailure = null;
-        press("Prepare loaded image");
+        press("Prepare loaded preview");
         stage = 3;
       }
       case 3 -> {
@@ -306,7 +306,7 @@ public final class PlatformEntityChecks {
           check.accept(
               "actual isolated animal native preparation is READY: " + mode,
               result.state() == ClientGraphicHost.State.READY);
-          press("Show loaded image");
+          press("Show loaded preview");
           stage = 4;
         }
       }
@@ -330,7 +330,7 @@ public final class PlatformEntityChecks {
           before = draws;
           press("Rotate right");
           press("Zoom in");
-          press("Show loaded image");
+          press("Show loaded preview");
           stage = 7;
         } else stage = 6;
       }
