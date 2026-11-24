@@ -254,7 +254,7 @@ final class PlatformRootInspectionChecks {
             widgets(workflow.screen()).stream()
                 .filter(Button.class::isInstance)
                 .map(Button.class::cast)
-                .filter(w -> w.getMessage().getString().equals("Back"))
+                .filter(w -> w.getMessage().getString().equals("Back to settings"))
                 .max(Comparator.comparingInt(Button::getY))
                 .orElseThrow();
         check.accept(

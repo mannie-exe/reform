@@ -2195,6 +2195,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (!geometry.navigationOverlay()) {
         if (isHome()) appendHome(token);
         if (metadata != null) {
+          metadata.returnCaption(
+              operationInspection != null && conflict != null
+                  ? text("return_conflict", "Back to conflict review")
+                  : operationInspection != null && inspection != null
+                      ? text("return_inspection", "Back to inspection")
+                      : operationInspection != null && operationInspection.owner() == null
+                          ? text("return_workspace", "Back to workspace")
+                          : text("return_settings", "Back to settings"));
           metadata.compose(
               outerFrame.headerInContent()
                   || outerFrame.statusInContent()

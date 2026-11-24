@@ -104,6 +104,7 @@ public final class OperationScreen<O> extends FormHostScreen implements ClientOp
     if (mounted || borrowed) throw new IllegalStateException("Operation already has a native host");
     borrowed = true;
     view.presentation(theme(), taskPresentation());
+    sealPresentation();
     return view;
   }
 

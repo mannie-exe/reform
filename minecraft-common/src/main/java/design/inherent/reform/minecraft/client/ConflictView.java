@@ -256,7 +256,7 @@ final class ConflictView<T> extends MetadataView implements ClientConflictInspec
     var cancel = button(text("cancel", "Cancel operation"), this::cancel);
     cancel.active =
         operation != null && !resolving && !operation.snapshot().cancellationRequested();
-    var back = button(text("back", "Back"), this::onClose);
+    var back = button(backCaption(text("back", "Back")), this::onClose);
     back.active = !resolving;
     int fieldWidth = 160;
     if (review != null)

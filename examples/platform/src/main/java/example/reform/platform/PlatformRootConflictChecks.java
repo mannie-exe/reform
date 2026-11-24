@@ -153,7 +153,7 @@ final class PlatformRootConflictChecks {
             widgets(workflow.screen()).stream()
                 .filter(Button.class::isInstance)
                 .map(Button.class::cast)
-                .filter(widget -> widget.getMessage().getString().equals("Back"))
+                .filter(widget -> widget.getMessage().getString().equals("Back to settings"))
                 .max(Comparator.comparingInt(Button::getY))
                 .orElseThrow();
         press(back);

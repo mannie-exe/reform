@@ -209,7 +209,7 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
       blocked.get(action.id()).ifPresent(reason -> control.setTooltip(Tooltip.create(reason)));
       footer.add(control);
     }
-    footer.add(button("back", text("back", "Back"), this::finish));
+    footer.add(button("back", backCaption(text("back", "Back")), this::finish));
     boolean hasDetails =
         observed != null && technical
             || outcome != null && !outcome.details().isEmpty()

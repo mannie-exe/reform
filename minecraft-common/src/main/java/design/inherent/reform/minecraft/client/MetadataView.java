@@ -9,6 +9,16 @@ import net.minecraft.network.chat.Component;
 abstract class MetadataView extends FormView {
   protected boolean composed, unified, visible;
   protected Consumer<FormPanel> prefix = ignored -> {}, suffix = ignored -> {};
+  private Component returnCaption;
+
+  final void returnCaption(Component caption) {
+    returnCaption = Objects.requireNonNull(caption).copy();
+  }
+
+  final Component backCaption(Component fallback) {
+    return composed && returnCaption != null ? returnCaption.copy() : fallback.copy();
+  }
+
   private ClientTheme scopedTheme;
   private TaskPresentation scopedTasks;
 

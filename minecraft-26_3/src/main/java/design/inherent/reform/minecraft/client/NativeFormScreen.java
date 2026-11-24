@@ -61,8 +61,13 @@ public abstract class NativeFormScreen extends Screen {
     }
   }
 
+  protected boolean presentationSealed() {
+    return false;
+  }
+
   private boolean themeMounted() {
-    return ((design.inherent.reform.minecraft.mixin.ScreenMountStateAccessor) this)
+    return presentationSealed()
+        || ((design.inherent.reform.minecraft.mixin.ScreenMountStateAccessor) this)
             .reform$initialized()
         || NativeScreens.current(net.minecraft.client.Minecraft.getInstance()) == this;
   }

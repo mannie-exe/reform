@@ -73,7 +73,7 @@ final class PlatformOperationPresentationChecks {
     return widgets(screen).stream()
         .filter(Button.class::isInstance)
         .map(Button.class::cast)
-        .filter(control -> control.getMessage().getString().equals("Back"))
+        .filter(control -> control.getMessage().getString().equals("Back to workspace"))
         .max(Comparator.comparingInt(Button::getY))
         .orElseThrow();
   }

@@ -16,6 +16,17 @@ abstract class FormHostScreen extends NativeFormScreen {
   private FormView mounted;
   private final List<FormView> views = new ArrayList<>();
   private boolean ticking, rebuildRequested, handingOff;
+  private boolean presentationBorrowed;
+
+  final void sealPresentation() {
+    presentationBorrowed = true;
+  }
+
+  @Override
+  protected final boolean presentationSealed() {
+    return presentationBorrowed;
+  }
+
   private Runnable deferredNavigation;
   private final FormView.Host host =
       new FormView.Host() {

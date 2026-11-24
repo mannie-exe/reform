@@ -55,6 +55,7 @@ public final class ConflictScreen<T> extends FormHostScreen implements ClientCon
     if (mounted || borrowed) throw new IllegalStateException("Conflict already has a native host");
     borrowed = true;
     view.presentation(theme(), taskPresentation());
+    sealPresentation();
     return view;
   }
 

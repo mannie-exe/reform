@@ -214,6 +214,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformFieldOrderChecks fieldOrderChecks;
   private PlatformThemeChecks themeChecks;
   private PlatformCustomViewChecks customViewChecks;
+  private PlatformBorrowedPresentationChecks borrowedPresentationChecks;
   private PlatformRootInspectionChecks rootInspectionChecks;
   private PlatformRootConflictChecks rootConflictChecks;
   private List<design.inherent.reform.minecraft.client.ClientEditor<?>> abandonedEditors =
@@ -594,6 +595,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (!choicesQualified && !entryChoices()) return false;
         if (customViewChecks == null) customViewChecks = new PlatformCustomViewChecks(this::check);
         if (!customViewChecks.tick()) return false;
+        if (borrowedPresentationChecks == null)
+          borrowedPresentationChecks = new PlatformBorrowedPresentationChecks(this::check);
+        if (!borrowedPresentationChecks.tick()) return false;
         if (rootInspectionChecks == null)
           rootInspectionChecks = new PlatformRootInspectionChecks(this::check, capture);
         if (!rootInspectionChecks.tick()) return false;

@@ -355,7 +355,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
               if (current() && operation == null && selected != null) finish(Optional.of(selected));
             });
     edit.active = current() && selected != null && !review.entries().isEmpty() && operation == null;
-    button(text("back", "Back"), () -> finish(Optional.empty()));
+    button(backCaption(text("back", "Back")), () -> finish(Optional.empty()));
     int fieldWidth = theme().values().value(ThemeValues.Role.MEASURE_INFORMATION_MINIMUM);
     int comparisonWidth = theme().values().value(ThemeValues.Role.MEASURE_EDITOR_MINIMUM);
     int minimumHeight =

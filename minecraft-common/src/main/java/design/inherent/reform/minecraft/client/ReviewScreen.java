@@ -110,6 +110,7 @@ public final class ReviewScreen<T> extends FormHostScreen implements ClientInspe
       throw new IllegalStateException("Inspection already has a native host");
     borrowed = true;
     view.presentation(theme(), taskPresentation());
+    sealPresentation();
     return view;
   }
 
