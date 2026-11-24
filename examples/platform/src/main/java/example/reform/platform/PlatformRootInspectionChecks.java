@@ -33,6 +33,7 @@ final class PlatformRootInspectionChecks {
   private NavigationBookmark bookmark;
   private byte[] source;
   private String originalDistance;
+  private EditBox originalLabelControl;
   private int stage;
 
   PlatformRootInspectionChecks(
@@ -80,6 +81,7 @@ final class PlatformRootInspectionChecks {
         editor = workflow.editor(route);
         retainedForm = editor.form();
         if (editor.busy() || retainedForm.fieldControl(label).isEmpty()) return false;
+        originalLabelControl = (EditBox) retainedForm.fieldControl(label).orElseThrow();
         originalDistance = ((EditBox) retainedForm.fieldControl(distance).orElseThrow()).getValue();
         replace(
             workflow.screen(),
@@ -112,7 +114,7 @@ final class PlatformRootInspectionChecks {
                 && Arrays.equals(source, source()));
         check.accept(
             "root inspection replaces editable controls without exposing ordinary owner Save",
-            !widgets(workflow.screen()).contains(retainedForm.fieldControl(label).orElseThrow())
+            !widgets(workflow.screen()).contains(originalLabelControl)
                 && widgets(workflow.screen()).stream()
                     .noneMatch(w -> w.getMessage().getString().equals("Save")));
         check.accept(
