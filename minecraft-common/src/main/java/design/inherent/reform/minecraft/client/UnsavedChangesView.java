@@ -3,8 +3,10 @@ package design.inherent.reform.minecraft.client;
 import design.inherent.reform.minecraft.client.UnsavedChangesScreen.Choice;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.SectionNavigation;
+import design.inherent.reform.presentation.ThemeValues;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -17,6 +19,22 @@ import net.minecraft.network.chat.Component;
 
 /** A bounded native draft decision; its callback requests work from the actual owner. */
 final class UnsavedChangesView extends MetadataView {
+
+  record Subject(Component title, Component state) {
+    Subject {
+      title = Objects.requireNonNull(title).copy();
+      state = Objects.requireNonNull(state).copy();
+    }
+  }
+
+  private Supplier<List<Subject>> subjects = List::of;
+  private List<Subject> displayedSubjects = List.of();
+
+  void subjects(Supplier<List<Subject>> subjects) {
+    if (minecraft != null)
+      throw new IllegalStateException("Declare decision subjects before mounting");
+    this.subjects = Objects.requireNonNull(subjects);
+  }
 
   private final Component contextLabel, explanation, saveLabel;
   private final Supplier<Optional<Component>> saveBlocked;
@@ -73,6 +91,7 @@ final class UnsavedChangesView extends MetadataView {
     generation = new Object();
     language = Language.getInstance();
     blocked = readiness();
+    displayedSubjects = List.copyOf(subjects.get());
     controls.clear();
     var widgets = new ArrayList<Button>();
     widgets.add(button(Choice.SAVE, saveLabel));
@@ -80,30 +99,63 @@ final class UnsavedChangesView extends MetadataView {
     widgets.add(button(Choice.KEEP_EDITING, text("keep_editing", "Keep editing")));
     controls.get(Choice.SAVE).active = blocked.isEmpty();
     blocked.ifPresent(reason -> controls.get(Choice.SAVE).setTooltip(Tooltip.create(reason)));
-    chrome =
-        new FormChrome(
-            minecraft,
+    var values = theme().values();
+    var bounds =
+        FormGeometry.centeredWidth(
             new FormGeometry.Placement(left, top, width, height),
-            composed ? Component.empty() : title,
-            composed ? Component.empty() : contextLabel,
-            Component.empty(),
-            widgets,
-            theme());
-    panel = chrome.panel();
-    if (composed) {
-      prefix.accept(panel);
-      panel.heading(title);
-      panel.row("context", Component.empty(), contextLabel);
-    }
-    chrome.mountActions(this::addRenderableWidget, panel);
-    panel.row(Component.empty(), explanation);
-    blocked.ifPresent(reason -> panel.row(text("save_blocked", "Action unavailable"), reason));
-    if (composed) suffix.accept(panel);
-    panel.finish(0);
+            Math.addExact(
+                Math.multiplyExact(
+                    font.width("M"), values.value(ThemeValues.Role.MEASURE_READING_COLUMNS)),
+                Math.multiplyExact(2, values.value(ThemeValues.Role.SPACE_SCREEN))));
+    var offer = frame(bounds, widgets);
+    var measured = content(offer, false);
+    int chromeHeight = offer.frame.bounds().height() - offer.frame.content().height();
+    int natural =
+        Math.min(
+            height,
+            Math.addExact(
+                chromeHeight,
+                Math.max(
+                    measured.naturalHeight(),
+                    values.value(ThemeValues.Role.MEASURE_CONTENT_MINIMUM_HEIGHT))));
+    chrome =
+        frame(new FormGeometry.Placement(bounds.x(), bounds.y(), bounds.width(), natural), widgets);
+    panel = content(chrome, true);
     panel.restore(viewport);
     addRenderableWidget(panel);
     var preferred = controls.get(preferredFocus);
     focus(preferred.active ? preferred : controls.get(Choice.KEEP_EDITING));
+  }
+
+  private FormChrome frame(FormGeometry.Placement bounds, List<Button> widgets) {
+    return new FormChrome(
+        minecraft,
+        bounds,
+        composed ? Component.empty() : title,
+        composed ? Component.empty() : contextLabel,
+        Component.empty(),
+        widgets,
+        theme());
+  }
+
+  /** Two bounded measurement passes use the same cached facts; only the final controls mount. */
+  private FormPanel content(FormChrome frame, boolean mountActions) {
+    var panel = frame.panel();
+    if (composed) {
+      prefix.accept(panel);
+      panel.heading(title);
+      if (displayedSubjects.isEmpty()) panel.row("context", Component.empty(), contextLabel);
+    }
+    if (!displayedSubjects.isEmpty()) {
+      panel.heading(text("subjects", "Affected documents"));
+      for (var subject : displayedSubjects) panel.row(subject.title(), subject.state());
+    }
+    panel.row(Component.empty(), explanation);
+    blocked.ifPresent(reason -> panel.row(text("save_blocked", "Action unavailable"), reason));
+    if (composed) suffix.accept(panel);
+    frame.mountActions(mountActions ? this::addRenderableWidget : ignored -> {}, panel);
+    panel.finish(0);
+    return panel;
   }
 
   @Override
@@ -181,6 +233,7 @@ final class UnsavedChangesView extends MetadataView {
     if (closed || minecraft == null || !currentHost()) return;
     var next = readiness();
     if (language != Language.getInstance()
+        || !displayedSubjects.equals(List.copyOf(subjects.get()))
         || !next.map(Component::getString).equals(blocked.map(Component::getString)))
       rebuildWidgets();
   }
@@ -204,6 +257,8 @@ final class UnsavedChangesView extends MetadataView {
   @Override
   public Component getNarrationMessage() {
     var message = title.copy().append(". ").append(contextLabel).append(". ").append(explanation);
+    for (var subject : displayedSubjects)
+      message.append(". ").append(subject.title()).append(": ").append(subject.state());
     blocked.ifPresent(reason -> message.append(". ").append(reason));
     return message;
   }

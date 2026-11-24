@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -1768,17 +1769,31 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private UnsavedChangesView closeDecision;
+    private Supplier<List<DocumentId>> closeDecisionScope = List::of;
 
     private void hideCloseDecision() {
       if (closeDecision != null) closeDecision.retireForNavigation();
       closeDecision = null;
+      closeDecisionScope = List::of;
     }
 
     /** Only this workflow's own decision callbacks can enter this transient body. */
-    private void showCloseDecision(UnsavedChangesScreen screen) {
+    private void showCloseDecision(Supplier<List<DocumentId>> scope, UnsavedChangesScreen screen) {
       beforeRebuild();
       var retained = metadata();
       if (retained != null) retained.hide();
+      closeDecisionScope = scope;
+      screen.subjects(
+          () -> {
+            var routes = scope.get();
+            var subjects = new LinkedHashMap<DocumentId, UnsavedChangesView.Subject>();
+            for (var state : documents())
+              if (state.opened() && routes.contains(state.document()))
+                subjects.putIfAbsent(
+                    state.ownerDocument(),
+                    new UnsavedChangesView.Subject(state.title(), state.summary()));
+            return List.copyOf(subjects.values());
+          });
       closeDecision = screen.borrowView();
       rebuildWidgets();
     }
@@ -2165,6 +2180,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (conflict != null) selected.put(conflictRoute, List.of());
       if (documentMenu != null) selected.put(documentMenuRoute, List.of());
       if (imported != null) selected.put(importRoute, List.of());
+      if (closeDecision != null)
+        for (var route : closeDecisionScope.get()) selected.put(route, List.of());
       for (var route : selected.keySet()) ensureOwner(route);
       var returned = resetList ? navigation.position(selectedKey).orElse(null) : null;
       if (returned != null && selected.containsKey(returned.owner()))
@@ -3397,12 +3414,13 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void confirmDiscard(DocumentId id) {
       showCloseDecision(
+          () -> List.of(id),
           new UnsavedChangesScreen(
               text("discard_title", "Discard this document's draft?"),
               entry(id).form.title(),
               text(
                   "discard_help",
-                  "Completed saves are retained. Discarding releases this editor; a later Open creates a new session."),
+                  "Discarding ends this editing session. Earlier saves stay saved. Open the document again to start a new draft."),
               text("review", "Review changes"),
               () ->
                   entry(id).editor != null && entry(id).editor.isOpen()
@@ -3457,16 +3475,21 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (current.stream()
           .anyMatch(state -> state.dirty() || state.opened() && !state.available())) {
         showCloseDecision(
+            () ->
+                documents().stream()
+                    .filter(DocumentState::opened)
+                    .map(DocumentState::document)
+                    .toList(),
             new UnsavedChangesScreen(
-                text("unsaved", "Retained document drafts"),
+                text("unsaved", "Unsaved changes"),
                 title,
                 layout == null
                     ? text(
                         "exit_help",
-                        "Review all documents before ordered saving, discard the remaining drafts, or keep editing. Previously completed saves are retained; documents do not form one atomic transaction.")
+                        "Review these documents before saving, discard their unsaved changes, or keep editing. Earlier saves stay saved; each document saves separately.")
                     : text(
                         "exit_scoped_help",
-                        "Return to the overview to review a scope or discard the remaining drafts."),
+                        "Keep editing to review the affected settings, or discard their unsaved changes. Earlier saves stay saved."),
                 text("review", "Review changes"),
                 Optional::empty,
                 choice -> {

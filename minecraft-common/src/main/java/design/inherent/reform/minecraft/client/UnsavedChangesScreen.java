@@ -42,6 +42,11 @@ public final class UnsavedChangesScreen extends FormHostScreen {
     return view;
   }
 
+  UnsavedChangesScreen subjects(Supplier<java.util.List<UnsavedChangesView.Subject>> subjects) {
+    view.subjects(subjects);
+    return this;
+  }
+
   @Override
   protected void init() {
     if (borrowed)

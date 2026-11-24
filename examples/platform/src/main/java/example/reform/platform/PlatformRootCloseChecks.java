@@ -107,6 +107,9 @@ final class PlatformRootCloseChecks {
         check.accept(
             "close review is distinct from saving",
             button(workflow.screen(), "Review changes").active);
+        check.accept(
+            "close decision names the actual affected document in narration",
+            workflow.screen().getNarrationMessage().getString().contains("Whole preferences"));
         geometry(workflow.screen());
         NativeClientProbe.size(client, width, height);
         stage = 90;

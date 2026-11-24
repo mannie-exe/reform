@@ -426,6 +426,12 @@ final class FormPanel extends ScrollFrame {
     return scrollDistance;
   }
 
+  /** The completed rows plus their actual viewport border; no assumed screen height. */
+  int naturalHeight() {
+    if (!finished) throw new IllegalStateException("Finish the panel before measuring its offer");
+    return Math.addExact(extent, border);
+  }
+
   boolean isNavigation() {
     return navigation;
   }

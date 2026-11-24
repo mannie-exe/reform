@@ -174,6 +174,8 @@ Normal workflow exit waits for known pending work and unreconciled results. This
 
 Workflow-owned close and discard decisions use a bounded body inside the same native root. They retain the original document or inspection beneath the decision; Keep editing and Escape restore it without another capture, validation, or write. Reflow preserves the actual decision focus and invalidates dismissed callbacks. The decision is transient in the current navigation context, rather than a new history visit or a second editor. `UnsavedChangesScreen` remains the standalone host of the same guarded callbacks for callers outside a workflow. A foreign decision is not automatically adopted from a matching title or document ID.
 
+The decision names the affected opened documents and uses their cached state for its body, narration, and owner context. Aliases of one owner appear once in that list. The reading width comes from resolved theme metrics; the height comes from completed native row and action measurements. Small windows retain the same scrollable content and native targets. These layout passes use the same cached facts and callbacks, without opening another editor, reading a source, or checking a save twice.
+
 The workflow owns editor lifetimes only. Closing it releases every entered editor, including after unexpected navigation away from a child or decision view. Actual game shutdown also closes managed workflows, even if their overview was never displayed. Forced `close()` is lifetime cleanup, not rollback or a promise to cancel an effect already entered. Owner shutdown and operation reconciliation retain their existing guarantees.
 
 ## Combined review and ordered saving
