@@ -88,6 +88,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       this.token = nativeControl.token();
       this.nativeControl = nativeControl;
       resolvedTheme = theme();
+      ClientControls.theme(nativeControl.widget(), resolvedTheme);
       language = Language.getInstance();
       state = customState(path, nativeControl, false, resolvedTheme);
       var binding =
@@ -114,7 +115,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                     || !visibleFields.contains(path)
                     || controls.get(path) == null
                     || controls.get(path).token() != token
-                    || !state.editable())
+                    || !state.editable()
+                    || !customEditable(path, controls.get(path), true))
                   throw new PolicyRefusal(
                       "presentation.control_unavailable", "This field control is unavailable.");
                 if (raw.length() > state.maximumCharacters())
@@ -143,6 +145,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           throw new IllegalArgumentException("The adapted control cannot shrink its native height");
         var tree = controlTree(contribution.widget());
         admittedTree = tree;
+        tree.forEach(widget -> ClientControls.theme(widget, resolvedTheme));
         for (var other : adaptedControls.values())
           if (other.live && other.contribution != null)
             for (var widget : controlTree(other.contribution.widget()))
@@ -266,19 +269,36 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void controlProblem(FieldPath path, String code, RuntimeException failed) {
-    if (controlFailure == null) controlFailure = failed;
-    else if (controlFailure != failed) controlFailure.addSuppressed(failed);
-    if (controlIssues.stream()
-        .noneMatch(issue -> issue.path().equals(path) && issue.code().equals(code)))
+    boolean first =
+        controlIssues.stream()
+            .noneMatch(issue -> issue.path().equals(path) && issue.code().equals(code));
+    if (first) {
+      if (controlFailure == null) controlFailure = failed;
+      else if (controlFailure != failed) controlFailure.addSuppressed(failed);
       controlIssues.add(
           design.inherent.reform.validation.Issue.error(
               code,
               path,
               "The custom field control failed. Use the standard control or reopen after correcting its declaration."));
+    }
     notice =
         text(
             "custom_control_failed",
             "The custom field control failed; the standard control remains available.");
+  }
+
+  private boolean customEditable(FieldPath path, Control control, boolean visible) {
+    return visible
+        && isCurrent()
+        && !closed
+        && !loading
+        && !saving
+        && locallyAvailable(path)
+        && actions.view().availability() == EditorActor.Availability.READY
+        && control.editable()
+        && (control.widget() instanceof FormEditBox input
+            ? input.acceptsInput()
+            : control.widget().active);
   }
 
   private ClientControlAdapter.State customState(
@@ -301,18 +321,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             ? Optional.<ClientControlAdapter.Selection>empty()
             : Optional.of(
                 new ClientControlAdapter.Selection(position.cursor(), position.selection()));
-    boolean editable =
-        visible
-            && isCurrent()
-            && !closed
-            && !loading
-            && !saving
-            && locallyAvailable(path)
-            && actions.view().availability() == EditorActor.Availability.READY
-            && control.editable()
-            && (control.widget() instanceof FormEditBox input
-                ? input.acceptsInput()
-                : control.widget().active);
+    boolean editable = customEditable(path, control, visible);
     return new ClientControlAdapter.State(
         raw,
         editable,
@@ -2201,12 +2210,21 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         presentation.catalog().sections().stream()
             .filter(section -> section.path().equals(path) && CatalogHelp.present(section))
             .findFirst();
-    if (declared.isPresent()) {
-      var section = declared.orElseThrow();
-      return CatalogHelp.describe(section);
-    }
     String key = labelKey(path) + ".help";
-    return Language.getInstance().has(key) ? Component.translatable(key) : Component.empty();
+    var purpose =
+        declared.isPresent()
+            ? CatalogHelp.describe(declared.orElseThrow())
+            : Language.getInstance().has(key) ? Component.translatable(key) : Component.empty();
+    if (controlIssues.stream().anyMatch(issue -> issue.path().equals(path))) {
+      var feedback =
+          text(
+              "custom_control_failed_field",
+              "Custom control failed; the standard control is available.");
+      return purpose.getString().isEmpty()
+          ? feedback
+          : purpose.copy().append("\n").append(feedback);
+    }
+    return purpose;
   }
 
   private boolean defaultedBoolean(
