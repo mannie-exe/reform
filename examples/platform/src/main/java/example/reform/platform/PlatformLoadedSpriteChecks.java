@@ -288,20 +288,29 @@ public final class PlatformLoadedSpriteChecks {
       }
       case 2 -> {
         if (!drawn(0xffff0000, 0xff00ff00)) return false;
-        capture.accept("loaded-sprite-gui.png", () -> {});
+        stage = 90;
+        capture.accept("loaded-sprite-gui.png", () -> stage = 20);
+      }
+      case 20 -> {
         unchanged();
         press("GUI second frame");
-        int count = preparations;
-        NativeClientProbe.pressRetired(retired);
-        check.accept(
-            "retired sprite callback cannot prepare its replaced slot", preparations == count);
         stage = 3;
       }
       case 3, 5, 7, 9, 11 -> {
         if (!released()) return false;
         check.accept(
             "sprite replacement retires the previous native and scene payload",
-            graphic == null || graphic.releaseCompletion().toCompletableFuture().isDone());
+            graphic == null
+                || graphic.releaseCompletion().toCompletableFuture().isDone()
+                    && graphic.state().released());
+        check.accept(
+            "sprite mode changes never implicitly prepare", preparations == (stage - 1) / 2);
+        if (stage == 3) {
+          if (button(workflow.screen(), "Prepare loaded image") == retired) return false;
+          NativeClientProbe.pressRetired(retired);
+          check.accept(
+              "retired sprite callback cannot prepare its replaced slot", preparations == 1);
+        }
         before = draws;
         press("Prepare loaded image");
         stage++;
@@ -313,7 +322,10 @@ public final class PlatformLoadedSpriteChecks {
       }
       case 6 -> {
         if (!drawn(0xffff0000, 0xff00ff00)) return false;
-        capture.accept("loaded-sprite-block.png", () -> {});
+        stage = 90;
+        capture.accept("loaded-sprite-block.png", () -> stage = 60);
+      }
+      case 60 -> {
         press("Missing sprite");
         stage = 7;
       }
