@@ -129,7 +129,17 @@ public final class PlatformLoadedSpriteChecks {
   }
 
   private boolean drawn(int first, int second) {
-    if (!(prepared instanceof GraphicScenePreparation.Ready ready) || draws <= before) return false;
+    if (failed != null) throw new AssertionError("Loaded sprite preparation failed", failed);
+    if (prepared == null) return false;
+    if (!(prepared instanceof GraphicScenePreparation.Ready ready))
+      throw new AssertionError("Expected ready loaded sprite; actual=" + prepared);
+    if (draws <= before) {
+      if (!showing) {
+        showing = true;
+        press("Show loaded image");
+      }
+      return false;
+    }
     var pixels = ready.graphic().scene().textures().values().iterator().next();
     check.accept(
         "native atlas frame has independent expected colors and extent",
