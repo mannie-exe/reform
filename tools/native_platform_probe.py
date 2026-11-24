@@ -304,7 +304,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
     target = next((t for t in load_targets(ROOT) if t["project"] == project), None)
     if target is None:
         raise ValueError("Select an admitted native target")
-    if isolated_scene is not None and (isolated_scene != "operations" or not client or any((world_client, recipe_client, authoring_client, chooser_client, connector, command_client, workspace_client, workflow_client, native_recipe_client, recipe_links_client, recipe_viewer, mod_menu, initialization_failure, synced_override))):
+    if isolated_scene is not None and (isolated_scene not in ("operations", "controls") or not client or any((world_client, recipe_client, authoring_client, chooser_client, connector, command_client, workspace_client, workflow_client, native_recipe_client, recipe_links_client, recipe_viewer, mod_menu, initialization_failure, synced_override))):
         raise ValueError("Select a separate admitted isolated client scene")
     if connector and (client or synced_override or "connectorVersion" not in target):
         raise ValueError("Connector requires a declared dedicated NeoForge target")
@@ -381,7 +381,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
     reports = ROOT / "build/reports/native-platform" / project / role / mode
     reports.mkdir(parents=True, exist_ok=True)
     required_scenarios = tuple(name for name, enabled in
-                               [("operations", isolated_scene == "operations"), ("nativeRecipes", native_recipe_client), ("recipeLinks", recipe_links_client), ("world", world_client), ("recipe", recipe_client), ("authoring", authoring_client),
+                               [("controls", isolated_scene == "controls"), ("operations", isolated_scene == "operations"), ("nativeRecipes", native_recipe_client), ("recipeLinks", recipe_links_client), ("world", world_client), ("recipe", recipe_client), ("authoring", authoring_client),
                                 ("initializationFailure", initialization_failure), ("chooser", chooser_client),
                                 ("nativeCommands", not client), ("nativeSearch", not client),
                                 ("clientCommands", command_client), ("workspace", workspace_client), ("workflow", workflow_client)] if enabled)
@@ -451,6 +451,11 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             if authoring_client and isinstance(native.get("authoring"), dict):
                 native["authoring"]["captures"] = retain_captures(
                     fixture, reports, native["authoring"].get("captures", []), AUTHORING_CAPTURES, reopen)
+            if isolated_scene == "controls":
+                roles = {"platform-control-custom-wide.png", "platform-control-custom-narrow.png"}
+                for key in ("controls", "sceneFailure"):
+                    if isinstance(native.get(key), dict):
+                        native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
             if isolated_scene == "operations":
                 roles = {"platform-operation-wide.png", "platform-operation-small.png", "platform-operation-close-pending.png", "platform-operation-close-terminal.png"}
                 for key in ("operations", "sceneFailure"):
@@ -513,7 +518,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--isolated-scene", choices=["operations"], help="Separate existing native operation presentation and close guards")
+    parser.add_argument("--isolated-scene", choices=["operations", "controls"], help="Separate native operation or custom-control qualification")
     parser.add_argument("--native-recipe-client", action="store_true", help="Actual owner-supplied native book and optional inventory viewer context")
     parser.add_argument("--recipe-links-client", action="store_true", help="Separate optional recipe-viewer and exact parent-return qualification")
     parser.add_argument("--recipe-viewer", choices=["jei", "emi", "both"], help="Recipe client with exact optional runtimes and original-input hash verification")

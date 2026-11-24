@@ -34,6 +34,16 @@ public interface SettingsForm<T> {
     return FormPresentation.EMPTY;
   }
 
+  /** Retained custom-control failures, independent of editing/validation authority. */
+  default design.inherent.reform.validation.ValidationReport controlReport() {
+    return design.inherent.reform.validation.ValidationReport.VALID;
+  }
+
+  /** Exact first control failure; subsequent failures remain suppressed on that cause. */
+  default Optional<Throwable> controlFailure() {
+    return Optional.empty();
+  }
+
   /** A currently mounted native control; hidden or retired widgets are not returned. */
   Optional<AbstractWidget> fieldControl(FieldPath path);
 

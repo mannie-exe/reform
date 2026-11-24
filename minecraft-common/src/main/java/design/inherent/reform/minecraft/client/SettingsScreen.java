@@ -232,6 +232,12 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     return this;
   }
 
+  /** Declare inline native controls before activation; edit and save authority remain shared. */
+  public SettingsScreen<T> withControls(Map<FieldPath, ClientControlAdapter> controls) {
+    view.withControls(controls);
+    return this;
+  }
+
   void focusAfterLoad(FieldPath path) {
     view.focusAfterLoad(path);
   }
@@ -250,6 +256,14 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
 
   public EditorActor.View<T> editorView() {
     return view.editorView();
+  }
+
+  public design.inherent.reform.validation.ValidationReport controlReport() {
+    return view.controlReport();
+  }
+
+  public Optional<Throwable> controlFailure() {
+    return view.controlFailure();
   }
 
   public Optional<AbstractWidget> fieldControl(FieldPath path) {

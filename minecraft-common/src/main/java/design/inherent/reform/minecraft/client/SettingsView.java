@@ -72,6 +72,271 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       Object token,
       Quantity quantity) {}
 
+  private final class AdaptedControl {
+    final FieldPath path;
+    final Object token;
+    final Control nativeControl;
+    ClientControlAdapter.Control contribution;
+    ClientControlAdapter.State state;
+    final ClientTheme resolvedTheme;
+    final Language language;
+    java.util.Set<AbstractWidget> admittedTree;
+    boolean live = true, failed;
+
+    AdaptedControl(FieldPath path, Control nativeControl, Component label) {
+      this.path = path;
+      this.token = nativeControl.token();
+      this.nativeControl = nativeControl;
+      resolvedTheme = theme();
+      language = Language.getInstance();
+      state = customState(path, nativeControl, false, resolvedTheme);
+      var binding =
+          new ClientControlAdapter.Binding(
+              path,
+              nativeControl.shape(),
+              label,
+              nativeControl.widget(),
+              () ->
+                  live
+                      ? state
+                      : new ClientControlAdapter.State(
+                          state.raw(),
+                          false,
+                          state.maximumCharacters(),
+                          state.validation(),
+                          state.theme(),
+                          state.selection()),
+              raw -> {
+                ClientSettingsRuntime.requireClientThread();
+                if (updating) return;
+                if (!live
+                    || !isCurrent()
+                    || !visibleFields.contains(path)
+                    || controls.get(path) == null
+                    || controls.get(path).token() != token
+                    || !state.editable())
+                  throw new PolicyRefusal(
+                      "presentation.control_unavailable", "This field control is unavailable.");
+                if (raw.length() > state.maximumCharacters())
+                  throw new PolicyRefusal(
+                      "presentation.control_input_limit",
+                      "The field input exceeds its native character allowance.");
+                updating = true;
+                try {
+                  nativeControl.display().accept(raw);
+                } finally {
+                  updating = false;
+                }
+                edit(path, token, raw);
+              },
+              () ->
+                  nativeControl.widget() instanceof FormEditBox input
+                      ? Optional.of(
+                          new ClientControlAdapter.Selection(
+                              input.getCursorPosition(), input.selection()))
+                      : Optional.empty());
+      boolean prior = updating;
+      updating = true;
+      try {
+        contribution = Objects.requireNonNull(controlAdapters.get(path).create(binding));
+        if (contribution.preferred().height() < nativeControl.widget().getHeight())
+          throw new IllegalArgumentException("The adapted control cannot shrink its native height");
+        var tree = controlTree(contribution.widget());
+        admittedTree = tree;
+        for (var other : adaptedControls.values())
+          if (other.live && other.contribution != null)
+            for (var widget : controlTree(other.contribution.widget()))
+              if (tree.contains(widget))
+                throw new IllegalArgumentException(
+                    "An adapted control cannot borrow another field's widget");
+        for (var other : controls.values())
+          if (other.token() != token && tree.contains(other.widget()))
+            throw new IllegalArgumentException(
+                "An adapted control cannot borrow another field's input");
+        ControlSizing.offer(
+            contribution.widget(),
+            contribution.preferred().width(),
+            contribution.preferred().height());
+      } catch (RuntimeException error) {
+        failed = true;
+        controlProblem(path, "presentation.control_factory_failed", error);
+        retire();
+      } finally {
+        updating = prior;
+      }
+    }
+
+    boolean matchesTheme() {
+      return resolvedTheme.equals(theme()) && language == Language.getInstance();
+    }
+
+    AbstractWidget widget() {
+      return failed || contribution == null ? nativeControl.widget() : contribution.widget();
+    }
+
+    void refresh() {
+      if (!live || failed) return;
+      state = customState(path, nativeControl, visibleFields.contains(path), resolvedTheme);
+      boolean prior = updating;
+      updating = true;
+      try {
+        contribution.synchronize().accept(state);
+        var currentTree = controlTree(contribution.widget());
+        if (!currentTree.equals(admittedTree))
+          throw new IllegalArgumentException(
+              "The mounted control tree must retain its declared identities");
+        for (var widget : currentTree) {
+          if (widget instanceof EditBox input) input.setEditable(state.editable());
+          else widget.active = state.editable();
+        }
+      } catch (RuntimeException error) {
+        failed = true;
+        controlProblem(path, "presentation.control_update_failed", error);
+        customRebuild = true;
+        retire();
+      } finally {
+        updating = prior;
+      }
+    }
+
+    void rememberSelection() {
+      if (!live || failed || contribution == null) return;
+      try {
+        contribution
+            .selection()
+            .get()
+            .ifPresent(
+                value ->
+                    inputPositions.put(
+                        path,
+                        new InputPosition(
+                            Math.min(value.cursor(), state.raw().length()),
+                            Math.min(value.anchor(), state.raw().length()),
+                            Optional.ofNullable(nativeControl.quantity())
+                                .map(q -> q.input.unit()))));
+      } catch (RuntimeException error) {
+        controlProblem(path, "presentation.control_state_failed", error);
+      }
+    }
+
+    void retire() {
+      if (!live) return;
+      live = false;
+      if (contribution != null) {
+        boolean prior = updating;
+        updating = true;
+        try {
+          contribution.dispose().run();
+        } catch (RuntimeException error) {
+          controlProblem(path, "presentation.control_close_failed", error);
+        } finally {
+          updating = prior;
+        }
+      }
+    }
+  }
+
+  private Map<FieldPath, ClientControlAdapter> controlAdapters = Map.of();
+  private final Map<FieldPath, AdaptedControl> adaptedControls = new LinkedHashMap<>();
+  private final List<design.inherent.reform.validation.Issue> controlIssues = new ArrayList<>();
+  private Throwable controlFailure;
+  private boolean customRebuild;
+
+  private static java.util.Set<AbstractWidget> controlTree(AbstractWidget root) {
+    var seen =
+        java.util.Collections.newSetFromMap(
+            new java.util.IdentityHashMap<
+                net.minecraft.client.gui.components.events.GuiEventListener, Boolean>());
+    var widgets =
+        java.util.Collections.newSetFromMap(
+            new java.util.IdentityHashMap<AbstractWidget, Boolean>());
+    var pending =
+        new java.util.ArrayDeque<net.minecraft.client.gui.components.events.GuiEventListener>();
+    pending.push(root);
+    while (!pending.isEmpty()) {
+      var entry = pending.pop();
+      if (!seen.add(entry) || seen.size() > 64)
+        throw new IllegalArgumentException(
+            "A custom field control needs a bounded nonshared native tree");
+      if (entry instanceof AbstractWidget widget) widgets.add(widget);
+      if (entry instanceof net.minecraft.client.gui.components.events.ContainerEventHandler group)
+        for (var child : group.children()) pending.push(child);
+    }
+    return widgets;
+  }
+
+  private void controlProblem(FieldPath path, String code, RuntimeException failed) {
+    if (controlFailure == null) controlFailure = failed;
+    else if (controlFailure != failed) controlFailure.addSuppressed(failed);
+    if (controlIssues.stream()
+        .noneMatch(issue -> issue.path().equals(path) && issue.code().equals(code)))
+      controlIssues.add(
+          design.inherent.reform.validation.Issue.error(
+              code,
+              path,
+              "The custom field control failed. Use the standard control or reopen after correcting its declaration."));
+    notice =
+        text(
+            "custom_control_failed",
+            "The custom field control failed; the standard control remains available.");
+  }
+
+  private ClientControlAdapter.State customState(
+      FieldPath path, Control control, boolean visible, ClientTheme resolvedTheme) {
+    String raw = local.getOrDefault(path, "");
+    int maximum =
+        control.widget() instanceof FormEditBox input
+            ? input.maximumCharacters()
+            : Math.max(128, raw.length());
+    var shape =
+        control.shape() instanceof ValueShape.Reference<?> reference
+            ? reference.element().shape()
+            : control.shape();
+    if (shape instanceof ValueShape.Scalar scalar)
+      maximum =
+          Math.max(maximum, scalar.choices().stream().mapToInt(String::length).max().orElse(0));
+    var position = inputPositions.get(path);
+    var selection =
+        position == null
+            ? Optional.<ClientControlAdapter.Selection>empty()
+            : Optional.of(
+                new ClientControlAdapter.Selection(position.cursor(), position.selection()));
+    boolean editable =
+        visible
+            && isCurrent()
+            && !closed
+            && !loading
+            && !saving
+            && locallyAvailable(path)
+            && actions.view().availability() == EditorActor.Availability.READY
+            && control.editable()
+            && (control.widget() instanceof FormEditBox input
+                ? input.acceptsInput()
+                : control.widget().active);
+    return new ClientControlAdapter.State(
+        raw,
+        editable,
+        Math.max(maximum, raw.length()),
+        actions.view().validation(),
+        resolvedTheme,
+        selection);
+  }
+
+  private AbstractWidget presentedControl(FieldPath path, Control control) {
+    var adapted = adaptedControls.get(path);
+    return adapted != null && adapted.token == control.token()
+        ? adapted.widget()
+        : control.widget();
+  }
+
+  public ValidationReport controlReport() {
+    return new ValidationReport(controlIssues, true);
+  }
+
+  public Optional<Throwable> controlFailure() {
+    return Optional.ofNullable(controlFailure);
+  }
+
   private static final class Quantity {
     NumericInput input;
     CycleButton<String> units;
@@ -344,6 +609,21 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     referenceTitles = Map.copyOf(titles);
   }
 
+  void withControls(Map<FieldPath, ClientControlAdapter> adapters) {
+    if (activated || requested || closed)
+      throw new IllegalStateException("Field controls must be declared before activation");
+    var declared = Map.copyOf(adapters);
+    if (declared.size() > 256) throw new IllegalArgumentException("Too many custom field controls");
+    for (var path : declared.keySet()) {
+      var shape =
+          design.inherent.reform.edit.DraftTypes.declaredAt(definition.type(), path).shape();
+      if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>))
+        throw new IllegalArgumentException(
+            "Inline controls require an actual declared scalar path");
+    }
+    controlAdapters = declared;
+  }
+
   private Component defaultsLabel() {
     return defaultsPresentation != null
         ? defaultsPresentation.label()
@@ -431,7 +711,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (footer.contains(focused) || focused == inspection) return true;
     if (focused != panel || panel == null) return false;
     var child = panel.getFocused();
-    return controls.values().stream().anyMatch(control -> control.widget() == child)
+    return controls.entrySet().stream()
+            .anyMatch(entry -> presentedControl(entry.getKey(), entry.getValue()) == child)
         || editorButtons.containsValue(child)
         || disclosureButtons.containsValue(child)
         || structureButtons.containsKey(child)
@@ -801,7 +1082,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (!visibleFields.contains(path) && !editorButtons.containsKey(path)) return Optional.empty();
     var scalar = visibleFields.contains(path) ? controls.get(path) : null;
     return scalar != null
-        ? Optional.of(scalar.widget())
+        ? Optional.of(presentedControl(path, scalar))
         : Optional.ofNullable(
             defaultControls.containsKey(path)
                 ? defaultControls.get(path)
@@ -851,9 +1132,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (path.equals(FieldPath.ROOT) && panel != null) {
       var owned = new ArrayList<AbstractWidget>();
       visibleFields.stream()
-          .map(controls::get)
-          .filter(Objects::nonNull)
-          .map(Control::widget)
+          .filter(controls::containsKey)
+          .map(pathValue -> presentedControl(pathValue, controls.get(pathValue)))
           .forEach(owned::add);
       owned.addAll(defaultControls.values());
       owned.addAll(editorButtons.values());
@@ -876,7 +1156,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                           .orElse(path));
     }
     var control = visibleFields.contains(controlPath) ? controls.get(controlPath) : null;
-    var widget = control == null ? editorButtons.get(controlPath) : control.widget();
+    var widget =
+        control == null ? editorButtons.get(controlPath) : presentedControl(controlPath, control);
     if (widget == null || !widget.active) {
       widget = availabilityButtons.get(path);
       if (widget == null)
@@ -955,10 +1236,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     // A refused or still-pending local edit must remain available for explicit recovery.
     synchronize(Map.copyOf(acceptedVersions));
     previousFields = java.util.Set.copyOf(visibleFields);
+    adaptedControls.values().forEach(AdaptedControl::rememberSelection);
     {
       controls.forEach(
           (path, control) -> {
-            if (previousFields.contains(path) && control.widget() instanceof FormEditBox input) {
+            if (previousFields.contains(path)
+                && !adaptedControls.containsKey(path)
+                && control.widget() instanceof FormEditBox input) {
               inputPositions.remove(path);
               inputPositions.put(
                   path,
@@ -1159,6 +1443,9 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (composition.selections().isEmpty()) {
       visibleFields.clear();
       bodyVisible = false;
+      adaptedControls.values().forEach(AdaptedControl::rememberSelection);
+      adaptedControls.values().forEach(AdaptedControl::retire);
+      adaptedControls.clear();
       displayed = current;
       feedback();
       if (!requested) {
@@ -1221,6 +1508,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void retainModelInputs() {
+    var retiring =
+        adaptedControls.values().stream()
+            .filter(value -> !visibleFields.contains(value.path))
+            .toList();
+    retiring.forEach(AdaptedControl::rememberSelection);
+    retiring.forEach(AdaptedControl::retire);
+    retiring.forEach(value -> adaptedControls.remove(value.path));
     var retained =
         formLayout.stream()
             .map(FormModel.Layout::path)
@@ -1691,7 +1985,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       control = createControl(shape, path, node, label, cycle, null);
       if (control.quantity() != null) local.put(path, control.quantity().input.text());
       controls.put(path, control);
-    } else if (!previousFields.contains(path)) {
+    } else if (!previousFields.contains(path)
+        || adaptedControls.containsKey(path) && !adaptedControls.get(path).matchesTheme()) {
       // Keep the editing state; a detached native widget must not become current again.
       control = createControl(shape, path, node, label, cycle, control);
       controls.put(path, control);
@@ -1869,6 +2164,21 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   private void fieldRow(FieldPath path, Component label, AbstractWidget... widgets) {
     var row = new ArrayList<>(List.of(widgets));
+    var base = controls.get(path);
+    if (base != null && controlAdapters.containsKey(path)) {
+      var adapted = adaptedControls.get(path);
+      if (adapted == null || adapted.token != base.token()) {
+        if (adapted != null) {
+          adapted.rememberSelection();
+          adapted.retire();
+        }
+        adapted = new AdaptedControl(path, base, label);
+        adaptedControls.put(path, adapted);
+      }
+      adapted.refresh();
+      int index = row.indexOf(base.widget());
+      if (index >= 0) row.set(index, adapted.widget());
+    }
     row.add(informationButton(path, label));
     if (hasAvailability(path)) row.add(availabilityButton(path, label));
     panel.relatedField(
@@ -3335,6 +3645,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         });
     availabilityRows.forEach((path, key) -> panel.summary(key, dependencyText(path)));
     informationButtons.values().forEach(button -> button.active = mayInspect() && !loading);
+    adaptedControls.values().forEach(AdaptedControl::refresh);
     refreshReferenceTitles();
   }
 
@@ -3382,6 +3693,10 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       else {
         feedback();
       }
+    }
+    if (customRebuild) {
+      customRebuild = false;
+      rebuildWidgets();
     }
     revealRequestedFocus();
     refreshReferenceTitles();
@@ -3573,6 +3888,10 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void disposePresentation() {
+    adaptedControls.values().forEach(AdaptedControl::rememberSelection);
+    adaptedControls.values().forEach(AdaptedControl::retire);
+    adaptedControls.clear();
+    controlAdapters = Map.of();
     titledReferences.clear();
     referenceTitles = Map.of();
     requestedFocus = null;

@@ -2,6 +2,7 @@ package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.definition.DocumentDefinition;
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.importing.ImportCatalog;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.presentation.FormPresentation;
@@ -23,7 +24,8 @@ public record ClientFormOptions<T>(
     Function<DocumentDefinition<T>, Optional<ImportCatalog<T>>> imports,
     Function<DocumentDefinition<T>, Optional<FormInformation<T>>> information,
     Optional<DefaultsPresentation> defaults,
-    Map<DocumentId, ReferenceTitles> referenceTitles) {
+    Map<DocumentId, ReferenceTitles> referenceTitles,
+    Map<FieldPath, ClientControlAdapter> controls) {
   /** Presentation of the whole-document Defaults action; it changes no owner operation. */
   public record DefaultsPresentation(Component label, Component help) {
     public DefaultsPresentation {
@@ -50,8 +52,29 @@ public record ClientFormOptions<T>(
     Objects.requireNonNull(information);
     Objects.requireNonNull(defaults);
     referenceTitles = Map.copyOf(referenceTitles);
+    controls = Map.copyOf(controls);
+    if (controls.size() > 256) throw new IllegalArgumentException("Too many custom field controls");
     if (referenceTitles.size() > 128)
       throw new IllegalArgumentException("Too many titled reference sources");
+  }
+
+  public ClientFormOptions(
+      FormPresentation presentation,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> references,
+      Function<DocumentDefinition<T>, FieldEditors<T>> editors,
+      Function<DocumentDefinition<T>, Optional<ImportCatalog<T>>> imports,
+      Function<DocumentDefinition<T>, Optional<FormInformation<T>>> information,
+      Optional<DefaultsPresentation> defaults,
+      Map<DocumentId, ReferenceTitles> referenceTitles) {
+    this(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        Map.of());
   }
 
   public ClientFormOptions(
@@ -113,13 +136,14 @@ public record ClientFormOptions<T>(
     information.apply(definition).ifPresent(form::withInformation);
     defaults.ifPresent(value -> form.withDefaults(value.label(), value.help()));
     form.withReferenceTitles(referenceTitles);
+    form.withControls(controls);
     return form;
   }
 
   public ClientFormOptions<T> withInformation(
       Function<DocumentDefinition<T>, Optional<FormInformation<T>>> factory) {
     return new ClientFormOptions<>(
-        presentation, references, editors, imports, factory, defaults, referenceTitles);
+        presentation, references, editors, imports, factory, defaults, referenceTitles, controls);
   }
 
   /** Label and visible help for document defaults, independent of per-field Default controls. */
@@ -131,7 +155,8 @@ public record ClientFormOptions<T>(
         imports,
         information,
         Optional.of(new DefaultsPresentation(label, help)),
-        referenceTitles);
+        referenceTitles,
+        controls);
   }
 
   /** Opt into titled selectors for this source; raw IDs remain explicitly editable. */
@@ -139,6 +164,22 @@ public record ClientFormOptions<T>(
     var selected = new java.util.LinkedHashMap<>(referenceTitles);
     selected.put(Objects.requireNonNull(source), Objects.requireNonNull(titles));
     return new ClientFormOptions<>(
-        presentation, references, editors, imports, information, defaults, selected);
+        presentation, references, editors, imports, information, defaults, selected, controls);
+  }
+
+  /** Replace or wrap one declared scalar control without replacing its owner or edit pipeline. */
+  public ClientFormOptions<T> withControl(FieldPath path, ClientControlAdapter adapter) {
+    var selected = new java.util.LinkedHashMap<>(controls);
+    if (selected.putIfAbsent(Objects.requireNonNull(path), Objects.requireNonNull(adapter)) != null)
+      throw new IllegalArgumentException("A field control may be declared only once");
+    return new ClientFormOptions<>(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        selected);
   }
 }
