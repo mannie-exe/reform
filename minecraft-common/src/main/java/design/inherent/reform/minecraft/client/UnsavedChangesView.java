@@ -1,0 +1,216 @@
+package design.inherent.reform.minecraft.client;
+
+import design.inherent.reform.minecraft.client.UnsavedChangesScreen.Choice;
+import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.SectionNavigation;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.locale.Language;
+import net.minecraft.network.chat.Component;
+
+/** A bounded native draft decision; its callback requests work from the actual owner. */
+final class UnsavedChangesView extends MetadataView {
+
+  private final Component contextLabel, explanation, saveLabel;
+  private final Supplier<Optional<Component>> saveBlocked;
+  private final Consumer<Choice> selected;
+  private final Runnable abandoned;
+  private final EnumMap<Choice, Button> controls = new EnumMap<>(Choice.class);
+  private FormPanel panel;
+  private FormChrome chrome;
+  private Optional<Component> blocked = Optional.empty();
+  private Language language;
+  private Object generation;
+  private Choice preferredFocus = Choice.KEEP_EDITING;
+  private boolean decided, closed;
+  private SectionNavigation.Bookmark viewport;
+
+  /**
+   * saveBlocked reads cached local readiness only: no IO, validation or native permission lookup. A
+   * choice never authorizes a save; the callback must retain actual owner preflight and receipts.
+   */
+  UnsavedChangesView(
+      Component title,
+      Component contextLabel,
+      Component explanation,
+      Component saveLabel,
+      Supplier<Optional<Component>> saveBlocked,
+      Consumer<Choice> selected,
+      Runnable abandoned) {
+    super(Objects.requireNonNull(title).copy());
+    this.contextLabel = Objects.requireNonNull(contextLabel).copy();
+    this.explanation = Objects.requireNonNull(explanation).copy();
+    this.saveLabel = Objects.requireNonNull(saveLabel).copy();
+    this.saveBlocked = Objects.requireNonNull(saveBlocked);
+    this.selected = Objects.requireNonNull(selected);
+    this.abandoned = Objects.requireNonNull(abandoned);
+  }
+
+  private static Component text(String key, String fallback) {
+    return Component.translatableWithFallback("reform.close." + key, fallback);
+  }
+
+  private Optional<Component> readiness() {
+    try {
+      return Objects.requireNonNull(saveBlocked.get()).map(Component::copy);
+    } catch (RuntimeException unavailable) {
+      return Optional.of(
+          text("unavailable", "This action is unavailable. Keep editing to review the problem."));
+    }
+  }
+
+  @Override
+  protected void init() {
+    preserve();
+    visible = true;
+    generation = new Object();
+    language = Language.getInstance();
+    blocked = readiness();
+    controls.clear();
+    var widgets = new ArrayList<Button>();
+    widgets.add(button(Choice.SAVE, saveLabel));
+    widgets.add(button(Choice.DISCARD, text("discard", "Discard draft")));
+    widgets.add(button(Choice.KEEP_EDITING, text("keep_editing", "Keep editing")));
+    controls.get(Choice.SAVE).active = blocked.isEmpty();
+    blocked.ifPresent(reason -> controls.get(Choice.SAVE).setTooltip(Tooltip.create(reason)));
+    chrome =
+        new FormChrome(
+            minecraft,
+            new FormGeometry.Placement(left, top, width, height),
+            composed ? Component.empty() : title,
+            composed ? Component.empty() : contextLabel,
+            Component.empty(),
+            widgets,
+            theme());
+    panel = chrome.panel();
+    if (composed) {
+      prefix.accept(panel);
+      panel.heading(title);
+      panel.row("context", Component.empty(), contextLabel);
+    }
+    chrome.mountActions(this::addRenderableWidget, panel);
+    panel.row(Component.empty(), explanation);
+    blocked.ifPresent(reason -> panel.row(text("save_blocked", "Action unavailable"), reason));
+    if (composed) suffix.accept(panel);
+    panel.finish(0);
+    panel.restore(viewport);
+    addRenderableWidget(panel);
+    var preferred = controls.get(preferredFocus);
+    focus(preferred.active ? preferred : controls.get(Choice.KEEP_EDITING));
+  }
+
+  @Override
+  FormPanel primary() {
+    return panel;
+  }
+
+  @Override
+  void preserve() {
+    if (panel == null || !visible) return;
+    viewport = panel.bookmark();
+    var focused = getFocused() == panel ? panel.getFocused() : getFocused();
+    controls.forEach(
+        (choice, control) -> {
+          if (focused == control) preferredFocus = choice;
+        });
+  }
+
+  @Override
+  void hide() {
+    preserve();
+    visible = false;
+    generation = null;
+  }
+
+  @Override
+  void retireForNavigation() {
+    hide();
+    closed = true;
+    controls.clear();
+  }
+
+  @Override
+  boolean ownsFocus(GuiEventListener focused) {
+    return focused == panel || controls.containsValue(focused);
+  }
+
+  private void focus(Button control) {
+    if (panel.children().contains(control)) {
+      panel.setFocused(control);
+      setFocused(panel);
+    } else setFocused(control);
+  }
+
+  private Button button(Choice choice, Component label) {
+    var token = generation;
+    var button =
+        theme()
+            .buttonBuilder(label, ignored -> choose(token, choice))
+            .bounds(0, 0, Math.max(20, font.width(label) + 20), 20)
+            .build();
+    controls.put(choice, button);
+    return button;
+  }
+
+  private void choose(Object token, Choice choice) {
+    if (closed || decided || generation != token || minecraft == null || !currentHost()) return;
+    if (choice == Choice.SAVE && readiness().isPresent()) {
+      rebuildWidgets();
+      return;
+    }
+    decided = true;
+    selected.accept(choice);
+  }
+
+  @Override
+  protected void setInitialFocus() {
+    var focused = getFocused();
+    if (focused == null || focused instanceof Button button && !button.active)
+      focus(controls.get(Choice.KEEP_EDITING));
+  }
+
+  @Override
+  public void tick() {
+    if (closed || minecraft == null || !currentHost()) return;
+    var next = readiness();
+    if (language != Language.getInstance()
+        || !next.map(Component::getString).equals(blocked.map(Component::getString)))
+      rebuildWidgets();
+  }
+
+  @Override
+  public void onClose() {
+    choose(generation, Choice.KEEP_EDITING);
+  }
+
+  @Override
+  public void removed() {
+    if (closed) return;
+    closed = true;
+    visible = false;
+    controls.clear();
+    panel = null;
+    generation = null;
+    if (!decided) abandoned.run();
+  }
+
+  @Override
+  public Component getNarrationMessage() {
+    var message = title.copy().append(". ").append(contextLabel).append(". ").append(explanation);
+    blocked.ifPresent(reason -> message.append(". ").append(reason));
+    return message;
+  }
+
+  @Override
+  public void render(FormCanvas graphics, int x, int y, float delta) {
+    super.render(graphics, x, y, delta);
+    chrome.render(graphics);
+  }
+}

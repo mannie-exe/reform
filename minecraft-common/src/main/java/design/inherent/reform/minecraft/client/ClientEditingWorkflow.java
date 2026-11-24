@@ -1767,12 +1767,30 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       return true;
     }
 
+    private UnsavedChangesView closeDecision;
+
+    private void hideCloseDecision() {
+      if (closeDecision != null) closeDecision.retireForNavigation();
+      closeDecision = null;
+    }
+
+    /** Only this workflow's own decision callbacks can enter this transient body. */
+    private void showCloseDecision(UnsavedChangesScreen screen) {
+      beforeRebuild();
+      var retained = metadata();
+      if (retained != null) retained.hide();
+      closeDecision = screen.borrowView();
+      rebuildWidgets();
+    }
+
     private MetadataView metadata() {
-      return operationInspection != null
-          ? operationInspection.view()
-          : conflict != null
-              ? conflict
-              : imported != null ? imported : inspection != null ? inspection : documentMenu;
+      return closeDecision != null
+          ? closeDecision
+          : operationInspection != null
+              ? operationInspection.view()
+              : conflict != null
+                  ? conflict
+                  : imported != null ? imported : inspection != null ? inspection : documentMenu;
     }
 
     private WorkspaceNavigation.Key operationKey(ClientDestination target) {
@@ -1878,6 +1896,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void hideInspection() {
+      hideCloseDecision();
       hideImport();
       hideDocumentMenu();
       hideOperation();
@@ -1912,6 +1931,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection() {
+      hideCloseDecision();
       if (documentMenu != null) documentMenu.retireForNavigation();
       hideDocumentMenu();
       retireOperations(null);
@@ -1925,6 +1945,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection(DocumentId document) {
+      hideCloseDecision();
       if (documentMenu != null && documentMenu.document().equals(document)) {
         documentMenu.retireForNavigation();
         hideDocumentMenu();
@@ -3375,7 +3396,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void confirmDiscard(DocumentId id) {
-      navigate(
+      showCloseDecision(
           new UnsavedChangesScreen(
               text("discard_title", "Discard this document's draft?"),
               entry(id).form.title(),
@@ -3388,7 +3409,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                       ? Optional.empty()
                       : Optional.of(text("context_ended", "This editing context ended.")),
               choice -> {
+                hideCloseDecision();
                 NativeScreens.open(minecraft, this);
+                rebuildWidgets();
                 try {
                   if (choice == UnsavedChangesScreen.Choice.DISCARD) {
                     discard(id);
@@ -3415,6 +3438,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void closeWorkflow() {
+      if (closeDecision != null) {
+        closeDecision.onClose();
+        return;
+      }
       if (!isOpen() || NativeScreens.current(minecraft) != this) return;
       var current = documents();
       if (current.stream().anyMatch(DocumentState::busy)
@@ -3429,7 +3456,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       if (current.stream()
           .anyMatch(state -> state.dirty() || state.opened() && !state.available())) {
-        navigate(
+        showCloseDecision(
             new UnsavedChangesScreen(
                 text("unsaved", "Retained document drafts"),
                 title,
@@ -3443,6 +3470,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 text("review", "Review changes"),
                 Optional::empty,
                 choice -> {
+                  hideCloseDecision();
+                  rebuildWidgets();
                   if (choice == UnsavedChangesScreen.Choice.DISCARD) finish();
                   else {
                     NativeScreens.open(minecraft, this);

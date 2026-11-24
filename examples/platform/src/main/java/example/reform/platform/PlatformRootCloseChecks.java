@@ -27,6 +27,8 @@ final class PlatformRootCloseChecks {
   private CompletableFuture<NavigationAttempt.Result> navigation;
   private byte[] source;
   private Button retiredDiscard;
+  private ClientInspection inspection;
+  private design.inherent.reform.operation.DocumentReview reviewed;
   private long version;
   private int stage;
 
@@ -155,6 +157,46 @@ final class PlatformRootCloseChecks {
             workflow.isOpen()
                 && editor.isOpen()
                 && workflow.editor(route) == editor
+                && editor.view().snapshot().orElseThrow().version() == version
+                && Arrays.equals(source, source()));
+        navigation =
+            workflow
+                .navigation()
+                .open(new ClientDestination.Inspection(route))
+                .completion()
+                .toCompletableFuture();
+        stage = 71;
+      }
+      case 71 -> {
+        if (!navigation.isDone()) return false;
+        check.accept(
+            "close parent inspection is actually revealed",
+            navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED);
+        inspection = workflow.inspection().orElseThrow();
+        if (inspection.reviewedInput().isEmpty()) return false;
+        reviewed = inspection.reviewedInput().orElseThrow();
+        press("Done");
+        stage = 72;
+      }
+      case 72 -> {
+        check.accept(
+            "inspection close decision stays in original root without a source write",
+            NativeScreens.current(client) == workflow.screen() && Arrays.equals(source, source()));
+        press("Keep editing");
+        stage = 73;
+      }
+      case 73 -> {
+        check.accept(
+            "Keep editing restores the same parent inspection capture and owner",
+            workflow.inspection().orElseThrow() == inspection
+                && inspection.reviewedInput().orElseThrow() == reviewed
+                && workflow.editor(route) == editor
+                && workflow
+                    .screen()
+                    .getNarrationMessage()
+                    .getString()
+                    .toLowerCase(Locale.ROOT)
+                    .contains("inspection")
                 && editor.view().snapshot().orElseThrow().version() == version
                 && Arrays.equals(source, source()));
         press("Done");
