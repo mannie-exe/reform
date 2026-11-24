@@ -147,6 +147,17 @@ final class WorkspaceNavigation {
     return Optional.ofNullable(positions.get(key));
   }
 
+  <T> T restorePosition(Key key, Position position, java.util.function.Supplier<T> reveal) {
+    remember(key, position);
+    boolean before = restoring;
+    restoring = true;
+    try {
+      return reveal.get();
+    } finally {
+      restoring = before;
+    }
+  }
+
   void visit(Key selected, FormCatalog.Limits limits) {
     if (selected == null || mounting) return;
     if (historyTarget != null) {

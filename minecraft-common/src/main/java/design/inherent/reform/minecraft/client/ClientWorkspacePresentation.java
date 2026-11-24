@@ -16,7 +16,8 @@ public record ClientWorkspacePresentation(
     Optional<DestinationId> initial,
     Map<ClientTheme.TextRole, net.minecraft.network.chat.Style> textStyles,
     TaskPresentation taskPresentation,
-    Map<DestinationId, ClientReferenceTask<?, ?>> referenceTasks) {
+    Map<DestinationId, ClientReferenceTask<?, ?>> referenceTasks,
+    Map<DestinationId, ClientCustomView<?>> views) {
   public ClientWorkspacePresentation {
     Objects.requireNonNull(identity);
     Objects.requireNonNull(header);
@@ -29,6 +30,47 @@ public record ClientWorkspacePresentation(
     referenceTasks.forEach(
         (key, value) -> tasks.put(Objects.requireNonNull(key), Objects.requireNonNull(value)));
     referenceTasks = Collections.unmodifiableMap(tasks);
+    views = Collections.unmodifiableMap(new LinkedHashMap<>(views));
+    for (var entry : views.entrySet()) {
+      Objects.requireNonNull(entry.getKey());
+      Objects.requireNonNull(entry.getValue());
+      if (!entry.getKey().equals(entry.getValue().key().id())
+          || referenceTasks.containsKey(entry.getKey()))
+        throw new IllegalArgumentException("A category has one uniquely identified body");
+    }
+  }
+
+  /** Preserve existing declarations without custom bodies. */
+  public ClientWorkspacePresentation(
+      WorkspaceIdentity identity,
+      HeaderComposition header,
+      Optional<HomePage> home,
+      ThemePatch theme,
+      Optional<DestinationId> initial,
+      Map<ClientTheme.TextRole, net.minecraft.network.chat.Style> textStyles,
+      TaskPresentation taskPresentation,
+      Map<DestinationId, ClientReferenceTask<?, ?>> referenceTasks) {
+    this(
+        identity,
+        header,
+        home,
+        theme,
+        initial,
+        textStyles,
+        taskPresentation,
+        referenceTasks,
+        Map.of());
+  }
+
+  /**
+   * Bind a lazy custom body to an existing category; it consumes the shared placement allowance.
+   */
+  public ClientWorkspacePresentation withView(ClientCustomView<?> view) {
+    var next = new LinkedHashMap<>(views);
+    if (next.putIfAbsent(view.key().id(), view) != null)
+      throw new IllegalArgumentException("Duplicate custom view identity");
+    return new ClientWorkspacePresentation(
+        identity, header, home, theme, initial, textStyles, taskPresentation, referenceTasks, next);
   }
 
   public ClientWorkspacePresentation(
@@ -68,12 +110,12 @@ public record ClientWorkspacePresentation(
     if (tasks.putIfAbsent(Objects.requireNonNull(destination), Objects.requireNonNull(task))
         != null) throw new IllegalArgumentException("Each category has one task body");
     return new ClientWorkspacePresentation(
-        identity, header, home, theme, initial, textStyles, taskPresentation, tasks);
+        identity, header, home, theme, initial, textStyles, taskPresentation, tasks, views);
   }
 
   public ClientWorkspacePresentation withTaskPresentation(TaskPresentation tasks) {
     return new ClientWorkspacePresentation(
-        identity, header, home, theme, initial, textStyles, tasks, referenceTasks);
+        identity, header, home, theme, initial, textStyles, tasks, referenceTasks, views);
   }
 
   public static ClientWorkspacePresentation standard(WorkspaceIdentity identity) {
@@ -87,7 +129,15 @@ public record ClientWorkspacePresentation(
 
   public ClientWorkspacePresentation withHeader(HeaderComposition header) {
     return new ClientWorkspacePresentation(
-        identity, header, home, theme, initial, textStyles, taskPresentation, referenceTasks);
+        identity,
+        header,
+        home,
+        theme,
+        initial,
+        textStyles,
+        taskPresentation,
+        referenceTasks,
+        views);
   }
 
   public ClientWorkspacePresentation withHome(HomePage home) {
@@ -99,7 +149,8 @@ public record ClientWorkspacePresentation(
         initial,
         textStyles,
         taskPresentation,
-        referenceTasks);
+        referenceTasks,
+        views);
   }
 
   public ClientWorkspacePresentation withoutHome() {
@@ -111,12 +162,21 @@ public record ClientWorkspacePresentation(
         initial,
         textStyles,
         taskPresentation,
-        referenceTasks);
+        referenceTasks,
+        views);
   }
 
   public ClientWorkspacePresentation withTheme(ThemePatch patch) {
     return new ClientWorkspacePresentation(
-        identity, header, home, patch, initial, textStyles, taskPresentation, referenceTasks);
+        identity,
+        header,
+        home,
+        patch,
+        initial,
+        textStyles,
+        taskPresentation,
+        referenceTasks,
+        views);
   }
 
   public ClientWorkspacePresentation withInitialDestination(DestinationId id) {
@@ -128,7 +188,8 @@ public record ClientWorkspacePresentation(
         Optional.of(id),
         textStyles,
         taskPresentation,
-        referenceTasks);
+        referenceTasks,
+        views);
   }
 
   public ClientWorkspacePresentation withTextStyle(
@@ -139,7 +200,7 @@ public record ClientWorkspacePresentation(
     next.putAll(textStyles);
     next.put(Objects.requireNonNull(role), Objects.requireNonNull(style));
     return new ClientWorkspacePresentation(
-        identity, header, home, theme, initial, next, taskPresentation, referenceTasks);
+        identity, header, home, theme, initial, next, taskPresentation, referenceTasks, views);
   }
 
   public ClientTheme clientTheme() {
@@ -185,8 +246,12 @@ public record ClientWorkspacePresentation(
         layout == null
             ? forms.size()
             : layout.groups().stream().mapToLong(group -> group.placements().size()).sum();
-    if (placementCount + referenceTasks.size() > ClientWorkflowLayout.MAXIMUM_PLACEMENTS)
+    if (placementCount + referenceTasks.size() + views.size()
+        > ClientWorkflowLayout.MAXIMUM_PLACEMENTS)
       issues.add(issue("Task bodies and field placements exceed their shared allowance"));
+    for (var id : views.keySet())
+      if (!taskCategories.contains(id))
+        issues.add(issue("Custom view requires a declared category: " + id));
     design.inherent.reform.presentation.graphics.GraphicLimits graphicLimits = null;
     int graphicViews = 0;
     for (var task : referenceTasks.entrySet()) {

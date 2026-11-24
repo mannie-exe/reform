@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
@@ -109,6 +110,52 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   private final Map<DestinationId, TaskEntry> taskViews = new LinkedHashMap<>();
 
+  private record CustomEntry(OwnerContext lifetime, CustomView view) {}
+
+  private final Map<DestinationId, CustomEntry> customViews = new LinkedHashMap<>();
+
+  private CustomView customView(DestinationId id) {
+    var existing = customViews.get(id);
+    if (existing != null) return existing.view();
+    var declaration = presentation.views().get(id);
+    if (declaration == null) throw missingDestination();
+    var client = Minecraft.getInstance();
+    var owner =
+        new OwnerContext(
+            client::execute,
+            ClientSettingsRuntime.workers(),
+            ClientSettingsRuntime::requireClientThread,
+            OwnerContext.Limits.STANDARD);
+    var closing = lifetime.onClose(owner::close);
+    try {
+      var view =
+          declaration.open(
+              new ClientViewContext(owner),
+              () -> {
+                var retained = customViews.get(id);
+                if (retained == null) return;
+                retained.view().refresh();
+                if (isOpen()
+                    && overview.selectedKey != null
+                    && overview.selectedKey.equals(overview.category(id.value()))
+                    && NativeScreens.current(client) == overview) overview.rebuildWidgets();
+              });
+      requireOpen();
+      owner.requireOwner();
+      customViews.put(id, new CustomEntry(owner, view));
+      owner.onClose(closing::close);
+      return view;
+    } catch (RuntimeException | Error failure) {
+      try {
+        owner.close();
+      } catch (RuntimeException | Error cleanup) {
+        failure.addSuppressed(cleanup);
+      }
+      closing.close();
+      throw failure;
+    }
+  }
+
   private ReferenceTaskView<?, ?> taskView(DestinationId id) {
     var existing = taskViews.get(id);
     if (existing != null) return existing.view();
@@ -160,12 +207,95 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private boolean closed;
   private ClientGraphicHost graphics;
   private final ClientNavigation navigation = new ClientNavigation(this);
+  private final UUID navigationIdentity = UUID.randomUUID();
   private NavigationAttempt pendingNavigation;
 
   /** Typed presentation links over this workflow's exact retained owners. */
   public ClientNavigation navigation() {
     ClientSettingsRuntime.requireClientThread();
     return navigation;
+  }
+
+  private ClientDestination destinationFor(WorkspaceNavigation.Key key) {
+    if (key.kind() == WorkspaceNavigation.Kind.HOME) return new ClientDestination.Home();
+    if (key.kind() == WorkspaceNavigation.Kind.CATEGORY) {
+      var id = new DestinationId(key.placement());
+      return presentation.views().containsKey(id) || presentation.referenceTasks().containsKey(id)
+          ? new ClientDestination.View(id)
+          : new ClientDestination.Category(id);
+    }
+    var placement =
+        overview.allPlacements().stream()
+            .filter(item -> item.id().equals(key.placement()))
+            .findFirst()
+            .orElseThrow(ClientEditingWorkflow::missingDestination);
+    var alias = Optional.of(new DestinationId(placement.id()));
+    var target = key.target().or(() -> placement.field().map(FormTarget.Field::new));
+    return target.orElse(null) instanceof FormTarget.Field field
+        ? new ClientDestination.Field(placement.route(), field.path(), alias)
+        : target.orElse(null) instanceof FormTarget.Section section
+            ? new ClientDestination.Section(placement.route(), section, alias)
+            : new ClientDestination.Placement(alias.orElseThrow());
+  }
+
+  Optional<ClientDestination> currentDestination() {
+    ClientSettingsRuntime.requireClientThread();
+    return !isOpen() || overview.selectedKey == null
+        ? Optional.empty()
+        : Optional.of(destinationFor(overview.selectedKey));
+  }
+
+  Optional<NavigationAttempt> navigateUp() {
+    requireOverview();
+    var current =
+        overview.navigationEntries(true).stream()
+            .filter(node -> node.key().equals(overview.selectedKey))
+            .findFirst();
+    var parent = current.flatMap(WorkspaceNavigation.Entry::parent);
+    if (parent.isPresent())
+      return Optional.of(openDestination(destinationFor(parent.orElseThrow())));
+    return presentation.home().isPresent() && !overview.isHome()
+        ? Optional.of(openDestination(new ClientDestination.Home()))
+        : Optional.empty();
+  }
+
+  NavigationBookmark navigationBookmark() {
+    requireOverview();
+    overview.beforeRebuild();
+    var position = overview.navigation.position(overview.selectedKey).orElse(null);
+    return new NavigationBookmark(
+        navigationIdentity,
+        destinationFor(overview.selectedKey),
+        Optional.ofNullable(position == null ? null : position.scroll()),
+        Optional.ofNullable(position == null ? null : position.focus()));
+  }
+
+  NavigationAttempt restoreBookmark(NavigationBookmark bookmark) {
+    requireOverview();
+    if (!navigationIdentity.equals(bookmark.workflow())) {
+      var refused = new NavigationAttempt(bookmark.destination());
+      refused.finish(
+          NavigationAttempt.Outcome.REFUSED,
+          new PolicyRefusal(
+                  "navigation.bookmark_context",
+                  "Return to the workflow that created this bookmark.")
+              .report(),
+          null);
+      return refused;
+    }
+    NavigationSelection selected;
+    try {
+      selected = resolveDestination(bookmark.destination());
+    } catch (PolicyRefusal missing) {
+      return openDestination(bookmark.destination());
+    }
+    return overview.navigation.restorePosition(
+        selected.key(),
+        new WorkspaceNavigation.Position(
+            bookmark.viewport().orElse(null),
+            bookmark.focus().orElse(null),
+            selected.route().orElse(null)),
+        () -> openDestination(bookmark.destination()));
   }
 
   private record NavigationSelection(
@@ -181,7 +311,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   private NavigationSelection resolveDestination(ClientDestination target) {
     if (target instanceof ClientDestination.View view) {
-      if (!presentation.referenceTasks().containsKey(view.id())) throw missingDestination();
+      if (!presentation.referenceTasks().containsKey(view.id())
+          && !presentation.views().containsKey(view.id())) throw missingDestination();
       target = new ClientDestination.Category(view.id());
     }
     if (target instanceof ClientDestination.Home) {
@@ -983,6 +1114,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
     }
     taskViews.clear();
+    for (var custom : List.copyOf(customViews.values())) {
+      try {
+        custom.lifetime().close();
+      } catch (RuntimeException | Error failed) {
+        if (failure == null) failure = failed;
+        else if (failure != failed) failure.addSuppressed(failed);
+      }
+    }
+    customViews.clear();
     try {
       if (graphics != null) graphics.close();
     } catch (RuntimeException | Error failed) {
@@ -1548,6 +1688,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       if (activeTask != null && activeTask != taskBody) activeTask.visible(false);
       activeTask = taskBody;
+      var customId = selectedKey == null ? null : new DestinationId(selectedKey.placement());
+      var customBody =
+          !geometry.navigationOverlay() && presentation.views().containsKey(customId)
+              ? customView(customId)
+              : null;
+      for (var custom : customViews.values()) if (custom.view() != customBody) custom.view().hide();
       if (taskBody != null) {
         taskBody.visible(true);
         taskBody.compose(
@@ -1575,6 +1721,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       if (!geometry.navigationOverlay()) {
         if (isHome()) appendHome(token);
+        if (customBody != null)
+          customBody.append(
+              panel, theme(), ClientEditingWorkflow.this.navigation, this::rebuildWidgets);
         if (information.open() && geometry.information().isEmpty()) information.append(panel);
         for (var item : selected.entrySet()) {
           var bound = entry(item.getKey());
@@ -1648,7 +1797,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   text("batch_result", "Last batch review/result"),
                   title,
                   () -> navigate(batchView)));
-        if (selected.isEmpty() && !isHome() && taskBody == null)
+        if (selected.isEmpty() && !isHome() && taskBody == null && customBody == null)
           panel.row(text("no_matches", "No matching settings or operations."), Component.empty());
         if (actionView != null) actions.addAll(actionView.ownerActions());
         if (outerFrame.actionsInContent())
@@ -1987,7 +2136,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private ReferenceTaskView<?, ?> activeTask;
 
     private List<ClientWorkflowLayout.Placement> pagePlacements() {
-      if (isHome() || declaredTask() != null) return List.of();
+      if (isHome()
+          || declaredTask() != null
+          || selectedKey != null
+              && presentation.views().containsKey(new DestinationId(selectedKey.placement())))
+        return List.of();
       var states = new LinkedHashMap<DocumentId, DocumentState>();
       for (var state : documents()) states.put(state.document(), state);
       return (layout == null
@@ -2133,28 +2286,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void revealNavigation(WorkspaceNavigation.Key key) {
-      if (key.kind() == WorkspaceNavigation.Kind.HOME) {
-        openDestination(new ClientDestination.Home());
-        return;
+      try {
+        openDestination(destinationFor(key));
+      } catch (PolicyRefusal missing) {
+        notice =
+            ClientStatusScreen.reason(
+                missing.report(), text("unavailable", "That destination is unavailable."));
+        rebuildWidgets();
       }
-      if (key.kind() == WorkspaceNavigation.Kind.CATEGORY && layout != null) {
-        openDestination(new ClientDestination.Category(new DestinationId(key.placement())));
-        return;
-      }
-      var placement =
-          allPlacements().stream().filter(item -> item.id().equals(key.placement())).findFirst();
-      if (placement.isEmpty()) return;
-      var item = placement.orElseThrow();
-      var target = key.target().or(() -> item.field().map(FormTarget.Field::new));
-      ClientDestination requested =
-          target.orElse(null) instanceof FormTarget.Field field
-              ? new ClientDestination.Field(
-                  item.route(), field.path(), Optional.of(new DestinationId(item.id())))
-              : target.orElse(null) instanceof FormTarget.Section section
-                  ? new ClientDestination.Section(
-                      item.route(), section, Optional.of(new DestinationId(item.id())))
-                  : new ClientDestination.Placement(new DestinationId(item.id()));
-      openDestination(requested);
     }
 
     private boolean accepts(ClientWorkflowLayout.Placement placement, DocumentState state) {

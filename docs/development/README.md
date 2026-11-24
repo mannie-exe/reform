@@ -30,6 +30,8 @@
 - [Verification](verification.md) owns current evidence and material gaps.
 - [Publishing](../publishing.md) owns artifact/version/update procedures.
 
+See [custom workspace views](custom-views.md) for development body declarations, bounded state, and public return bookmarks.
+
 ## Proposed design
 
 [Configuration workflows for 0.4](../design/configuration-workflows-0.4.md) defines the owner-selected shared-menu contract: adjacent A preferred with responsive focused/vertical B, retained task/input state, and truthful meta-workflow effects. Its complete task presentation remains development work.
