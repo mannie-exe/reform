@@ -55,6 +55,22 @@ class OptionalAdmissionTests(unittest.TestCase):
 
 
 class CaptureRetentionTests(unittest.TestCase):
+    def test_authoring_retains_its_embedded_workflow_graphics_only(self):
+        names = ["platform-form-graphic-texture.png", "platform-form-graphic-layers.png",
+                 "platform-form-graphic-orbit.png"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture, reports = root / "fixture", root / "reports"
+            fixture.mkdir()
+            reports.mkdir()
+            for name in names:
+                (fixture / name).write_bytes(name.encode())
+            kept = retain_captures(fixture, reports, names, platform.AUTHORING_CAPTURES, False)
+            self.assertEqual(["first-" + name for name in names], [item["file"] for item in kept])
+            with self.assertRaisesRegex(ValueError, "Unrecognized native capture"):
+                retain_captures(fixture, reports, ["platform-form-graphic-foreign.png"],
+                                platform.AUTHORING_CAPTURES, False)
+
     def test_checked_capture_is_retained_and_hashed_for_each_boot(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
