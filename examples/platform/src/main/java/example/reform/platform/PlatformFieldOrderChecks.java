@@ -5,6 +5,7 @@ import static example.reform.platform.PlatformWidgets.*;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.minecraft.client.*;
 import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.presentation.FormCatalog;
 import design.inherent.reform.presentation.FormLayout;
 import design.inherent.reform.presentation.FormPresentation;
 import java.nio.file.Files;
@@ -56,16 +57,29 @@ final class PlatformFieldOrderChecks {
       case 0 -> {
         bytes = source();
         var presentation =
-            FormPresentation.EMPTY.withLayout(
-                new FormLayout(
-                    List.of(),
-                    List.of(
-                        new FormLayout.Group(
-                            "review-order",
-                            "example.review-order",
-                            "Authored order",
-                            "",
-                            VISUAL))));
+            FormPresentation.EMPTY
+                .withCatalog(
+                    new FormCatalog(
+                        List.of(
+                            new FormCatalog.Section(
+                                FieldPath.ROOT, "example.review-root", "Review fields", ""),
+                            new FormCatalog.Section(
+                                VISUAL.get(0),
+                                "example.custom-label",
+                                "Display name",
+                                "A retained custom purpose."),
+                            new FormCatalog.Section(
+                                VISUAL.get(1), "example.custom-enabled", "Feature enabled", ""))))
+                .withLayout(
+                    new FormLayout(
+                        List.of(),
+                        List.of(
+                            new FormLayout.Group(
+                                "review-order",
+                                "example.review-order",
+                                "Authored order",
+                                "",
+                                VISUAL))));
         form =
             (SettingsScreen<?>)
                 PlatformWorkflowExample.settings()
@@ -99,7 +113,7 @@ final class PlatformFieldOrderChecks {
       case 2 -> {
         var captured = review.reviewedInput().orElse(null);
         if (captured == null) return false;
-        var captions = List.of("Label", "Enabled", "Distance");
+        var captions = List.of("Display name", "Feature enabled", "Distance");
         var indexed =
             widgets(review).stream()
                 .filter(Button.class::isInstance)

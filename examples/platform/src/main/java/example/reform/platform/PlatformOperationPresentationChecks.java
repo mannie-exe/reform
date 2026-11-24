@@ -31,7 +31,8 @@ final class PlatformOperationPresentationChecks {
   private Button retiredInspect;
   private byte[] source;
   private int stage, starts, entered, oldWidth, oldHeight;
-  private boolean blocked, observable = true;
+  private boolean blocked, navigateAtStart, observable = true;
+  private OperationHandle<String> latest;
   private CompletableFuture<NavigationAttempt.Result> navigation;
 
   PlatformOperationPresentationChecks(
@@ -100,7 +101,15 @@ final class PlatformOperationPresentationChecks {
                 () -> {
                   starts++;
                   result = new CompletableFuture<>();
-                  return scope.submit(descriptor, OperationDescriptor.EntryPoint.GUI, "values");
+                  latest = scope.submit(descriptor, OperationDescriptor.EntryPoint.GUI, "values");
+                  if (navigateAtStart)
+                    navigation =
+                        workflow
+                            .navigation()
+                            .open(new ClientDestination.Home())
+                            .completion()
+                            .toCompletableFuture();
+                  return latest;
                 },
                 () -> observable,
                 value ->
@@ -291,6 +300,80 @@ final class PlatformOperationPresentationChecks {
         check.accept(
             "cancelled operation remains an actual cancellation rather than a save receipt",
             state.state() == OperationSnapshot.State.CANCELLED && starts == 2);
+        press(operation(), button(operation(), "Back"));
+        observable = false;
+        press(workflow.screen(), button(workflow.screen(), "Inspect values"));
+        check.accept(
+            "accepted operation request remains retained when inspection refuses",
+            starts == 3 && NativeScreens.current(client) == workflow.screen());
+        stage = 13;
+      }
+      case 13 -> {
+        if (entered != 3) return false;
+        check.accept(
+            "inspection refusal truthfully acknowledges the entered request and safe next step",
+            workflow.screen().getNarrationMessage().getString().contains("operation was requested")
+                && workflow
+                    .screen()
+                    .getNarrationMessage()
+                    .getString()
+                    .contains("before requesting it again"));
+        result.complete("Previously unobserved request completed.");
+        observable = true;
+        stage = 14;
+      }
+      case 14 -> {
+        var inspect =
+            widgets(workflow.screen()).stream()
+                .filter(Button.class::isInstance)
+                .map(Button.class::cast)
+                .filter(
+                    widget ->
+                        widget.getMessage().getString().equals("Inspect result") && widget.active)
+                .findFirst();
+        if (inspect.isEmpty()) return false;
+        press(workflow.screen(), inspect.orElseThrow());
+        stage = 15;
+      }
+      case 15 -> {
+        var state = operation().observedOperation().orElse(null);
+        if (state == null || !state.terminal()) return false;
+        check.accept(
+            "restored inspection observes that same request without repeating its effect",
+            starts == 3
+                && state.state() == OperationSnapshot.State.COMPLETED
+                && state.result().orElseThrow().equals("Previously unobserved request completed."));
+        press(operation(), button(operation(), "Back"));
+        navigateAtStart = true;
+        press(workflow.screen(), button(workflow.screen(), "Inspect values"));
+        stage = 16;
+      }
+      case 16 -> {
+        if (!navigation.isDone() || entered != 4) return false;
+        check.accept(
+            "reentrant named-action navigation wins without an obsolete inspector",
+            navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED
+                && NativeScreens.current(client) == workflow.screen()
+                && button(workflow.screen(), "Actions") != null
+                && starts == 4);
+        result.complete("Reentrant request completed.");
+        navigation =
+            workflow
+                .navigation()
+                .open(
+                    new ClientDestination.OperationResult(
+                        DocumentId.parse("fixture:inspect_values"), latest.snapshot().id()))
+                .completion()
+                .toCompletableFuture();
+        stage = 17;
+      }
+      case 17 -> {
+        if (!navigation.isDone() || operation().observedOperation().isEmpty()) return false;
+        check.accept(
+            "explicit result navigation retains the reentrant request without another start",
+            navigation.join().outcome() == NavigationAttempt.Outcome.HANDED_OFF
+                && operation().observedOperation().orElseThrow().id().equals(latest.snapshot().id())
+                && starts == 4);
         workflow.close();
         owner.close();
         NativeScreens.open(client, parent);
@@ -304,10 +387,10 @@ final class PlatformOperationPresentationChecks {
                             .gameDirectory
                             .toPath()
                             .resolve("config/reform_platform_example/workflow_preferences.json"))));
-        stage = 13;
+        stage = 18;
         return true;
       }
-      case 13 -> {
+      case 18 -> {
         return true;
       }
       case 19 -> {}

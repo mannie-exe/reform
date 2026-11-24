@@ -1227,6 +1227,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   @Override
+  public FormPresentation fieldPresentation() {
+    return presentation;
+  }
+
+  @Override
   public List<FieldPath> fieldOrder() {
     var declared = SettingsForm.super.fieldOrder();
     var snapshot = actions.view().snapshot();
@@ -2165,6 +2170,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                 : Optional.empty());
     screen.withActions(reviewActions);
     screen.withFieldOrder(fieldOrder());
+    screen.withFieldPresentation(presentation);
     handoff = true;
     try {
       openScreen(screen);
@@ -2452,28 +2458,30 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     try {
       screen =
           new ConflictScreen<>(
-              text("conflict_title", "Review conflict"),
-              contextLabel,
-              actions,
-              () -> !closed,
-              result -> {
-                result.ifPresent(
-                    resolved ->
-                        notice =
-                            resolved.report().valid()
-                                ? text(
-                                    "conflict_resolved",
-                                    "Choices resolved in this draft. Save or apply separately.")
-                                : text(
-                                        "conflict_needs_repair",
-                                        "Choices resolved in this draft; validation needs attention.")
-                                    .copy()
-                                    .append(" ")
-                                    .append(first(resolved.report())));
-                synchronize(Map.copyOf(versions));
-                openScreen(ownerScreen());
-              },
-              this::abandonEditing);
+                  text("conflict_title", "Review conflict"),
+                  contextLabel,
+                  actions,
+                  () -> !closed,
+                  result -> {
+                    result.ifPresent(
+                        resolved ->
+                            notice =
+                                resolved.report().valid()
+                                    ? text(
+                                        "conflict_resolved",
+                                        "Choices resolved in this draft. Save or apply separately.")
+                                    : text(
+                                            "conflict_needs_repair",
+                                            "Choices resolved in this draft; validation needs attention.")
+                                        .copy()
+                                        .append(" ")
+                                        .append(first(resolved.report())));
+                    synchronize(Map.copyOf(versions));
+                    openScreen(ownerScreen());
+                  },
+                  this::abandonEditing)
+              .withFieldOrder(fieldOrder())
+              .withFieldPresentation(presentation);
     } catch (RuntimeException refused) {
       notice = failure(refused);
       feedback();

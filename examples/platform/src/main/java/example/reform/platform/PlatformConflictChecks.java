@@ -9,6 +9,7 @@ import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.minecraft.client.ClientRegistration;
 import design.inherent.reform.minecraft.client.ConflictScreen;
 import design.inherent.reform.minecraft.client.NativeScreens;
+import design.inherent.reform.minecraft.client.ScrollFrame;
 import design.inherent.reform.minecraft.client.SettingsScreen;
 import design.inherent.reform.owner.EditorActor;
 import java.nio.file.Files;
@@ -55,6 +56,8 @@ final class PlatformConflictChecks implements PlatformFormProbe.Scene {
   private String saved;
   private int stage;
   private boolean fallbackReload;
+  private final int[] windowWidth = new int[1], windowHeight = new int[1];
+  private int initialScale, initialWidth;
 
   PlatformConflictChecks(
       boolean reopen, Consumer<String> progress, BiConsumer<String, Runnable> capture) {
@@ -188,7 +191,13 @@ final class PlatformConflictChecks implements PlatformFormProbe.Scene {
           }
           return false;
         }
+        NativeClientProbe.size(client, windowWidth, windowHeight);
+        initialScale = client.options.guiScale().get();
+        initialWidth = form.width;
         press(button(form, "Review conflict…"));
+        client.options.guiScale().set(2);
+        NativeClientProbe.resize(client, 1708, 960);
+        NativeClientProbe.reflow(client);
         step("generated conflict entry opens public native view");
       }
       case 4 -> {
@@ -200,10 +209,71 @@ final class PlatformConflictChecks implements PlatformFormProbe.Scene {
             input.entries().size() == 3
                 && !input.baselineRevision().equals(input.observedRevision()));
         check("native choices have no implicit default", !button(popup(), "Resolve draft").active);
+        check(
+            "wide conflict separates its field index from actual comparisons",
+            popup().children().stream().filter(ScrollFrame.class::isInstance).count() == 2);
         geometry(popup());
-        capture.accept("form-conflict-review.png", () -> choose("minimum", "Your draft"));
-        step("one native field choice selected");
+        capture.accept(
+            "form-conflict-review.png",
+            () -> {
+              choose("minimum", "Your draft");
+              stage = 40;
+            });
+        stage = 49;
       }
+      case 40 -> {
+        client.options.guiScale().set(2);
+        NativeClientProbe.resize(client, 640, 480);
+        NativeClientProbe.reflow(client);
+        stage = 41;
+      }
+      case 41 -> {
+        if (popup().width > 340) return false;
+        check(
+            "focused conflict preserves its actual capture and one partial explicit choice",
+            popup().children().stream().filter(ScrollFrame.class::isInstance).count() == 1
+                && popup().reviewedInput().orElseThrow().id().equals(review)
+                && form.editingActions()
+                        .conflicts()
+                        .choices(popup().reviewedInput().orElseThrow())
+                        .size()
+                    == 1
+                && !button(popup(), "Resolve draft").active
+                && Files.readString(path).equals(saved));
+        geometry(popup());
+        NativeClientProbe.resize(client, 1708, 960);
+        NativeClientProbe.reflow(client);
+        stage = 42;
+      }
+      case 42 -> {
+        if (popup().width < 800) return false;
+        check(
+            "returned adjacent conflict retains partial choices without reading or resolving",
+            popup().children().stream().filter(ScrollFrame.class::isInstance).count() == 2
+                && popup().reviewedInput().orElseThrow().id().equals(review)
+                && form.editingActions()
+                        .conflicts()
+                        .choices(popup().reviewedInput().orElseThrow())
+                        .size()
+                    == 1
+                && popup()
+                    .choiceControl(FieldPath.ROOT.field("minimum"))
+                    .orElseThrow()
+                    .getMessage()
+                    .getString()
+                    .equals("Your draft")
+                && Files.readString(path).equals(saved));
+        client.options.guiScale().set(initialScale);
+        NativeClientProbe.resize(client, windowWidth[0], windowHeight[0]);
+        NativeClientProbe.reflow(client);
+        stage = 43;
+      }
+      case 43 -> {
+        if (popup().width != initialWidth) return false;
+        stage = 5;
+        progress.accept("one native field choice selected and retained through A/B/A");
+      }
+      case 49 -> {}
       case 5 -> {
         check("incomplete choice set cannot resolve", !button(popup(), "Resolve draft").active);
         press(button(popup(), "Back"));

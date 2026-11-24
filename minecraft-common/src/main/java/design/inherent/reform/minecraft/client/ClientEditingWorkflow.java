@@ -1175,6 +1175,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             captured.review(),
             report);
     screen.withFieldOrder(selected.form().fieldOrder());
+    screen.withFieldPresentation(selected.form().fieldPresentation());
     NativeScreens.open(Minecraft.getInstance(), screen);
   }
 
@@ -1187,6 +1188,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     supersedeNavigation();
     if (overview.navigationRequest != navigationToken) return;
     var action = entry.action;
+    boolean requested = false;
     if (entry.latest == null || restart) {
       if (entry.busy())
         throw new PolicyRefusal("client.operation_busy", "This operation is already running");
@@ -1194,8 +1196,27 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (blocked.isPresent())
         throw new PolicyRefusal("client.operation_unavailable", blocked.orElseThrow().getString());
       entry.latest = Objects.requireNonNull(action.start().get());
+      requested = true;
     }
-    inspectOperation(entry);
+    // An entered callback may legitimately navigate or close its workflow. It cannot bring an
+    // obsolete inspector back over that newer choice.
+    if (!isOpen()
+        || overview.navigationRequest != navigationToken
+        || NativeScreens.current(Minecraft.getInstance()) != overview) return;
+    try {
+      inspectOperation(entry);
+    } catch (PolicyRefusal refused) {
+      if (!requested) throw refused;
+      var acknowledged =
+          new PolicyRefusal(
+              new PolicyRefusal(
+                      "client.operation_requested_inspection_unavailable",
+                      "The operation was requested, but its status cannot be inspected here. Check its result before requesting it again.")
+                  .report()
+                  .and(refused.report()));
+      acknowledged.initCause(refused);
+      throw acknowledged;
+    }
   }
 
   private <O> void inspectOperation(Contributed<O> entry) {
@@ -2609,6 +2630,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     public Component getNarrationMessage() {
       if (!isOpen()) return title;
       var message = title.copy().append(". ").append(scopeStatus());
+      if (notice != null) message.append(". ").append(notice);
       if (actionRoute != null
           && entry(actionRoute).editor != null
           && entry(actionRoute).editor.isOpen())

@@ -72,6 +72,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   private List<Optional<Component>> actionReasons = List.of();
   private final Map<FieldPath, String> searchIndex = new LinkedHashMap<>();
   private Map<FieldPath, Integer> fieldOrder = Map.of();
+  private design.inherent.reform.presentation.FormPresentation fieldPresentation =
+      design.inherent.reform.presentation.FormPresentation.EMPTY;
   private final EnumSet<Value> expanded = EnumSet.noneOf(Value.class);
   private DocumentReview review;
   private EditorActor.Validation validated;
@@ -171,22 +173,23 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   public ReviewScreen<T> withFieldOrder(List<FieldPath> paths) {
     if (activated || closed)
       throw new IllegalStateException("Declare review field order before mounting");
-    var order = new LinkedHashMap<FieldPath, Integer>();
-    for (var path : List.copyOf(paths)) {
-      if (actions.fields().field(path).isEmpty() || order.putIfAbsent(path, order.size()) != null)
-        throw new IllegalArgumentException(
-            "Review order requires distinct declared field identities");
-    }
-    fieldOrder = Map.copyOf(order);
+    fieldOrder = FormFieldOrder.admit(actions, paths);
     return this;
   }
 
   private List<DocumentReview.Entry> orderedEntries() {
-    return review.entries().stream()
-        .sorted(
-            java.util.Comparator.comparingInt(
-                entry -> fieldOrder.getOrDefault(entry.path(), Integer.MAX_VALUE)))
-        .toList();
+    return FormFieldOrder.sort(review.entries(), fieldOrder, DocumentReview.Entry::path);
+  }
+
+  /** Retain the invoking form's declared captions and purpose, independently of serialized IDs. */
+  public ReviewScreen<T> withFieldPresentation(
+      design.inherent.reform.presentation.FormPresentation presentation) {
+    if (activated || closed)
+      throw new IllegalStateException("Declare review field presentation before mounting");
+    Objects.requireNonNull(presentation).requireCompatible(actions.definition().type());
+    fieldPresentation = presentation;
+    index();
+    return this;
   }
 
   private static Component text(String key, String fallback, Object... arguments) {
@@ -396,6 +399,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
           text("stale", "Draft changed after this capture"),
           text("stale_help", "These details retain their original version. Refresh the view."));
     panel.row("detail:selected", text("selected_field", "Selected field"), label(selected));
+    FieldLabels.help(actions.definition().id(), selected, fieldPresentation.catalog())
+        .ifPresent(help -> panel.row("detail:purpose", Component.empty(), help));
     actions
         .fields()
         .field(entry.path())
@@ -868,7 +873,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
   }
 
   private Component label(FieldPath path) {
-    return FieldLabels.input(actions.definition().id(), path, text("document", "Document"));
+    return FieldLabels.input(
+        actions.definition().id(), path, text("document", "Document"), fieldPresentation.catalog());
   }
 
   private Component timing(ApplicationEffects.Timing value) {

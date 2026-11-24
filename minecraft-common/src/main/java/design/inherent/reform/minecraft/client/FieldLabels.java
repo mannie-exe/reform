@@ -2,10 +2,35 @@ package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.presentation.FormCatalog;
+import java.util.Optional;
 import net.minecraft.network.chat.Component;
 
 /** Shared native captions; translated field identity stays independent of row UUIDs and labels. */
 final class FieldLabels {
+  static Component input(DocumentId document, FieldPath path, Component root, FormCatalog catalog) {
+    return catalog.sections().stream()
+        .filter(section -> section.path().equals(path))
+        .findFirst()
+        .<Component>map(
+            section ->
+                Component.translatableWithFallback(section.translationKey(), section.label()))
+        .orElseGet(() -> input(document, path, root));
+  }
+
+  static Optional<Component> help(DocumentId document, FieldPath path, FormCatalog catalog) {
+    var declared =
+        catalog.sections().stream()
+            .filter(section -> section.path().equals(path))
+            .filter(CatalogHelp::present)
+            .findFirst();
+    if (declared.isPresent()) return declared.map(CatalogHelp::describe);
+    var key = key(document, path) + ".help";
+    return net.minecraft.locale.Language.getInstance().has(key)
+        ? Optional.of(Component.translatable(key))
+        : Optional.empty();
+  }
+
   static String key(DocumentId document, FieldPath path) {
     var parts =
         path.segments().stream()

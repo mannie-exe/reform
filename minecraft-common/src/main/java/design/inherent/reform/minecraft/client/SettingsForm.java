@@ -4,6 +4,7 @@ import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.owner.EditorActor;
+import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.FormTarget;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +27,11 @@ public interface SettingsForm<T> {
    */
   default List<FieldPath> fieldOrder() {
     return editingActions().fields().fields().stream().map(field -> field.path()).toList();
+  }
+
+  /** Declared caption/help metadata, not a fresh value read or editing capability. */
+  default FormPresentation fieldPresentation() {
+    return FormPresentation.EMPTY;
   }
 
   /** A currently mounted native control; hidden or retired widgets are not returned. */

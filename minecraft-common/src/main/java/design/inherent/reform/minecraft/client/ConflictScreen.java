@@ -9,6 +9,9 @@ import design.inherent.reform.operation.OperationHandle;
 import design.inherent.reform.owner.DocumentSession;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.FormGeometry;
+import design.inherent.reform.presentation.TaskPresentation;
+import design.inherent.reform.presentation.ThemeValues;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,7 +52,15 @@ public final class ConflictScreen<T> extends NativeFormScreen {
   private final Map<FieldPath, CycleButton<Choice>> controls = new LinkedHashMap<>();
   private DocumentConflicts.Preview review;
   private OperationHandle<?> operation;
-  private FormPanel panel;
+  private FormPanel panel, fields;
+  private TaskPanels panels;
+  private TaskPanels.State retained = TaskPanels.State.empty();
+  private Map<FieldPath, Integer> fieldOrder = Map.of();
+  private design.inherent.reform.presentation.FormPresentation fieldPresentation =
+      design.inherent.reform.presentation.FormPresentation.EMPTY;
+  private FieldPath selected;
+  private int fieldPage;
+  private boolean activated, sourceDetails;
   private FormChrome chrome;
   private Object widgets;
   private Component notice;
@@ -88,6 +99,32 @@ public final class ConflictScreen<T> extends NativeFormScreen {
   /** Current widget only, without source access, resolution or persistence authority. */
   public Optional<AbstractWidget> choiceControl(FieldPath path) {
     return Optional.ofNullable(controls.get(path));
+  }
+
+  /** Presentation order only, declared before mounting; resolution/capture order is unchanged. */
+  public ConflictScreen<T> withFieldOrder(List<FieldPath> paths) {
+    if (activated || closed)
+      throw new IllegalStateException("Declare conflict field order before mounting");
+    fieldOrder = FormFieldOrder.admit(actions, paths);
+    return this;
+  }
+
+  private Component fieldLabel(FieldPath path) {
+    return FieldLabels.input(
+        actions.definition().id(),
+        path,
+        text("document", "Whole document"),
+        fieldPresentation.catalog());
+  }
+
+  /** Retain the invoking form's captions/purpose; source and choice admission remain unchanged. */
+  public ConflictScreen<T> withFieldPresentation(
+      design.inherent.reform.presentation.FormPresentation presentation) {
+    if (activated || closed)
+      throw new IllegalStateException("Declare conflict field presentation before mounting");
+    Objects.requireNonNull(presentation).requireCompatible(actions.definition().type());
+    fieldPresentation = presentation;
+    return this;
   }
 
   private boolean contextRecipe() {
@@ -130,11 +167,10 @@ public final class ConflictScreen<T> extends NativeFormScreen {
 
   @Override
   protected void init() {
+    activated = true;
     widgets = new Object();
     footer.clear();
     controls.clear();
-    float scroll = panel == null ? 0 : panel.scroll();
-    String focus = panel == null ? null : panel.focusKey();
     var resolve = button(text("resolve", "Resolve draft"), this::resolve);
     resolve.active = operation == null && current() && choices.size() == review.entries().size();
     var refresh =
@@ -151,38 +187,85 @@ public final class ConflictScreen<T> extends NativeFormScreen {
     back.active = !resolving;
     chrome =
         new FormChrome(minecraft, width, height, title, contextLabel, status(), footer, theme());
-    panel = chrome.panel();
-    chrome.mountActions(this::addRenderableWidget, panel);
-    panel.row(
-        "purpose",
+    int fieldWidth = 160;
+    if (review != null)
+      for (var entry : review.entries())
+        fieldWidth = Math.max(fieldWidth, font.width(fieldLabel(entry.path())) + 24);
+    int padding = 2 * theme().values().value(ThemeValues.Role.SPACE_CONTENT);
+    int minimumHeight =
+        3 * font.lineHeight + theme().values().value(ThemeValues.Role.CONTROL_HEIGHT) + padding;
+    var policy =
+        review == null || review.entries().isEmpty()
+            ? taskPresentation()
+                .withPreference(
+                    TaskPresentation.Kind.INSPECTION, TaskPresentation.Preference.FOCUSED)
+            : taskPresentation();
+    panels =
+        new TaskPanels(
+            chrome,
+            policy,
+            TaskPresentation.Kind.INSPECTION,
+            new TaskPresentation.Offer(
+                new FormGeometry.Size(fieldWidth, minimumHeight), fieldWidth),
+            new TaskPresentation.Offer(new FormGeometry.Size(220 + padding, minimumHeight), 360),
+            theme(),
+            retained);
+    fields = panels.primary();
+    panel = panels.detail();
+    chrome.mountActions(this::addRenderableWidget, fields);
+    fields.row(
+        "primary:purpose",
         text("purpose", "Manual conflict review"),
         text(
             "help",
             "Choose every listed field. Resolving replaces this draft and resets its Undo history. Saving or applying remains separate."));
     if (review != null) {
-      panel.row(
-          "source",
-          Component.literal(review.source().description()),
-          Component.literal(review.source().location().orElse(review.source().kind())));
-      panel.row("baseline_revision", baseline(), Component.literal(review.baselineRevision()));
-      panel.row("observed_revision", observed(), Component.literal(review.observedRevision()));
-      panel.row(
-          "raw_input",
+      var entries =
+          FormFieldOrder.sort(review.entries(), fieldOrder, DocumentConflicts.Entry::path);
+      if (selected == null || entries.stream().noneMatch(entry -> entry.path().equals(selected)))
+        selected = entries.isEmpty() ? null : entries.getFirst().path();
+      appendIndex(entries);
+      fields.row(
+          "primary:source",
+          text("source", "Observed source"),
+          Component.literal(review.source().description()));
+      fields.actions(
+          "primary:source-disclosure",
+          localAction(
+              sourceDetails
+                  ? text("hide_source_details", "Hide source details")
+                  : text("source_details", "Source details"),
+              () -> {
+                sourceDetails = !sourceDetails;
+                rebuildWidgets();
+              }));
+      if (sourceDetails) {
+        fields.row(
+            "primary:source-location",
+            text("source_location", "Source location"),
+            Component.literal(review.source().location().orElse(review.source().kind())));
+        fields.row(
+            "primary:baseline-revision", baseline(), Component.literal(review.baselineRevision()));
+        fields.row(
+            "primary:observed-revision", observed(), Component.literal(review.observedRevision()));
+      }
+      fields.row(
+          "primary:raw-input",
           text("input", "Compared input"),
           text(
               "input_help",
               "Retained inactive values are included. Collections are chosen together; rows are not merged."));
-      diagnostics("source", observed(), review.observationReport());
+      diagnostics("detail:source", observed(), review.observationReport());
       diagnostics(
-          "draft", text("draft_diagnostics", "Draft diagnostics"), review.draftValidation());
+          "detail:draft", text("draft_diagnostics", "Draft diagnostics"), review.draftValidation());
       var generation = widgets;
-      for (int index = 0; index < review.entries().size(); index++) {
-        var entry = review.entries().get(index);
-        String key = "entry:" + index;
-        var caption =
-            FieldLabels.input(
-                actions.definition().id(), entry.path(), text("document", "Whole document"));
+      for (int index = 0; index < entries.size(); index++) {
+        var entry = entries.get(index);
+        String key = "detail:entry:" + entry.path();
+        var caption = fieldLabel(entry.path());
         panel.section(key, caption);
+        FieldLabels.help(actions.definition().id(), entry.path(), fieldPresentation.catalog())
+            .ifPresent(help -> panel.row(key + ":purpose", Component.empty(), help));
         panel.row(key + ":baseline", baseline(), Component.literal(entry.baseline()));
         panel.row(key + ":observed", observed(), Component.literal(entry.observed()));
         panel.row(key + ":draft", text("draft", "Your draft"), Component.literal(entry.draft()));
@@ -224,17 +307,98 @@ public final class ConflictScreen<T> extends NativeFormScreen {
       }
       if (!current())
         panel.row(
-            "stale",
+            "detail:stale",
             text("stale", "Review is no longer current"),
             text(
                 "read_again",
                 "Read the current values and choose again. Earlier draft work is retained."));
     }
-    if (notice != null) panel.row("notice", text("status", "Review status"), notice);
-    addRenderableWidget(panel);
-    panel.finish(scroll);
-    panel.restoreFocus(focus);
-    if (focus != null) setFocused(panel);
+    if (notice != null) fields.row("primary:notice", text("status", "Review status"), notice);
+    addRenderableWidget(fields);
+    if (panel != fields) addRenderableWidget(panel);
+    panels.finish().ifPresent(this::setFocused);
+  }
+
+  private void appendIndex(List<DocumentConflicts.Entry> entries) {
+    if (entries.isEmpty()) return;
+    if (panels.arrangement() != TaskPresentation.Arrangement.ADJACENT) {
+      var token = widgets;
+      var control =
+          NativeCycles.<FieldPath>builder(
+                  this::fieldLabel,
+                  selected,
+                  entries.stream().map(DocumentConflicts.Entry::path).toList())
+              .displayOnlyValue()
+              .create(
+                  0,
+                  0,
+                  180,
+                  20,
+                  text("field", "Field"),
+                  (widget, path) -> {
+                    if (!closed && widgets == token && NativeScreens.current(minecraft) == this)
+                      reveal(path);
+                  });
+      control.active = entries.size() > 1;
+      fields.row("primary:field", text("field", "Field"), Component.empty(), control);
+      return;
+    }
+    int pages = Math.max(1, (entries.size() + 15) / 16);
+    fieldPage = Math.clamp(fieldPage, 0, pages - 1);
+    if (pages > 1) {
+      var previous =
+          localAction(
+              text("previous_fields", "Previous fields"),
+              () -> {
+                fieldPage--;
+                rebuildWidgets();
+              });
+      var next =
+          localAction(
+              text("next_fields", "Next fields"),
+              () -> {
+                fieldPage++;
+                rebuildWidgets();
+              });
+      previous.active = fieldPage > 0;
+      next.active = fieldPage + 1 < pages;
+      fields.row(
+          "primary:field-page",
+          text("field_page", "Fields %s of %s", fieldPage + 1, pages),
+          Component.empty(),
+          previous,
+          next);
+    }
+    for (int i = fieldPage * 16; i < Math.min(entries.size(), (fieldPage + 1) * 16); i++) {
+      var path = entries.get(i).path();
+      var choice =
+          choices.containsKey(path) ? Choice.valueOf(choices.get(path).name()) : Choice.UNCHOSEN;
+      fields.anchorRow(
+          "primary:field:" + path,
+          Component.empty(),
+          label(choice),
+          localAction(fieldLabel(path), () -> reveal(path)));
+    }
+  }
+
+  private void reveal(FieldPath path) {
+    selected = path;
+    rebuildWidgets();
+    setFocused(panel);
+    panel.focusRow("detail:entry:" + path + ":choice");
+  }
+
+  private Button localAction(Component caption, Runnable action) {
+    var token = widgets;
+    return ClientControls.action(
+            font,
+            caption,
+            () -> {
+              if (!closed && widgets == token && NativeScreens.current(minecraft) == this)
+                action.run();
+            },
+            theme())
+        .build();
   }
 
   private void diagnostics(String key, Component title, ValidationReport report) {
@@ -248,9 +412,7 @@ public final class ConflictScreen<T> extends NativeFormScreen {
     int index = 0;
     for (var issue : report.issues())
       panel.row(
-          key + ":issue:" + index++,
-          FieldLabels.input(actions.definition().id(), issue.path(), text("document", "Document")),
-          Component.literal(issue.fallback()));
+          key + ":issue:" + index++, fieldLabel(issue.path()), Component.literal(issue.fallback()));
   }
 
   private void prepare() {
@@ -346,9 +508,7 @@ public final class ConflictScreen<T> extends NativeFormScreen {
       wasCurrent = current();
       rebuildWidgets();
       if (review != null && current()) {
-        panel.jump("entry:0");
-        setFocused(panel);
-        panel.focusVisibleControl();
+        if (selected != null) reveal(selected);
       }
     }
     boolean now = current();
@@ -375,15 +535,14 @@ public final class ConflictScreen<T> extends NativeFormScreen {
   }
 
   @Override
+  protected void beforeResize() {
+    if (panels != null) retained = panels.remember(getFocused());
+  }
+
+  @Override
   protected void rebuildWidgets() {
-    var bookmark = panel == null ? null : panel.bookmark();
-    String focus = panel == null ? null : panel.focusKey();
+    beforeResize();
     super.rebuildWidgets();
-    if (bookmark != null) panel.restore(bookmark);
-    if (focus != null) {
-      setFocused(panel);
-      panel.restoreFocus(focus);
-    }
   }
 
   @Override
