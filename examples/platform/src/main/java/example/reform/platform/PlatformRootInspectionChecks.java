@@ -58,7 +58,7 @@ final class PlatformRootInspectionChecks {
   private boolean revealed() {
     if (!pending.isDone()) return false;
     check.accept(
-        "root inspection link acknowledges the actual mounted destination",
+        "root inspection link acknowledges the actual mounted destination: " + pending.join(),
         pending.join().outcome() == NavigationAttempt.Outcome.REVEALED);
     return true;
   }
@@ -379,6 +379,8 @@ final class PlatformRootInspectionChecks {
       }
       case 12 -> {
         if (!revealed()) return false;
+        var ready = workflow.editor(route);
+        if (ready.busy() || ready.form().fieldControl(label).isEmpty()) return false;
         check.accept(
             "discard opens a fresh owner only through explicit document navigation",
             workflow.editor(route) != editor && !workflow.editor(route).dirty());
