@@ -381,7 +381,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
     reports = ROOT / "build/reports/native-platform" / project / role / mode
     reports.mkdir(parents=True, exist_ok=True)
     required_scenarios = tuple(name for name, enabled in
-                               [("controls", isolated_scene == "controls"), ("operations", isolated_scene == "operations"), ("nativeRecipes", native_recipe_client), ("recipeLinks", recipe_links_client), ("world", world_client), ("recipe", recipe_client), ("authoring", authoring_client),
+                               [("customControls", isolated_scene == "controls"), ("operations", isolated_scene == "operations"), ("nativeRecipes", native_recipe_client), ("recipeLinks", recipe_links_client), ("world", world_client), ("recipe", recipe_client), ("authoring", authoring_client),
                                 ("initializationFailure", initialization_failure), ("chooser", chooser_client),
                                 ("nativeCommands", not client), ("nativeSearch", not client),
                                 ("clientCommands", command_client), ("workspace", workspace_client), ("workflow", workflow_client)] if enabled)
@@ -453,7 +453,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     fixture, reports, native["authoring"].get("captures", []), AUTHORING_CAPTURES, reopen)
             if isolated_scene == "controls":
                 roles = {"platform-control-custom-wide.png", "platform-control-custom-narrow.png"}
-                for key in ("controls", "sceneFailure"):
+                for key in ("customControls", "sceneFailure"):
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
             if isolated_scene == "operations":

@@ -33,6 +33,7 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
   private SelectionBox replacement;
   private NativeControlFrame frame;
   private int stage, creates, disposals, labelEdits;
+  private long initialVersion;
   private final int[] originalWidth = {0}, originalHeight = {0};
   private byte[] before;
   private Object ownerActions;
@@ -174,7 +175,10 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
       case 1 -> {
         if (editor.view().availability() != EditorActor.Availability.READY
             || labelBinding == null
-            || distanceBinding == null) return false;
+            || distanceBinding == null
+            || editor.busy()
+            || !labelBinding.state().editable()
+            || !distanceBinding.state().editable()) return false;
         check(
             "actual scalar replacement and wrapper are mounted in the original form",
             editor.form().fieldControl(LABEL).orElseThrow() == replacement
@@ -185,17 +189,20 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
                 && distanceBinding.state().raw().equals("64")
                 && editor.form().controlReport().valid());
         ownerActions = editor.form().editingActions();
+        initialVersion = editor.view().snapshot().orElseThrow().version();
         nested().setValue("bad");
         replacement.setValue("Adapter");
         stage = 2;
       }
       case 2 -> {
-        if (!raw(DISTANCE).equals("bad")
+        if (editor.busy()
+            || !raw(DISTANCE).equals("bad")
             || !raw(LABEL).equals("Adapter")
             || editor.view().validation().valid()) return false;
         check(
             "one replacement input dispatches one existing edit, preserving an invalid sibling",
-            labelEdits == 1 && !editor.canSubmit());
+            editor.view().snapshot().orElseThrow().version() == initialVersion + 2
+                && !editor.canSubmit());
         check(
             "guarded adapter edit refuses native input overflow before changing the draft",
             overflowRefused() && raw(LABEL).equals("Adapter"));
@@ -236,7 +243,7 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
                 && nested().isFocused());
         check(
             "reflow constructs no second control or effect",
-            creates == 2 && disposals == 0 && labelEdits == 1);
+            creates == 2 && disposals == 0 && revision().equals(revision));
         driver.capture("control-custom-narrow.png", () -> stage = 5);
         stage = 99;
       }
@@ -388,6 +395,14 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
     result.add("checks", checks.deepCopy());
     result.addProperty("creates", creates);
     result.addProperty("disposals", disposals);
+    result.addProperty("nativeResponderCalls", labelEdits);
+    result.addProperty("initialActorVersion", initialVersion);
+    if (editor != null && editor.isOpen()) {
+      result.addProperty(
+          "actualActorVersion", editor.view().snapshot().map(value -> value.version()).orElse(-1L));
+      result.addProperty("busy", editor.busy());
+      result.addProperty("canSubmit", editor.canSubmit());
+    }
     return result;
   }
 

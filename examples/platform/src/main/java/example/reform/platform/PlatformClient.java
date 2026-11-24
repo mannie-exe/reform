@@ -535,7 +535,7 @@ public final class PlatformClient {
         }
         case 32 -> {
           if (!pending.isDone()) return;
-          report.add("controls", (JsonObject) pending.join());
+          report.add("customControls", (JsonObject) pending.join());
           beginShutdown();
         }
         case 31 -> {

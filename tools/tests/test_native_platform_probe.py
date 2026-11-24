@@ -449,13 +449,13 @@ class PlatformOutcomeTests(unittest.TestCase):
             self.native["workflow"][field] = True
 
     def test_requested_native_scenario_needs_its_own_success(self):
-        for name in ["world", "recipe", "authoring", "initializationFailure", "nativeCommands", "nativeSearch", "connector", "clientCommands", "workspace", "workflow"]:
+        for name in ["world", "recipe", "authoring", "initializationFailure", "nativeCommands", "nativeSearch", "connector", "clientCommands", "workspace", "workflow", "operations", "customControls"]:
             with self.subTest(scenario=name):
                 def accepted():
                     return successful_boot(self.process, self.native, self.library,
                                            self.target, "0.20.1", required_scenarios=(name,))
                 self.assertFalse(accepted())
-                for child in [None, "PASS", {}, {"status": "FAIL"}]:
+                for child in [None, "PASS", ["PASS"], {}, {"status": "FAIL"}]:
                     self.native[name] = child
                     self.assertFalse(accepted())
                 self.native[name] = {"status": "PASS"}

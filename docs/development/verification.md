@@ -1,5 +1,13 @@
 # Verification
 
+## 0.4 development: inline native control bindings
+
+Candidate `0.4.0-dev.83` at `5703a2a` passes the four-target build and an isolated native initial/reopen pair on each minimum target. Each boot records 19 custom-control checks; all eight clients exit normally and remove their disposable fixtures. The replacement text box and nested wrapper retain the actual actor, complete invalid-and-valid sibling draft, native selection, and focused child through a real 320×240 window resize and return. Explicit repair does not save. Disabled and retired bindings refuse, failed construction restores the standard input with its cause, and a disposal failure leaves its sibling cleanup complete and editing authority revoked. Wide and narrow frames on both game families were inspected.
+
+The actual dev.82 negative exposed a missing theme binding on the retained standard input after replacement. Dev.83 binds that input and the admitted native child tree before feedback. Its unchanged native owned-scope guard remains active. Verification corrections separately wait for the actual editable binding, count accepted actor-version changes rather than native responder notifications, and retain the scene under `customControls` instead of overwriting the baseline `controls` array. The launcher rejected that overwritten report despite a normal client exit. These failed observations remain distinct from the qualified pairs.
+
+Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.83 --client --isolated-scene controls --timeout 240`, selecting the other targets explicitly. This establishes the exercised replacement/wrapper, reflow, feedback, and retirement behavior. It does not certify arbitrary replacement widgets, full malformed-child geometry containment, permission-rejected native text, or the complete 0.4 and combined-consumer acceptance. See [inline adapters](presentation.md#inline-native-control-adapters) for the binding contract.
+
 ## 0.4 development: pending-close feedback
 
 Candidate `0.4.0-dev.80` at `41f27f4` passes the four-target `spotlessApply check build`, including 137 tooling tests. Its isolated native operation scene passes 42 checks per boot on all four minimum targets, with eight normal exits and disposable fixture removal. The exact original Maven inputs, named source archives, actual loaded archives, and public class-resource witnesses are retained separately.
