@@ -78,12 +78,12 @@ class CaptureRetentionTests(unittest.TestCase):
             fixture, reports = root / "fixture", root / "reports"
             fixture.mkdir()
             reports.mkdir()
-            names = ["platform-loaded-sprite-gui.png", "platform-loaded-sprite-block.png"]
+            names = ["platform-loaded-sprite-gui.png", "platform-loaded-sprite-block.png", "platform-loaded-sprite-before-prepare.png", "platform-loaded-sprite-before-draw.png"]
             for name in names:
                 (fixture / name).write_bytes(b"fixture native pixels")
             for reopen in [False, True]:
                 kept = retain_captures(fixture, reports, names, platform.WORKSPACE_CAPTURES, reopen)
-                self.assertEqual(len(kept), 2)
+                self.assertEqual(len(kept), 4)
                 self.assertTrue(all((reports / entry["file"]).is_file() for entry in kept))
             with self.assertRaisesRegex(ValueError, "Unrecognized native capture"):
                 retain_captures(fixture, reports, ["platform-loaded-sprite-foreign.png"], platform.WORKSPACE_CAPTURES, False)

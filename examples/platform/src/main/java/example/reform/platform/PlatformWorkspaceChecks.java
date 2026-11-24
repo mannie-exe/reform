@@ -254,6 +254,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
     var result = new JsonObject();
     result.addProperty("status", complete ? "PASS" : "RUNNING");
     result.add("checks", checks);
+    if (loadedSpriteChecks != null)
+      result.add("spriteNavigation", loadedSpriteChecks.navigationReport());
     result.add("layoutMeasurements", layoutMeasurements);
     result.add("inputCosts", inputCosts());
     result.addProperty("sourceKind", PlatformWorkflowSources.sourceKind());

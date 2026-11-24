@@ -2,6 +2,8 @@ package example.reform.platform;
 
 import static example.reform.platform.PlatformWidgets.*;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.minecraft.client.*;
 import design.inherent.reform.owner.PolicyRefusal;
@@ -39,7 +41,49 @@ public final class PlatformLoadedSpriteChecks {
   private int stage, draws, before, preparations;
   private byte[] bytes;
   private Button retired;
-  private boolean showing, smallNativeQualified;
+  private boolean showing, smallNativeQualified, suppress, beforeDrawCaptured;
+  private final JsonObject navigationFrames = new JsonObject();
+
+  public static boolean suppressDraw(Object value) {
+    return active != null
+        && active.suppress
+        && value instanceof PreparedGraphic graphic
+        && graphic.stamp().provider().equals(DocumentId.parse("reform:loaded_sprite"));
+  }
+
+  JsonObject navigationReport() {
+    return navigationFrames.deepCopy();
+  }
+
+  private boolean focusedImage() {
+    GuiEventListener focused = workflow.screen().getFocused();
+    while (focused instanceof ContainerEventHandler container && container.getFocused() != null)
+      focused = container.getFocused();
+    return focused
+        == widgets(workflow.screen()).stream()
+            .filter(
+                w ->
+                    !(w instanceof Button)
+                        && w.getMessage().getString().equals("Loaded test sprite"))
+            .findFirst()
+            .orElseThrow();
+  }
+
+  private void observeNavigation(String phase) {
+    var rows = new JsonArray();
+    for (var widget : widgets(workflow.screen())) {
+      if (!(widget instanceof NativeNavigationButton)) continue;
+      var row = new JsonObject();
+      row.addProperty("message", widget.getMessage().getString());
+      row.addProperty("narration", NativeNarrationProbe.read(widget));
+      row.addProperty("x", widget.getX());
+      row.addProperty("y", widget.getY());
+      row.addProperty("width", widget.getWidth());
+      row.addProperty("height", widget.getHeight());
+      rows.add(row);
+    }
+    navigationFrames.add(phase, rows);
+  }
 
   PlatformLoadedSpriteChecks(
       BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -144,18 +188,7 @@ public final class PlatformLoadedSpriteChecks {
       press("Show loaded image");
       return false;
     }
-    GuiEventListener focused = workflow.screen().getFocused();
-    while (focused instanceof ContainerEventHandler container && container.getFocused() != null)
-      focused = container.getFocused();
-    if (draws <= before
-        || focused
-            != widgets(workflow.screen()).stream()
-                .filter(
-                    w ->
-                        !(w instanceof Button)
-                            && w.getMessage().getString().equals("Loaded test sprite"))
-                .findFirst()
-                .orElseThrow()) return false;
+    if (draws <= before || !focusedImage()) return false;
     check.accept("sprite capture follows settled native viewport focus and a new draw", true);
     var pixels = ready.graphic().scene().textures().values().iterator().next();
     check.accept(
@@ -340,6 +373,11 @@ public final class PlatformLoadedSpriteChecks {
             "idle sprite cancellation is disabled",
             !button(workflow.screen(), "Cancel preparation").active);
         retired = button(workflow.screen(), "Prepare loaded image");
+        observeNavigation("before-native-preparation");
+        stage = 90;
+        capture.accept("loaded-sprite-before-prepare.png", () -> stage = 15);
+      }
+      case 15 -> {
         before = draws;
         showing = false;
         press("Prepare loaded image");
@@ -369,12 +407,35 @@ public final class PlatformLoadedSpriteChecks {
           return false;
         }
 
+        if (!beforeDrawCaptured) {
+          if (failed != null) throw new AssertionError("Suppressed native input failed", failed);
+          if (!(prepared instanceof GraphicScenePreparation.Ready)) return false;
+          if (!showing) {
+            showing = true;
+            press("Show loaded image");
+            return false;
+          }
+          if (!focusedImage()) return false;
+          observeNavigation("before-native-draw");
+          stage = 90;
+          capture.accept(
+              "loaded-sprite-before-draw.png",
+              () -> {
+                beforeDrawCaptured = true;
+                suppress = false;
+                showing = false;
+                stage = 2;
+              });
+          return false;
+        }
         if (!drawn(0xffff0000, 0xff00ff00)) return false;
+        observeNavigation("after-native-draw");
         stage = 90;
         capture.accept("loaded-sprite-gui.png", () -> stage = 20);
       }
       case 21 -> {
         if (!released()) return false;
+        suppress = true;
         check.accept(
             "explicit wider sprite envelope releases the refused native preparation first",
             preparations == 1);

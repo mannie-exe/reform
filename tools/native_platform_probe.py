@@ -52,6 +52,8 @@ WORKSPACE_CAPTURES = {
     'platform-form-workspace-reference-titles.png',
     'platform-form-workspace-wide.png',
     'platform-loaded-sprite-block.png',
+    'platform-loaded-sprite-before-prepare.png',
+    'platform-loaded-sprite-before-draw.png',
     'platform-loaded-sprite-gui.png',
     'platform-loaded-texture-small.png',
     'platform-loaded-texture.png',
