@@ -40,9 +40,10 @@ final class PlatformRootConflictChecks {
   }
 
   private void press(Button button) {
+    var host = NativeScreens.current(client);
     check.accept(
-        "root conflict action belongs to the native focus tree", focus(workflow.screen(), button));
-    click(workflow.screen(), button);
+        "root conflict action belongs to its actual native focus tree", focus(host, button));
+    click(host, button);
   }
 
   private void choose(FieldPath path) {
