@@ -38,6 +38,8 @@ Use a ledger shared across the workflow's entered preparations and retiring grap
 
 ## Hosted preparation
 
+Obtain the host with `workflow.graphics(limits, maximumViews)`. The workflow fixes this explicit aggregate budget and view bound once, across both source kinds. Opening a view alone does not prepare it.
+
 ### Loaded resources
 
 `host.openLoaded(provider)` opens a read-only loaded-resource view without admitting a settings document. `ClientLoadedGraphicProvider<S>` receives a `LoadedGraphicRequest<S>` under the workflow's actual READ operation and context. It receives no edited settings, fabricated draft revision, or write capability. `ClientGraphicProvider<T, S>` retains its separate complete-draft capture and native-input guards. Both kinds use the same bounded lane, worker/native stages, ledgers, visibility, cancellation, and actual-use retirement.
@@ -50,9 +52,21 @@ The client-only reload adapter observes the actual Minecraft resource manager, b
 
 `ClientViewContent.LoadedGraphic<S>` adds a shared loaded-image slot to an authored custom body. Supply a readable title/help, the typed provider and frozen subject, and the workflow's explicit aggregate limits/view bound. It admits no editor and performs no preparation during projection. **Prepare loaded image** is explicit; camera controls change only the view. **Show loaded image** focuses and reveals the current native viewport after dispatch. Unchanged slots survive ordinary custom-state refresh/reflow; replaced, removed, hidden, and closed slots retire their actual interests. A draft catalogue task continues to use `ClientTaskGraphic`, with its actual document input.
 
+For example, create a provider once in an admitted custom-view factory, then return a cached declaration from its projection:
+
+```java
+var textures = ClientLoadedGraphics.textures(limits, metadataLimits);
+return () -> new ClientViewContent(List.of(
+    new ClientViewContent.LoadedGraphic<>(
+        "logo", Component.literal("Pack artwork"), Component.empty(),
+        textures, "example:textures/gui/logo.png", limits, 1)));
+```
+
+The declaration is a loaded-resource view. To preview edited profile output, use the actual document provider instead.
+
 ### Draft providers
 
-The development host is obtained through `workflow.graphics(limits, maximumViews)`. The workflow fixes this aggregate budget and view bound once. Open a typed view with `host.open(workflow.editor(definition), provider)`, using the exact owner definition. This does not load another editor, prepare a subject, or grant READ permission.
+Open a draft view with `host.open(workflow.editor(definition), provider)`, using the exact retained owner definition. This does not load another editor, prepare a subject, or grant READ permission.
 
 `ClientGraphicProvider<T, S>` supplies a stable provider ID, a `ValueType<S>` for bounded selection parameters, explicit limits, a cheap actual `ReferenceStamp` for its resources, and a preparation function. Its request contains the complete separately captured `DraftPreviewInput<T>`; do not serialize the full document or texture payload into `S`. Selection parameters use the existing operation input admission. The provider composes `ClientGraphicWork.onWorker` and `onClient` stages rather than waiting for a worker result on the client thread. Native stages prepare detached model data; private GPU allocation stays with the host. Each stage must close its own transient resources before returning detached data.
 
