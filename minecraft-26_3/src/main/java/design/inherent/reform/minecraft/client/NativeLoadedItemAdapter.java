@@ -1,19 +1,27 @@
 package design.inherent.reform.minecraft.client;
 
+import com.mojang.blaze3d.ProjectionType;
+import com.mojang.blaze3d.buffers.Std140Builder;
+import com.mojang.blaze3d.platform.Lighting;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.systems.ScissorState;
+import com.mojang.blaze3d.vertex.PoseStack;
 import design.inherent.reform.definition.DocumentId;
-import design.inherent.reform.minecraft.mixin.GraphicCanvasAccessor;
 import design.inherent.reform.presentation.graphics.GraphicCamera;
 import design.inherent.reform.value.ValueType;
-import java.util.List;
-import net.minecraft.client.renderer.item.TrackingItemStackRenderState;
-import net.minecraft.client.renderer.state.gui.GuiItemRenderState;
+import java.util.Optional;
+import java.util.OptionalDouble;
+import net.minecraft.client.gui.render.GuiRenderer;
+import net.minecraft.client.renderer.Projection;
+import net.minecraft.client.renderer.SubmitNodeStorage;
+import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
+import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.world.item.ItemDisplayContext;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
-import org.joml.Matrix3x2f;
 import org.joml.Matrix4f;
+import org.lwjgl.system.MemoryStack;
 
-/** Owned prepared native item state, consumed by the real native GUI extraction pipeline. */
+/** Native feature rendering into the shared owned target, without enlarging a GUI icon cache. */
 final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSubject> {
   static final NativeLoadedItemAdapter INSTANCE = new NativeLoadedItemAdapter();
 
@@ -25,44 +33,98 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
     return ClientItemSubject.type();
   }
 
+  @SuppressWarnings("try")
   public Prepared prepare(ClientItemSubject input, NativeGraphicPreparationContext context) {
     var stack = NativeItemSnapshots.decode(input);
     var state = new State(context.ledger().limits().resources());
-    context
-        .client()
+    var client = context.client();
+    client
         .getItemModelResolver()
-        .updateForTopItem(
-            state,
-            stack,
-            ItemDisplayContext.GUI,
-            context.client().level,
-            context.client().player,
-            0);
-    state.freeze();
+        .updateForTopItem(state, stack, ItemDisplayContext.GUI, client.level, client.player, 0);
+    if (state.isEmpty())
+      return new Prepared() {
+        public ClientMeshGraphic.DrawOutcome draw(NativeGraphicDrawContext draw) {
+          return ClientMeshGraphic.DrawOutcome.EMPTY;
+        }
+
+        public void release(NativeGraphicReleaseContext release) {
+          state.clear();
+        }
+      };
+    var bounds = state.getModelBoundingBox();
+    var center = bounds.getCenter();
+    double extent = Math.max(bounds.getXsize(), Math.max(bounds.getYsize(), bounds.getZsize()));
+    var projection = new Projection();
+    var submits = new SubmitNodeStorage();
+    // Attach the surface before any GPU allocation, and retain it through the enclosing use.
+    var uniform = new com.mojang.renderpearl.api.buffers.GpuBuffer[1];
+    var surface =
+        NativeMeshGraphic.surface(
+            context,
+            (color, depth, width, height, camera) -> {
+              var encoder = RenderSystem.getDevice().createCommandEncoder();
+              try (var borrowed = new GuiState();
+                  Scope submission = encoder::submit) {
+                borrowed.modelView.identity();
+                projection.setupOrtho(-1000, 1000, width, height, true);
+                try (var memory = MemoryStack.stackPush()) {
+                  var bytes =
+                      Std140Builder.onStack(memory, RenderSystem.PROJECTION_MATRIX_UBO_SIZE)
+                          .putMat4f(projection.getMatrix(new Matrix4f()))
+                          .get();
+                  var upload = RenderSystem.getDevice().createCommandEncoder();
+                  upload.writeToBuffer(uniform[0].slice(), bytes);
+                  upload.submit();
+                }
+                RenderSystem.setProjectionMatrix(uniform[0].slice(), ProjectionType.ORTHOGRAPHIC);
+                RenderSystem.enableScissorForRenderTypeDraws(0, 0, width, height);
+                client
+                    .gameRenderer
+                    .lighting()
+                    .setupFor(
+                        state.usesBlockLight()
+                            ? Lighting.Entry.ITEMS_3D
+                            : Lighting.Entry.ITEMS_FLAT);
+                var pose = new PoseStack();
+                pose.translate(width * (0.5 + camera.panX()), height * (0.5 - camera.panY()), 0);
+                float fit =
+                    (float)
+                        (Math.min(width, height)
+                            * camera.zoom()
+                            / 1.75
+                            / (extent > 0 ? extent : 1));
+                pose.scale(fit, -fit, fit);
+                pose.last()
+                    .mulPose(
+                        new Matrix4f()
+                            .rotateY(
+                                (float) Math.toRadians(camera.yaw() - GraphicCamera.STANDARD.yaw()))
+                            .rotateX(
+                                (float)
+                                    Math.toRadians(
+                                        camera.pitch() - GraphicCamera.STANDARD.pitch())));
+                pose.translate(-center.x, -center.y, -center.z);
+                state.submit(pose, submits, 15728880, OverlayTexture.NO_OVERLAY, 0);
+                try (var frame =
+                        client.gameRenderer.featureRenderDispatcher().prepareFrame(submits);
+                    var pass =
+                        encoder.createRenderPass(
+                            () -> "re:form native item",
+                            color,
+                            Optional.of(GuiRenderer.CLEAR_COLOR),
+                            depth,
+                            OptionalDouble.of(0))) {
+                  RenderSystem.bindDefaultUniforms(pass);
+                  FeatureRenderDispatcher.renderAllFeatures(pass, frame);
+                }
+              }
+            });
+    uniform[0] =
+        surface.uniformBuffer(
+            RenderSystem.PROJECTION_MATRIX_UBO_SIZE, "re:form native item projection");
     return new Prepared() {
       public ClientMeshGraphic.DrawOutcome draw(NativeGraphicDrawContext draw) {
-        if (state.isEmpty()) return ClientMeshGraphic.DrawOutcome.EMPTY;
-        state.camera(draw.camera());
-        var bounds = state.getModelBoundingBox();
-        double sx = Math.max(1, bounds.getXsize()), sy = Math.max(1, bounds.getYsize());
-        float fit =
-            (float)
-                (Math.min(draw.width() / sx, draw.height() / sy) * draw.camera().zoom() / 16 / 1.1);
-        if (!(fit > 0) || !Float.isFinite(fit)) return ClientMeshGraphic.DrawOutcome.WAITING;
-        var center = bounds.getCenter();
-        var pose =
-            new Matrix3x2f(draw.graphics().pose())
-                .translate(
-                    (float) (draw.x() + draw.width() * (0.5 + draw.camera().panX())),
-                    (float) (draw.y() + draw.height() * (0.5 - draw.camera().panY())))
-                .scale(fit)
-                .translate((float) (-8 - center.x * 16), (float) (-8 + center.y * 16));
-        // The outer callback's native scissor remains active; preserve its exact intersection.
-        var clip = draw.graphics().textRenderer().defaultParameters().scissor();
-        ((GraphicCanvasAccessor) draw.graphics())
-            .reform$graphicState()
-            .addItem(new GuiItemRenderState(pose, state, 0, 0, clip));
-        return ClientMeshGraphic.DrawOutcome.RENDERED;
+        return surface.drawSurface(draw, context::isCurrent);
       }
 
       public void release(NativeGraphicReleaseContext release) {
@@ -71,13 +133,41 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
     };
   }
 
-  private static final class State extends TrackingItemStackRenderState {
+  private interface Scope extends AutoCloseable {
+    @Override
+    void close();
+  }
+
+  /**
+   * Try-with-resources preserves the primary render failure if submission/restoration also fail.
+   */
+  private static final class GuiState implements Scope {
+    private final com.mojang.renderpearl.api.buffers.GpuBufferSlice
+        projection = RenderSystem.getProjectionMatrixBuffer(),
+        lights = RenderSystem.getShaderLights(),
+        fog = RenderSystem.getShaderFog();
+    private final ProjectionType type = RenderSystem.getProjectionType();
+    private final ScissorState scissor =
+        new ScissorState(RenderSystem.getScissorStateForRenderTypeDraws());
+    private final org.joml.Matrix4fStack modelView = RenderSystem.getModelViewStack();
+
+    GuiState() {
+      modelView.pushMatrix();
+    }
+
+    public void close() {
+      NativeGraphicCleanup.run(
+          () -> RenderSystem.setProjectionMatrix(projection, type),
+          () -> RenderSystem.setShaderLights(lights),
+          () -> RenderSystem.setShaderFog(fog),
+          () -> RenderSystem.getScissorStateForRenderTypeDraws().setFrom(scissor),
+          modelView::popMatrix);
+    }
+  }
+
+  private static final class State extends ItemStackRenderState {
     private final int maximumLayers;
     private int layers;
-    private final Matrix4f rotation = new Matrix4f();
-    private List<?> identity = List.of();
-    private Object key = identity;
-    private GraphicCamera camera;
 
     State(int maximumLayers) {
       this.maximumLayers = maximumLayers;
@@ -93,75 +183,15 @@ final class NativeLoadedItemAdapter implements NativeGraphicAdapter<ClientItemSu
 
     @Override
     public LayerRenderState newLayer() {
-      var layer = super.newLayer();
+      var result = super.newLayer();
       layers++;
-      return layer;
-    }
-
-    void freeze() {
-      identity = List.copyOf((List<?>) super.getModelIdentity());
-      setOversizedInGui(true);
-    }
-
-    void camera(GraphicCamera value) {
-      if (value.equals(camera)) return;
-      rotation
-          .identity()
-          .rotateY((float) Math.toRadians(value.yaw() - GraphicCamera.STANDARD.yaw()))
-          .rotateX((float) Math.toRadians(value.pitch() - GraphicCamera.STANDARD.pitch()));
-      camera = value;
-      key = List.of(identity, value.yaw(), value.pitch());
-    }
-
-    @Override
-    public Object getModelIdentity() {
-      return key;
-    }
-
-    // Static prepared geometry. A changed camera receives a distinct native cache identity.
-    @Override
-    public boolean isAnimated() {
-      return false;
-    }
-
-    @Override
-    public void submit(
-        com.mojang.blaze3d.vertex.PoseStack pose,
-        net.minecraft.client.renderer.SubmitNodeCollector collector,
-        int light,
-        int overlay,
-        int outline) {
-      pose.pushPose();
-      try {
-        pose.last().mulPose(rotation);
-        super.submit(pose, collector, light, overlay, outline);
-      } finally {
-        pose.popPose();
-      }
-    }
-
-    @Override
-    public void visitExtents(java.util.function.Consumer<org.joml.Vector3fc> output) {
-      var scratch = new org.joml.Vector3f();
-      super.visitExtents(value -> output.accept(scratch.set(value).mulPosition(rotation)));
-    }
-
-    @Override
-    public AABB getModelBoundingBox() {
-      var bounds = new AABB.Builder();
-      visitExtents(bounds::include);
-      return bounds.isDefined() ? bounds.build() : AABB.ofSize(Vec3.ZERO, 0, 0, 0);
+      return result;
     }
 
     @Override
     public void clear() {
       super.clear();
       layers = 0;
-      rotation.identity();
-      camera = null;
-      identity = List.of();
-      key = identity;
-      ((List<?>) super.getModelIdentity()).clear();
     }
   }
 }

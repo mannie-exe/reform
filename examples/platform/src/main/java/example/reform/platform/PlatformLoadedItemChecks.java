@@ -42,6 +42,10 @@ public final class PlatformLoadedItemChecks {
   private ClientItemSubject copied;
   private ClientGraphicHost.Attempt contextAttempt;
   private boolean joinedWorld;
+  private boolean resized;
+  private final int[] nativeWidth = new int[1], nativeHeight = new int[1];
+  private int screenWidth, screenHeight;
+  private PreparedGraphic retainedGraphic;
 
   private void contextWorkspace() {
     workflow = ClientEditingWorkflow.open(parent, text("Item registry context"), List.of());
@@ -360,6 +364,17 @@ public final class PlatformLoadedItemChecks {
         capture.accept("loaded-item-stone-orbit.png", () -> stage = 6);
       }
       case 6 -> {
+        if (mode == 0 && !resized) {
+          retainedGraphic = graphic;
+          screenWidth = workflow.screen().width;
+          screenHeight = workflow.screen().height;
+          NativeClientProbe.size(client, nativeWidth, nativeHeight);
+          NativeClientProbe.resize(client, 320, 240);
+          NativeClientProbe.reflow(client);
+          before = submissions;
+          stage = 20;
+          return false;
+        }
         if (mode == 1 || mode == 2) {
           stage = 90;
           capture.accept("loaded-item-" + mode + ".png", () -> stage = 7);
@@ -442,6 +457,55 @@ public final class PlatformLoadedItemChecks {
         active = null;
         stage = 9;
         return true;
+      }
+      case 20 -> {
+        if (workflow.screen().width > 340) return false;
+        press("Show loaded image");
+        stage = 21;
+      }
+      case 21 -> {
+        if (submissions <= before) return false;
+        var image =
+            widgets(workflow.screen()).stream()
+                .filter(
+                    w ->
+                        w.getMessage().getString().equals("Loaded test item")
+                            && !(w instanceof net.minecraft.client.gui.components.Button))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "native item resize retains prepared identity and fits the real narrow viewport",
+            graphic == retainedGraphic
+                && preparations == 1
+                && image.getY() >= 0
+                && image.getBottom() <= workflow.screen().height
+                && image.getX() >= 0
+                && image.getRight() <= workflow.screen().width);
+        unchanged();
+        stage = 90;
+        capture.accept("loaded-item-small.png", () -> stage = 22);
+      }
+      case 22 -> {
+        NativeClientProbe.resize(client, nativeWidth[0], nativeHeight[0]);
+        NativeClientProbe.reflow(client);
+        before = submissions;
+        stage = 23;
+      }
+      case 23 -> {
+        if (workflow.screen().width != screenWidth || workflow.screen().height != screenHeight)
+          return false;
+        press("Show loaded image");
+        stage = 24;
+      }
+      case 24 -> {
+        if (submissions <= before) return false;
+        check.accept(
+            "native item restored viewport keeps one preparation and the same native lease",
+            graphic == retainedGraphic && preparations == 1 && drawFailure == null);
+        unchanged();
+        resized = true;
+        stage = 90;
+        capture.accept("loaded-item-returned.png", () -> stage = 6);
       }
       default -> {}
     }

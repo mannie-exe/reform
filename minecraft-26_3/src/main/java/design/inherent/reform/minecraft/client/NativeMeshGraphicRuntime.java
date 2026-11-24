@@ -49,6 +49,7 @@ public final class NativeMeshGraphicRuntime {
     final RenderLifetime lifetime;
     final RenderLifetime.Use use;
     Runnable cleanup = () -> {};
+    final List<Runnable> beforeConsumption = new ArrayList<>();
 
     Ticket(RenderLifetime lifetime) {
       this.lifetime = lifetime;
@@ -125,9 +126,35 @@ public final class NativeMeshGraphicRuntime {
     EXTRACTED.computeIfAbsent(state, ignored -> new Frame()).tickets.add(ticket);
   }
 
+  /** Native feature work belongs to the exact already-entered extraction use, not another job. */
+  static void beforeConsumption(GuiRenderState state, RenderLifetime lifetime, Runnable action) {
+    var frame = EXTRACTED.get(state);
+    if (frame == null || frame.consuming)
+      throw new IllegalStateException("Native work needs its current extracted GUI use");
+    for (var ticket : frame.tickets.reversed()) {
+      if (ticket.lifetime == lifetime) {
+        ticket.beforeConsumption.add(action);
+        return;
+      }
+    }
+    throw new IllegalStateException("Native work has no matching extracted lifetime");
+  }
+
   public static void begin(GuiRenderState state) {
     var frame = EXTRACTED.get(state);
-    if (frame != null) frame.consuming = true;
+    if (frame != null) {
+      frame.consuming = true;
+      for (var ticket : frame.tickets) {
+        var actions = ticket.beforeConsumption.toArray(Runnable[]::new);
+        ticket.beforeConsumption.clear();
+        try {
+          NativeGraphicCleanup.run(actions);
+        } catch (RuntimeException | Error failed) {
+          FAILURES.putIfAbsent(ticket.lifetime, failed);
+          LOG.error("Deferred native graphic preparation failed", failed);
+        }
+      }
+    }
     poll();
   }
 
@@ -170,6 +197,7 @@ public final class NativeMeshGraphicRuntime {
 
   private static void finish(Ticket ticket) {
     if (!USES.remove(ticket)) return;
+    ticket.beforeConsumption.clear(); // An actually reset/unconsumed state never enters this work.
     try {
       ticket.cleanup.run();
     } catch (RuntimeException | Error failed) {

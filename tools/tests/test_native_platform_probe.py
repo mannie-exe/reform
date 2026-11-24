@@ -96,7 +96,8 @@ class CaptureRetentionTests(unittest.TestCase):
             fixture.mkdir()
             reports.mkdir()
             names = ["platform-loaded-item-stone.png", "platform-loaded-item-stone-orbit.png",
-                     "platform-loaded-item-1.png", "platform-loaded-item-2.png"]
+                     "platform-loaded-item-1.png", "platform-loaded-item-2.png",
+                     "platform-loaded-item-small.png", "platform-loaded-item-returned.png"]
             for name in names:
                 (fixture / name).write_bytes(b"actual item capture stand-in")
             for reopen in [False, True]:

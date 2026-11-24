@@ -59,6 +59,8 @@ WORKSPACE_CAPTURES = {
     'platform-loaded-item-stone-orbit.png',
     'platform-loaded-item-1.png',
     'platform-loaded-item-2.png',
+    'platform-loaded-item-small.png',
+    'platform-loaded-item-returned.png',
     'platform-loaded-texture-small.png',
     'platform-loaded-texture.png',
     'platform-operation-small.png',

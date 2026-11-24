@@ -129,6 +129,7 @@ final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
   }
 
   private final GraphicScene scene;
+  private NativeFrame nativeFrame;
   private final GraphicLedger ledger;
   private final int maximumUses;
   private final RenderLifetime lifetime;
@@ -142,6 +143,38 @@ final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
   private GpuSampler outputSampler;
   private int frameWidth, frameHeight;
   private GraphicCamera renderedCamera;
+
+  @FunctionalInterface
+  interface NativeFrame {
+    void render(
+        GpuTextureView color, GpuTextureView depth, int width, int height, GraphicCamera camera);
+  }
+
+  /** Reuse the owned native target and compositor, attached to the contribution's exact use. */
+  static NativeMeshGraphic surface(NativeGraphicPreparationContext context, NativeFrame frame) {
+    var surface = new NativeMeshGraphic(context);
+    context.own(release -> surface.release());
+    surface.nativeFrame = java.util.Objects.requireNonNull(frame);
+    surface.initializeOutputSampler();
+    return surface;
+  }
+
+  private NativeMeshGraphic(NativeGraphicPreparationContext context) {
+    scene = null;
+    ledger = context.ledger();
+    lifetime = context.lifetime();
+    maximumUses = Integer.MAX_VALUE;
+  }
+
+  GpuBuffer uniformBuffer(int bytes, String label) {
+    return owned(
+        bytes,
+        () ->
+            RenderSystem.getDevice()
+                .createBuffer(
+                    () -> label, GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, bytes),
+        GpuBuffer::close);
+  }
 
   NativeMeshGraphic(
       GraphicScene scene,
@@ -276,6 +309,11 @@ final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
       bindings.put(
           entry.getKey(), new Binding(textures.get(material.texture()), sampler, buffer, pipeline));
     }
+    initializeOutputSampler();
+  }
+
+  private void initializeOutputSampler() {
+    var device = RenderSystem.getDevice();
     outputSampler =
         owned(
             0,
@@ -435,6 +473,13 @@ final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
     frameResources.clear();
     resources.removeIf(resource -> resource.released);
     var device = RenderSystem.getDevice();
+    int maximum =
+        Math.min(
+            device.getDeviceInfo().limits().maxTextureSizeForFormat(GpuFormat.RGBA8_UNORM),
+            device.getDeviceInfo().limits().maxTextureSizeForFormat(GpuFormat.D32_FLOAT));
+    if (width > maximum || height > maximum)
+      throw new PolicyRefusal(
+          "preview.budget", "The viewport exceeds this renderer's texture extent");
     long bytes = (long) width * height * 4;
     color =
         owned(
@@ -470,6 +515,69 @@ final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
     frameResources.add(resources.getLast());
     frameWidth = width;
     frameHeight = height;
+  }
+
+  ClientMeshGraphic.DrawOutcome drawSurface(
+      NativeGraphicDrawContext context, java.util.function.BooleanSupplier current) {
+    int width = context.width(), height = context.height();
+    double scale = net.minecraft.client.Minecraft.getInstance().getWindow().getGuiScale();
+    long w = Math.round(width * scale), h = Math.round(height * scale);
+    if (w < 1
+        || h < 1
+        || w > Integer.MAX_VALUE
+        || h > Integer.MAX_VALUE
+        || w > ledger.limits().nativeBytes() / 8 / h)
+      throw new PolicyRefusal("preview.budget", "The native viewport exceeds its image allowance");
+    boolean changed =
+        frameWidth != w || frameHeight != h || !context.camera().equals(renderedCamera);
+    if (changed && lifetime.state().outstandingUses() > 1)
+      return ClientMeshGraphic.DrawOutcome.WAITING;
+    var graphics = (GraphicCanvasAccessor) context.graphics();
+    if (changed) {
+      if (frameWidth != w || frameHeight != h) {
+        frame((int) w, (int) h);
+      }
+      var camera = context.camera();
+      NativeMeshGraphicRuntime.beforeConsumption(
+          graphics.reform$graphicState(),
+          lifetime,
+          () -> {
+            clearNativeFrame();
+            if (!current.getAsBoolean()) return;
+            nativeFrame.render(colorView, depthView, frameWidth, frameHeight, camera);
+            renderedCamera = camera;
+          });
+    }
+    graphics.reform$blitGraphic(
+        RenderPipelines.GUI_TEXTURED_PREMULTIPLIED_ALPHA,
+        colorView,
+        outputSampler,
+        context.x(),
+        context.y(),
+        context.x() + width,
+        context.y() + height,
+        0,
+        1,
+        1,
+        0,
+        -1);
+    return ClientMeshGraphic.DrawOutcome.RENDERED;
+  }
+
+  @SuppressWarnings("try")
+  private void clearNativeFrame() {
+    var encoder = RenderSystem.getDevice().createCommandEncoder();
+    try (var pass =
+        encoder.createRenderPass(
+            () -> "re:form clear native frame",
+            colorView,
+            Optional.of(GuiRenderer.CLEAR_COLOR),
+            depthView,
+            OptionalDouble.of(0))) {
+      // An unconsumed or revoked domain never displays uninitialized target contents.
+    } finally {
+      encoder.submit();
+    }
   }
 
   private void render(GraphicCamera camera) {
@@ -526,8 +634,11 @@ final class NativeMeshGraphic implements AutoCloseable, NativeOwnedGraphic {
     frameResources.clear();
     uploadResources.clear();
     bindings.clear();
-    NativeMeshGraphicRuntime.released(lifetime);
-    NativeMeshGraphicRuntime.released(this);
+    nativeFrame = null;
+    if (scene != null) {
+      NativeMeshGraphicRuntime.released(lifetime);
+      NativeMeshGraphicRuntime.released(this);
+    }
   }
 
   @Override

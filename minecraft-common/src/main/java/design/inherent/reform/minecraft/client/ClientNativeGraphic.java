@@ -22,6 +22,7 @@ final class ClientNativeGraphic implements ClientGraphicLease, NativeOwnedGraphi
   private GraphicLedger.Allocation binding;
   private NativeGraphicAdapter.Prepared content;
   private GraphicCamera submittedCamera;
+  private int submittedWidth, submittedHeight;
 
   private static final class Resource {
     final NativeGraphicResource value;
@@ -92,6 +93,7 @@ final class ClientNativeGraphic implements ClientGraphicLease, NativeOwnedGraphi
                                 ledger,
                                 data.stamp(),
                                 graphic.lifetime,
+                                graphic.current,
                                 graphic::own)));
             // The binding was admitted before preparation. Transfer it while the preparation
             // ticket is still entered, even if a reentrant callback requested closure. No second
@@ -148,15 +150,16 @@ final class ClientNativeGraphic implements ClientGraphicLease, NativeOwnedGraphi
     var failure = NativeMeshGraphicRuntime.failure(lifetime);
     if (failure.isPresent()) {
       var refused =
-          new PolicyRefusal("preview.prepare_failed", "Native graphic retirement is unconfirmed");
+          new PolicyRefusal(
+              "preview.prepare_failed", "Native graphic preparation or retirement failed");
       refused.initCause(failure.orElseThrow());
       throw refused;
     }
     if (width < 1
         || height < 1
         || lifetime.state().outstandingUses() >= maximumUses
-        || !camera.equals(submittedCamera) && lifetime.state().outstandingUses() > 0)
-      return ClientMeshGraphic.DrawOutcome.WAITING;
+        || (!camera.equals(submittedCamera) || width != submittedWidth || height != submittedHeight)
+            && lifetime.state().outstandingUses() > 0) return ClientMeshGraphic.DrawOutcome.WAITING;
     double scale = Minecraft.getInstance().getWindow().getGuiScale();
     long w = Math.round(width * scale), h = Math.round(height * scale);
     if (w < 1
@@ -168,7 +171,11 @@ final class ClientNativeGraphic implements ClientGraphicLease, NativeOwnedGraphi
     var outcome =
         NativeAdapterSubmission.draw(
             lifetime, (NativeCanvas) canvas, x, y, width, height, camera, content);
-    if (outcome != ClientMeshGraphic.DrawOutcome.WAITING) submittedCamera = camera;
+    if (outcome != ClientMeshGraphic.DrawOutcome.WAITING) {
+      submittedCamera = camera;
+      submittedWidth = width;
+      submittedHeight = height;
+    }
     return outcome;
   }
 
