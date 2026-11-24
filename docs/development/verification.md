@@ -97,6 +97,14 @@ Dev.63 passes all four builds and packaged consumer compilations. Actual NeoForg
 
 The loaded-sprite fixture causes an actual native viewport budget refusal after preparation. The hosted status retains Refused and the specific native allowance reason, confirms the lease released and both ledgers reached zero, then succeeds through explicit wider-budget preparation. This tests report propagation and the existing cleanup path, not a new allocation policy or an implicit retry. Other draw exceptions retain their existing failure handling. The other two native runtimes are compile-only at this checkpoint; no new consumer adoption or full 0.4 acceptance follows from these library pairs.
 
+## 0.4 development: document-free workspaces
+
+The actual dev.63 negative rejects a declared loaded-sprite workspace solely because its document list is empty. The retained exception originates at workflow construction before preparation; the game exits normally and the runner reports failure. Dev.64 removes that artificial minimum while preserving the 32-document maximum and declaration checks.
+
+All four builds and packaged consumer compilations pass on dev.64. Actual NeoForge 1.21.1 and Fabric 26.3 workspace initial/reopen pairs each record 873/668 assertions, with four normal exits and fixture removal. The real loaded-sprite workspace has no settings owner: it starts at Home, refuses a missing document without leaving Home, prepares and draws its atlas frames, performs explicit budget recovery, and releases its native and scene ownership. Additional mounted workspaces without Home and with only Home select their actual declared destinations without preparing or creating an editor. The settings source bytes remain unchanged.
+
+The same pairs check the revised import help against its draft-only effects. They do not certify physical OS-dialog interaction, reference-value title projection, every invalid declaration, or the other two native runtimes. A separate no-destination declaration helper compiles but is not invoked by these workspace pairs; its execution remains part of the final broader checks. Initial verification-only import namespace errors are retained separately; the three Maven artifacts published before that failure remain byte-identical after fixture correction. Full 0.4 and final consumer acceptance remain open.
+
 ## Stable 0.3.0 release qualification
 
 The 0.3.0 build passes `mise run check` and `mise run check:security`. It retains 590 core tests on each codec runtime, four packaged native consumers, eight public consumer inputs, tooling, Markdown, and workflow checks. Security review reports no release-blocking findings or source secrets; 31 explicitly classified supplied-runtime advisories remain visible. This is not a whole-game security certification.
