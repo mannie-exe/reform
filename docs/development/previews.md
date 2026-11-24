@@ -120,6 +120,14 @@ Preparation creates a fresh native chest renderer and fresh baked model parts us
 
 A preparation-only vertex sink measures actual posed native vertices and enforces the canonical position/normal/UV allowance before GPU allocation; it retains no replacement mesh. That allowance is not a measurement of baked model object memory or allocator overhead. Three native model layers are required by the actual renderer constructor. Owned surfaces and outstanding native uses share the existing host ledger and retirement protocol; borrowed native assets are never closed by this provider. Native qualification and material limits belong in [verification](verification.md).
 
+## Curated native animal references
+
+`ClientLoadedGraphics.entities(limits)` accepts `ClientEntitySubject`: cow or pig, adult or baby. It requires an existing joined level/registry context and reports `preview.entity_context` without one. It never opens a world or accepts a live entity, position, equipment, skin, or arbitrary NBT. The native constructors allocate owned reference objects and their normal native identities; they are not inserted into a level or ticked. This does not promise that no global identity counter advances during native construction.
+
+Each prepared contribution owns a fresh renderer and freshly baked parts. The 1.21.1 binding measures actual native renderer output. The 26.3 binding extracts native state and measures actual model submissions with the game's pose setup and vertex compilation. Camera drawing reuses this prepared subject through the normal native pipeline. The measured canonical vertex allowance does not estimate model objects, registry storage, or allocator overhead. Borrowed context/assets are not closed. The same host context/resource guard prevents obsolete submission, and actual native uses retain resources until retirement.
+
+These are static, full-bright native references. Native default variants come from the joined registry; no default holders are synthesized. The capability does not cover arbitrary entities, foreign renderer hooks, player skins, equipment, gameplay animation, or world-shader parity. Unsupported extra native geometry refuses admission. Implementation, compilation, and actual execution remain separately attributed in [verification](verification.md).
+
 ## Native ownership
 
 `RenderLifetime` separates a view's interest from outstanding native uses. Closing it prevents new uses; resources release only after every acquired use retires. Release entry, successful completion, and failure are separate observations. A failed partial release is retained rather than retried as if nothing happened.

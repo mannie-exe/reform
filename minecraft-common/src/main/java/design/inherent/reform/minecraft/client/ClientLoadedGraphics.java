@@ -28,6 +28,73 @@ public final class ClientLoadedGraphics {
   private static final DocumentId MATERIAL = DocumentId.parse("reform:loaded_texture_surface");
   private static final DocumentId ITEM = DocumentId.parse("reform:loaded_item");
 
+  /** Curated detached native animals in an already joined registry context; never opens a world. */
+  public static ClientLoadedGraphicProvider<ClientEntitySubject> entities(GraphicLimits limits) {
+    Objects.requireNonNull(limits);
+    return new ClientLoadedGraphicProvider<>() {
+      public DocumentId id() {
+        return DocumentId.parse("reform:curated_entity");
+      }
+
+      public ValueType<ClientEntitySubject> subjectType() {
+        return ClientEntitySubject.type();
+      }
+
+      public GraphicLimits limits() {
+        return limits;
+      }
+
+      public ReferenceStamp resourceStamp() {
+        return NativeItemContexts.source();
+      }
+
+      public CompletionStage<GraphicScenePreparation> prepare(
+          LoadedGraphicRequest<ClientEntitySubject> request, ClientGraphicWork work) {
+        work.checkpoint();
+        if (!NativeItemContexts.source().equals(request.stamp().resources()))
+          throw new PolicyRefusal(
+              "preview.stale", "The native context changed; prepare the animal again");
+        var encoded =
+            ClientEntitySubject.type()
+                .codec()
+                .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, request.subject())
+                .getOrThrow()
+                .toString();
+        if (encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+            > request.limits().inputBytes())
+          throw new PolicyRefusal(
+              "preview.budget", "The animal subject exceeds its input allowance");
+        if (!LoadedGraphicResources.snapshot().ready())
+          return CompletableFuture.completedFuture(
+              new GraphicScenePreparation.Unavailable(
+                  problem(
+                      "preview.resources_unavailable",
+                      "Loaded resources are unavailable; finish or retry the resource reload")));
+        return CompletableFuture.completedFuture(
+            new NativeGraphicContribution<>(
+                NativeEntityAdapter.INSTANCE,
+                request.subject(),
+                request.stamp(),
+                GraphicCamera.STANDARD,
+                List.of(
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/source"),
+                        "Source",
+                        "Fresh native animal and renderer in the current registry context"),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/pose"),
+                        "Pose",
+                        request.subject().baby()
+                            ? "Static native baby reference"
+                            : "Static native adult reference"),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/rendering"),
+                        "Rendering",
+                        "Isolated full-bright reference; no world insertion, entity ticking, equipment, player skin, or live renderer reuse"))));
+      }
+    };
+  }
+
   /**
    * Fresh native single-chest renderer and explicit static lid pose, without a live block entity.
    */

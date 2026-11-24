@@ -2,6 +2,7 @@ package example.reform.platform.mixin;
 
 import design.inherent.reform.minecraft.client.ClientGraphicHost;
 import example.reform.platform.PlatformChestChecks;
+import example.reform.platform.PlatformEntityChecks;
 import example.reform.platform.PlatformLoadedBlockChecks;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,5 +16,6 @@ abstract class GraphicRequestMixin {
   private void requested(Object subject, CallbackInfoReturnable<ClientGraphicHost.Attempt> result) {
     PlatformLoadedBlockChecks.request(subject, result.getReturnValue());
     PlatformChestChecks.request(subject, result.getReturnValue());
+    PlatformEntityChecks.request(subject, result.getReturnValue());
   }
 }

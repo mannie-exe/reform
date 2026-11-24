@@ -37,6 +37,7 @@ abstract class GraphicDrawMixin {
       example.reform.platform.PlatformLoadedItemChecks.recordFailure(this, failed);
       example.reform.platform.PlatformLoadedBlockChecks.failure(this, failed);
       example.reform.platform.PlatformChestChecks.failure(this, failed);
+      example.reform.platform.PlatformEntityChecks.failure(this, failed);
       throw failed;
     }
   }
@@ -47,6 +48,7 @@ abstract class GraphicDrawMixin {
         this, result.getReturnValue());
     example.reform.platform.PlatformLoadedBlockChecks.draw(this, result.getReturnValue());
     example.reform.platform.PlatformChestChecks.draw(this, result.getReturnValue());
+    example.reform.platform.PlatformEntityChecks.draw(this, result.getReturnValue());
     PlatformTaskChecks.recordDraw(this, result.getReturnValue());
     example.reform.platform.PlatformLoadedSpriteChecks.recordDraw(this, result.getReturnValue());
     example.reform.platform.PlatformLoadedItemChecks.recordDraw(this, result.getReturnValue());

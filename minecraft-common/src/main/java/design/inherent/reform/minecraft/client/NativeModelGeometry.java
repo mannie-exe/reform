@@ -6,25 +6,27 @@ import design.inherent.reform.presentation.graphics.GraphicLimits;
 import net.minecraft.world.phys.AABB;
 
 /** Counts actual native emitted vertices for admission and fit; retains no replacement mesh. */
-final class NativeChestGeometry implements VertexConsumer {
+final class NativeModelGeometry implements VertexConsumer {
   private final long maximumVertices;
   private long vertices;
   private double minX = Double.POSITIVE_INFINITY, minY = minX, minZ = minX;
   private double maxX = Double.NEGATIVE_INFINITY, maxY = maxX, maxZ = maxX;
 
-  NativeChestGeometry(GraphicLimits limits) {
+  NativeModelGeometry(GraphicLimits limits, int requiredLayers) {
     // Canonical position/normal/UV size, not native object or allocator memory.
     maximumVertices = limits.outputBytes() / (8 * Float.BYTES);
-    if (limits.resources() < 3)
-      throw new PolicyRefusal("preview.budget", "The chest needs three native model layers");
+    if (limits.resources() < requiredLayers)
+      throw new PolicyRefusal(
+          "preview.budget", "The reference exceeds its native model-layer allowance");
   }
 
   public VertexConsumer addVertex(float x, float y, float z) {
     if (++vertices > maximumVertices)
-      throw new PolicyRefusal("preview.budget", "The chest exceeds its native vertex allowance");
+      throw new PolicyRefusal(
+          "preview.budget", "The reference exceeds its native vertex allowance");
     if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z))
       throw new NativeGraphicUnavailable(
-          "preview.chest_geometry", "The native chest has non-finite geometry");
+          "preview.model_geometry", "The native reference has non-finite geometry");
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
     minZ = Math.min(minZ, z);
@@ -37,7 +39,7 @@ final class NativeChestGeometry implements VertexConsumer {
   AABB bounds() {
     if (vertices == 0)
       throw new NativeGraphicUnavailable(
-          "preview.chest_geometry", "The native chest model is empty");
+          "preview.model_geometry", "The native reference model is empty");
     return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
   }
 
