@@ -342,14 +342,14 @@ final class PlatformRootBatchChecks {
         check.accept(
             "owner retirement invalidates its old batch and result without resurrection",
             !prior.isOpen()
-                && !workflow
-                    .navigation()
-                    .inspect(new ClientDestination.BatchReview(SCOPE))
-                    .available()
-                && !workflow
-                    .navigation()
-                    .inspect(new ClientDestination.BatchResult(SCOPE, submission.snapshot().id()))
-                    .available());
+                && workflow.navigation().inspect(new ClientDestination.BatchReview(SCOPE)).kind()
+                    == DestinationAvailability.Kind.MISSING
+                && workflow
+                        .navigation()
+                        .inspect(
+                            new ClientDestination.BatchResult(SCOPE, submission.snapshot().id()))
+                        .kind()
+                    == DestinationAvailability.Kind.MISSING);
         workflow.close();
         NativeScreens.open(client, parent);
         stage = 24;
