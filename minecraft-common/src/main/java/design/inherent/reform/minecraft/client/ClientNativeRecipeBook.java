@@ -100,6 +100,10 @@ public final class ClientNativeRecipeBook {
       throw refusal(
           "recipe.book_unavailable", "This screen does not expose one mounted native recipe book.");
     var book = books.getFirst();
+    if (!book.isVisible() && NativeRecipeCompatibility.emiInstalled())
+      throw refusal(
+          "recipe.book_integration_unavailable",
+          "Opening the native recipe book through re:form is not supported with EMI installed. Use the screen's own controls or EMI.");
     var buttons =
         owner.children().stream()
             .filter(ImageButton.class::isInstance)

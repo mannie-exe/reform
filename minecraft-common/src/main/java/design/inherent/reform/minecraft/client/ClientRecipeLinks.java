@@ -54,7 +54,15 @@ public final class ClientRecipeLinks {
         throw refusal(
             "recipe.container_context",
             "Open this link from its current native inventory or crafting screen.");
+      var before = context();
       var prepared = prepare(destination, origin);
+      if (NativeScreens.current(client) != origin
+          || client.player == null
+          || client.player.containerMenu != origin.getMenu()
+          || !before.equals(context()))
+        throw refusal(
+            "recipe.container_changed",
+            "The native screen or its resources changed during lookup. Open the link again from the current screen.");
       try {
         prepared.open();
         if (NativeScreens.current(client) == origin || !prepared.hasParent(origin))
@@ -62,7 +70,9 @@ public final class ClientRecipeLinks {
               "recipe.return_unavailable",
               "This viewer did not preserve the native screen's return path.");
       } catch (RuntimeException | Error failure) {
-        NativeScreens.open(client, origin);
+        if (client.player != null
+            && client.player.containerMenu == origin.getMenu()
+            && before.equals(context())) NativeScreens.open(client, origin);
         throw failure;
       }
       attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);

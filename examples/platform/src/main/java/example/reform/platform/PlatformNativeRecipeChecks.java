@@ -30,6 +30,10 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
   private CompletableFuture<Void> survival;
   private boolean emi;
   private int stage, mode;
+  private ClientNativeRecipeBook.Result bookResult;
+  private AutoCloseable simulated;
+  private int simulatedOpens;
+  private NavigationAttempt simulatedAttempt;
 
   static java.util.concurrent.CompletionStage<JsonObject> run(ClientRegistration registration) {
     return PlatformFormProbe.run(
@@ -60,6 +64,23 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
     var result = new JsonObject();
     result.addProperty("status", "PASS");
     result.add("checks", checks);
+    if (bookResult != null) {
+      var book = new JsonObject();
+      book.addProperty("visible", bookResult.visible());
+      book.addProperty("changed", bookResult.changed());
+      var issues = new JsonArray();
+      for (var issue : bookResult.report().issues())
+        issues.add(issue.code() + ": " + issue.fallback());
+      book.add("issues", issues);
+      book.addProperty("complete", bookResult.report().complete());
+      book.addProperty("cause", bookResult.cause().map(Throwable::toString).orElse(""));
+      result.add("bookResult", book);
+    }
+    result.addProperty("simulatedContainerOpenCalls", simulatedOpens);
+    if (simulatedAttempt != null)
+      result.addProperty(
+          "simulatedContainerOutcome",
+          simulatedAttempt.result().map(r -> r.outcome().name()).orElse("PENDING"));
     result.addProperty("emiRequested", emi);
     result.addProperty("knownRecipeCount", unlocked == null ? -1 : unlocked.size());
     return result;
@@ -190,10 +211,28 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
       case 5 -> {
         check(
             "owner supplies actual current player inventory/menu",
-            client.player.containerMenu == inventory.getMenu()
-                && ClientNativeRecipeBook.inspect(inventory).kind()
-                    == DestinationAvailability.Kind.READY);
+            client.player.containerMenu == inventory.getMenu());
+        if (emi) {
+          var availability = ClientNativeRecipeBook.inspect(inventory);
+          bookResult = ClientNativeRecipeBook.open(inventory);
+          check(
+              "EMI native book integration refuses before invoking repurposed action",
+              availability.kind() == DestinationAvailability.Kind.UNAVAILABLE
+                  && availability.report().issues().stream()
+                      .anyMatch(issue -> issue.code().equals("recipe.book_integration_unavailable"))
+                  && !bookResult.report().valid()
+                  && !bookResult.visible()
+                  && !bookResult.changed()
+                  && NativeScreens.current(client) == inventory);
+          unchanged();
+          stage = 6;
+          break;
+        }
+        check(
+            "current native book context is ready",
+            ClientNativeRecipeBook.inspect(inventory).kind() == DestinationAvailability.Kind.READY);
         var opened = ClientNativeRecipeBook.open(inventory);
+        bookResult = opened;
         check(
             "existing native book opens through its own action",
             opened.report().valid() && opened.visible());
@@ -253,6 +292,53 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
       }
       case 9 -> {
         unchanged();
+        if (!emi) {
+          simulated =
+              ClientRecipeLinks.register(
+                  RecipeLinkPolicy.Provider.JEI,
+                  new ClientRecipeLinks.Adapter() {
+                    public Set<RecipeLinkRequest.Kind> kinds() {
+                      return Set.of(RecipeLinkRequest.Kind.PRODUCING);
+                    }
+
+                    public Optional<design.inherent.reform.owner.PolicyRefusal> unavailable(
+                        Screen origin) {
+                      return Optional.empty();
+                    }
+
+                    public ClientRecipeLinks.Prepared prepare(
+                        RecipeLinkRequest request, Screen origin) {
+                      NativeScreens.open(client, null);
+                      return new ClientRecipeLinks.Prepared() {
+                        public void open() {
+                          simulatedOpens++;
+                          throw new design.inherent.reform.owner.PolicyRefusal(
+                              "fixture.container_retired",
+                              "Simulated lookup retired its old container before activation");
+                        }
+
+                        public boolean hasParent(Screen origin) {
+                          return false;
+                        }
+                      };
+                    }
+                  });
+          var destination =
+              new ClientDestination.Recipe(
+                  new RecipeLinkRequest(
+                      RecipeLinkRequest.Kind.PRODUCING,
+                      DocumentId.parse("minecraft:crafting_table")),
+                  RecipeLinkPolicy.standard().choosing(RecipeLinkPolicy.Provider.JEI));
+          simulatedAttempt = ClientRecipeLinks.openContainer(inventory, destination);
+          check(
+              "simulated retired container lookup never enters or resurrects old view",
+              simulatedOpens == 0
+                  && simulatedAttempt.result().orElseThrow().outcome()
+                      == NavigationAttempt.Outcome.REFUSED
+                  && NativeScreens.current(client) == null);
+          simulated.close();
+          simulated = null;
+        }
         NativeScreens.open(client, null);
         check(
             "retired native book screen is unavailable without resurrection",
@@ -290,6 +376,14 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
 
   @Override
   public void close() {
+    if (simulated != null) {
+      try {
+        simulated.close();
+      } catch (Exception failed) {
+        throw new IllegalStateException("Simulated adapter cleanup failed", failed);
+      }
+      simulated = null;
+    }
     if (workflow != null && workflow.isOpen()) workflow.close();
   }
 }

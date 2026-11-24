@@ -37,6 +37,8 @@ The 1.21.1 adapter supports producing recipes, uses, exact recipe identity, and 
 
 EMI requires a real, already-open native container to preserve its parent. The shared settings root reports `recipe.return_unavailable` and offers a ready admitted alternate explicitly. It never manufactures an inventory screen. Owners with an actual native `AbstractContainerScreen` can call `ClientRecipeLinks.openContainer(owner, destination)`; the current screen and the player's actual menu must still match. The result uses the same identified `NavigationAttempt`. The caller can inspect admitted alternatives and explicitly choose one; no preference is silently rewritten.
 
+After explicit lookup, the helper rechecks the current container, menu, and world/resource context before invoking the prepared action. A lookup that retires its origin is refused without reopening it. Failure restoration also requires the original menu and context; it does not restore a retired world or menu.
+
 `ClientRecipeLinks.context()` exposes world/connection and resource-generation identities without retaining native owners. `resourcesReady` describes client resources only. It grants no read, write, gameplay, or menu authority. An adapter still checks its actual viewer and current native screen.
 
 ## Explicit native recipe book
@@ -45,13 +47,15 @@ EMI requires a real, already-open native container to preserve its parent. The s
 
 The helper identifies the mounted book and its actual native visibility action, using a client-only read accessor for the button's sprite identity. It invokes the native button so Minecraft updates both book visibility and container placement. Modified, missing, or ambiguous controls report unavailable. Already-visible books stay visible. This does not replace a renderer, craft, transfer, give items, or grant unlocks. The ordinary Minecraft book-open preference can change through its own action; no re:form configuration file is created.
 
+EMI can repurpose that same button without changing its native identity. With EMI installed, re:form conservatively refuses to activate a closed native book with `recipe.book_integration_unavailable`. This is a limit of this helper, not a claim about every EMI configuration. It does not read or override EMI's preference; the screen's own controls and the separately admitted EMI links remain available. An already-visible native book requires no activation.
+
 The result reports the supplied owner's observed visibility, whether that displayed state changed, its structured report, and an optional cause. Check the report even if the book became visible: a failing native callback is not evidence that nothing changed. A stale or retired owner is unavailable and is never reopened implicitly.
 
 ## Qualification
 
 Candidate 0.4.0-dev.76 passes two actual client boots on each target for all five JEI link kinds, exact original-parent return with a dirty editor and retained native caret, missing-match refusal, and explicit alternate selection. The fixture leaves its source file unchanged. JEI logged a delayed history-save error after world departure; no upstream suppression or correction is claimed. The four actual client absent paths also pass, with the loaders confirming no JEI or EMI, unavailable resolution, unchanged source, and normal shutdown. Candidate 0.4.0-dev.77 additionally passes a controlled public-adapter lookup supersession case and ordinary JEI handoffs on NeoForge 1.21.1 and Fabric 26.3, with two boots per case and target. This controlled case is not a reproduced JEI defect or proof for arbitrary callbacks inside a foreign viewer. Dedicated-server absence and other context changes remain separate checks; consult the current verification record for tested artifacts.
 
-The native book and EMI adapter are new engineering inputs pending their actual packaged fixtures. No EMI 26.3 compatibility is claimed. Compilation is not evidence of native opening, return, permissions, or unchanged inventory and unlocks.
+Candidate 0.4.0-dev.78 passes the supplied native book fixture on NeoForge 1.21.1 and Fabric 26.3, with two normal boots per target and unchanged inventory, unlocks, and owner file. An actual EMI fixture exposed the repurposed native button; a separate controlled adapter lookup exposed restoration of a retired container. Both negative records remain attributed to dev.78. Candidate dev.79 adds the compatibility refusal and a post-lookup container/context check; its native qualification is separate. No EMI 26.3 compatibility is claimed. Compilation is not evidence of native opening, return, permissions, or unchanged inventory and unlocks.
 
 ## Updating and qualifying adapters
 
