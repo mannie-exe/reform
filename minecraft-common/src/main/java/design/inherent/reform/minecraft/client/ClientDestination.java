@@ -33,6 +33,14 @@ public sealed interface ClientDestination {
     }
   }
 
+  /** Inspect one exact retained document operation without starting or repeating its effect. */
+  record DocumentOperation(DocumentId route, UUID handle) implements ClientDestination {
+    public DocumentOperation {
+      Objects.requireNonNull(route);
+      Objects.requireNonNull(handle);
+    }
+  }
+
   record Placement(DestinationId id) implements ClientDestination {
     public Placement {
       Objects.requireNonNull(id);

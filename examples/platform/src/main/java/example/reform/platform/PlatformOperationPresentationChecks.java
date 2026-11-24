@@ -41,8 +41,41 @@ final class PlatformOperationPresentationChecks {
     this.capture = capture;
   }
 
-  private OperationScreen<?> operation() {
-    return (OperationScreen<?>) NativeScreens.current(client);
+  private Screen operation() {
+    if (NativeScreens.current(client) != workflow.screen())
+      throw new AssertionError("Operation replaced root");
+    return workflow.screen();
+  }
+
+  private Optional<? extends OperationSnapshot<?>> observed() {
+    return workflow.operationInspection().flatMap(ClientOperationInspection::observedOperation);
+  }
+
+  private long taskPanels(Screen screen) {
+    return screen.children().stream()
+        .filter(ScrollFrame.class::isInstance)
+        .map(ScrollFrame.class::cast)
+        .filter(
+            frame ->
+                widgets(frame).stream()
+                    .anyMatch(
+                        control ->
+                            Set.of(
+                                    "Show technical details",
+                                    "Hide technical details",
+                                    "Next details",
+                                    "Previous details")
+                                .contains(control.getMessage().getString())))
+        .count();
+  }
+
+  private Button back(Screen screen) {
+    return widgets(screen).stream()
+        .filter(Button.class::isInstance)
+        .map(Button.class::cast)
+        .filter(control -> control.getMessage().getString().equals("Back"))
+        .max(Comparator.comparingInt(Button::getY))
+        .orElseThrow();
   }
 
   private void press(Screen screen, Button control) {
@@ -169,7 +202,7 @@ final class PlatformOperationPresentationChecks {
         stage = 2;
       }
       case 2 -> {
-        var state = operation().observedOperation().orElse(null);
+        var state = observed().orElse(null);
         if (state == null || entered != 1) return false;
         identity = state.id();
         check.accept(
@@ -180,7 +213,7 @@ final class PlatformOperationPresentationChecks {
       }
       case 3 -> {
         var screen = operation();
-        var state = screen.observedOperation().orElseThrow();
+        var state = observed().orElseThrow();
         if (!state.terminal()) return false;
         check.accept(
             "result receipt and ordinary narration retain the actual effect without technical IDs",
@@ -189,8 +222,7 @@ final class PlatformOperationPresentationChecks {
                 && screen.getNarrationMessage().getString().contains("No settings were saved")
                 && !screen.getNarrationMessage().getString().contains(identity.toString()));
         check.accept(
-            "wide operation separates summary from captured details",
-            screen.children().stream().filter(ScrollFrame.class::isInstance).count() == 2);
+            "wide operation separates summary from captured details", taskPanels(screen) == 2);
         geometry(screen);
         press(screen, button(screen, "Next details"));
         oldWidth = screen.width;
@@ -209,8 +241,8 @@ final class PlatformOperationPresentationChecks {
         if (screen.width >= oldWidth || screen.width > 400) return false;
         check.accept(
             "narrow operation keeps the exact handle, result page and one complete flow",
-            screen.children().stream().filter(ScrollFrame.class::isInstance).count() == 1
-                && screen.observedOperation().orElseThrow().id().equals(identity)
+            taskPanels(screen) == 1
+                && observed().orElseThrow().id().equals(identity)
                 && button(screen, "Previous details").active
                 && starts == 1);
         geometry(screen);
@@ -227,15 +259,15 @@ final class PlatformOperationPresentationChecks {
         if (screen.width != oldWidth || screen.height != oldHeight) return false;
         check.accept(
             "returned operation restores adjacent details without restarting or losing its page",
-            screen.children().stream().filter(ScrollFrame.class::isInstance).count() == 2
-                && screen.observedOperation().orElseThrow().id().equals(identity)
+            taskPanels(screen) == 2
+                && observed().orElseThrow().id().equals(identity)
                 && button(screen, "Previous details").active
                 && starts == 1);
         press(screen, button(screen, "Show technical details"));
         check.accept(
             "technical disclosure exposes the same operation identity without another effect",
             screen.getNarrationMessage().getString().contains(identity.toString()) && starts == 1);
-        press(screen, button(screen, "Back"));
+        press(screen, back(screen));
         blocked = true;
         stage = 6;
       }
@@ -252,8 +284,8 @@ final class PlatformOperationPresentationChecks {
       case 7 -> {
         check.accept(
             "result navigation does not repeat the effect or replace its identity",
-            operation().observedOperation().orElseThrow().id().equals(identity) && starts == 1);
-        press(operation(), button(operation(), "Back"));
+            observed().orElseThrow().id().equals(identity) && starts == 1);
+        press(operation(), back(operation()));
         observable = false;
         blocked = false;
         stage = 8;
@@ -277,7 +309,7 @@ final class PlatformOperationPresentationChecks {
         stage = 10;
       }
       case 10 -> {
-        var state = operation().observedOperation().orElse(null);
+        var state = observed().orElse(null);
         if (state == null || entered != 2) return false;
         check.accept(
             "explicit repeat starts a distinct operation once",
@@ -286,7 +318,7 @@ final class PlatformOperationPresentationChecks {
         stage = 11;
       }
       case 11 -> {
-        var state = operation().observedOperation().orElseThrow();
+        var state = observed().orElseThrow();
         if (!state.cancellationRequested()) return false;
         check.accept(
             "cancellation request retains pending work until its provider drains",
@@ -295,12 +327,12 @@ final class PlatformOperationPresentationChecks {
         stage = 12;
       }
       case 12 -> {
-        var state = operation().observedOperation().orElseThrow();
+        var state = observed().orElseThrow();
         if (!state.terminal()) return false;
         check.accept(
             "cancelled operation remains an actual cancellation rather than a save receipt",
             state.state() == OperationSnapshot.State.CANCELLED && starts == 2);
-        press(operation(), button(operation(), "Back"));
+        press(operation(), back(operation()));
         observable = false;
         press(workflow.screen(), button(workflow.screen(), "Inspect values"));
         check.accept(
@@ -336,14 +368,14 @@ final class PlatformOperationPresentationChecks {
         stage = 15;
       }
       case 15 -> {
-        var state = operation().observedOperation().orElse(null);
+        var state = observed().orElse(null);
         if (state == null || !state.terminal()) return false;
         check.accept(
             "restored inspection observes that same request without repeating its effect",
             starts == 3
                 && state.state() == OperationSnapshot.State.COMPLETED
                 && state.result().orElseThrow().equals("Previously unobserved request completed."));
-        press(operation(), button(operation(), "Back"));
+        press(operation(), back(operation()));
         navigateAtStart = true;
         press(workflow.screen(), button(workflow.screen(), "Inspect values"));
         stage = 16;
@@ -368,11 +400,11 @@ final class PlatformOperationPresentationChecks {
         stage = 17;
       }
       case 17 -> {
-        if (!navigation.isDone() || operation().observedOperation().isEmpty()) return false;
+        if (!navigation.isDone() || observed().isEmpty()) return false;
         check.accept(
             "explicit result navigation retains the reentrant request without another start",
-            navigation.join().outcome() == NavigationAttempt.Outcome.HANDED_OFF
-                && operation().observedOperation().orElseThrow().id().equals(latest.snapshot().id())
+            navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED
+                && observed().orElseThrow().id().equals(latest.snapshot().id())
                 && starts == 4);
         workflow.close();
         owner.close();

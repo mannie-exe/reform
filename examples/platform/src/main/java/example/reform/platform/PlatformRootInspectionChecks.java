@@ -158,6 +158,72 @@ final class PlatformRootInspectionChecks {
             focused == button(workflow.screen(), "Label")
                 && input(workflow.screen(), "Find a field").getValue().equals("a")
                 && input(workflow.screen(), "Find a field").getCursorPosition() == 1);
+        var export = button(workflow.screen(), "Export value…");
+        if (!export.active) return false;
+        click(workflow.screen(), export);
+        stage = 33;
+      }
+      case 33 -> {
+        var output =
+            workflow.operationInspection().flatMap(ClientOperationInspection::observedOperation);
+        if (output.isEmpty() || !output.orElseThrow().terminal()) return false;
+        check.accept(
+            "captured export opens its original handle inside the same root",
+            NativeScreens.current(client) == workflow.screen()
+                && workflow.navigation().current().orElseThrow()
+                    instanceof ClientDestination.DocumentOperation
+                && workflow.editor(route) == editor
+                && inspection.reviewedInput().orElseThrow() == reviewed
+                && Arrays.equals(source, source()));
+        var back =
+            widgets(workflow.screen()).stream()
+                .filter(Button.class::isInstance)
+                .map(Button.class::cast)
+                .filter(w -> w.getMessage().getString().equals("Back"))
+                .min(Comparator.comparingInt(Button::getY))
+                .orElseThrow();
+        check.accept(
+            "root export history Back is a native focus target", focus(workflow.screen(), back));
+        click(workflow.screen(), back);
+        stage = 34;
+      }
+      case 34 -> {
+        if (workflow.operationInspection().isPresent()) return false;
+        check.accept(
+            "operation Back returns to the same originating inspection capture",
+            workflow.inspection().orElseThrow() == inspection
+                && inspection.reviewedInput().orElseThrow() == reviewed
+                && Arrays.equals(source, source()));
+        var forward = button(workflow.screen(), "Forward");
+        check.accept(
+            "export result remains in native Forward history",
+            forward.active && focus(workflow.screen(), forward));
+        click(workflow.screen(), forward);
+        stage = 35;
+      }
+      case 35 -> {
+        if (workflow.operationInspection().isEmpty()) return false;
+        var back =
+            widgets(workflow.screen()).stream()
+                .filter(Button.class::isInstance)
+                .map(Button.class::cast)
+                .filter(w -> w.getMessage().getString().equals("Back"))
+                .min(Comparator.comparingInt(Button::getY))
+                .orElseThrow();
+        check.accept(
+            "returned export retains a native history Back",
+            back.active && focus(workflow.screen(), back));
+        click(workflow.screen(), back);
+        stage = 36;
+      }
+      case 36 -> {
+        if (workflow.operationInspection().isPresent()) return false;
+        check.accept(
+            "result history never inserts a phantom editable-document visit",
+            workflow.inspection().filter(value -> value == inspection).isPresent()
+                && inspection.reviewedInput().orElseThrow() == reviewed
+                && workflow.editor(route) == editor
+                && Arrays.equals(source, source()));
         stage = 4;
       }
       case 4 -> {

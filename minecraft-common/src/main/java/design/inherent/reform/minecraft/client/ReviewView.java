@@ -34,22 +34,7 @@ import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 
 /** Identified source/value inspection, with an optional explicit conditional-submit handoff. */
-final class ReviewView<T> extends FormView implements ClientInspection {
-  private boolean composed, unified, visible;
-
-  private boolean currentHost() {
-    return visible && isCurrent();
-  }
-
-  private Consumer<FormPanel> prefix = ignored -> {}, suffix = ignored -> {};
-
-  void compose(boolean unified, Consumer<FormPanel> prefix, Consumer<FormPanel> suffix) {
-    composed = true;
-    this.unified = unified;
-    this.prefix = Objects.requireNonNull(prefix);
-    this.suffix = Objects.requireNonNull(suffix);
-  }
-
+final class ReviewView<T> extends MetadataView implements ClientInspection {
   private enum Value {
     BASELINE,
     DRAFT,
@@ -57,26 +42,6 @@ final class ReviewView<T> extends FormView implements ClientInspection {
   }
 
   private static final int SUMMARY_CHARACTERS = 512, ISSUE_PAGE = 16;
-  private ClientTheme scopedTheme;
-  private TaskPresentation scopedTasks;
-
-  void presentation(ClientTheme theme, TaskPresentation tasks) {
-    scopedTheme = Objects.requireNonNull(theme);
-    scopedTasks = Objects.requireNonNull(tasks);
-  }
-
-  @Override
-  protected ClientTheme theme() {
-    return scopedTheme == null ? super.theme() : scopedTheme;
-  }
-
-  private TaskPresentation taskPresentation() {
-    return scopedTasks == null ? TaskPresentation.standard() : scopedTasks;
-  }
-
-  Component caption() {
-    return title.copy();
-  }
 
   design.inherent.reform.definition.DocumentId document() {
     return actions.definition().id();

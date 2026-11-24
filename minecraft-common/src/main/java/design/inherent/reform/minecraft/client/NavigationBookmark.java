@@ -27,6 +27,7 @@ public record NavigationBookmark(
     private final String filter;
     private final WorkspaceNavigation.UiState tree;
     private final ReviewView.Bookmark inspection;
+    private final OperationView.Bookmark operation;
 
     NavigationState(String filter, WorkspaceNavigation.UiState tree) {
       this(filter, tree, null);
@@ -34,6 +35,15 @@ public record NavigationBookmark(
 
     NavigationState(
         String filter, WorkspaceNavigation.UiState tree, ReviewView.Bookmark inspection) {
+      this(filter, tree, inspection, null);
+    }
+
+    NavigationState(
+        String filter,
+        WorkspaceNavigation.UiState tree,
+        ReviewView.Bookmark inspection,
+        OperationView.Bookmark operation) {
+      this.operation = operation;
       this.inspection = inspection;
       this.filter = Objects.requireNonNull(filter);
       this.tree = Objects.requireNonNull(tree);
@@ -61,6 +71,10 @@ public record NavigationBookmark(
 
     public int expandedCount() {
       return tree.expanded().size();
+    }
+
+    OperationView.Bookmark operation() {
+      return operation;
     }
 
     ReviewView.Bookmark inspection() {

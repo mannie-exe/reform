@@ -36,10 +36,21 @@ final class WorkspaceNavigation {
     DESTINATION,
     SECTION,
     INSPECTION,
+    DOCUMENT_OPERATION,
+    OPERATION_RESULT,
     FIELD
   }
 
-  record Key(Kind kind, DocumentId placement, Optional<FieldPath> field, Optional<String> section) {
+  record Key(
+      Kind kind,
+      DocumentId placement,
+      Optional<FieldPath> field,
+      Optional<String> section,
+      Optional<java.util.UUID> operation) {
+    Key(Kind kind, DocumentId placement, Optional<FieldPath> field, Optional<String> section) {
+      this(kind, placement, field, section, Optional.empty());
+    }
+
     Key(Kind kind, DocumentId placement, Optional<FieldPath> field) {
       this(kind, placement, field, Optional.empty());
     }
@@ -49,6 +60,11 @@ final class WorkspaceNavigation {
       Objects.requireNonNull(placement);
       Objects.requireNonNull(field);
       Objects.requireNonNull(section);
+      Objects.requireNonNull(operation);
+      if ((kind == Kind.DOCUMENT_OPERATION || kind == Kind.OPERATION_RESULT)
+          != operation.isPresent())
+        throw new IllegalArgumentException(
+            "Only a result navigation key names an operation handle");
       if ((kind == Kind.FIELD) != field.isPresent())
         throw new IllegalArgumentException("Only a field navigation key names a field");
       if ((kind == Kind.SECTION) != section.isPresent())

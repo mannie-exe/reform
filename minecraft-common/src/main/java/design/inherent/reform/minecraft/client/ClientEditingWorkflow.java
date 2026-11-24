@@ -223,7 +223,20 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     return isOpen() ? Optional.ofNullable(overview.inspection) : Optional.empty();
   }
 
+  /** Cached actual operation disclosure; this never starts work or grants authority. */
+  public Optional<ClientOperationInspection> operationInspection() {
+    ClientSettingsRuntime.requireClientThread();
+    return isOpen()
+        ? Optional.ofNullable(overview.operationInspection).map(value -> value.view())
+        : Optional.empty();
+  }
+
   private ClientDestination destinationFor(WorkspaceNavigation.Key key) {
+    if (key.kind() == WorkspaceNavigation.Kind.DOCUMENT_OPERATION)
+      return new ClientDestination.DocumentOperation(
+          key.placement(), key.operation().orElseThrow());
+    if (key.kind() == WorkspaceNavigation.Kind.OPERATION_RESULT)
+      return new ClientDestination.OperationResult(key.placement(), key.operation().orElseThrow());
     if (key.kind() == WorkspaceNavigation.Kind.INSPECTION)
       return new ClientDestination.Inspection(key.placement());
     if (key.kind() == WorkspaceNavigation.Kind.HOME) return new ClientDestination.Home();
@@ -249,6 +262,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   Optional<ClientDestination> currentDestination() {
     ClientSettingsRuntime.requireClientThread();
+    if (isOpen() && overview.operationInspection != null)
+      return Optional.of(overview.operationInspection.destination());
     if (isOpen() && overview.inspection != null)
       return Optional.of(new ClientDestination.Inspection(overview.inspectionRoute));
     return !isOpen() || overview.selectedKey == null
@@ -258,7 +273,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   Optional<NavigationAttempt> navigateUp() {
     requireOverview();
-    if (overview.inspection != null)
+    if (overview.operationInspection != null && overview.inspection != null)
+      return Optional.of(
+          openDestination(new ClientDestination.Inspection(overview.inspectionRoute)));
+    if (overview.metadata() != null)
       return Optional.of(openDestination(destinationFor(overview.selectedKey)));
     var current =
         overview.navigationEntries(true).stream()
@@ -276,6 +294,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     requireOverview();
     overview.beforeRebuild();
     var inspected = overview.inspection == null ? null : overview.inspection.bookmark();
+    var operated =
+        overview.operationInspection == null
+            ? null
+            : overview.operationInspection.view().bookmark();
     var position = overview.navigation.position(overview.selectedKey).orElse(null);
     return new NavigationBookmark(
         navigationIdentity,
@@ -284,7 +306,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         Optional.ofNullable(position == null ? null : position.focus()),
         Optional.of(
             new NavigationBookmark.NavigationState(
-                overview.selectedFilter.name(), overview.navigation.uiState(), inspected)));
+                overview.selectedFilter.name(),
+                overview.navigation.uiState(),
+                inspected,
+                operated)));
   }
 
   NavigationAttempt restoreBookmark(NavigationBookmark bookmark) {
@@ -318,6 +343,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private NavigationSelection resolveDestination(ClientDestination target) {
     if (target instanceof ClientDestination.Inspection inspection)
       target = new ClientDestination.Document(inspection.route());
+    if (target instanceof ClientDestination.DocumentOperation operation)
+      target = new ClientDestination.Document(operation.route());
     if (target instanceof ClientDestination.View view) {
       if (!presentation.referenceTasks().containsKey(view.id())
           && !presentation.views().containsKey(view.id())) throw missingDestination();
@@ -405,6 +432,34 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (!isOpen())
       return availability(
           DestinationAvailability.Kind.CLOSED, "navigation.closed", "This workflow is closed.");
+    if (target instanceof ClientDestination.DocumentOperation operation) {
+      var cached = overview.operationViews.get(operation.handle());
+      if (cached == null || !cached.destination().equals(operation) || !cached.view().retained())
+        return availability(
+            DestinationAvailability.Kind.MISSING,
+            "navigation.result_missing",
+            "That operation result is no longer retained.");
+      var bound = entries.get(operation.route());
+      if (bound == null || bound.editor == null || !bound.editor.isOpen())
+        return availability(
+            DestinationAvailability.Kind.CLOSED, "editor.closed", "This editing context ended.");
+      if (bound
+          .editor
+          .actions()
+          .operation(operation.handle())
+          .filter(value -> value == cached.view().handle())
+          .isEmpty())
+        return availability(
+            DestinationAvailability.Kind.MISSING,
+            "navigation.result_missing",
+            "That operation result is no longer retained.");
+      return cached.view().available()
+          ? availability(DestinationAvailability.Kind.READY, null, null)
+          : availability(
+              DestinationAvailability.Kind.UNAVAILABLE,
+              "navigation.result_unavailable",
+              "This context cannot inspect that operation result.");
+    }
     if (target instanceof ClientDestination.Operation operation)
       return contributions.containsKey(operation.id())
           ? availability(DestinationAvailability.Kind.READY, null, null)
@@ -643,6 +698,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (attempt.target() instanceof ClientDestination.Inspection requested) {
         overview.revealInspection(requested.route(), Objects.requireNonNull(editor));
       }
+      if (attempt.target() instanceof ClientDestination.DocumentOperation operation)
+        overview.activateOperation(
+            Objects.requireNonNull(overview.operationViews.get(operation.handle())));
       if (bookmark != null) overview.restorePosition(bookmark);
       attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
     } catch (RuntimeException failed) {
@@ -666,13 +724,26 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             null);
         return;
       }
+      var bookmark = navigationBookmarks.get(attempt.id());
+      if (bookmark != null && bookmark.navigation().isPresent()) {
+        overview.beforeRebuild();
+        var state = bookmark.navigation().orElseThrow();
+        overview.navigation.restoreUi(state.tree());
+        overview.selectedFilter = Overview.Filter.valueOf(state.filter());
+      }
       if (attempt.target() instanceof ClientDestination.Operation operation) {
         overview.revealOperation(contributions.get(operation.id()));
         attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
       } else {
         var result = (ClientDestination.OperationResult) attempt.target();
         inspectOperation(contributions.get(result.id()));
-        attempt.finish(NavigationAttempt.Outcome.HANDED_OFF, ValidationReport.VALID, null);
+        if (bookmark != null) overview.restorePosition(bookmark);
+        attempt.finish(
+            overview.operationInspection != null
+                ? NavigationAttempt.Outcome.REVEALED
+                : NavigationAttempt.Outcome.HANDED_OFF,
+            ValidationReport.VALID,
+            null);
       }
     } catch (RuntimeException failed) {
       finishNavigationFailure(attempt, failed);
@@ -1397,6 +1468,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (!action.mayObserve().getAsBoolean())
       throw new PolicyRefusal(
           "navigation.result_unavailable", "This context cannot inspect that result.");
+    if (overview.revealRetainedOperation(entry.latest)) return;
     overview.navigate(
         new OperationScreen<>(
             action.title(),
@@ -1405,7 +1477,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             () -> isOpen() && action.mayObserve().getAsBoolean(),
             action.describe(),
             List.of(),
-            () -> NativeScreens.open(Minecraft.getInstance(), overview),
+            () -> overview.navigate(overview),
             this::close));
   }
 
@@ -1414,7 +1486,119 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private DocumentId inspectionRoute;
     private final Map<DocumentId, ReviewView<?>> inspections = new LinkedHashMap<>();
 
+    private record OperationBinding(
+        OperationView<?> view, ClientDestination destination, DocumentId owner) {}
+
+    private OperationBinding operationInspection;
+    private final Map<java.util.UUID, OperationBinding> operationViews = new LinkedHashMap<>();
+
+    private MetadataView metadata() {
+      return operationInspection == null ? inspection : operationInspection.view();
+    }
+
+    private WorkspaceNavigation.Key operationKey(ClientDestination target) {
+      if (target instanceof ClientDestination.DocumentOperation operation)
+        return new WorkspaceNavigation.Key(
+            WorkspaceNavigation.Kind.DOCUMENT_OPERATION,
+            operation.route(),
+            Optional.empty(),
+            Optional.empty(),
+            Optional.of(operation.handle()));
+      var operation = (ClientDestination.OperationResult) target;
+      return new WorkspaceNavigation.Key(
+          WorkspaceNavigation.Kind.OPERATION_RESULT,
+          operation.id(),
+          Optional.empty(),
+          Optional.empty(),
+          Optional.of(operation.handle()));
+    }
+
+    private void hideOperation() {
+      if (operationInspection != null) operationInspection.view().hide();
+      operationInspection = null;
+    }
+
+    private void activateOperation(OperationBinding binding) {
+      beforeRebuild();
+      hideOperation();
+      if (inspection != null) inspection.hide();
+      operationInspection = binding;
+      navigation.task(operationKey(binding.destination()));
+      information.clear();
+      drawerOpen = false;
+      rebuildWidgets();
+      if (!binding.view().isCurrent())
+        throw new IllegalStateException("Operation result was not mounted");
+    }
+
+    private boolean revealRetainedOperation(OperationHandle<?> handle) {
+      var cached = operationViews.get(handle.snapshot().id());
+      if (cached == null || cached.view().handle() != handle || !cached.view().retained())
+        return false;
+      activateOperation(cached);
+      return true;
+    }
+
+    private void retireOperations(DocumentId owner) {
+      var removed =
+          operationViews.values().stream()
+              .filter(value -> owner == null || owner.equals(value.owner()))
+              .toList();
+      for (var binding : removed) {
+        binding.view().retireForNavigation();
+        operationViews.remove(binding.view().handle().snapshot().id());
+        if (operationInspection == binding) {
+          operationInspection = null;
+          navigation.task(null);
+        }
+      }
+    }
+
+    private boolean adoptOperation(OperationScreen<?> screen) {
+      var actual = screen.handle();
+      var id = actual.snapshot().id();
+      var bound =
+          entries.values().stream()
+              .filter(
+                  value ->
+                      value.editor != null
+                          && value.editor.isOpen()
+                          && value
+                              .editor
+                              .actions()
+                              .operation(id)
+                              .filter(handle -> handle == actual)
+                              .isPresent())
+              .findFirst();
+      var contributed =
+          contributions.values().stream().filter(value -> value.latest == actual).findFirst();
+      if (bound.isEmpty() && contributed.isEmpty()) return false;
+      if (revealRetainedOperation(actual)) {
+        screen.borrowView().retireForNavigation();
+        return true;
+      }
+      var view = screen.borrowView();
+      ClientDestination target =
+          bound.isPresent()
+              ? new ClientDestination.DocumentOperation(bound.orElseThrow().form.route(), id)
+              : new ClientDestination.OperationResult(contributed.orElseThrow().action.id(), id);
+      var binding =
+          new OperationBinding(
+              view, target, bound.map(value -> value.form.document()).orElse(null));
+      var replaced = operationViews.put(id, binding);
+      if (replaced != null) replaced.view().retireForNavigation();
+      while (operationViews.size()
+          > design.inherent.reform.presentation.FormCatalog.Limits.STANDARD
+              .maximumHistoryEntries()) {
+        var oldest = operationViews.remove(operationViews.keySet().iterator().next());
+        oldest.view().retireForNavigation();
+      }
+      activateOperation(binding);
+      return true;
+    }
+
     private void hideInspection() {
+      hideOperation();
       if (inspection != null) inspection.hide();
       inspection = null;
       inspectionRoute = null;
@@ -1445,6 +1629,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection() {
+      retireOperations(null);
+      navigation.task(null);
       for (var retained : inspections.values()) retained.retireForNavigation();
       inspections.clear();
       inspection = null;
@@ -1452,17 +1638,29 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection(DocumentId document) {
+      retireOperations(document);
       var retained = inspections.remove(document);
       if (retained == null) return;
       retained.retireForNavigation();
       if (inspection == retained) {
         inspection = null;
         inspectionRoute = null;
+        navigation.task(null);
       }
     }
 
     @Override
     protected boolean managedNavigation(Screen next) {
+      if (next instanceof OperationScreen<?> operation) return adoptOperation(operation);
+      if (next == this
+          && NativeScreens.current(Minecraft.getInstance()) == this
+          && operationInspection != null) {
+        beforeRebuild();
+        hideOperation();
+        navigation.task(inspection == null ? null : inspectionKey(inspectionRoute));
+        rebuildWidgets();
+        return true;
+      }
       if (next instanceof ReviewScreen<?> review) {
         var admitted =
             entries.values().stream()
@@ -1602,6 +1800,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       generation = new Object();
       language = Language.getInstance();
       var token = generation;
+      var metadata = metadata();
       var page = pagePlacements();
       var selected = new LinkedHashMap<DocumentId, List<SettingsView.Selection>>();
       for (var item : page) {
@@ -1701,7 +1900,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               : 0;
       // Measure once with the same labels before mounting, rather than reserving a fixed row count.
       var actionView =
-          inspection != null
+          metadata != null
                   || actionEntry == null
                   || actionEntry.editor == null
                   || !actionEntry.editor.isOpen()
@@ -1808,7 +2007,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                       "Temporarily showing the linked destination; your filter is unchanged."));
           };
       ReferenceTaskView<?, ?> taskBody = null;
-      if (inspection == null && !geometry.navigationOverlay() && taskDeclaration != null) {
+      if (metadata == null && !geometry.navigationOverlay() && taskDeclaration != null) {
         var taskOwner = entry(taskDeclaration.route()).editor;
         if (taskOwner != null
             && taskOwner.isOpen()
@@ -1819,7 +2018,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       activeTask = taskBody;
       var customId = selectedKey == null ? null : new DestinationId(selectedKey.placement());
       var customBody =
-          inspection == null
+          metadata == null
                   && !geometry.navigationOverlay()
                   && presentation.views().containsKey(customId)
               ? customView(customId)
@@ -1848,12 +2047,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 bounds.height(),
                 false,
                 theme());
-        if (inspection == null) beforeContent.accept(panel);
+        if (metadata == null) beforeContent.accept(panel);
       }
       if (!geometry.navigationOverlay()) {
         if (isHome()) appendHome(token);
-        if (inspection != null) {
-          inspection.compose(
+        if (metadata != null) {
+          metadata.compose(
               outerFrame.headerInContent()
                   || outerFrame.statusInContent()
                   || outerFrame.actionsInContent(),
@@ -1865,17 +2064,17 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                       actions.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
               });
           mount(
-              inspection,
+              metadata,
               new FormGeometry.Placement(
                   padding + bounds.x(), bounds.y(), bounds.width(), bounds.height()));
-          panel = inspection.primary();
+          panel = metadata.primary();
         }
         if (customBody != null)
           customBody.append(
               panel, theme(), ClientEditingWorkflow.this.navigation, this::rebuildWidgets);
         if (information.open() && geometry.information().isEmpty()) information.append(panel);
         for (var item :
-            inspection == null
+            metadata == null
                 ? selected.entrySet()
                 : java.util.Set.<Map.Entry<DocumentId, List<SettingsView.Selection>>>of()) {
           var bound = entry(item.getKey());
@@ -1909,7 +2108,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 retry);
           }
         }
-        if (inspection == null && layout != null && !isHome()) {
+        if (metadata == null && layout != null && !isHome()) {
           for (var group : selectedGroups())
             for (var action : group.actions()) operationRow(token, contributions.get(action.id()));
           for (var scope : reviews.values())
@@ -1923,7 +2122,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               review.active = batch == null || !batch.hasActiveOperations();
               panel.row(scope.id().toString(), scope.title(), Component.empty(), review);
             }
-        } else if (inspection == null && !isHome()) {
+        } else if (metadata == null && !isHome()) {
           var review =
               button(
                   token,
@@ -1940,7 +2139,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   "Each document saves separately. Drafts and undo history remain when you browse."),
               review);
         }
-        if (inspection == null && batchView != null)
+        if (metadata == null && batchView != null)
           panel.row(
               Component.empty(),
               Component.empty(),
@@ -1953,22 +2152,22 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             && !isHome()
             && taskBody == null
             && customBody == null
-            && inspection == null)
+            && metadata == null)
           panel.row(text("no_matches", "No matching settings or operations."), Component.empty());
         if (actionView != null) actions.addAll(actionView.ownerActions());
-        if (inspection == null && outerFrame.actionsInContent())
+        if (metadata == null && outerFrame.actionsInContent())
           panel.actions(
               "workspace:actions",
               actions.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
-        if (inspection == null) addRenderableWidget(panel);
+        if (metadata == null) addRenderableWidget(panel);
         if (taskBody != null) taskBody.finish();
-        else if (inspection == null) {
+        else if (metadata == null) {
           panel.finish(0);
           if (returned != null) panel.restore(returned.scroll());
           else if (!resetList && retainedScroll != null) panel.restore(retainedScroll);
         }
         String focus =
-            inspection != null || taskBody != null
+            metadata != null || taskBody != null
                 ? null
                 : returned != null ? returned.focus() : !resetList ? retainedFocus : null;
         if (focus != null) {
@@ -2128,7 +2327,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private boolean isHome() {
-      return selectedKey != null && selectedKey.kind() == WorkspaceNavigation.Kind.HOME;
+      return metadata() == null
+          && selectedKey != null
+          && selectedKey.kind() == WorkspaceNavigation.Kind.HOME;
     }
 
     private void selectHome() {
@@ -2155,8 +2356,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (chain.isEmpty())
         chain.add(
             new WorkspaceHeader.Crumb(text("location_missing", "Unavailable location"), () -> {}));
-      if (inspection != null)
-        chain.addLast(new WorkspaceHeader.Crumb(inspection.caption(), () -> {}));
+      if (metadata() != null)
+        chain.addLast(new WorkspaceHeader.Crumb(metadata().caption(), () -> {}));
       return List.copyOf(chain);
     }
 
@@ -2294,7 +2495,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private ReferenceTaskView<?, ?> activeTask;
 
     private List<ClientWorkflowLayout.Placement> pagePlacements() {
-      if (inspection != null
+      if (metadata() != null
           || isHome()
           || declaredTask() != null
           || selectedKey != null
@@ -2565,8 +2766,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     protected void beforeRebuild() {
-      if (inspection != null) {
-        inspection.preserve();
+      if (metadata() != null) {
+        metadata().preserve();
         navigation.preserve(getFocused());
         return;
       }
@@ -2638,7 +2839,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private void restorePosition(NavigationBookmark bookmark) {
       if (panel == null) return;
       var captured = bookmark.navigation().map(NavigationBookmark.NavigationState::inspection);
-      if (inspection != null && captured.isPresent()) {
+      var operated = bookmark.navigation().map(NavigationBookmark.NavigationState::operation);
+      if (operationInspection != null && operated.isPresent()) {
+        operationInspection.view().restore(operated.orElseThrow());
+      } else if (inspection != null && captured.isPresent()) {
         inspection.restore(captured.orElseThrow());
       } else {
         bookmark.viewport().ifPresent(panel::restore);
@@ -2653,7 +2857,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           if (navigationWidgets.panel().getFocused() != null) setFocused(navigationWidgets.panel());
         }
       }
-      if (inspection == null)
+      if (metadata() == null)
         navigation.remember(
             selectedKey,
             new WorkspaceNavigation.Position(
@@ -2819,8 +3023,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     public void onClose() {
-      if (inspection != null) {
-        inspection.onClose();
+      if (metadata() != null) {
+        metadata().onClose();
         return;
       }
       closeWorkflow();
@@ -2995,7 +3199,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (!isOpen()) return title;
       var message = title.copy().append(". ").append(scopeStatus());
       if (notice != null) message.append(". ").append(notice);
-      if (inspection != null) message.append(". ").append(inspection.getNarrationMessage());
+      if (metadata() != null) message.append(". ").append(metadata().getNarrationMessage());
       if (actionRoute != null
           && entry(actionRoute).editor != null
           && entry(actionRoute).editor.isOpen())
@@ -3004,6 +3208,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private Component scopeStatus() {
+      if (operationInspection != null) return operationInspection.view().context();
       if (isHome())
         return Component.translatableWithFallback(
             "reform.workspace.home_status",
