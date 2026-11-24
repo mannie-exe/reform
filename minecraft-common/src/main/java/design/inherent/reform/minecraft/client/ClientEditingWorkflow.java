@@ -2007,6 +2007,154 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       rebuildWidgets();
     }
 
+    private ChoiceView reviewChoices;
+    private ClientChoiceScreen reviewChoiceHost;
+
+    private void retireReviewChoices() {
+      if (reviewChoices != null) reviewChoices.retireForNavigation();
+      reviewChoices = null;
+      reviewChoiceHost = null;
+    }
+
+    private void hideReviewChoices() {
+      if (reviewChoices != null) reviewChoices.hide();
+      reviewChoices = null;
+      reviewChoiceHost = null;
+    }
+
+    private Optional<Component> reviewChoiceBlocked(Predicate<DocumentId> included) {
+      if (!isOpen()) return Optional.of(text("closed", "This workflow is closed."));
+      for (var bound : entries.values()) {
+        if (!included.test(bound.form.route())) continue;
+        if (bound.retiring || bound.waiting != null || bound.editor != null && bound.editor.busy())
+          return Optional.of(
+              text("review_wait", "Wait for pending document work before reviewing."));
+        var available = bound.form.availability();
+        if (!available.ready())
+          return Optional.of(bound.form.title().copy().append(": ").append(available.message()));
+        if (bound.editor != null && !bound.editor.isOpen())
+          return Optional.of(
+              bound
+                  .form
+                  .title()
+                  .copy()
+                  .append(": ")
+                  .append(
+                      text(
+                          "context_ended",
+                          "This editing context ended. Return to settings to review its state.")));
+        if (bound.editor != null && !bound.editor.actions().mayInspect())
+          return Optional.of(
+              bound
+                  .form
+                  .title()
+                  .copy()
+                  .append(": ")
+                  .append(
+                      text(
+                          "review_read_unavailable",
+                          "This document cannot currently be inspected. Check its state in settings.")));
+      }
+      return Optional.empty();
+    }
+
+    private void returnFromReviewChoices() {
+      navigationRequest = new Object();
+      cancelDeferredNavigation();
+      supersedeNavigation();
+      beforeRebuild();
+      retireReviewChoices();
+      navigation.task(null);
+      rebuildWidgets();
+    }
+
+    private void inspectForClose(DocumentId route) {
+      var attempt = openDestination(new ClientDestination.Document(route));
+      attempt
+          .completion()
+          .whenComplete(
+              (result, failed) -> {
+                if (!isOpen()
+                    || NativeScreens.current(minecraft) != this
+                    || navigationRequest != attempt.id()) return;
+                if (failed != null) {
+                  showOpeningFailure(failed);
+                  return;
+                }
+                if (result.outcome() != NavigationAttempt.Outcome.REVEALED) {
+                  notice =
+                      ClientStatusScreen.reason(
+                          result.report(), text("unavailable", "Inspection is unavailable."));
+                  rebuildWidgets();
+                  return;
+                }
+                try {
+                  var selected = editor(route);
+                  selected.presentation().openInspection(false);
+                  if (inspection == null || !inspection.isCurrent())
+                    throw new PolicyRefusal(
+                        "inspection.input_unaccepted",
+                        "Repair or revert the current field input before inspecting these changes.");
+                } catch (PolicyRefusal refused) {
+                  showOpeningFailure(refused);
+                }
+              });
+    }
+
+    private void showReviewChoices() {
+      beforeRebuild();
+      hideInspection();
+      var choices = new ArrayList<ClientChoiceScreen.Choice>();
+      for (var scope : reviews.values()) {
+        choices.add(
+            new ClientChoiceScreen.Choice(
+                "scope-" + choices.size(),
+                scope.title(),
+                Component.translatableWithFallback(
+                    "reform.workflow.review_scope_help",
+                    "Documents to review: %s\nRead-only checks: %s",
+                    scope.writable().size(),
+                    scope.checked().size()),
+                () ->
+                    reviewChoiceBlocked(
+                        route ->
+                            scope.writable().contains(route) || scope.checked().contains(route)),
+                () -> beginReview(scope, this)));
+      }
+      for (var state : documents()) {
+        if (!state.opened() || !state.dirty() && state.available()) continue;
+        var route = state.document();
+        choices.add(
+            new ClientChoiceScreen.Choice(
+                "document-" + choices.size(),
+                Component.translatableWithFallback(
+                    "reform.workflow.inspect_changes", "Inspect %s", state.title()),
+                text(
+                    "inspect_changes_help",
+                    "Compare this document's current draft with its saved settings. This does not save."),
+                () -> reviewChoiceBlocked(route::equals),
+                () -> inspectForClose(route)));
+      }
+      if (choices.isEmpty()) {
+        notice =
+            text(
+                "no_review_choices",
+                "There are no changes to review. Check the current settings before closing.");
+        rebuildWidgets();
+        return;
+      }
+      reviewChoiceHost =
+          new ClientChoiceScreen(
+              this,
+              text("review_choices", "Choose changes to review"),
+              text(
+                  "review_choices_help",
+                  "Choose a review group or inspect a document. Nothing is saved by choosing."),
+              choices,
+              text("return_settings", "Back to settings"));
+      navigate(reviewChoiceHost);
+    }
+
     private UnsavedChangesView closeDecision;
     private Supplier<List<DocumentId>> closeDecisionScope = List::of;
 
@@ -2040,13 +2188,17 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private MetadataView metadata() {
       return closeDecision != null
           ? closeDecision
-          : operationInspection != null
-              ? operationInspection.view()
-              : conflict != null
-                  ? conflict
-                  : imported != null
-                      ? imported
-                      : inspection != null ? inspection : batched != null ? batched : documentMenu;
+          : reviewChoices != null
+              ? reviewChoices
+              : operationInspection != null
+                  ? operationInspection.view()
+                  : conflict != null
+                      ? conflict
+                      : imported != null
+                          ? imported
+                          : inspection != null
+                              ? inspection
+                              : batched != null ? batched : documentMenu;
     }
 
     private WorkspaceNavigation.Key operationKey(ClientDestination target) {
@@ -2175,6 +2327,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void hideInspection() {
+      hideReviewChoices();
       hideBatch();
       hideCloseDecision();
       hideImport();
@@ -2211,6 +2364,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection() {
+      retireReviewChoices();
       retireBatch();
       hideCloseDecision();
       if (documentMenu != null) documentMenu.retireForNavigation();
@@ -2226,6 +2380,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection(DocumentId document) {
+      retireReviewChoices();
       if (batch != null && batch.documents().contains(document)) {
         retireBatch();
         var previousBatch = batch;
@@ -2257,6 +2412,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     protected boolean managedNavigation(Screen next) {
+      if (next instanceof ClientChoiceScreen choice && choice == reviewChoiceHost) {
+        beforeRebuild();
+        reviewChoices = choice.borrowView();
+        reviewChoices.returned(this::returnFromReviewChoices);
+        information.clear();
+        drawerOpen = false;
+        rebuildWidgets();
+        return true;
+      }
       if (next instanceof BatchReviewScreen review) return adoptBatch(review);
       if (next instanceof ImportScreen<?> importing) return adoptImport(importing);
       if (next == this
@@ -3556,6 +3720,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         OperationBinding operation) {
       // Retain the old page before assigning new identity, including a focusless viewport.
       beforeRebuild();
+      var previousChoices = reviewChoices;
+      var previousChoiceHost = reviewChoiceHost;
       var previousBatch = batched;
       var previousInspection = inspection;
       var previousInspectionRoute = inspectionRoute;
@@ -3620,6 +3786,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             selectedKey, design.inherent.reform.presentation.FormCatalog.Limits.STANDARD);
       } catch (RuntimeException | Error failed) {
         hideOperation();
+        reviewChoices = previousChoices;
+        reviewChoiceHost = previousChoiceHost;
         batched = previousBatch;
         inspection = previousInspection;
         inspectionRoute = previousInspectionRoute;
@@ -3637,9 +3805,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                     ? conflictKey(previousConflictRoute)
                     : previousImport != null
                         ? importKey(previousImportRoute)
-                        : previousInspection == null
-                            ? null
-                            : inspectionKey(previousInspectionRoute));
+                        : previousInspection != null
+                            ? inspectionKey(previousInspectionRoute)
+                            : previousBatch != null ? batchKey() : null);
         navigation.restoreUi(previousUi);
         selectedFilter = previousFilter;
         selectedKey = previousKey;
@@ -3788,9 +3956,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   if (choice == UnsavedChangesScreen.Choice.DISCARD) finish();
                   else {
                     NativeScreens.open(minecraft, this);
-                    if (choice == UnsavedChangesScreen.Choice.SAVE && layout == null) {
+                    if (choice == UnsavedChangesScreen.Choice.SAVE) {
                       try {
-                        reviewAll();
+                        if (layout == null) reviewAll();
+                        else showReviewChoices();
                       } catch (PolicyRefusal refused) {
                         notice =
                             ClientStatusScreen.reason(
@@ -3928,6 +4097,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (metadata() != null) message.append("\n").append(metadata().getNarrationMessage());
       boolean completeScope =
           closeDecision != null
+              || reviewChoices != null
               || batched != null && metadata() == batched
               || operationInspection != null
                   && operationInspection.destination() instanceof ClientDestination.BatchResult;
@@ -3941,6 +4111,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private Component scopeStatus() {
       if (closeDecision != null) return closeDecision.contextStatus();
+      if (reviewChoices != null) return reviewChoices.caption();
       if (operationInspection != null) return operationInspection.view().context();
       if (batched != null && metadata() == batched) return batched.contextStatus();
       if (isHome())

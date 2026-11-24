@@ -216,6 +216,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformCustomViewChecks customViewChecks;
   private PlatformRootImportChecks rootImportChecks;
   private PlatformRootBatchChecks rootBatchChecks;
+  private PlatformRootScopeChecks rootScopeChecks;
   private PlatformRootCloseChecks rootCloseChecks;
   private PlatformRootActionsChecks rootActionsChecks;
   private PlatformBorrowedPresentationChecks borrowedPresentationChecks;
@@ -599,6 +600,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (!choicesQualified && !entryChoices()) return false;
         if (customViewChecks == null) customViewChecks = new PlatformCustomViewChecks(this::check);
         if (!customViewChecks.tick()) return false;
+        if (rootScopeChecks == null)
+          rootScopeChecks = new PlatformRootScopeChecks(this::check, capture);
+        if (!rootScopeChecks.tick()) return false;
         if (rootBatchChecks == null)
           rootBatchChecks = new PlatformRootBatchChecks(this::check, capture);
         if (!rootBatchChecks.tick()) return false;

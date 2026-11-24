@@ -419,7 +419,7 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
         "detail:change-count",
         compared
             ? text(
-                "value_changes", "%s value changes", entry.review().comparison().changes().size())
+                "value_changes", "Changed values: %s", entry.review().comparison().changes().size())
             : text(
                 "comparison_unavailable",
                 "Some values could not be compared. Inspect fields for the full diagnostics."),
