@@ -1,5 +1,10 @@
 package example.reform.platform.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import design.inherent.reform.minecraft.client.ClientMeshGraphic;
+import design.inherent.reform.minecraft.client.FormCanvas;
+import design.inherent.reform.presentation.graphics.GraphicCamera;
 import example.reform.platform.PlatformTaskChecks;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -14,6 +19,23 @@ abstract class GraphicDrawMixin {
     if (PlatformTaskChecks.suppressDraw(this))
       result.setReturnValue(
           design.inherent.reform.minecraft.client.ClientMeshGraphic.DrawOutcome.WAITING);
+  }
+
+  @WrapMethod(method = "draw")
+  private ClientMeshGraphic.DrawOutcome observeFailure(
+      FormCanvas canvas,
+      int x,
+      int y,
+      int width,
+      int height,
+      GraphicCamera camera,
+      Operation<ClientMeshGraphic.DrawOutcome> original) {
+    try {
+      return original.call(canvas, x, y, width, height, camera);
+    } catch (RuntimeException | Error failed) {
+      example.reform.platform.PlatformLoadedSpriteChecks.recordFailure(this, failed);
+      throw failed;
+    }
   }
 
   @Inject(method = "draw", at = @At("RETURN"))

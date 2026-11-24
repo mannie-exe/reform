@@ -21,7 +21,7 @@ import net.minecraft.network.chat.Component;
 
 /** Actual loaded GUI/block atlases through the production authored slot and native renderer. */
 public final class PlatformLoadedSpriteChecks {
-  private static final GraphicLimits LIMITS = new GraphicLimits(65536, 65536, 16384, 32, 1048576);
+  private static final GraphicLimits LIMITS = new GraphicLimits(65536, 65536, 16384, 32, 8388608);
   private static final DestinationId IMAGE = DestinationId.parse("fixture:loaded_sprite");
   private static PlatformLoadedSpriteChecks active;
   private final Minecraft client = Minecraft.getInstance();
@@ -32,12 +32,12 @@ public final class PlatformLoadedSpriteChecks {
   private ClientGraphicHost host;
   private CompletableFuture<NavigationAttempt.Result> entered;
   private volatile GraphicScenePreparation prepared;
-  private volatile Throwable failed;
+  private volatile Throwable failed, drawFailure;
   private PreparedGraphic graphic;
   private int stage, draws, before, preparations;
   private byte[] bytes;
   private Button retired;
-  private boolean showing;
+  private boolean showing, smallNativeQualified;
 
   PlatformLoadedSpriteChecks(
       BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -55,21 +55,21 @@ public final class PlatformLoadedSpriteChecks {
     }
   }
 
+  public static void recordFailure(Object value, Throwable failed) {
+    if (active != null
+        && value instanceof PreparedGraphic graphic
+        && graphic.stamp().provider().equals(DocumentId.parse("reform:loaded_sprite"))) {
+      active.graphic = graphic;
+      active.drawFailure = failed;
+    }
+  }
+
   private static Component text(String value) {
     return Component.literal(value);
   }
 
-  private ClientLoadedGraphicProvider<ClientSpriteSubject> provider(boolean tiny) {
-    var delegate =
-        ClientLoadedGraphics.sprites(
-            tiny
-                ? new GraphicLimits(
-                    1,
-                    LIMITS.outputBytes(),
-                    LIMITS.decodedPixels(),
-                    LIMITS.resources(),
-                    LIMITS.nativeBytes())
-                : LIMITS);
+  private ClientLoadedGraphicProvider<ClientSpriteSubject> provider(GraphicLimits allowance) {
+    var delegate = ClientLoadedGraphics.sprites(allowance);
     return new ClientLoadedGraphicProvider<>() {
       public DocumentId id() {
         return delegate.id();
@@ -92,6 +92,7 @@ public final class PlatformLoadedSpriteChecks {
         preparations++;
         prepared = null;
         failed = null;
+        drawFailure = null;
         return delegate
             .prepare(request, work)
             .whenComplete(
@@ -130,6 +131,8 @@ public final class PlatformLoadedSpriteChecks {
 
   private boolean drawn(int first, int second) {
     if (failed != null) throw new AssertionError("Loaded sprite preparation failed", failed);
+    if (drawFailure != null)
+      throw new AssertionError("Loaded sprite native draw failed", drawFailure);
     if (prepared == null) return false;
     if (!(prepared instanceof GraphicScenePreparation.Ready ready))
       throw new AssertionError("Expected ready loaded sprite; actual=" + prepared);
@@ -184,7 +187,9 @@ public final class PlatformLoadedSpriteChecks {
                 ? unavailable
                 : prepared.getClass().getSimpleName())
         + ", failure="
-        + failed;
+        + failed
+        + ", drawFailure="
+        + drawFailure;
   }
 
   boolean tick() throws Exception {
@@ -197,8 +202,23 @@ public final class PlatformLoadedSpriteChecks {
                     .gameDirectory
                     .toPath()
                     .resolve("config/reform_platform_example/workflow_preferences.json"));
-        var normal = provider(false);
-        var tiny = provider(true);
+        var normal = provider(LIMITS);
+        var tiny =
+            provider(
+                new GraphicLimits(
+                    1,
+                    LIMITS.outputBytes(),
+                    LIMITS.decodedPixels(),
+                    LIMITS.resources(),
+                    LIMITS.nativeBytes()));
+        var smallNative =
+            provider(
+                new GraphicLimits(
+                    LIMITS.inputBytes(),
+                    LIMITS.outputBytes(),
+                    LIMITS.decodedPixels(),
+                    LIMITS.resources(),
+                    1048576));
         var category =
             new ClientWorkflowLayout.Category(IMAGE.value(), text("Sprite"), Component.empty());
         var settings =
@@ -221,8 +241,8 @@ public final class PlatformLoadedSpriteChecks {
                 new ViewKey<>(
                     IMAGE,
                     new ViewStateKey<>(
-                        DocumentId.parse("fixture:sprite_state"), ValueTypes.integer(0, 5))),
-                0,
+                        DocumentId.parse("fixture:sprite_state"), ValueTypes.integer(0, 6))),
+                6,
                 (context, state) ->
                     () -> {
                       int mode = state.value();
@@ -273,7 +293,7 @@ public final class PlatformLoadedSpriteChecks {
                                   "sprite",
                                   text("Loaded test sprite"),
                                   text("A physical atlas frame; no animation is implied."),
-                                  mode == 5 ? tiny : normal,
+                                  mode == 5 ? tiny : mode == 6 ? smallNative : normal,
                                   subject,
                                   LIMITS,
                                   2)));
@@ -312,9 +332,42 @@ public final class PlatformLoadedSpriteChecks {
         stage = 2;
       }
       case 2 -> {
+        if (!smallNativeQualified) {
+          if (failed != null)
+            throw new AssertionError("Small viewport case failed before native draw", failed);
+          if (drawFailure == null) {
+            if (prepared instanceof GraphicScenePreparation.Ready && !showing) {
+              showing = true;
+              press("Show loaded image");
+            }
+            return false;
+          }
+          check.accept(
+              "actual native sprite viewport refuses the one-MiB allowance",
+              drawFailure instanceof PolicyRefusal refused
+                  && refused.report().issues().stream()
+                      .anyMatch(issue -> issue.code().equals("preview.budget"))
+                  && draws == 0);
+          unchanged();
+          smallNativeQualified = true;
+          press("GUI first frame");
+          stage = 21;
+          return false;
+        }
+
         if (!drawn(0xffff0000, 0xff00ff00)) return false;
         stage = 90;
         capture.accept("loaded-sprite-gui.png", () -> stage = 20);
+      }
+      case 21 -> {
+        if (!released()) return false;
+        check.accept(
+            "explicit wider sprite envelope releases the refused native preparation first",
+            preparations == 1);
+        before = draws;
+        showing = false;
+        press("Prepare loaded image");
+        stage = 2;
       }
       case 20 -> {
         unchanged();
@@ -329,12 +382,12 @@ public final class PlatformLoadedSpriteChecks {
                 || graphic.releaseCompletion().toCompletableFuture().isDone()
                     && graphic.state().released());
         check.accept(
-            "sprite mode changes never implicitly prepare", preparations == (stage - 1) / 2);
+            "sprite mode changes never implicitly prepare", preparations == (stage - 1) / 2 + 1);
         if (stage == 3) {
           if (button(workflow.screen(), "Prepare loaded image") == retired) return false;
           NativeClientProbe.pressRetired(retired);
           check.accept(
-              "retired sprite callback cannot prepare its replaced slot", preparations == 1);
+              "retired sprite callback cannot prepare its replaced slot", preparations == 2);
         }
         before = draws;
         showing = false;
