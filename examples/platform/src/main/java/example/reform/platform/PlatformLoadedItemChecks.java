@@ -48,6 +48,9 @@ public final class PlatformLoadedItemChecks {
   private PreparedGraphic retainedGraphic;
   private int nativeEntries, pendingControl, nativeEntriesBefore;
   private boolean resetObserved, faultObserved, deferredChecked, pendingCloseObserved, resetChecked;
+  private boolean sourceRevoked, sourceChecked;
+  private CompletableFuture<Void> nativeReload;
+  private ReferenceStamp sourceBeforeReload;
   private static final IllegalStateException NATIVE_FAULT =
       new IllegalStateException("fixture native item feature fault");
 
@@ -71,6 +74,15 @@ public final class PlatformLoadedItemChecks {
       active.workflow.close();
       NativeScreens.open(active.client, active.parent);
       active.pendingCloseObserved = true;
+    } else if (active != null && active.pendingControl == 4) {
+      active.pendingControl = 0;
+      active.check.accept(
+          "actual resource reload starts with a pending extracted item use",
+          active.graphic != null && active.graphic.state().outstandingUses() > 0);
+      active.nativeEntriesBefore = active.nativeEntries;
+      active.sourceBeforeReload = ClientLoadedGraphics.items(LIMITS).resourceStamp();
+      active.nativeReload = active.client.reloadResourcePacks();
+      active.sourceRevoked = true;
     }
   }
 
@@ -83,6 +95,15 @@ public final class PlatformLoadedItemChecks {
           "actual reset GUI consumption never enters its discarded native callback",
           active.nativeEntries == active.nativeEntriesBefore);
       active.resetChecked = true;
+    }
+    if (active != null && active.sourceRevoked && !active.sourceChecked) {
+      active.check.accept(
+          "actual reload revokes pending native feature entry before consumption",
+          active.nativeEntries == active.nativeEntriesBefore
+              && !ClientLoadedGraphics.items(LIMITS)
+                  .resourceStamp()
+                  .equals(active.sourceBeforeReload));
+      active.sourceChecked = true;
     }
   }
 
@@ -333,7 +354,7 @@ public final class PlatformLoadedItemChecks {
                 new ViewKey<>(
                     ITEM,
                     new ViewStateKey<>(
-                        DocumentId.parse("fixture:item_choice"), ValueTypes.integer(0, 5))),
+                        DocumentId.parse("fixture:item_choice"), ValueTypes.integer(0, 7))),
                 0,
                 (context, state) -> {
                   selection = state;
@@ -345,7 +366,10 @@ public final class PlatformLoadedItemChecks {
                                   text("Loaded test item"),
                                   text("Prepared native GUI model"),
                                   state.value() == 4 ? one : normal,
-                                  choices.get(state.value() == 5 ? 2 : Math.min(3, state.value())),
+                                  choices.get(
+                                      state.value() == 6
+                                          ? 1
+                                          : state.value() >= 5 ? 2 : Math.min(3, state.value())),
                                   LIMITS,
                                   2)));
                 });
@@ -394,14 +418,18 @@ public final class PlatformLoadedItemChecks {
             prepared instanceof NativeGraphicContribution<?> && preparations == mode + 1);
         if (!showing) {
           showing = true;
-          if (mode == 5) {
-            pendingControl = 3;
+          if (mode == 5 || mode == 7) {
+            pendingControl = mode == 5 ? 4 : 3;
             nativeEntriesBefore = nativeEntries;
           }
           press("Show loaded image");
           return false;
         }
         if (mode == 5) {
+          if (sourceRevoked) stage = 50;
+          return false;
+        }
+        if (mode == 7) {
           if (pendingCloseObserved) stage = 40;
           return false;
         }
@@ -532,6 +560,22 @@ public final class PlatformLoadedItemChecks {
         active = null;
         stage = 9;
         return true;
+      }
+      case 50 -> {
+        if (!nativeReload.isDone() || !NativeClientProbe.ready(client) || !released()) return false;
+        nativeReload.join();
+        check.accept(
+            "completed native resource reload drains old item ownership without implicit preparation",
+            sourceChecked
+                && nativeEntries == nativeEntriesBefore
+                && preparations == 6
+                && graphic.releaseCompletion().toCompletableFuture().isDone()
+                && graphic.state().released()
+                && graphic.state().outstandingUses() == 0);
+        unchanged();
+        mode++;
+        selection.replace(mode);
+        stage = 2;
       }
       case 40 -> {
         if (!released()) return false;
