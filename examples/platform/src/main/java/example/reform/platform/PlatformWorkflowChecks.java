@@ -14,6 +14,7 @@ import design.inherent.reform.minecraft.client.ClientEditor;
 import design.inherent.reform.minecraft.client.ClientRegistration;
 import design.inherent.reform.minecraft.client.ClientWorkflowLayout;
 import design.inherent.reform.minecraft.client.KeyBindingScreen;
+import design.inherent.reform.minecraft.client.NativeNavigationButton;
 import design.inherent.reform.minecraft.client.NativeScreens;
 import design.inherent.reform.minecraft.client.NavigationAttempt;
 import design.inherent.reform.minecraft.client.SettingsForm;
@@ -148,7 +149,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
 
   private Button navigation(Screen screen, String label) {
     return widgets(screen).stream()
-        .filter(Button.class::isInstance)
+        .filter(NativeNavigationButton.class::isInstance)
         .map(Button.class::cast)
         .filter(
             widget ->
@@ -304,7 +305,7 @@ final class PlatformWorkflowChecks implements PlatformFormProbe.Scene {
                 && widgets(workflow.screen()).stream()
                     .noneMatch(
                         widget ->
-                            widget instanceof Button
+                            widget instanceof NativeNavigationButton
                                 && widget
                                     .getMessage()
                                     .getString()
