@@ -32,6 +32,7 @@ final class PlatformRootBatchChecks {
   private ClientEditingWorkflow workflow;
   private ClientEditor<?> editor, twin;
   private ClientBatchInspection inspection;
+  private PlatformStandaloneBatchChecks standalone;
   private DocumentBatch.Review reviewed;
   private OperationHandle<DocumentBatch.Result> submission;
   private OperationHandle<?> restoration;
@@ -395,7 +396,10 @@ final class PlatformRootBatchChecks {
         workflow.close();
         NativeScreens.open(client, parent);
         stage = 24;
-        return true;
+      }
+      case 24 -> {
+        if (standalone == null) standalone = new PlatformStandaloneBatchChecks(check);
+        return standalone.tick();
       }
       case 90 -> {
         return false;
