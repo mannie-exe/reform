@@ -37,6 +37,7 @@ public final class PlatformLoadedSpriteChecks {
   private int stage, draws, before, preparations;
   private byte[] bytes;
   private Button retired;
+  private boolean showing;
 
   PlatformLoadedSpriteChecks(
       BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
@@ -160,7 +161,20 @@ public final class PlatformLoadedSpriteChecks {
   }
 
   String diagnostic() {
-    return "sprite stage=" + stage + ", preparations=" + preparations + ", failure=" + failed;
+    return "sprite stage="
+        + stage
+        + ", preparations="
+        + preparations
+        + ", draws="
+        + draws
+        + ", outcome="
+        + (prepared == null
+            ? "pending"
+            : prepared instanceof GraphicScenePreparation.Unavailable unavailable
+                ? unavailable
+                : prepared.getClass().getSimpleName())
+        + ", failure="
+        + failed;
   }
 
   boolean tick() throws Exception {
@@ -283,6 +297,7 @@ public final class PlatformLoadedSpriteChecks {
             !button(workflow.screen(), "Cancel preparation").active);
         retired = button(workflow.screen(), "Prepare loaded image");
         before = draws;
+        showing = false;
         press("Prepare loaded image");
         stage = 2;
       }
@@ -312,6 +327,7 @@ public final class PlatformLoadedSpriteChecks {
               "retired sprite callback cannot prepare its replaced slot", preparations == 1);
         }
         before = draws;
+        showing = false;
         press("Prepare loaded image");
         stage++;
       }
