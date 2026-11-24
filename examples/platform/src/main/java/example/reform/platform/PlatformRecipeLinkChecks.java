@@ -16,7 +16,31 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 /** Actual optional viewer admission, public handoff, parent return, and original edited owner. */
-final class PlatformRecipeLinkChecks {
+final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
+  private final com.google.gson.JsonArray checks = new com.google.gson.JsonArray();
+
+  static java.util.concurrent.CompletionStage<com.google.gson.JsonObject> run(
+      ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration,
+        "RECIPE_LINKS",
+        driver -> new PlatformRecipeLinkChecks(null, driver::capture));
+  }
+
+  @Override
+  public com.google.gson.JsonObject report() {
+    var result = new com.google.gson.JsonObject();
+    result.addProperty("status", "PASS");
+    result.add("checks", checks);
+    result.addProperty("optionalViewerInstalled", installed);
+    return result;
+  }
+
+  @Override
+  public int tickBudget() {
+    return 900;
+  }
+
   private final Minecraft client = Minecraft.getInstance();
   private final Screen parent = NativeScreens.current(client);
   private final BiConsumer<String, Boolean> check;
@@ -39,11 +63,16 @@ final class PlatformRecipeLinkChecks {
 
   PlatformRecipeLinkChecks(
       BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
-    this.check = check;
+    this.check =
+        (message, accepted) -> {
+          if (check != null) check.accept(message, accepted);
+          if (!accepted) throw new AssertionError(message);
+          checks.add(message);
+        };
     this.capture = capture;
   }
 
-  String diagnostic() {
+  public String diagnostic() {
     return "recipe-links stage="
         + stage
         + ",mode="
@@ -68,8 +97,8 @@ final class PlatformRecipeLinkChecks {
         .resolve("config/reform_platform_example/workflow_preferences.json");
   }
 
-  boolean tick() throws Exception {
-    var route = DocumentId.parse(PlatformServer.ID + ":workflow_preferences");
+  public boolean tick() throws Exception {
+    var route = PlatformWorkflowExample.DEFINITION.id();
     switch (stage) {
       case 0 -> {
         var input =
@@ -156,8 +185,9 @@ final class PlatformRecipeLinkChecks {
                 && workflow.editor(route) == editor
                 && editor.isOpen()
                 && editor.view().snapshot().orElseThrow().version() == revision);
-        if (mode == 0) capture.accept("platform-recipe-viewer.png", () -> {});
-        NativeScreens.current(client).onClose();
+        if (mode == 0)
+          capture.accept("recipe-viewer.png", () -> NativeScreens.current(client).onClose());
+        else NativeScreens.current(client).onClose();
         stage = 6;
       }
       case 6 -> {

@@ -36,7 +36,7 @@ layout.buildDirectory = file("build/${targetId}${bareLibrary ? '-bare' : ''}")
 repositories {
     maven { url = uri('../../build/repository'); content { includeGroup 'design.inherent' } }
     mavenCentral()
-    maven { url = 'https://maven.blamejared.com/'; content { includeGroup 'mezz.jei' } }
+    maven { url = 'https://maven.blamejared.com/'; content { includeGroup 'mezz.jei'; includeGroup 'net.mezzdev.config' } }
     maven { url = 'https://libraries.minecraft.net/'; content { includeGroup 'com.mojang' } }
     maven {
         url = 'https://api.modrinth.com/maven'
@@ -140,6 +140,7 @@ if (withRecipeViewer) {
             def actual = java.security.MessageDigest.getInstance('SHA-256').digest(original.singleFile.bytes).encodeHex().toString()
             if (actual != providers.gradleProperty('viewerSha256').get())
                 throw new GradleException('Recipe viewer differs from the selected original runtime')
+            configurations.runtimeClasspath.resolve()
             println "Native recipe viewer SHA-256: ${actual}"
         }
     }

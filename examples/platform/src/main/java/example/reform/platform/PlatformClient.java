@@ -37,6 +37,7 @@ public final class PlatformClient {
       finished,
       worldScenario,
       recipeScenario,
+      recipeLinksScenario,
       commandScenario,
       authoringScenario,
       workspaceScenario,
@@ -70,6 +71,8 @@ public final class PlatformClient {
               .getAsJsonObject();
       reopen = input.get("reopen").getAsBoolean();
       worldScenario = input.has("worldClient") && input.get("worldClient").getAsBoolean();
+      recipeLinksScenario =
+          input.has("recipeLinksClient") && input.get("recipeLinksClient").getAsBoolean();
       recipeScenario = input.has("recipeClient") && input.get("recipeClient").getAsBoolean();
       commandScenario = input.has("commandClient") && input.get("commandClient").getAsBoolean();
       authoringScenario =
@@ -121,7 +124,8 @@ public final class PlatformClient {
         PlatformWorkflowExample.register(registration);
         PlatformReviewCommands.register(registration);
       }
-      if (workspaceScenario || workflowScenario) PlatformWorkflowExample.register(registration);
+      if (workspaceScenario || workflowScenario || recipeLinksScenario)
+        PlatformWorkflowExample.register(registration);
       if (workspaceScenario) {
         PlatformWorkspaceChecks.register(registration);
         PlatformTaskChecks.register(registration);
@@ -293,6 +297,11 @@ public final class PlatformClient {
           if (chooserScenario) {
             pending = PlatformChooserChecks.run(clientRegistration).toCompletableFuture();
             stage = 24;
+            return;
+          }
+          if (recipeLinksScenario) {
+            pending = PlatformRecipeLinkChecks.run(clientRegistration).toCompletableFuture();
+            stage = 28;
             return;
           }
           if (workspaceScenario) {
@@ -471,6 +480,11 @@ public final class PlatformClient {
           report.addProperty("status", "PASS");
           finished = true;
           client.stop();
+        }
+        case 28 -> {
+          if (!pending.isDone()) return;
+          report.add("recipeLinks", (JsonObject) pending.join());
+          beginShutdown();
         }
         case 29 -> nativeItemShutdown.tick();
         default -> throw new AssertionError("Unknown native client stage");

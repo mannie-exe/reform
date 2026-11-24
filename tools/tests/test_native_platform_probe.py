@@ -12,6 +12,20 @@ from tools.native_platform_probe import retain_captures, retain_native_report, s
 
 
 class OptionalAdmissionTests(unittest.TestCase):
+    def test_recipe_links_require_separate_client_before_resolving_inputs(self):
+        for options in [{}, {"client": True, "world_client": True},
+                        {"client": True, "authoring_client": True}]:
+            with self.subTest(options=options), patch.object(platform, "select_library") as resolve:
+                with self.assertRaisesRegex(ValueError, "Recipe links require their own"):
+                    platform.run("neoforge-1_21_1", None, 1, recipe_links_client=True, **options)
+                resolve.assert_not_called()
+
+    def test_viewer_cannot_be_added_to_unrelated_client_scenario(self):
+        with patch.object(platform, "select_library") as resolve:
+            with self.assertRaisesRegex(ValueError, "requires its own recipe-links client"):
+                platform.run("neoforge-1_21_1", None, 1, client=True, workspace_client=True, recipe_viewer="jei")
+            resolve.assert_not_called()
+
     def test_workspace_requires_its_own_client_scenario(self):
         for options in [{}, {"client": True, "world_client": True},
                         {"client": True, "recipe_client": True},

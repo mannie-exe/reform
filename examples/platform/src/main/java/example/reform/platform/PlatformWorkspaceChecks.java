@@ -250,7 +250,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
     return "workspace stage="
         + stage
         + ", screen="
-        + NativeScreens.current(client).getClass().getSimpleName()
+        + (NativeScreens.current(client) == null
+            ? "none"
+            : NativeScreens.current(client).getClass().getSimpleName())
         + (stage == 0 && loadedGraphicChecks != null ? "; " + loadedGraphicChecks.diagnostic() : "")
         + (stage == 0 && loadedSpriteChecks != null ? "; " + loadedSpriteChecks.diagnostic() : "")
         + (stage == 0 && loadedBlockChecks != null ? "; " + loadedBlockChecks.diagnostic() : "")
