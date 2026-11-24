@@ -254,6 +254,8 @@ final class PlatformCustomViewChecks {
                     .equals(new ClientDestination.View(COUNTER))
                 && button(workflow.screen(), "Increment") != null);
         geometry(workflow.screen());
+        boolean ownerUnopened =
+            workflow.documents().stream().noneMatch(ClientEditingWorkflow.DocumentState::opened);
         workflow.close();
         boolean closed = false;
         try {
@@ -265,7 +267,7 @@ final class PlatformCustomViewChecks {
             "custom lifetime closes once and rejects later state changes", closes == 1 && closed);
         check.accept(
             "custom views never open or write their unused file owner",
-            workflow.documents().stream().noneMatch(ClientEditingWorkflow.DocumentState::opened)
+            ownerUnopened
                 && Arrays.equals(
                     source,
                     Files.readAllBytes(
