@@ -80,6 +80,7 @@ public final class PlatformServer {
           "loadedLibrary",
           ServerSettings.class.getProtectionDomain().getCodeSource().getLocation().toString());
       report.addProperty("librarySha256", input.get("librarySha256").getAsString());
+      report.add("runtimeArtifacts", NativeRuntimeArtifacts.read());
       check(
           "library is loaded from a packaged JAR",
           report.get("loadedLibrary").getAsString().contains(".jar"));

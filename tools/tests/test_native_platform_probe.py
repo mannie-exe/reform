@@ -223,6 +223,55 @@ class CaptureRetentionTests(unittest.TestCase):
             self.assertEqual([], list(reports.iterdir()))
 
 
+class RuntimeArtifactRetentionTests(unittest.TestCase):
+    def fixture(self, root):
+        source = root / "actual.jar"
+        source.write_bytes(b"measured-runtime-archive")
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        return source, {"runtimeArtifacts": {"reform": {
+            "path": str(source), "bytes": source.stat().st_size, "sha256": digest}}}
+
+    def test_actual_archive_is_copied_once_and_rehashed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, native = self.fixture(root)
+            first = platform.retain_runtime_artifacts(native, root / "store")
+            copy = Path(first["reform"]["path"])
+            self.assertEqual(copy.read_bytes(), source.read_bytes())
+            before = copy.stat().st_mtime_ns
+            self.assertEqual(first, platform.retain_runtime_artifacts(native, root / "store"))
+            self.assertEqual(copy.stat().st_mtime_ns, before)
+
+    def test_changed_archive_cannot_pass_its_earlier_observation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, native = self.fixture(root)
+            source.write_bytes(b"different-runtime-input!")
+            with self.assertRaisesRegex(ValueError, "differs from its native observation"):
+                platform.retain_runtime_artifacts(native, root / "store")
+
+    def test_corrupt_existing_copy_is_not_overwritten_or_accepted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, native = self.fixture(root)
+            first = platform.retain_runtime_artifacts(native, root / "store")
+            copy = Path(first["reform"]["path"])
+            copy.write_bytes(b"corrupt")
+            with self.assertRaisesRegex(ValueError, "Retained runtime archive differs"):
+                platform.retain_runtime_artifacts(native, root / "store")
+            self.assertEqual(copy.read_bytes(), b"corrupt")
+
+    def test_symlink_is_not_used_as_actual_runtime_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, native = self.fixture(root)
+            alias = root / "alias.jar"
+            alias.symlink_to(source)
+            native["runtimeArtifacts"]["reform"]["path"] = str(alias)
+            with self.assertRaisesRegex(ValueError, "differs from its native observation"):
+                platform.retain_runtime_artifacts(native, root / "store")
+
+
 class PlatformOutcomeTests(unittest.TestCase):
     @staticmethod
     def held_stops():
@@ -236,10 +285,15 @@ class PlatformOutcomeTests(unittest.TestCase):
 
     def setUp(self):
         self.process = {"exitCode": 0, "termination": None}
-        self.native = {"status": "PASS", "shutdownClosed": True, "librarySha256": "actual",
+        self.native = {"status": "PASS", "shutdownClosed": True, "librarySha256": "a" * 64,
                        "java": "25.0.4+101", "loadedLibrary": "file:/actual/library.jar",
                        "minecraft": "26.3", "loader": "0.20.1"}
-        self.library = SimpleNamespace(sha256="actual")
+        self.native["runtimeArtifacts"] = {"reform": {
+            "path": "/actual/library.jar", "bytes": 100, "sha256": "a" * 64,
+            "witness": "design/inherent/reform/minecraft/configuration/ServerSettings.class",
+            "witnessSha256": "b" * 64, "resource": "jar:file:/actual/library.jar!/witness.class",
+            "resourceMatchesArchive": True}}
+        self.library = SimpleNamespace(sha256="a" * 64)
         self.target = {"java": 25, "minecraftVersion": "26.3"}
 
     def accepted(self):
@@ -247,6 +301,49 @@ class PlatformOutcomeTests(unittest.TestCase):
 
     def test_complete_native_outcome(self):
         self.assertTrue(self.accepted())
+
+    def test_echoed_original_without_runtime_archive_is_not_success(self):
+        self.native.pop("runtimeArtifacts")
+        self.assertFalse(self.accepted())
+
+    def test_unremapped_runtime_archive_must_match_original(self):
+        self.native["runtimeArtifacts"]["reform"]["sha256"] = "c" * 64
+        self.assertFalse(self.accepted())
+
+    def test_remapped_runtime_records_its_distinct_actual_hash(self):
+        self.target["remapMinecraft"] = True
+        self.native["runtimeArtifacts"]["reform"]["sha256"] = "c" * 64
+        self.assertTrue(self.accepted())
+
+    def test_runtime_archive_requires_matching_class_resource(self):
+        self.native["runtimeArtifacts"]["reform"]["resourceMatchesArchive"] = False
+        self.assertFalse(self.accepted())
+
+    def test_installed_viewer_cannot_omit_runtime_archive(self):
+        self.native["recipeViewers"] = {"emi": "1.1.24"}
+        self.assertFalse(self.accepted())
+
+    def test_unremapped_viewer_archive_must_match_selected_original(self):
+        self.native["recipeViewers"] = {"emi": "1.1.24"}
+        fact = dict(self.native["runtimeArtifacts"]["reform"])
+        fact.update(path="/actual/emi.jar", witness="dev/emi/emi/api/EmiApi.class", sha256="c" * 64)
+        self.native["runtimeArtifacts"]["emi"] = fact
+        original = {"provider": "emi", "sha256": "d" * 64}
+        self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+        original["sha256"] = "c" * 64
+        self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+
+    def test_runtime_archive_rejects_invalid_or_unbounded_facts(self):
+        fact = self.native["runtimeArtifacts"]["reform"]
+        for key, value in [("path", "relative.jar"), ("bytes", 0),
+                           ("bytes", 64 * 1024 * 1024 + 1), ("bytes", True),
+                           ("sha256", "not-a-hash"), ("witnessSha256", ""),
+                           ("witness", "wrong.class"), ("resource", "")]:
+            with self.subTest(key=key, value=value):
+                original = fact[key]
+                fact[key] = value
+                self.assertFalse(self.accepted())
+                fact[key] = original
 
     def test_normal_exit_without_native_report_is_not_success(self):
         self.native = {}

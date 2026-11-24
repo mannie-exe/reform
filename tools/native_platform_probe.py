@@ -205,7 +205,56 @@ def complete_native_item_shutdown(value):
                     for k in ("outstandingUses", "nativeBytes", "nativeResources", "outputBytes")))
 
 
-def successful_boot(result, native, library, target, loader_version, client=False, required_scenarios=()):
+def runtime_artifacts_match(native, library, target, viewer_input=None):
+    artifacts = native.get("runtimeArtifacts")
+    viewers = native.get("recipeViewers", {})
+    witnesses = {"reform": "design/inherent/reform/minecraft/configuration/ServerSettings.class",
+                 "jei": "mezz/jei/api/IModPlugin.class", "emi": "dev/emi/emi/api/EmiApi.class"}
+    if (not isinstance(artifacts, dict) or not isinstance(viewers, dict)
+            or not set(viewers).issubset({"jei", "emi"})
+            or set(artifacts) != {"reform"} | set(viewers)):
+        return False
+    for identity, fact in artifacts.items():
+        if (not isinstance(fact, dict) or not isinstance(fact.get("path"), str)
+                or not Path(fact["path"]).is_absolute() or not fact["path"].endswith(".jar")
+                or type(fact.get("bytes")) is not int or not 0 < fact["bytes"] <= 64 * 1024 * 1024
+                or fact.get("witness") != witnesses[identity]
+                or fact.get("resourceMatchesArchive") is not True
+                or not isinstance(fact.get("resource"), str) or not fact["resource"]):
+            return False
+        for key in ("sha256", "witnessSha256"):
+            value = fact.get(key)
+            if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                return False
+    if target.get("remapMinecraft") is True:
+        return True
+    return (artifacts["reform"]["sha256"] == library.sha256
+            and (viewer_input is None
+                 or artifacts.get(viewer_input["provider"], {}).get("sha256") == viewer_input["sha256"]))
+
+
+def retain_runtime_artifacts(native, store):
+    """Rehash actual reported loader archives and retain one immutable copy per content hash."""
+    retained = {}
+    store.mkdir(parents=True, exist_ok=True)
+    for identity, fact in native["runtimeArtifacts"].items():
+        source = Path(fact["path"])
+        if (source.is_symlink() or not source.is_file() or source.stat().st_size != fact["bytes"]
+                or hashlib.sha256(source.read_bytes()).hexdigest() != fact["sha256"]):
+            raise ValueError("Actual runtime archive differs from its native observation: " + identity)
+        destination = store / (fact["sha256"] + ".jar")
+        if not destination.exists():
+            with source.open("rb") as read, destination.open("xb") as write:
+                shutil.copyfileobj(read, write)
+        if (destination.is_symlink() or not destination.is_file()
+                or destination.stat().st_size != fact["bytes"]
+                or hashlib.sha256(destination.read_bytes()).hexdigest() != fact["sha256"]):
+            raise ValueError("Retained runtime archive differs from its identity: " + identity)
+        retained[identity] = {"path": str(destination), "sha256": fact["sha256"], "bytes": fact["bytes"]}
+    return retained
+
+
+def successful_boot(result, native, library, target, loader_version, client=False, required_scenarios=(), viewer_input=None):
     return (result["exitCode"] == 0 and result["termination"] is None
             and native.get("status") == "PASS" and native.get("shutdownClosed") is True
             and all(isinstance(native.get(name), dict) and native[name].get("status") == "PASS"
@@ -235,6 +284,7 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
             and ("chooser" not in required_scenarios
                  or native["chooser"].get("nativeFileDialogExercised") is True)
             and native.get("librarySha256") == library.sha256
+            and runtime_artifacts_match(native, library, target, viewer_input)
             and native.get("java", "").split(".", 1)[0] == str(target["java"])
             and native.get("minecraft") == target["minecraftVersion"]
             and native.get("loader") == loader_version
@@ -376,6 +426,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             if raw_report is not None:
                 report.setdefault("rawNativeReports", []).append(raw_report)
             native = json.loads(output.read_text()) if output.is_file() else {}
+            if runtime_artifacts_match(native, library, target, viewer_input):
+                report.setdefault("runtimeArtifactCopies", []).append(
+                    retain_runtime_artifacts(native, ROOT / ".cache/native-runtime-artifacts"))
             failed_scene = fixture / "platform-scene-failure.json"
             if failed_scene.is_file() and not failed_scene.is_symlink() and failed_scene.stat().st_size <= 131072:
                 report.setdefault("rawSceneFailures", []).append(
@@ -430,7 +483,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             report["boots"].append({"run": result, "native": native, "expectedOriginalCausePresent": original_cause_present,
                                     "expectedRefusalNotLogged": expected_refusal_not_logged,
                                     "consoleEvidence": console_evidence(log), "crashReports": crash_evidence(fixture)})
-            if not original_cause_present or not expected_refusal_not_logged or not successful_boot(result, native, library, target, loader_version, client, required_scenarios):
+            if not original_cause_present or not expected_refusal_not_logged or not successful_boot(result, native, library, target, loader_version, client, required_scenarios, viewer_input):
                 break
         else:
             report["status"] = "PASS"

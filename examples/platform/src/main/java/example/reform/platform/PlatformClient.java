@@ -111,6 +111,7 @@ public final class PlatformClient {
       report.addProperty("minecraft", game);
       report.addProperty("loader", loader);
       report.addProperty("librarySha256", input.get("librarySha256").getAsString());
+      report.add("runtimeArtifacts", NativeRuntimeArtifacts.read());
       report.addProperty(
           "loadedLibrary",
           SettingsScreen.class.getProtectionDomain().getCodeSource().getLocation().toString());
