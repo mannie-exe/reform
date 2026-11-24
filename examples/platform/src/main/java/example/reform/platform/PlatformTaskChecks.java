@@ -71,6 +71,9 @@ public final class PlatformTaskChecks {
   private final UUID resources = UUID.randomUUID(), generation = UUID.randomUUID();
   private ClientEditingWorkflow workflow;
   private ReferenceActions<String, String> references;
+  private final ReferenceTitles titles = new ReferenceTitles(titleMap("Default"));
+  private Object initialSearch;
+  private long titleDraftVersion;
   private CompletableFuture<?> pending;
   private byte[] bytes;
   private ClientEditor<?> actual;
@@ -89,6 +92,38 @@ public final class PlatformTaskChecks {
   private byte[] source() throws Exception {
     return Files.readAllBytes(
         client.gameDirectory.toPath().resolve("config/reform_platform_example/task_profiles.json"));
+  }
+
+  private static Map<String, Component> titleMap(String defaultTitle) {
+    return Map.of(
+        "fixture:default",
+        Component.literal(defaultTitle),
+        "fixture:blue",
+        Component.literal("Blue"),
+        "fixture:inherited",
+        Component.literal("Inherited"));
+  }
+
+  private String requestedTitle(String field) {
+    return taskRow("detail:requested:" + FieldPath.ROOT.field(field));
+  }
+
+  private String taskRow(String key) {
+    for (var child : workflow.screen().children()) {
+      if (!child.getClass().getSimpleName().equals("FormPanel")) continue;
+      for (var at : (List<?>) observed(child, "layout")) {
+        var row = observed(at, "row");
+        if (key.equals(observed(row, "key")))
+          return ((Component) observed(row, "summary")).getString();
+      }
+    }
+    return "";
+  }
+
+  private Object taskSearch() {
+    var views = (Map<?, ?>) observed(workflow, "taskViews");
+    var entry = views.values().iterator().next();
+    return observed(observed(entry, "view"), "search");
   }
 
   private String raw(String name) {
@@ -274,7 +309,8 @@ public final class PlatformTaskChecks {
         var form =
             settings.form(
                 Component.literal("Appearance"),
-                new ClientFormOptions<>(FormPresentation.EMPTY, Map.of(SOURCE, references)));
+                new ClientFormOptions<Config>(FormPresentation.EMPTY, Map.of(SOURCE, references))
+                    .withReferenceTitles(SOURCE, titles));
         var layout =
             new ClientWorkflowLayout(
                 List.of(
@@ -371,6 +407,62 @@ public final class PlatformTaskChecks {
                 && providers.get() == 1
                 && prepares.get() == 0
                 && Arrays.equals(bytes, source()));
+        check.accept(
+            "task requested fields use cached friendly titles while preserving actual IDs",
+            requestedTitle("models").equals("Draft value: Default")
+                && requestedTitle("artwork").equals("Draft value: Default")
+                && raw("models").equals("fixture:default")
+                && raw("artwork").equals("fixture:default"));
+        var disclose = button(workflow.screen(), "Source details");
+        check.accept(
+            "requested-ID disclosure is in the actual native focus tree",
+            focus(workflow.screen(), disclose));
+        click(workflow.screen(), disclose);
+        check.accept(
+            "friendly requested titles retain both exact IDs under explicit details",
+            taskRow("detail:requested-id:" + FieldPath.ROOT.field("models"))
+                    .equals("fixture:default")
+                && taskRow("detail:requested-id:" + FieldPath.ROOT.field("artwork"))
+                    .equals("fixture:default"));
+        var collapse = button(workflow.screen(), "Hide source details");
+        check.accept(
+            "requested-ID disclosure closes through the actual native control",
+            focus(workflow.screen(), collapse));
+        click(workflow.screen(), collapse);
+        initialSearch = taskSearch();
+        titleDraftVersion = actual.view().snapshot().orElseThrow().version();
+        titles.replace(titleMap("Renamed Default"));
+        stage = 30;
+      }
+      case 30 -> {
+        if (!requestedTitle("models").equals("Draft value: Renamed Default")) return false;
+        check.accept(
+            "cached title replacement changes presentation without querying or editing",
+            taskSearch() == initialSearch
+                && actual.view().snapshot().orElseThrow().version() == titleDraftVersion
+                && !actual.dirty()
+                && prepares.get() == 0
+                && sources.get() == 1
+                && Arrays.equals(bytes, source()));
+        titles.replace(Map.of("fixture:blue", Component.literal("Blue")));
+        stage = 31;
+      }
+      case 31 -> {
+        if (!requestedTitle("models").equals("Draft value: fixture:default")) return false;
+        check.accept(
+            "missing cached title preserves requested ID without inventing source validity",
+            taskSearch() == initialSearch
+                && raw("models").equals("fixture:default")
+                && actual.view().snapshot().orElseThrow().version() == titleDraftVersion
+                && Arrays.equals(bytes, source()));
+        titles.replace(titleMap("Default"));
+        stage = 32;
+      }
+      case 32 -> {
+        if (!requestedTitle("models").equals("Draft value: Default")) return false;
+        check.accept(
+            "title repair retains the same source handle and unchanged draft",
+            taskSearch() == initialSearch && !actual.dirty());
         retainedQuery = input(workflow.screen(), "Search");
         retainedManual = input(workflow.screen(), "Reference ID");
         replace(workflow.screen(), retainedQuery, "Blue");

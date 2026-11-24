@@ -41,6 +41,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
   private List<Button> choosing = List.of();
   private Preview preview;
   private Object observedOwner, observedGraphic;
+  private ReferenceTitles.Snapshot observedTitles;
   private ClientGraphicHost.View<?, ?> graphicView;
   private boolean sourceWasCurrent, showPreviewPending;
 
@@ -147,6 +148,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
   @Override
   protected void init() {
     generation = new Object();
+    observedTitles = editor.presentation().referenceTitleSnapshot(declaration.source());
     if (filter == null) {
       filter = new FormEditBox(font, 0, 0, 180, 20, text("search", "Search"));
       filter.setMaxLength(declaration.limits().maximumQueryLength());
@@ -278,6 +280,11 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
               .map(DraftNode.Scalar.class::cast)
               .map(DraftNode.Scalar::raw)
               .orElse("—");
+      var requestedId = value;
+      var title =
+          observedTitles == null
+              ? Component.literal(value)
+              : observedTitles.title(value).orElseGet(() -> Component.literal(requestedId));
       var token = generation;
       var information =
           new InformationButton(
@@ -294,8 +301,13 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
       detail.field(
           "detail:requested:" + selection.field(),
           selection.title(),
-          text("draft_value", "Draft value").copy().append(": ").append(value),
+          text("draft_value", "Draft value").copy().append(": ").append(title),
           information);
+      if (details)
+        detail.row(
+            "detail:requested-id:" + selection.field(),
+            text("requested_id", "Requested ID").copy().append(": ").append(selection.title()),
+            Component.literal(requestedId));
       var pick = button(selection.label(), () -> choose(selection));
       pick.active = canChoose(selection.field());
       picks.add(pick);
@@ -501,6 +513,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
     if (sourceWasCurrent && !current)
       notice = text("stale", "This source changed. Refresh before choosing a value.");
     if (sourceWasCurrent != current
+        || observedTitles != editor.presentation().referenceTitleSnapshot(declaration.source())
         || observedOwner != editor.view()
         || !Objects.equals(observedGraphic, preview == null ? null : preview.state())) {
       sourceWasCurrent = current;

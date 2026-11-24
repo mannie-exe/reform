@@ -428,9 +428,7 @@ public final class ClientFileSettings<T> {
                         "startup_context",
                         "Startup choices · saved changes require restarting the game")
                     : storageOnly()
-                        ? text(
-                            "staged_context",
-                            "Saved settings · application belongs to the owning service")
+                        ? text("staged_context", "Saved settings · application is separate")
                         : deferred.isPresent()
                             ? text(
                                 "world_defaults_context",
@@ -447,9 +445,9 @@ public final class ClientFileSettings<T> {
                         text("close_startup", "Save for restart and close"))
                     : storageOnly()
                         ? new SettingsScreen.SubmissionLabels(
-                            text("save_staged", "Save staged values"),
-                            text("review_staged", "Save reviewed staged values"),
-                            text("close_staged", "Save staged values and close"))
+                            text("save_staged", "Save settings"),
+                            text("review_staged", "Save reviewed changes"),
+                            text("close_staged", "Save settings and close"))
                         : deferred.isPresent()
                             ? new SettingsScreen.SubmissionLabels(
                                 text("save_defaults", "Save defaults"),

@@ -124,6 +124,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private final DocumentActions<T> actions;
   private final Map<DocumentId, ReferenceActions<String, ?>> sources;
   private Map<DocumentId, ReferenceTitles> referenceTitles = Map.of();
+
+  /** Borrow only cached owner-published titles; this performs no source lookup or admission. */
+  ReferenceTitles.Snapshot referenceTitleSnapshot(DocumentId source) {
+    var titles = referenceTitles.get(source);
+    return titles == null ? null : titles.snapshot();
+  }
+
   private final Map<FieldPath, TitledReference> titledReferences = new LinkedHashMap<>();
 
   private final class TitledReference {
@@ -2141,7 +2148,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             submitting
                 ? text("review_title", "Review changes")
                 : text("inspect_title", "Source and value inspection"),
-            contextLabel,
+            title.copy().append(" · ").append(contextLabel),
             actions,
             selected,
             () -> !closed,

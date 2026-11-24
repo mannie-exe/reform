@@ -215,9 +215,19 @@ final class PlatformConflictChecks implements PlatformFormProbe.Scene {
             input.entries().size() == 3
                 && !input.baselineRevision().equals(input.observedRevision()));
         check("native choices have no implicit default", !button(popup(), "Resolve draft").active);
+        var panes =
+            popup().children().stream()
+                .filter(ScrollFrame.class::isInstance)
+                .map(ScrollFrame.class::cast)
+                .toList();
+        check("wide conflict separates its field index from actual comparisons", panes.size() == 2);
+        int left =
+            panes.stream().mapToInt(pane -> (int) observed(pane, "left")).min().orElseThrow();
+        int right =
+            panes.stream().mapToInt(pane -> (int) observed(pane, "right")).max().orElseThrow();
         check(
-            "wide conflict separates its field index from actual comparisons",
-            popup().children().stream().filter(ScrollFrame.class::isInstance).count() == 2);
+            "ultra-wide conflict keeps its actual panes in a centered bounded reading frame",
+            (right - left) * 2 < popup().width && Math.abs(left + right - popup().width) <= 2);
         geometry(popup());
         capture.accept(
             "form-conflict-review.png",

@@ -2,12 +2,51 @@ package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.presentation.SectionNavigation;
 import design.inherent.reform.presentation.TaskPresentation;
+import java.util.List;
 import java.util.Optional;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.network.chat.Component;
 
 /** One measured task, either adjacent scroll regions or a complete focused flow. No owner state. */
 final class TaskPanels {
+  /** Keep an auxiliary task's controls with its text even on an unusually wide native window. */
+  static FormChrome readingChrome(
+      Minecraft client,
+      int width,
+      int height,
+      Component title,
+      Component context,
+      Component status,
+      List<? extends AbstractWidget> actions,
+      ClientTheme theme,
+      TaskPresentation.Offer primary,
+      TaskPresentation.Offer detail) {
+    var values = theme.values();
+    int padding =
+        Math.multiplyExact(
+            2, values.value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_SCREEN));
+    int gap = values.value(design.inherent.reform.presentation.ThemeValues.Role.SPACE_CONTENT);
+    int preferred =
+        Math.max(
+            Math.addExact(
+                Math.multiplyExact(
+                    client.font.width("M"),
+                    values.value(
+                        design.inherent.reform.presentation.ThemeValues.Role
+                            .MEASURE_READING_COLUMNS)),
+                padding),
+            Math.addExact(
+                Math.addExact(primary.preferredWidth(), detail.preferredWidth()),
+                Math.addExact(gap, padding)));
+    var host =
+        design.inherent.reform.presentation.FormGeometry.centeredWidth(
+            new design.inherent.reform.presentation.FormGeometry.Placement(0, 0, width, height),
+            preferred);
+    return new FormChrome(client, host, title, context, status, actions, theme);
+  }
+
   enum Region {
     PRIMARY,
     DETAIL

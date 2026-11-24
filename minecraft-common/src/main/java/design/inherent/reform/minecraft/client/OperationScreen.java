@@ -201,9 +201,6 @@ public final class OperationScreen<O> extends NativeFormScreen {
       footer.add(control);
     }
     footer.add(button("back", text("back", "Back"), this::finish));
-    chrome =
-        new FormChrome(
-            minecraft, width, height, title, contextLabel, Component.empty(), footer, theme());
     boolean hasDetails =
         observed != null && technical
             || outcome != null && !outcome.details().isEmpty()
@@ -221,15 +218,30 @@ public final class OperationScreen<O> extends NativeFormScreen {
     int detailWidth = theme().values().value(ThemeValues.Role.MEASURE_INFORMATION_MINIMUM);
     int minimumHeight =
         3 * font.lineHeight + theme().values().value(ThemeValues.Role.CONTROL_HEIGHT);
+    var firstOffer =
+        new TaskPresentation.Offer(
+            new FormGeometry.Size(primaryWidth, minimumHeight), primaryWidth);
+    var secondOffer =
+        new TaskPresentation.Offer(new FormGeometry.Size(detailWidth, minimumHeight), detailWidth);
+    chrome =
+        TaskPanels.readingChrome(
+            minecraft,
+            width,
+            height,
+            title,
+            contextLabel,
+            Component.empty(),
+            footer,
+            theme(),
+            firstOffer,
+            secondOffer);
     panels =
         new TaskPanels(
             chrome,
             policy,
             TaskPresentation.Kind.OPERATIONS,
-            new TaskPresentation.Offer(
-                new FormGeometry.Size(primaryWidth, minimumHeight), primaryWidth),
-            new TaskPresentation.Offer(
-                new FormGeometry.Size(detailWidth, minimumHeight), detailWidth),
+            firstOffer,
+            secondOffer,
             theme(),
             retained);
     panel = panels.primary();

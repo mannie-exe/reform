@@ -185,8 +185,6 @@ public final class ConflictScreen<T> extends NativeFormScreen {
         operation != null && !resolving && !operation.snapshot().cancellationRequested();
     var back = button(text("back", "Back"), this::onClose);
     back.active = !resolving;
-    chrome =
-        new FormChrome(minecraft, width, height, title, contextLabel, status(), footer, theme());
     int fieldWidth = 160;
     if (review != null)
       for (var entry : review.entries())
@@ -200,14 +198,29 @@ public final class ConflictScreen<T> extends NativeFormScreen {
                 .withPreference(
                     TaskPresentation.Kind.INSPECTION, TaskPresentation.Preference.FOCUSED)
             : taskPresentation();
+    var firstOffer =
+        new TaskPresentation.Offer(new FormGeometry.Size(fieldWidth, minimumHeight), fieldWidth);
+    var secondOffer =
+        new TaskPresentation.Offer(new FormGeometry.Size(220 + padding, minimumHeight), 360);
+    chrome =
+        TaskPanels.readingChrome(
+            minecraft,
+            width,
+            height,
+            title,
+            contextLabel,
+            status(),
+            footer,
+            theme(),
+            firstOffer,
+            secondOffer);
     panels =
         new TaskPanels(
             chrome,
             policy,
             TaskPresentation.Kind.INSPECTION,
-            new TaskPresentation.Offer(
-                new FormGeometry.Size(fieldWidth, minimumHeight), fieldWidth),
-            new TaskPresentation.Offer(new FormGeometry.Size(220 + padding, minimumHeight), 360),
+            firstOffer,
+            secondOffer,
             theme(),
             retained);
     fields = panels.primary();

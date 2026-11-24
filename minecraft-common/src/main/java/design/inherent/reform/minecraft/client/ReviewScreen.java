@@ -276,12 +276,27 @@ public final class ReviewScreen<T> extends NativeFormScreen {
             });
     edit.active = current() && selected != null && !review.entries().isEmpty() && operation == null;
     button(text("back", "Back"), () -> finish(Optional.empty()));
-    chrome =
-        new FormChrome(minecraft, width, height, title, contextLabel, status(), footer, theme());
     int fieldWidth = theme().values().value(ThemeValues.Role.MEASURE_INFORMATION_MINIMUM);
     int comparisonWidth = theme().values().value(ThemeValues.Role.MEASURE_EDITOR_MINIMUM);
     int minimumHeight =
         3 * font.lineHeight + theme().values().value(ThemeValues.Role.CONTROL_HEIGHT);
+    var firstOffer =
+        new TaskPresentation.Offer(new FormGeometry.Size(fieldWidth, minimumHeight), fieldWidth);
+    var secondOffer =
+        new TaskPresentation.Offer(
+            new FormGeometry.Size(comparisonWidth, minimumHeight), comparisonWidth);
+    chrome =
+        TaskPanels.readingChrome(
+            minecraft,
+            width,
+            height,
+            title,
+            contextLabel,
+            status(),
+            footer,
+            theme(),
+            firstOffer,
+            secondOffer);
     panels =
         new TaskPanels(
             chrome,
@@ -291,10 +306,8 @@ public final class ReviewScreen<T> extends NativeFormScreen {
                     .withPreference(
                         TaskPresentation.Kind.INSPECTION, TaskPresentation.Preference.FOCUSED),
             TaskPresentation.Kind.INSPECTION,
-            new TaskPresentation.Offer(
-                new FormGeometry.Size(fieldWidth, minimumHeight), fieldWidth),
-            new TaskPresentation.Offer(
-                new FormGeometry.Size(comparisonWidth, minimumHeight), comparisonWidth),
+            firstOffer,
+            secondOffer,
             theme(),
             retained);
     fieldPanel = panels.primary();
@@ -430,7 +443,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
         entry.numericValues().effective());
     panel.row(
         "detail:application",
-        text("application", "Owner-declared application"),
+        text("application", "Application timing"),
         entry
             .application()
             .<Component>map(this::application)
@@ -439,23 +452,6 @@ public final class ReviewScreen<T> extends NativeFormScreen {
                     text(
                         "application_unknown",
                         "No application boundary is declared for this field. Saving does not certify live effects.")));
-    if (review.effective().isEmpty())
-      panel.row(
-          "detail:effective_state",
-          text("effective_state", "Effective observation"),
-          text("not_observed", "This owner has not supplied a qualified effective observation."));
-    else {
-      var effective = review.effective().orElseThrow();
-      panel.row(
-          "detail:effective_state",
-          text("effective_state", "Effective observation"),
-          text(
-              "effective_detail",
-              "%s at revision %s; value details captured: %s. This is an observed snapshot.",
-              effective.availability().name(),
-              effective.revision(),
-              effective.valuesCaptured()));
-    }
     narration = narration.copy().append(". ").append(label(selected));
     sourceFacts();
     diagnosis();
@@ -481,6 +477,43 @@ public final class ReviewScreen<T> extends NativeFormScreen {
             });
     panel.actions("detail:source-toggle", toggle);
     if (!sourceDetails) return;
+    panel.row(
+        "detail:document-identity",
+        text("document_identity", "Settings ID"),
+        Component.literal(review.target().document().toString()));
+    panel.row(
+        "detail:comparison-accounting",
+        text("comparison_details", "Comparison details"),
+        text(
+            "summary_detail",
+            "%s semantic changes. Authored input changed: %s.",
+            review.comparison().changes().size(),
+            review.comparison().authoredChanges()));
+    if (submission.isPresent())
+      panel.row(
+          "detail:submission-boundary",
+          Component.empty(),
+          text(
+              "submit_boundary",
+              "Submission rechecks the exact captured draft, complete validation, current authority and source. These declarations do not certify live world changes."));
+    if (review.effective().isEmpty())
+      panel.row(
+          "detail:effective_state",
+          text("effective_state", "Effective observation"),
+          text("not_observed", "This owner has not supplied a qualified effective observation."));
+    else {
+      var effective = review.effective().orElseThrow();
+      panel.row(
+          "detail:effective_state",
+          text("effective_state", "Effective observation"),
+          text(
+              "effective_detail",
+              "%s at revision %s; value details captured: %s. This is an observed snapshot.",
+              effective.availability().name(),
+              effective.revision(),
+              effective.valuesCaptured()));
+    }
+
     panel.row(
         "detail:source-kind",
         text("source_kind", "Source kind"),
@@ -666,19 +699,22 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     var comparison = review.comparison();
     panel.heading(text("changes", "Changes in this capture"));
     panel.row(
-        text("scope", "Affected owner"), Component.literal(review.target().document().toString()));
-    panel.row(
-        text("summary", "Compared with the observed baseline"),
-        text(
-            "summary_detail",
-            "%s semantic changes. Authored input changed: %s.",
-            comparison.changes().size(),
-            comparison.authoredChanges()));
-    panel.row(
-        Component.empty(),
-        text(
-            "submit_boundary",
-            "Submission rechecks the exact captured draft, complete validation, current authority and source. These declarations do not certify live world changes."));
+        text("scope_summary", "Scope"),
+        text("whole_document", "Whole document, including settings outside the current section."));
+    int count = comparison.changes().size();
+    Component summary =
+        !comparison.report().valid()
+            ? text(
+                "comparison_needs_attention",
+                "Some values could not be compared. See the diagnostics below.")
+            : count == 0
+                ? comparison.authoredChanges()
+                    ? text("input_changes_only", "No value changes; entered input differs.")
+                    : text("no_value_changes", "No value changes.")
+                : count == 1
+                    ? text("one_value_change", "1 value changed.")
+                    : text("value_change_count", "%s values changed.", count);
+    panel.row(text("summary", "Compared with the observed baseline"), summary);
     submitBlocked()
         .ifPresent(reason -> panel.row(text("before_submit", "Before submitting"), reason));
     var changes = comparison.changes();
@@ -1147,7 +1183,7 @@ public final class ReviewScreen<T> extends NativeFormScreen {
     return review == null
         ? text("waiting", "Refresh the view to inspect observed values.")
         : wasCurrent
-            ? text("ready", "Captured details; editing and source effects remain separate.")
+            ? text("captured_values", "Captured values")
             : text("stale_status", "Earlier capture; refresh to inspect the new draft.");
   }
 

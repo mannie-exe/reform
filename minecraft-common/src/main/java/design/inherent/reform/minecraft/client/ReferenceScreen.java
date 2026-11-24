@@ -82,16 +82,6 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
     use = footer(text("use", "Use selection"), this::choose);
     footer(text("refresh", "Refresh source"), this::refresh);
     back = footer(text("back", "Back"), this::onClose);
-    chrome =
-        new FormChrome(
-            minecraft,
-            width,
-            height,
-            title,
-            text("choose_help", "Browse choices, then inspect and use the selected value."),
-            status(),
-            footer,
-            theme());
     var searchButton = queryButton(text("search", "Search"), () -> search(Optional.empty()));
     var inspectButton =
         queryButton(
@@ -114,16 +104,31 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
         Math.addExact(
             3 * font.lineHeight,
             Math.addExact(theme().values().value(ThemeValues.Role.CONTROL_HEIGHT), padding));
-    int preferred = Math.max(primaryMinimum, chrome.contentBounds().width() / 2);
+    var firstOffer =
+        new TaskPresentation.Offer(
+            new FormGeometry.Size(primaryMinimum, minimumHeight), primaryMinimum);
+    var secondOffer =
+        new TaskPresentation.Offer(
+            new FormGeometry.Size(detailMinimum, minimumHeight), detailMinimum);
+    chrome =
+        TaskPanels.readingChrome(
+            minecraft,
+            width,
+            height,
+            title,
+            text("choose_help", "Browse choices, then inspect and use the selected value."),
+            status(),
+            footer,
+            theme(),
+            firstOffer,
+            secondOffer);
     panels =
         new TaskPanels(
             chrome,
             taskPresentation(),
             TaskPresentation.Kind.CHOOSER,
-            new TaskPresentation.Offer(
-                new FormGeometry.Size(primaryMinimum, minimumHeight), preferred),
-            new TaskPresentation.Offer(
-                new FormGeometry.Size(detailMinimum, minimumHeight), detailMinimum),
+            firstOffer,
+            secondOffer,
             theme(),
             retained);
     panel = panels.primary();
