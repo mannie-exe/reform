@@ -220,6 +220,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformLoadedGraphicChecks loadedGraphicChecks;
   private PlatformLoadedSpriteChecks loadedSpriteChecks;
   private PlatformLoadedItemChecks loadedItemChecks;
+  private PlatformLoadedBlockChecks loadedBlockChecks;
   private PlatformRootCloseChecks rootCloseChecks;
   private PlatformRootActionsChecks rootActionsChecks;
   private PlatformBorrowedPresentationChecks borrowedPresentationChecks;
@@ -249,6 +250,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         + NativeScreens.current(client).getClass().getSimpleName()
         + (stage == 0 && loadedGraphicChecks != null ? "; " + loadedGraphicChecks.diagnostic() : "")
         + (stage == 0 && loadedSpriteChecks != null ? "; " + loadedSpriteChecks.diagnostic() : "")
+        + (stage == 0 && loadedBlockChecks != null ? "; " + loadedBlockChecks.diagnostic() : "")
         + (stage == 0 && loadedItemChecks != null ? "; " + loadedItemChecks.diagnostic() : "");
   }
 
@@ -617,6 +619,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (loadedSpriteChecks == null)
           loadedSpriteChecks = new PlatformLoadedSpriteChecks(this::check, capture);
         if (!loadedSpriteChecks.tick()) return false;
+        if (loadedBlockChecks == null)
+          loadedBlockChecks = new PlatformLoadedBlockChecks(this::check, capture);
+        if (!loadedBlockChecks.tick()) return false;
         if (loadedItemChecks == null)
           loadedItemChecks = new PlatformLoadedItemChecks(this::check, capture);
         if (!loadedItemChecks.tick()) return false;

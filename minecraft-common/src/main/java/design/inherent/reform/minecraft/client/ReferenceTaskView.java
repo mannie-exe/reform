@@ -216,7 +216,7 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
                     Component.empty(),
                     Component.translatableWithFallback(
                         "reform.task.page_values",
-                        "%s values on this page",
+                        "Values on this page: %s",
                         page.choices().size()));
                 for (var choice : page.choices()) {
                   var action =

@@ -28,6 +28,66 @@ public final class ClientLoadedGraphics {
   private static final DocumentId MATERIAL = DocumentId.parse("reform:loaded_texture_surface");
   private static final DocumentId ITEM = DocumentId.parse("reform:loaded_item");
 
+  /** Static native state/model only; block-entity renderers require their own explicit provider. */
+  public static ClientLoadedGraphicProvider<ClientBlockSubject> blocks(GraphicLimits limits) {
+    Objects.requireNonNull(limits);
+    var id = DocumentId.parse("reform:loaded_block");
+    return new ClientLoadedGraphicProvider<>() {
+      public DocumentId id() {
+        return id;
+      }
+
+      public ValueType<ClientBlockSubject> subjectType() {
+        return ClientBlockSubject.type();
+      }
+
+      public GraphicLimits limits() {
+        return limits;
+      }
+
+      public ReferenceStamp resourceStamp() {
+        return LoadedGraphicResources.snapshot().stamp();
+      }
+
+      public CompletionStage<GraphicScenePreparation> prepare(
+          LoadedGraphicRequest<ClientBlockSubject> request, ClientGraphicWork work) {
+        work.checkpoint();
+        var resources = LoadedGraphicResources.snapshot();
+        if (!resources.stamp().equals(request.stamp().resources()))
+          throw new PolicyRefusal(
+              "preview.stale", "Loaded resources changed; prepare the block again");
+        if (request.subject().inputBytes() > request.limits().inputBytes())
+          throw new PolicyRefusal(
+              "preview.budget", "The copied block state exceeds its input allowance");
+        if (!resources.ready())
+          return CompletableFuture.completedFuture(
+              new GraphicScenePreparation.Unavailable(
+                  problem(
+                      "preview.resources_unavailable",
+                      "Loaded resources are unavailable; finish or retry the resource reload")));
+        return CompletableFuture.completedFuture(
+            new NativeGraphicContribution<>(
+                NativeLoadedBlockAdapter.INSTANCE,
+                request.subject(),
+                request.stamp(),
+                GraphicCamera.STANDARD,
+                List.of(
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/source"),
+                        "Source",
+                        "Copied block state and loaded native static model"),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/rendering"),
+                        "Rendering",
+                        "Isolated native model lighting and default tints; no world ambient occlusion or block-entity renderer"),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/animation"),
+                        "Animation",
+                        "Static prepared geometry; loaded atlas and shader effects follow the native renderer"))));
+      }
+    };
+  }
+
   /**
    * Explicit copied native item with its loaded GUI model. Captures no inventory capability, does
    * not tick a world, and never substitutes this loaded subject for an edited domain preview.

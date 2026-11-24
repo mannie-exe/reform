@@ -237,7 +237,7 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
                   Component.empty(),
                   Component.translatableWithFallback(
                       "reform.reference.page_values",
-                      "%s values on this page",
+                      "Values on this page: %s",
                       page.choices().size()));
               for (var choice : page.choices()) {
                 var inspect =
