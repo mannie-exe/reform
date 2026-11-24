@@ -74,17 +74,7 @@ final class NativeFeatureGraphic {
                       "This model and camera cannot form a finite native transform; reset the view");
                 pose.translate(panX, panY, 0);
                 pose.scale(fit, -fit, fit);
-                pose.last()
-                    .mulPose(
-                        new Matrix4f()
-                            .rotateY(
-                                (float)
-                                    Math.toRadians(
-                                        Math.IEEEremainder(camera.yaw() - yawOrigin, 360)))
-                            .rotateX(
-                                (float)
-                                    Math.toRadians(
-                                        Math.IEEEremainder(camera.pitch() - pitchOrigin, 360))));
+                NativeGraphicCamera.rotate(pose, camera, yawOrigin, pitchOrigin);
                 pose.translate(-center.x, -center.y, -center.z);
                 submit.accept(pose, submits);
                 try (var frame =

@@ -31,3 +31,16 @@ tasks.register('nativeProbeJar', Jar) {
     from sourceSets.nativeProbe.output
 }
 tasks.named('check') { dependsOn 'nativeProbeClasses' }
+
+// Native matrix/PoseStack math requires the actual game classpath; ordinary unit tests remain neutral.
+tasks.register('nativeCameraRegression', JavaExec) {
+    group = 'verification'
+    description = 'Compare native camera transforms with the shared projection without starting a client.'
+    dependsOn 'nativeProbeClasses'
+    classpath = sourceSets.nativeProbe.runtimeClasspath + project(':core').sourceSets.main.output
+    mainClass = 'design.inherent.reform.minecraft.client.NativeCameraRegression'
+    workingDir = layout.buildDirectory.dir('native-camera-regression').get().asFile
+    doFirst { workingDir.mkdirs() }
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+}
+tasks.named('check') { dependsOn 'nativeCameraRegression' }

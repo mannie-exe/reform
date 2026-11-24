@@ -3,7 +3,6 @@ package design.inherent.reform.minecraft.client;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexSorting;
-import com.mojang.math.Axis;
 import net.minecraft.client.gui.GuiGraphics;
 import org.joml.Matrix4f;
 
@@ -55,12 +54,7 @@ final class NativeGuiModelGraphic {
                       "This model and camera cannot form a finite native transform; reset the view");
                 pose.translate(panX, panY, 0);
                 pose.scale(fit, -fit, fit);
-                pose.mulPose(
-                    Axis.YP.rotationDegrees(
-                        (float) Math.IEEEremainder(camera.yaw() - yawOrigin, 360)));
-                pose.mulPose(
-                    Axis.XP.rotationDegrees(
-                        (float) Math.IEEEremainder(camera.pitch() - pitchOrigin, 360)));
+                NativeGraphicCamera.rotate(pose, camera, yawOrigin, pitchOrigin);
                 pose.translate(-center.x, -center.y, -center.z);
                 try {
                   render.accept(graphics, pose);
