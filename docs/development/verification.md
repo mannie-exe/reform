@@ -1,5 +1,15 @@
 # Verification
 
+## 0.4 development: native recipe links
+
+Candidate `0.4.0-dev.79` at `2891227` passes the four-target `spotlessApply check build`, including 123 tooling tests, packaged consumer compilation, distribution checks, and the native recipe-policy regression. Twelve original Maven binaries, sources, and POMs, plus four named source archives, match the committed source. This is an unpublished development candidate; the full 0.4 and final combined Lootr acceptance remain open.
+
+Four actual native survival-inventory book pairs pass 15 checks per boot, including unchanged inventory, unlocked recipes, and owner file. Each also exercises a controlled public-adapter lookup that retires its real origin: activation is refused with zero prepared-open calls and no old-screen resurrection. This corrects the retained dev.78 negative, which entered once and restored the retired inventory. The control does not certify arbitrary callbacks inside foreign viewer code.
+
+Both 1.21.1 loaders additionally pass two boots with EMI `1.1.24+1.21.1`, with 38 checks per boot. Producing recipes, uses, exact recipe, and category links return through EMI's public API to the same native container and menu. Missing matches and workstation-only scope are explicit refusals. EMI can repurpose the native book button; the helper conservatively refuses closed-book activation with EMI installed, without reading or overriding its preferences. These six pairs finish with 12 normal exits and owned fixture removal. First-boot book frames on both game families and EMI frames on both loaders were inspected.
+
+See [recipe links](recipe-links.md) for reproduction, provider admission, and the separately attributed dev.76 four-target JEI/absence and dev.77 navigation checks. No EMI 26.3, simultaneous-viewer, crafting-screen-specific, runtime-failure, or dedicated-server claim follows from these client pairs. Original upstream runtime hashes were verified, but remapped upstream code-source bytes were not independently captured. Historical results below retain their own candidates and do not qualify the whole current library.
+
 ## 0.4 development: registered reference tasks
 
 The unpublished `0.4.0-dev.28` product at `0b05434`, with independent fixtures at `72b0c47`, passes the four-target build, 653 core tests on each codec runtime, 106 tooling tests, four packaged native consumer compiles, and eight public consumer inputs. All four native workspace and saved-file reopen pairs pass with eight normal exits and disposable fixture removal. First-boot workspace counts are 370 on both Fabric targets and NeoForge 1.21.1, and 372 on NeoForge 26.3; each reopen contains 166 checks. These are check counts within the identified scenarios, not separate exhaustive test suites.
