@@ -119,7 +119,11 @@ abstract class FormHostScreen extends NativeFormScreen {
 
   /** One root handoff retains every composed owner, including owners other than the initiator. */
   protected final void navigate(Screen next) {
-    if (next instanceof NativeFormScreen themed && next != this) themed.inheritTheme(theme());
+    if (next instanceof NativeFormScreen themed && next != this) {
+      themed.inheritTheme(theme());
+      themed.inheritFallbackTasks(this);
+    }
+    if (managedNavigation(next)) return;
     if (minecraft != null && NativeScreens.current(minecraft) == this && next != this)
       beforeRebuild();
     handingOff = true;
@@ -128,6 +132,11 @@ abstract class FormHostScreen extends NativeFormScreen {
     } finally {
       handingOff = false;
     }
+  }
+
+  /** Adopt a known shared contribution without replacing this actual native screen. */
+  protected boolean managedNavigation(Screen next) {
+    return false;
   }
 
   protected final boolean handingOff() {

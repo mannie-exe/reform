@@ -23,6 +23,28 @@ final class TaskPanels {
       ClientTheme theme,
       TaskPresentation.Offer primary,
       TaskPresentation.Offer detail) {
+    return readingChrome(
+        client,
+        new design.inherent.reform.presentation.FormGeometry.Placement(0, 0, width, height),
+        title,
+        context,
+        status,
+        actions,
+        theme,
+        primary,
+        detail);
+  }
+
+  static FormChrome readingChrome(
+      Minecraft client,
+      design.inherent.reform.presentation.FormGeometry.Placement bounds,
+      Component title,
+      Component context,
+      Component status,
+      List<? extends AbstractWidget> actions,
+      ClientTheme theme,
+      TaskPresentation.Offer primary,
+      TaskPresentation.Offer detail) {
     var values = theme.values();
     int padding =
         Math.multiplyExact(
@@ -40,10 +62,7 @@ final class TaskPanels {
             Math.addExact(
                 Math.addExact(primary.preferredWidth(), detail.preferredWidth()),
                 Math.addExact(gap, padding)));
-    var host =
-        design.inherent.reform.presentation.FormGeometry.centeredWidth(
-            new design.inherent.reform.presentation.FormGeometry.Placement(0, 0, width, height),
-            preferred);
+    var host = design.inherent.reform.presentation.FormGeometry.centeredWidth(bounds, preferred);
     return new FormChrome(client, host, title, context, status, actions, theme);
   }
 

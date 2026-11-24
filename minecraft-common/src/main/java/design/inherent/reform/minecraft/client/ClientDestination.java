@@ -26,6 +26,13 @@ public sealed interface ClientDestination {
     }
   }
 
+  /** The retained source/value inspection for one admitted owner, not a save or validation. */
+  record Inspection(DocumentId route) implements ClientDestination {
+    public Inspection {
+      Objects.requireNonNull(route);
+    }
+  }
+
   record Placement(DestinationId id) implements ClientDestination {
     public Placement {
       Objects.requireNonNull(id);

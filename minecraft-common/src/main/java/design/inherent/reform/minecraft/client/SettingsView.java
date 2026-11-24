@@ -2126,16 +2126,19 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     openInspection(false);
   }
 
-  private void openInspection(boolean submitting) {
+  boolean acceptsInspection() {
     var view = actions.view();
-    if (closed
-        || !isCurrent()
-        || saving
-        || loading
-        || pendingEdits > 0
-        || unsent()
-        || view.availability() != EditorActor.Availability.READY
-        || view.snapshot().isEmpty()) return;
+    return !closed
+        && !saving
+        && !loading
+        && pendingEdits == 0
+        && !unsent()
+        && view.availability() == EditorActor.Availability.READY
+        && view.snapshot().isPresent();
+  }
+
+  void openInspection(boolean submitting) {
+    if (!isCurrent() || !acceptsInspection()) return;
     var focused = panel == null ? null : panel.getFocused();
     var selected =
         controls.entrySet().stream()
