@@ -21,7 +21,7 @@ final class NativeChestAdapter implements NativeGraphicAdapter<ClientChestSubjec
   }
 
   public Prepared prepare(ClientChestSubject input, NativeGraphicPreparationContext context) {
-    var bounds = new NativeModelGeometry(context.ledger().limits(), 3);
+    var bounds = new NativeModelGeometry(context.ledger().limits(), 3, "preview.chest_geometry");
     var client = context.client();
     var renderer =
         new ChestRenderer<ChestBlockEntity>(

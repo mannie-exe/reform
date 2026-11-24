@@ -61,7 +61,7 @@ final class NativeEntityAdapter implements NativeGraphicAdapter<ClientEntitySubj
 
   private static <T extends Mob, M extends EntityModel<T>> Prepared prepare(
       MobRenderer<T, M> renderer, T animal, NativeGraphicPreparationContext context) {
-    var bounds = new NativeModelGeometry(context.ledger().limits(), 0);
+    var bounds = new NativeModelGeometry(context.ledger().limits(), 0, "preview.entity_geometry");
     renderer.render(animal, 0, 0, new PoseStack(), layer -> bounds, 15728880);
     var surface =
         NativeGuiModelGraphic.prepare(

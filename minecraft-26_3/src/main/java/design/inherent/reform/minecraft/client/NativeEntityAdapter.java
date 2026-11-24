@@ -26,6 +26,8 @@ import net.minecraft.world.entity.animal.pig.Pig;
 /** Fresh native animal render states and models through actual feature submission. */
 final class NativeEntityAdapter implements NativeGraphicAdapter<ClientEntitySubject> {
   static final NativeEntityAdapter INSTANCE = new NativeEntityAdapter();
+  // Private render seeds, never world/network registrations. Never wrap or reuse a retained ID.
+  private static int nextReferenceId = -1;
 
   public DocumentId id() {
     return DocumentId.parse("reform:curated_entity");
@@ -79,11 +81,24 @@ final class NativeEntityAdapter implements NativeGraphicAdapter<ClientEntitySubj
           M extends net.minecraft.client.model.EntityModel<? super S>>
       Prepared prepare(
           MobRenderer<T, S, M> renderer, T animal, NativeGraphicPreparationContext context) {
+    var level = animal.level();
+    if (nextReferenceId == Integer.MIN_VALUE)
+      throw new NativeGraphicUnavailable(
+          "preview.entity_identity",
+          "Native reference identities are exhausted; restart the client before preparing again");
+    int referenceId = nextReferenceId--;
+    if (level.getEntity(referenceId) != null)
+      throw new PolicyRefusal(
+          "preview.entity_identity",
+          "This reference identity is already in use; prepare the animal again");
+    // Client Level.getNextEntityId returns INVALID_ENTITY_ID. The native item-state extractor
+    // still requires an assigned seed, even for empty equipment. Set only this detached object.
+    animal.setId(referenceId);
     var state = renderer.createRenderState();
     renderer.extractRenderState(animal, state, 0);
     state.lightCoords = 15728880;
     var camera = new CameraRenderState();
-    var bounds = new NativeModelGeometry(context.ledger().limits(), 0);
+    var bounds = new NativeModelGeometry(context.ledger().limits(), 0, "preview.entity_geometry");
     var measure = new Measure(bounds);
     renderer.submit(state, new PoseStack(), measure, camera);
     if (!measure.getSubmitsPerOrder().isEmpty())
@@ -100,7 +115,11 @@ final class NativeEntityAdapter implements NativeGraphicAdapter<ClientEntitySubj
             (pose, submits) -> renderer.submit(state, pose, submits, camera));
     return new Prepared() {
       public ClientMeshGraphic.DrawOutcome draw(NativeGraphicDrawContext draw) {
-        return surface.drawSurface(draw, context::isCurrent);
+        if (level.getEntity(referenceId) != null)
+          throw new PolicyRefusal(
+              "preview.stale", "The reference identity changed; prepare it again");
+        return surface.drawSurface(
+            draw, () -> context.isCurrent() && level.getEntity(referenceId) == null);
       }
 
       public void release(NativeGraphicReleaseContext release) {}

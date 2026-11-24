@@ -8,11 +8,13 @@ import net.minecraft.world.phys.AABB;
 /** Counts actual native emitted vertices for admission and fit; retains no replacement mesh. */
 final class NativeModelGeometry implements VertexConsumer {
   private final long maximumVertices;
+  private final String capabilityCode;
   private long vertices;
   private double minX = Double.POSITIVE_INFINITY, minY = minX, minZ = minX;
   private double maxX = Double.NEGATIVE_INFINITY, maxY = maxX, maxZ = maxX;
 
-  NativeModelGeometry(GraphicLimits limits, int requiredLayers) {
+  NativeModelGeometry(GraphicLimits limits, int requiredLayers, String capabilityCode) {
+    this.capabilityCode = capabilityCode;
     // Canonical position/normal/UV size, not native object or allocator memory.
     maximumVertices = limits.outputBytes() / (8 * Float.BYTES);
     if (limits.resources() < requiredLayers)
@@ -26,7 +28,7 @@ final class NativeModelGeometry implements VertexConsumer {
           "preview.budget", "The reference exceeds its native vertex allowance");
     if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z))
       throw new NativeGraphicUnavailable(
-          "preview.model_geometry", "The native reference has non-finite geometry");
+          capabilityCode, "The native reference has non-finite geometry");
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
     minZ = Math.min(minZ, z);
@@ -38,8 +40,7 @@ final class NativeModelGeometry implements VertexConsumer {
 
   AABB bounds() {
     if (vertices == 0)
-      throw new NativeGraphicUnavailable(
-          "preview.model_geometry", "The native reference model is empty");
+      throw new NativeGraphicUnavailable(capabilityCode, "The native reference model is empty");
     return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
   }
 

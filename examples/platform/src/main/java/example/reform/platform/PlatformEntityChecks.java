@@ -144,6 +144,10 @@ public final class PlatformEntityChecks {
 
   private void detached() {
     check.accept(
+        "owned native references keep distinct assigned render identities",
+        created.stream().map(net.minecraft.world.entity.Entity::getId).distinct().count()
+            == created.size());
+    check.accept(
         "actual constructed reference animals are never inserted or ticked",
         !created.isEmpty()
             && created.stream()
