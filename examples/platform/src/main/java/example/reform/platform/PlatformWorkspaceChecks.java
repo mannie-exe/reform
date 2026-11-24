@@ -221,6 +221,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformLoadedSpriteChecks loadedSpriteChecks;
   private PlatformLoadedItemChecks loadedItemChecks;
   private PlatformLoadedBlockChecks loadedBlockChecks;
+  private PlatformChestChecks chestChecks;
   private PlatformRootCloseChecks rootCloseChecks;
   private PlatformRootActionsChecks rootActionsChecks;
   private PlatformBorrowedPresentationChecks borrowedPresentationChecks;
@@ -622,6 +623,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (loadedBlockChecks == null)
           loadedBlockChecks = new PlatformLoadedBlockChecks(this::check, capture);
         if (!loadedBlockChecks.tick()) return false;
+        if (chestChecks == null) chestChecks = new PlatformChestChecks(this::check, capture);
+        if (!chestChecks.tick()) return false;
         if (loadedItemChecks == null)
           loadedItemChecks = new PlatformLoadedItemChecks(this::check, capture);
         if (!loadedItemChecks.tick()) return false;

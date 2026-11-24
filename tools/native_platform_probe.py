@@ -58,6 +58,11 @@ WORKSPACE_CAPTURES = {
     'platform-loaded-block-0.png',
     'platform-loaded-block-1.png',
     'platform-loaded-block-3.png',
+    'platform-isolated-chest-0.png',
+    'platform-isolated-chest-1.png',
+    'platform-isolated-chest-2.png',
+    'platform-isolated-chest-3.png',
+
     'platform-loaded-item-stone.png',
     'platform-loaded-item-stone-orbit.png',
     'platform-loaded-item-1.png',

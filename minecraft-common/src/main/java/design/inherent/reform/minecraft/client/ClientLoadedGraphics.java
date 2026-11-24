@@ -28,6 +28,73 @@ public final class ClientLoadedGraphics {
   private static final DocumentId MATERIAL = DocumentId.parse("reform:loaded_texture_surface");
   private static final DocumentId ITEM = DocumentId.parse("reform:loaded_item");
 
+  /**
+   * Fresh native single-chest renderer and explicit static lid pose, without a live block entity.
+   */
+  public static ClientLoadedGraphicProvider<ClientChestSubject> chests(GraphicLimits limits) {
+    Objects.requireNonNull(limits);
+    return new ClientLoadedGraphicProvider<>() {
+      public DocumentId id() {
+        return DocumentId.parse("reform:isolated_chest");
+      }
+
+      public ValueType<ClientChestSubject> subjectType() {
+        return ClientChestSubject.type();
+      }
+
+      public GraphicLimits limits() {
+        return limits;
+      }
+
+      public ReferenceStamp resourceStamp() {
+        return LoadedGraphicResources.snapshot().stamp();
+      }
+
+      public CompletionStage<GraphicScenePreparation> prepare(
+          LoadedGraphicRequest<ClientChestSubject> request, ClientGraphicWork work) {
+        work.checkpoint();
+        var resources = LoadedGraphicResources.snapshot();
+        if (!resources.stamp().equals(request.stamp().resources()))
+          throw new PolicyRefusal(
+              "preview.stale", "Loaded resources changed; prepare the chest again");
+        var encoded =
+            ClientChestSubject.type()
+                .codec()
+                .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, request.subject())
+                .getOrThrow()
+                .toString();
+        if (encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+            > request.limits().inputBytes())
+          throw new PolicyRefusal("preview.budget", "The chest pose exceeds its input allowance");
+        if (!resources.ready())
+          return CompletableFuture.completedFuture(
+              new GraphicScenePreparation.Unavailable(
+                  problem(
+                      "preview.resources_unavailable",
+                      "Loaded resources are unavailable; finish or retry the resource reload")));
+        return CompletableFuture.completedFuture(
+            new NativeGraphicContribution<>(
+                NativeChestAdapter.INSTANCE,
+                request.subject(),
+                request.stamp(),
+                GraphicCamera.STANDARD,
+                List.of(
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/source"),
+                        "Source",
+                        "Fresh native single-chest renderer and loaded model layers/textures"),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/pose"),
+                        "Pose",
+                        "Static native lid position: " + request.subject().lidProgress()),
+                    new GraphicSceneData.Fact(
+                        DocumentId.parse("reform:graphic/rendering"),
+                        "Rendering",
+                        "Isolated full-bright reference; no inventory, world, neighbor pairing, ticking, or live block-entity renderer"))));
+      }
+    };
+  }
+
   /** Static native state/model only; block-entity renderers require their own explicit provider. */
   public static ClientLoadedGraphicProvider<ClientBlockSubject> blocks(GraphicLimits limits) {
     Objects.requireNonNull(limits);

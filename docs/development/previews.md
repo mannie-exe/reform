@@ -112,6 +112,14 @@ Draft, native-input, permission, or resource-identity changes prevent old native
 
 The host is integrated with authored loaded-resource slots and registered draft tasks. Exact native and consumer checks remain attributed to their tested candidates in verification. Consumers should use these shared compositions rather than create a private production screen or coordinator around the viewport widget.
 
+## Isolated native chest references
+
+`ClientLoadedGraphics.chests(limits)` accepts `ClientChestSubject`: normal or trapped single chest, with finite lid progress from zero to one. This explicit reference is independent of a saved or edited domain profile. It never copies an inventory, block-entity NBT, world position, or level, and it does not insert, tick, open, or pair a chest in the world.
+
+Preparation creates a fresh native chest renderer and fresh baked model parts using the actual loaded model set, textures, and native dependencies. It does not borrow the live dispatcher's mutable renderer or replace a model/resource manager. The 1.21.1 adapter invokes the native chest renderer directly; the 26.3 adapter extracts detached native state and uses native feature submission. The game's native lid easing, seasonal material choice, geometry, UVs, and shading remain native. This is a static full-bright single-chest reference, without world lighting, neighboring halves, gameplay animation, or arbitrary modded block-entity rendering.
+
+A preparation-only vertex sink measures actual posed native vertices and enforces the canonical position/normal/UV allowance before GPU allocation; it retains no replacement mesh. That allowance is not a measurement of baked model object memory or allocator overhead. Three native model layers are required by the actual renderer constructor. Owned surfaces and outstanding native uses share the existing host ledger and retirement protocol; borrowed native assets are never closed by this provider. Native qualification and material limits belong in [verification](verification.md).
+
 ## Native ownership
 
 `RenderLifetime` separates a view's interest from outstanding native uses. Closing it prevents new uses; resources release only after every acquired use retires. Release entry, successful completion, and failure are separate observations. A failed partial release is retained rather than retried as if nothing happened.
