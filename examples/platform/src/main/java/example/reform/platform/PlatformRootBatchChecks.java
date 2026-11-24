@@ -161,6 +161,26 @@ final class PlatformRootBatchChecks {
                 && inspection.submission().isEmpty()
                 && twin.view().snapshot().orElseThrow().version() == twinVersion);
         unchanged();
+        press("Done");
+        stage = 40;
+      }
+      case 40 -> {
+        check.accept(
+            "close decision over Batch keeps original root and actual capture",
+            NativeScreens.current(client) == workflow.screen()
+                && inspection.reviewedInput().orElseThrow() == reviewed
+                && inspection.submission().isEmpty());
+        unchanged();
+        press("Keep editing");
+        stage = 41;
+      }
+      case 41 -> {
+        check.accept(
+            "Keep editing restores same Batch capture and selected document without recapture",
+            inspection.reviewedInput().orElseThrow() == reviewed
+                && inspection.selectedDocument().orElseThrow().equals(TWIN)
+                && editor.view().snapshot().orElseThrow().version() == version);
+        unchanged();
         check.accept(
             "batch bookmark captures an actual detail control",
             focus(workflow.screen(), button(workflow.screen(), "Inspect fields")));
