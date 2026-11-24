@@ -119,6 +119,43 @@ final class WorkspaceNavigation {
 
   record Position(SectionNavigation.Bookmark scroll, String focus, DocumentId owner) {}
 
+  record UiState(
+      String query,
+      int cursor,
+      int selection,
+      boolean searchFocused,
+      Set<Key> expanded,
+      SectionNavigation.Bookmark viewport,
+      String focus) {
+    UiState {
+      expanded = Set.copyOf(expanded);
+    }
+  }
+
+  private UiState pendingUi;
+
+  UiState uiState() {
+    return new UiState(
+        query,
+        queryCursor,
+        querySelection,
+        searchFocused,
+        expanded,
+        panel == null ? null : panel.bookmark(),
+        focusedRow);
+  }
+
+  void restoreUi(UiState state) {
+    query = state.query();
+    queryCursor = state.cursor();
+    querySelection = state.selection();
+    searchFocused = state.searchFocused();
+    focusedRow = state.focus();
+    expanded.clear();
+    expanded.addAll(state.expanded());
+    pendingUi = state;
+  }
+
   WorkspaceNavigation(BooleanSupplier active, Runnable rebuild, Consumer<Key> reveal) {
     this(active, rebuild, reveal, () -> {});
   }
@@ -249,6 +286,7 @@ final class WorkspaceNavigation {
   }
 
   void preserve(GuiEventListener focused) {
+    if (pendingUi != null) return; // Old mounted controls must not overwrite an admitted return.
     if (search != null) {
       queryCursor = search.getCursorPosition();
       querySelection = search.selection();
@@ -458,6 +496,11 @@ final class WorkspaceNavigation {
     }
     if (shown == 0) panel.row(text("no_matches", "No matching settings"), Component.empty());
     panel.finish(scroll);
+    if (pendingUi != null) {
+      panel.restore(pendingUi.viewport());
+      if (pendingUi.focus() != null) panel.restoreFocus(pendingUi.focus());
+      pendingUi = null;
+    }
     return new Widgets(search, panel, List.copyOf(historyButtons));
   }
 

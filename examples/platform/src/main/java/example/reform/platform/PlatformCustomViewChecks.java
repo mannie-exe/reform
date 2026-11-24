@@ -26,6 +26,7 @@ final class PlatformCustomViewChecks {
   private ClientViewState<Integer> state;
   private CompletableFuture<NavigationAttempt.Result> pending;
   private NavigationBookmark bookmark;
+  private NavigationBookmark navigationState;
   private Button retired;
   private byte[] source;
   private int stage, opens, closes, partialCloses;
@@ -181,6 +182,68 @@ final class PlatformCustomViewChecks {
         check.accept(
             "same-destination bookmark restores its captured native focus",
             button(workflow.screen(), "Increment").isFocused());
+        replace(workflow.screen(), input(workflow.screen(), "Search settings"), "Counter");
+        stage = 11;
+      }
+      case 11 -> {
+        var search = input(workflow.screen(), "Search settings");
+        search.setCursorPosition(2);
+        search.setHighlightPos(5);
+        focus(workflow.screen(), search);
+        navigationState = workflow.navigation().bookmark();
+        press("Show: All");
+        replace(workflow.screen(), input(workflow.screen(), "Search settings"), "Broken");
+        var tools =
+            widgets(workflow.screen()).stream()
+                .filter(
+                    widget ->
+                        widget.getClass().getSimpleName().equals("NavigationButton")
+                            && widget.getMessage().getString().equals("Tools"))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "bookmark test changes actual tree disclosure through native navigation",
+            focus(workflow.screen(), tools));
+        click(workflow.screen(), tools);
+        stage = 12;
+      }
+      case 12 -> {
+        if (!workflow
+            .navigation()
+            .current()
+            .orElseThrow()
+            .equals(new ClientDestination.Category(DestinationId.parse("fixture:custom_tools"))))
+          return false;
+        pending = workflow.navigation().restore(navigationState).completion().toCompletableFuture();
+        stage = 13;
+      }
+      case 13 -> {
+        if (!ready()) return false;
+        var search = input(workflow.screen(), "Search settings");
+        var restored = workflow.navigation().bookmark().navigation().orElseThrow();
+        check.accept(
+            "public bookmark restores actual query, caret, selection and search focus",
+            search.getValue().equals("Counter")
+                && search.getCursorPosition() == 2
+                && search.getHighlighted().equals("unt")
+                && search.isFocused());
+        check.accept(
+            "public bookmark restores filter and admitted disclosure state without opening owners",
+            button(workflow.screen(), "Show: All") != null
+                && restored.filter().equals("ALL")
+                && restored.expandedCount()
+                    == navigationState.navigation().orElseThrow().expandedCount()
+                && workflow.documents().stream()
+                    .noneMatch(ClientEditingWorkflow.DocumentState::opened));
+        pending = workflow.navigation().restore(bookmark).completion().toCompletableFuture();
+        stage = 14;
+      }
+      case 14 -> {
+        if (!ready()) return false;
+        check.accept(
+            "restoring an earlier bookmark also restores its earlier empty filter query",
+            input(workflow.screen(), "Search settings").getValue().isEmpty()
+                && button(workflow.screen(), "Increment").isFocused());
         enter(new ClientDestination.Home());
         stage = 3;
       }

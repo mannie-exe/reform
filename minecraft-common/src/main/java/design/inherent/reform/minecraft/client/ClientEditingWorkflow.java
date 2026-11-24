@@ -268,7 +268,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         navigationIdentity,
         destinationFor(overview.selectedKey),
         Optional.ofNullable(position == null ? null : position.scroll()),
-        Optional.ofNullable(position == null ? null : position.focus()));
+        Optional.ofNullable(position == null ? null : position.focus()),
+        Optional.of(
+            new NavigationBookmark.NavigationState(
+                overview.selectedFilter.name(), overview.navigation.uiState())));
   }
 
   NavigationAttempt restoreBookmark(NavigationBookmark bookmark) {
@@ -609,8 +612,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           && !Objects.requireNonNull(editor)
               .presentation()
               .navigationTargetExists(selected.target().orElseThrow())) throw missingDestination();
-      overview.mountDestination(selected, editor, restoring);
       var bookmark = navigationBookmarks.get(attempt.id());
+      overview.mountDestination(
+          selected,
+          editor,
+          restoring,
+          bookmark == null ? null : bookmark.navigation().orElse(null));
       if (bookmark != null) overview.restorePosition(bookmark);
       attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
     } catch (RuntimeException failed) {
@@ -2473,6 +2480,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       bookmark.viewport().ifPresent(panel::restore);
       bookmark.focus().ifPresent(panel::restoreFocus);
       if (panel.getFocused() != null) setFocused(panel);
+      if (bookmark.navigation().isPresent() && navigationWidgets != null) {
+        if (bookmark.navigation().orElseThrow().searchFocused() && navigation.focusSearch())
+          setFocused(navigationWidgets.search());
+        else if (navigation.restoreTreeFocus()) {
+          navigation.restoreTree();
+          if (navigationWidgets.panel().getFocused() != null) setFocused(navigationWidgets.panel());
+        }
+      }
       navigation.remember(
           selectedKey,
           new WorkspaceNavigation.Position(
@@ -2481,8 +2496,22 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void mountDestination(
         NavigationSelection selected, ClientEditor<?> editor, boolean restoring) {
+      mountDestination(selected, editor, restoring, null);
+    }
+
+    private void mountDestination(
+        NavigationSelection selected,
+        ClientEditor<?> editor,
+        boolean restoring,
+        NavigationBookmark.NavigationState navigationState) {
       // Retain the old page before assigning new identity, including a focusless viewport.
       beforeRebuild();
+      var previousUi = navigation.uiState();
+      var previousFilter = selectedFilter;
+      if (navigationState != null) {
+        navigation.restoreUi(navigationState.tree());
+        selectedFilter = Filter.valueOf(navigationState.filter());
+      }
       var previousKey = selectedKey;
       var previousCategory = categoryPath;
       var previousRoute = selectedRoute;
@@ -2517,6 +2546,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         navigation.visit(
             selectedKey, design.inherent.reform.presentation.FormCatalog.Limits.STANDARD);
       } catch (RuntimeException | Error failed) {
+        navigation.restoreUi(previousUi);
+        selectedFilter = previousFilter;
         selectedKey = previousKey;
         categoryPath = previousCategory;
         selectedRoute = previousRoute;
