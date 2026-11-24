@@ -146,7 +146,11 @@ def retain_native_report(source, reports, reopen, role="native"):
 
 
 def retain_captures(fixture, reports, names, allowed, reopen):
-    if not isinstance(names, list) or len(names) > len(allowed):
+    if not isinstance(names, list):
+        raise ValueError("Native capture list exceeds its bound")
+    if names and not allowed:
+        raise ValueError("Unrecognized native capture")
+    if len(names) > len(allowed):
         raise ValueError("Native capture list exceeds its bound")
     seen = set()
     for name in names:
