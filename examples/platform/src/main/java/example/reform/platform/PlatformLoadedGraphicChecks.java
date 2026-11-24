@@ -240,6 +240,23 @@ public final class PlatformLoadedGraphicChecks {
                 && preparations == 0
                 && released());
         unchanged();
+        var originalResources = normal.resourceStamp();
+        for (var type : net.minecraft.server.packs.PackType.values()) {
+          try (var other =
+              new net.minecraft.server.packs.resources.ReloadableResourceManager(type)) {
+            other
+                .createReload(
+                    Runnable::run,
+                    Runnable::run,
+                    CompletableFuture.completedFuture(net.minecraft.util.Unit.INSTANCE),
+                    List.of())
+                .done()
+                .join();
+          }
+          check.accept(
+              "separate resource-manager reload/close cannot replace loaded-client source: " + type,
+              originalResources.equals(normal.resourceStamp()));
+        }
         press("Prepare loaded image");
         stage = 2;
       }
