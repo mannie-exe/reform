@@ -205,6 +205,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private final DocumentBatch.Validator validator;
   private DocumentBatch batch;
   private BatchReviewScreen batchView;
+  private BatchReviewView batchBody;
+  private DocumentId batchId;
+  private Object batchEpoch;
   private boolean closed;
   private ClientGraphicHost graphics;
   private final ClientNavigation navigation = new ClientNavigation(this);
@@ -244,7 +247,17 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     return isOpen() ? Optional.ofNullable(overview.imported) : Optional.empty();
   }
 
+  /** Cached complete review; this never opens an owner, captures, submits or applies. */
+  public Optional<ClientBatchInspection> batchInspection() {
+    ClientSettingsRuntime.requireClientThread();
+    return isOpen() ? Optional.ofNullable(overview.batched) : Optional.empty();
+  }
+
   private ClientDestination destinationFor(WorkspaceNavigation.Key key) {
+    if (key.kind() == WorkspaceNavigation.Kind.BATCH_REVIEW)
+      return new ClientDestination.BatchReview(key.placement());
+    if (key.kind() == WorkspaceNavigation.Kind.BATCH_RESULT)
+      return new ClientDestination.BatchResult(key.placement(), key.operation().orElseThrow());
     if (key.kind() == WorkspaceNavigation.Kind.IMPORT)
       return new ClientDestination.Import(key.placement());
     if (key.kind() == WorkspaceNavigation.Kind.CONFLICT)
@@ -287,6 +300,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       return Optional.of(new ClientDestination.Conflict(overview.conflictRoute));
     if (isOpen() && overview.inspection != null)
       return Optional.of(new ClientDestination.Inspection(overview.inspectionRoute));
+    if (isOpen() && overview.batched != null)
+      return Optional.of(new ClientDestination.BatchReview(batchId));
     return !isOpen() || overview.selectedKey == null
         ? Optional.empty()
         : Optional.of(destinationFor(overview.selectedKey));
@@ -299,6 +314,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (overview.operationInspection != null && overview.inspection != null)
       return Optional.of(
           openDestination(new ClientDestination.Inspection(overview.inspectionRoute)));
+    if (overview.batched != null
+        && (overview.operationInspection != null || overview.inspection != null))
+      return Optional.of(openDestination(new ClientDestination.BatchReview(batchId)));
     if (overview.metadata() != null)
       return Optional.of(openDestination(destinationFor(overview.selectedKey)));
     var current =
@@ -344,7 +362,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 inspected,
                 operated,
                 conflicted,
-                imported)));
+                imported,
+                overview.batched == null ? null : overview.batched.bookmark())));
   }
 
   NavigationAttempt restoreBookmark(NavigationBookmark bookmark) {
@@ -471,6 +490,47 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     if (!isOpen())
       return availability(
           DestinationAvailability.Kind.CLOSED, "navigation.closed", "This workflow is closed.");
+    if (target instanceof ClientDestination.BatchReview
+        || target instanceof ClientDestination.BatchResult) {
+      var scope =
+          target instanceof ClientDestination.BatchReview review
+              ? review.scope()
+              : ((ClientDestination.BatchResult) target).scope();
+      if (batch == null || !scope.equals(batchId) || batchBody == null || !batchBody.retained())
+        return availability(
+            DestinationAvailability.Kind.MISSING,
+            "navigation.batch_missing",
+            "That complete review is no longer retained. Start a new review explicitly.");
+      try {
+        batch.requireRead();
+      } catch (PolicyRefusal refused) {
+        return new DestinationAvailability(
+            DestinationAvailability.Kind.UNAVAILABLE,
+            refused.report(),
+            java.util.Set.of(
+                DestinationAvailability.Recovery.BACK, DestinationAvailability.Recovery.RETRY));
+      }
+      if (target instanceof ClientDestination.BatchResult result) {
+        var cached = overview.operationViews.get(result.handle());
+        if (cached == null
+            || !cached.destination().equals(result)
+            || !cached.view().retained()
+            || batch
+                .operation(result.handle())
+                .filter(handle -> handle == cached.view().handle())
+                .isEmpty())
+          return availability(
+              DestinationAvailability.Kind.MISSING,
+              "navigation.result_missing",
+              "That batch result is no longer retained.");
+        if (!cached.view().available())
+          return availability(
+              DestinationAvailability.Kind.UNAVAILABLE,
+              "navigation.result_unavailable",
+              "This context cannot inspect that batch result.");
+      }
+      return availability(DestinationAvailability.Kind.READY, null, null);
+    }
     if (target instanceof ClientDestination.DocumentOperation operation) {
       var cached = overview.operationViews.get(operation.handle());
       if (cached == null || !cached.destination().equals(operation) || !cached.view().retained())
@@ -662,6 +722,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         attempt.finish(outcome, available.report(), null);
         return attempt;
       }
+      if (target instanceof ClientDestination.BatchReview
+          || target instanceof ClientDestination.BatchResult) {
+        pendingNavigation = attempt;
+        finishBatchNavigation(attempt);
+        return attempt;
+      }
       if (target instanceof ClientDestination.Operation
           || target instanceof ClientDestination.OperationResult) {
         pendingNavigation = attempt;
@@ -769,6 +835,43 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           && (overview.operationInspection == null
               || !overview.operationInspection.view().isCurrent()))
         throw new IllegalStateException("Requested operation result was not mounted");
+      if (bookmark != null) overview.restorePosition(bookmark);
+      attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
+    } catch (RuntimeException failed) {
+      finishNavigationFailure(attempt, failed);
+    }
+  }
+
+  private void finishBatchNavigation(NavigationAttempt attempt) {
+    if (pendingNavigation != attempt || overview.navigationRequest != attempt.id()) return;
+    if (overview.deferNavigation(() -> finishBatchNavigation(attempt))) return;
+    pendingNavigation = null;
+    try {
+      requireOverview();
+      var available = inspectDestination(attempt.target());
+      if (available.kind() != DestinationAvailability.Kind.READY) {
+        overview.navigation.cancelRestoration();
+        attempt.finish(
+            available.kind() == DestinationAvailability.Kind.MISSING
+                ? NavigationAttempt.Outcome.MISSING
+                : NavigationAttempt.Outcome.UNAVAILABLE,
+            available.report(),
+            null);
+        return;
+      }
+      var bookmark = navigationBookmarks.get(attempt.id());
+      if (bookmark != null && bookmark.navigation().isPresent()) {
+        overview.beforeRebuild();
+        var state = bookmark.navigation().orElseThrow();
+        overview.navigation.restoreUi(state.tree());
+        overview.selectedFilter = Overview.Filter.valueOf(state.filter());
+      }
+      if (attempt.target() instanceof ClientDestination.BatchReview) overview.revealBatch();
+      else {
+        var result = (ClientDestination.BatchResult) attempt.target();
+        overview.activateOperation(
+            Objects.requireNonNull(overview.operationViews.get(result.handle())));
+      }
       if (bookmark != null) overview.restorePosition(bookmark);
       attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
     } catch (RuntimeException failed) {
@@ -1340,6 +1443,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     contributions.clear();
     batch = null;
     batchView = null;
+    batchBody = null;
+    batchId = null;
+    batchEpoch = null;
     if (failure instanceof RuntimeException failed) throw failed;
     if (failure instanceof Error failed) throw failed;
   }
@@ -1454,7 +1560,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                   ? DocumentBatch.Intent.COMMIT
                   : DocumentBatch.Intent.CHECK));
     }
+    overview.retireBatch();
     if (batch != null) batch.close();
+    batchId = id;
+    batchEpoch = new Object();
+    batchBody = null;
     batch =
         new DocumentBatch(
             lifetime, batchAccess, id, members, validate, DocumentBatch.Limits.STANDARD);
@@ -1465,13 +1575,44 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             this::isOpen,
             owner -> ownerEntries.get(owner).form.title(),
             this::inspectBatch,
-            () -> NativeScreens.open(Minecraft.getInstance(), overview),
+            () -> {
+              if (NativeScreens.current(Minecraft.getInstance()) == overview)
+                overview.returnFromBatch();
+              else NativeScreens.open(Minecraft.getInstance(), overview);
+            },
             this::close);
+    var fields = new LinkedHashMap<DocumentId, BatchReviewScreen.Fields>();
+    var actualEditors = new ArrayList<ClientEditor<?>>();
+    for (var member : members) {
+      var actual = ownerEntries.get(member.document()).editor;
+      actualEditors.add(actual);
+      fields.put(
+          member.document(),
+          new BatchReviewScreen.Fields(
+              actual.form().fieldOrder(), actual.form().fieldPresentation()));
+    }
+    batchView
+        .withFieldPresentations(fields)
+        .withInputGuard(
+            () -> {
+              for (var actual : actualEditors) {
+                if (!actual.isOpen())
+                  return new PolicyRefusal("editor.closed", "This review's editing context ended.")
+                      .report();
+                if (actual.presentation().retainedInput())
+                  return new PolicyRefusal(
+                          "client.unaccepted_input",
+                          "Repair or revert unaccepted document input before reviewing or saving this scope.")
+                      .report();
+              }
+              return ValidationReport.VALID;
+            });
     if (from == overview) overview.navigate(batchView);
     else NativeScreens.open(Minecraft.getInstance(), batchView);
   }
 
   private void inspectBatch(DocumentBatch.Entry captured, Screen parent) {
+    var originBatch = batchEpoch;
     var bound = ownerEntries.get(captured.document());
     var selected = editor(bound.form.route());
     var report = captured.preflight();
@@ -1488,14 +1629,26 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               if (path.isPresent()) {
                 NativeScreens.open(Minecraft.getInstance(), overview);
                 overview.openDocument(bound.form.route(), path);
-              } else NativeScreens.open(Minecraft.getInstance(), parent);
+              } else if (isOpen()
+                  && batchEpoch == originBatch
+                  && batchBody != null
+                  && batchBody.retained()) {
+                if (NativeScreens.current(Minecraft.getInstance()) != overview)
+                  NativeScreens.open(Minecraft.getInstance(), overview);
+                overview.revealBatch();
+              } else if (isOpen()) {
+                if (NativeScreens.current(Minecraft.getInstance()) != overview)
+                  NativeScreens.open(Minecraft.getInstance(), overview);
+                overview.openDocument(bound.form.route(), Optional.empty());
+              }
             },
             this::close,
             captured.review(),
             report);
     screen.withFieldOrder(selected.form().fieldOrder());
     screen.withFieldPresentation(selected.form().fieldPresentation());
-    NativeScreens.open(Minecraft.getInstance(), screen);
+    if (NativeScreens.current(Minecraft.getInstance()) == overview) overview.navigate(screen);
+    else NativeScreens.open(Minecraft.getInstance(), screen);
   }
 
   private <O> void openOperation(Contributed<O> entry, boolean restart) {
@@ -1768,6 +1921,72 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       return true;
     }
 
+    private BatchReviewView batched;
+
+    private WorkspaceNavigation.Key batchKey() {
+      return new WorkspaceNavigation.Key(
+          WorkspaceNavigation.Kind.BATCH_REVIEW, Objects.requireNonNull(batchId), Optional.empty());
+    }
+
+    private void hideBatch() {
+      if (batched != null) batched.hide();
+      batched = null;
+    }
+
+    private void retireBatch() {
+      hideBatch();
+      if (batchBody != null) batchBody.retireForNavigation();
+      for (var binding : List.copyOf(operationViews.values()))
+        if (binding.destination() instanceof ClientDestination.BatchResult) {
+          binding.view().retireForNavigation();
+          operationViews.remove(binding.view().handle().snapshot().id());
+          if (operationInspection == binding) operationInspection = null;
+        }
+    }
+
+    private void revealBatch() {
+      var expectedBatch = batch;
+      var expectedRequest = navigationRequest;
+      if (deferNavigation(
+          () -> {
+            if (!isOpen()
+                || NativeScreens.current(Minecraft.getInstance()) != this
+                || batch != expectedBatch
+                || navigationRequest != expectedRequest) return;
+            try {
+              revealBatch();
+            } catch (RuntimeException failed) {
+              showOpeningFailure(failed);
+            }
+          })) return;
+      if (batch == null || batchId == null || batchBody == null || !batchBody.retained())
+        throw missingDestination();
+      batch.requireRead();
+      beforeRebuild();
+      hideInspection();
+      batched = batchBody;
+      navigation.task(batchKey());
+      information.clear();
+      drawerOpen = false;
+      rebuildWidgets();
+      if (!batched.isCurrent()) throw new IllegalStateException("Batch review was not mounted");
+    }
+
+    private boolean adoptBatch(BatchReviewScreen screen) {
+      if (screen != batchView || batch == null || !screen.borrows(batch)) return false;
+      if (batchBody == null) batchBody = screen.borrowView();
+      revealBatch();
+      return true;
+    }
+
+    private void returnFromBatch() {
+      beforeRebuild();
+      hideBatch();
+      hideOperation();
+      navigation.task(null);
+      rebuildWidgets();
+    }
+
     private UnsavedChangesView closeDecision;
     private Supplier<List<DocumentId>> closeDecisionScope = List::of;
 
@@ -1805,10 +2024,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               ? operationInspection.view()
               : conflict != null
                   ? conflict
-                  : imported != null ? imported : inspection != null ? inspection : documentMenu;
+                  : imported != null
+                      ? imported
+                      : inspection != null ? inspection : batched != null ? batched : documentMenu;
     }
 
     private WorkspaceNavigation.Key operationKey(ClientDestination target) {
+      if (target instanceof ClientDestination.BatchResult result)
+        return new WorkspaceNavigation.Key(
+            WorkspaceNavigation.Kind.BATCH_RESULT,
+            result.scope(),
+            Optional.empty(),
+            Optional.empty(),
+            Optional.of(result.handle()));
       if (target instanceof ClientDestination.DocumentOperation operation)
         return new WorkspaceNavigation.Key(
             WorkspaceNavigation.Kind.DOCUMENT_OPERATION,
@@ -1832,7 +2060,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void activateOperation(OperationBinding binding) {
       beforeRebuild();
+      if (binding.destination() instanceof ClientDestination.BatchResult result) {
+        if (batchBody == null || !batchBody.retained() || !result.scope().equals(batchId))
+          throw missingDestination();
+        hideInspection();
+        batched = batchBody;
+      }
       hideOperation();
+      if (batched != null) batched.hide();
       if (inspection != null) inspection.hide();
       if (conflict != null) conflict.hide();
       operationInspection = binding;
@@ -1885,7 +2120,13 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               .findFirst();
       var contributed =
           contributions.values().stream().filter(value -> value.latest == actual).findFirst();
-      if (bound.isEmpty() && contributed.isEmpty()) return false;
+      boolean batchResult =
+          batch != null
+              && batchId != null
+              && batchBody != null
+              && batchBody.retained()
+              && batch.operation(id).filter(handle -> handle == actual).isPresent();
+      if (bound.isEmpty() && contributed.isEmpty() && !batchResult) return false;
       if (revealRetainedOperation(actual)) {
         screen.borrowView().retireForNavigation();
         return true;
@@ -1894,7 +2135,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       ClientDestination target =
           bound.isPresent()
               ? new ClientDestination.DocumentOperation(bound.orElseThrow().form.route(), id)
-              : new ClientDestination.OperationResult(contributed.orElseThrow().action.id(), id);
+              : batchResult
+                  ? new ClientDestination.BatchResult(batchId, id)
+                  : new ClientDestination.OperationResult(
+                      contributed.orElseThrow().action.id(), id);
       var binding =
           new OperationBinding(
               view, target, bound.map(value -> value.form.document()).orElse(null));
@@ -1911,6 +2155,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void hideInspection() {
+      hideBatch();
       hideCloseDecision();
       hideImport();
       hideDocumentMenu();
@@ -1946,6 +2191,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection() {
+      retireBatch();
       hideCloseDecision();
       if (documentMenu != null) documentMenu.retireForNavigation();
       hideDocumentMenu();
@@ -1960,6 +2206,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void retireInspection(DocumentId document) {
+      if (batch != null && batch.documents().contains(document)) {
+        retireBatch();
+        var previousBatch = batch;
+        batch = null;
+        batchView = null;
+        batchBody = null;
+        batchId = null;
+        batchEpoch = null;
+        previousBatch.close();
+      }
       hideCloseDecision();
       if (documentMenu != null && documentMenu.document().equals(document)) {
         documentMenu.retireForNavigation();
@@ -1981,6 +2237,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     protected boolean managedNavigation(Screen next) {
+      if (next instanceof BatchReviewScreen review) return adoptBatch(review);
       if (next instanceof ImportScreen<?> importing) return adoptImport(importing);
       if (next == this
           && NativeScreens.current(Minecraft.getInstance()) == this
@@ -2011,7 +2268,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         navigation.task(
             conflict != null
                 ? conflictKey(conflictRoute)
-                : inspection == null ? null : inspectionKey(inspectionRoute));
+                : inspection != null
+                    ? inspectionKey(inspectionRoute)
+                    : batched != null ? batchKey() : null);
         rebuildWidgets();
         return true;
       }
@@ -2036,6 +2295,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         if (admitted.isEmpty())
           return false; // A genuinely foreign owner keeps its explicit handoff.
         beforeRebuild();
+        var parentBatch = batched;
         var borrowed = review.borrowView();
         var route =
             admitted.stream()
@@ -2048,6 +2308,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         if (replaced != null) replaced.retireForNavigation();
         inspection = borrowed;
         inspectionRoute = route;
+        batched = parentBatch;
         navigation.task(inspectionKey(route));
         information.clear();
         drawerOpen = false;
@@ -2180,6 +2441,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (conflict != null) selected.put(conflictRoute, List.of());
       if (documentMenu != null) selected.put(documentMenuRoute, List.of());
       if (imported != null) selected.put(importRoute, List.of());
+      if (metadata() == batched && batched != null && batch != null)
+        for (var document : batch.documents()) {
+          var bound = ownerEntries.get(document);
+          if (bound != null) selected.put(bound.form.route(), List.of());
+        }
       if (closeDecision != null)
         for (var route : closeDecisionScope.get()) selected.put(route, List.of());
       for (var route : selected.keySet()) ensureOwner(route);
@@ -3218,6 +3484,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var operated = bookmark.navigation().map(NavigationBookmark.NavigationState::operation);
       var conflicted = bookmark.navigation().map(NavigationBookmark.NavigationState::conflict);
       var importedState = bookmark.navigation().map(NavigationBookmark.NavigationState::imported);
+      var batchState = bookmark.navigation().map(NavigationBookmark.NavigationState::batch);
+      if (batched != null && batchState.isPresent()) batched.restore(batchState.orElseThrow());
       if (operationInspection != null && operated.isPresent()) {
         operationInspection.view().restore(operated.orElseThrow());
       } else if (conflict != null && conflicted.isPresent()) {
@@ -3268,6 +3536,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         OperationBinding operation) {
       // Retain the old page before assigning new identity, including a focusless viewport.
       beforeRebuild();
+      var previousBatch = batched;
       var previousInspection = inspection;
       var previousInspectionRoute = inspectionRoute;
       var previousOperation = operationInspection;
@@ -3331,6 +3600,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             selectedKey, design.inherent.reform.presentation.FormCatalog.Limits.STANDARD);
       } catch (RuntimeException | Error failed) {
         hideOperation();
+        batched = previousBatch;
         inspection = previousInspection;
         inspectionRoute = previousInspectionRoute;
         operationInspection = previousOperation;
@@ -3633,18 +3903,26 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     @Override
     public Component getNarrationMessage() {
       if (!isOpen()) return title;
-      var message = title.copy().append(". ").append(scopeStatus());
-      if (notice != null) message.append(". ").append(notice);
-      if (metadata() != null) message.append(". ").append(metadata().getNarrationMessage());
-      if (actionRoute != null
+      var message = title.copy().append("\n").append(scopeStatus());
+      if (notice != null) message.append("\n").append(notice);
+      if (metadata() != null) message.append("\n").append(metadata().getNarrationMessage());
+      boolean completeScope =
+          closeDecision != null
+              || batched != null && metadata() == batched
+              || operationInspection != null
+                  && operationInspection.destination() instanceof ClientDestination.BatchResult;
+      if (!completeScope
+          && actionRoute != null
           && entry(actionRoute).editor != null
           && entry(actionRoute).editor.isOpen())
-        message.append(". ").append(entry(actionRoute).editor.presentation().contextMessage());
+        message.append("\n").append(entry(actionRoute).editor.presentation().contextMessage());
       return message;
     }
 
     private Component scopeStatus() {
+      if (closeDecision != null) return closeDecision.contextStatus();
       if (operationInspection != null) return operationInspection.view().context();
+      if (batched != null && metadata() == batched) return batched.caption();
       if (isHome())
         return Component.translatableWithFallback(
             "reform.workspace.home_status",

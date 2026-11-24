@@ -392,6 +392,11 @@ public final class DocumentBatch implements AutoCloseable {
     return scope.find(id);
   }
 
+  /** Declared membership only; the issued review retains the validated submission order. */
+  public List<DocumentId> documents() {
+    return members.stream().map(Member::document).toList();
+  }
+
   public boolean hasActiveOperations() {
     return scope.hasActiveOperations();
   }

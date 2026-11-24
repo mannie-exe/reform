@@ -256,11 +256,25 @@ final class UnsavedChangesView extends MetadataView {
 
   @Override
   public Component getNarrationMessage() {
-    var message = title.copy().append(". ").append(contextLabel).append(". ").append(explanation);
+    var message =
+        composed
+            ? explanation.copy()
+            : title.copy().append("\n").append(contextLabel).append("\n").append(explanation);
     for (var subject : displayedSubjects)
-      message.append(". ").append(subject.title()).append(": ").append(subject.state());
-    blocked.ifPresent(reason -> message.append(". ").append(reason));
+      message.append("\n").append(subject.title()).append(": ").append(subject.state());
+    blocked.ifPresent(reason -> message.append("\n").append(reason));
     return message;
+  }
+
+  Component contextStatus() {
+    if (displayedSubjects.size() == 1)
+      return displayedSubjects.getFirst().title().copy().append(": ").append(title);
+    if (displayedSubjects.isEmpty()) return title.copy();
+    return Component.translatableWithFallback(
+        "reform.close.affected_count",
+        "%s · %s affected documents",
+        title,
+        displayedSubjects.size());
   }
 
   @Override

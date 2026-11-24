@@ -55,6 +55,21 @@ public sealed interface ClientDestination {
     }
   }
 
+  /** Return to the current admitted complete review without capturing or saving again. */
+  record BatchReview(DocumentId scope) implements ClientDestination {
+    public BatchReview {
+      Objects.requireNonNull(scope);
+    }
+  }
+
+  /** Inspect one exact retained batch submission; opening never repeats it. */
+  record BatchResult(DocumentId scope, UUID handle) implements ClientDestination {
+    public BatchResult {
+      Objects.requireNonNull(scope);
+      Objects.requireNonNull(handle);
+    }
+  }
+
   record Placement(DestinationId id) implements ClientDestination {
     public Placement {
       Objects.requireNonNull(id);

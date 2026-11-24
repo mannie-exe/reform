@@ -110,6 +110,12 @@ final class PlatformRootCloseChecks {
         check.accept(
             "close decision names the actual affected document in narration",
             workflow.screen().getNarrationMessage().getString().contains("Whole preferences"));
+        var narrated = workflow.screen().getNarrationMessage().getString();
+        check.accept(
+            "close narration separates facts without a duplicated heading or punctuation",
+            narrated.indexOf("Unsaved changes") >= 0
+                && narrated.indexOf("Unsaved changes") == narrated.lastIndexOf("Unsaved changes")
+                && !narrated.contains(".. "));
         geometry(workflow.screen());
         NativeClientProbe.size(client, width, height);
         stage = 90;

@@ -466,6 +466,7 @@ class DocumentBatchTest {
       h.editFirst("15");
       h.editSecond("17");
       var review = h.review();
+      assertEquals(List.of(FIRST, SECOND), h.nativeCall(() -> h.batch.documents()));
       assertEquals(
           List.of(SECOND, FIRST),
           review.entries().stream().map(DocumentBatch.Entry::document).toList());

@@ -599,7 +599,8 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (!choicesQualified && !entryChoices()) return false;
         if (customViewChecks == null) customViewChecks = new PlatformCustomViewChecks(this::check);
         if (!customViewChecks.tick()) return false;
-        if (rootBatchChecks == null) rootBatchChecks = new PlatformRootBatchChecks(this::check);
+        if (rootBatchChecks == null)
+          rootBatchChecks = new PlatformRootBatchChecks(this::check, capture);
         if (!rootBatchChecks.tick()) return false;
         if (rootCloseChecks == null)
           rootCloseChecks = new PlatformRootCloseChecks(this::check, capture);

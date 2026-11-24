@@ -8,7 +8,6 @@ import design.inherent.reform.operation.DocumentActions;
 import design.inherent.reform.operation.DocumentReview;
 import design.inherent.reform.operation.OperationDescriptor.EntryPoint;
 import design.inherent.reform.operation.OperationHandle;
-import design.inherent.reform.owner.ApplicationEffects;
 import design.inherent.reform.owner.EditorActor;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.FormGeometry;
@@ -41,7 +40,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
     EFFECTIVE
   }
 
-  private static final int SUMMARY_CHARACTERS = 512, ISSUE_PAGE = 16;
+  private static final int SUMMARY_CHARACTERS = ReviewText.SUMMARY_CHARACTERS, ISSUE_PAGE = 16;
 
   design.inherent.reform.definition.DocumentId document() {
     return actions.definition().id();
@@ -531,7 +530,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
         text("application", "Application timing"),
         entry
             .application()
-            .<Component>map(this::application)
+            .<Component>map(ReviewText::application)
             .orElseGet(
                 () ->
                     text(
@@ -841,12 +840,15 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
       var change = changes.get(index);
       var application = review.applicationEffects().forField(change.path());
       var detail =
-          Component.literal(preview(change.beforeJson()) + " → " + preview(change.afterJson()));
+          Component.literal(
+              ReviewText.preview(change.beforeJson())
+                  + " → "
+                  + ReviewText.preview(change.afterJson()));
       detail
           .append("\n")
           .append(
               application
-                  .<Component>map(this::application)
+                  .<Component>map(ReviewText::application)
                   .orElseGet(
                       () ->
                           text(
@@ -854,22 +856,6 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
                               "No application boundary is declared for this field. Saving does not certify live effects.")));
       panel.row("detail:change:" + index, label(change.path()), detail);
     }
-  }
-
-  private static String preview(String value) {
-    return value.length() > SUMMARY_CHARACTERS
-        ? value.substring(0, SUMMARY_CHARACTERS) + "…"
-        : value;
-  }
-
-  private Component application(ApplicationEffects.Rule rule) {
-    return Component.literal(
-            rule.timings().stream()
-                .sorted()
-                .map(value -> timing(value).getString())
-                .collect(java.util.stream.Collectors.joining(", ")))
-        .append("\n")
-        .append(rule.explanation());
   }
 
   private void diagnosis() {
@@ -976,24 +962,6 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
   private Component label(FieldPath path) {
     return FieldLabels.input(
         actions.definition().id(), path, text("document", "Document"), fieldPresentation.catalog());
-  }
-
-  private Component timing(ApplicationEffects.Timing value) {
-    String fallback =
-        switch (value) {
-          case OWNER_PUBLICATION -> "Owner value publication";
-          case EXPLICIT_RELOAD -> "Explicit reload";
-          case REOPEN_VIEW -> "Reopen the view";
-          case NEXT_OPERATION -> "Next operation";
-          case NEXT_JOIN -> "Next join";
-          case WORLD_RESTART -> "World or server restart";
-          case GAME_RESTART -> "Game restart";
-          case NEW_WORLD -> "New world only";
-          case NEW_CHUNKS -> "Newly generated chunks";
-          case INCOMPATIBLE -> "Incompatible with this context";
-          case OWNER_MANAGED -> "Application managed by the owner";
-        };
-    return text("timing." + value.name().toLowerCase(Locale.ROOT), fallback);
   }
 
   private void index() {

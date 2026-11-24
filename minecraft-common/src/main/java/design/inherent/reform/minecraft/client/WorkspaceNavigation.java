@@ -38,6 +38,8 @@ final class WorkspaceNavigation {
     INSPECTION,
     CONFLICT,
     IMPORT,
+    BATCH_REVIEW,
+    BATCH_RESULT,
     DOCUMENT_OPERATION,
     OPERATION_RESULT,
     FIELD
@@ -63,7 +65,9 @@ final class WorkspaceNavigation {
       Objects.requireNonNull(field);
       Objects.requireNonNull(section);
       Objects.requireNonNull(operation);
-      if ((kind == Kind.DOCUMENT_OPERATION || kind == Kind.OPERATION_RESULT)
+      if ((kind == Kind.DOCUMENT_OPERATION
+              || kind == Kind.OPERATION_RESULT
+              || kind == Kind.BATCH_RESULT)
           != operation.isPresent())
         throw new IllegalArgumentException(
             "Only a result navigation key names an operation handle");

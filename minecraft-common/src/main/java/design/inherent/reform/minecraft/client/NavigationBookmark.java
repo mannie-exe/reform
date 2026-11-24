@@ -30,6 +30,7 @@ public record NavigationBookmark(
     private final OperationView.Bookmark operation;
     private final ConflictView.Bookmark conflict;
     private final ImportView.Bookmark imported;
+    private final BatchReviewView.Bookmark batch;
 
     NavigationState(String filter, WorkspaceNavigation.UiState tree) {
       this(filter, tree, null);
@@ -64,6 +65,18 @@ public record NavigationBookmark(
         OperationView.Bookmark operation,
         ConflictView.Bookmark conflict,
         ImportView.Bookmark imported) {
+      this(filter, tree, inspection, operation, conflict, imported, null);
+    }
+
+    NavigationState(
+        String filter,
+        WorkspaceNavigation.UiState tree,
+        ReviewView.Bookmark inspection,
+        OperationView.Bookmark operation,
+        ConflictView.Bookmark conflict,
+        ImportView.Bookmark imported,
+        BatchReviewView.Bookmark batch) {
+      this.batch = batch;
       this.imported = imported;
       this.conflict = conflict;
       this.operation = operation;
@@ -98,6 +111,10 @@ public record NavigationBookmark(
 
     ImportView.Bookmark imported() {
       return imported;
+    }
+
+    BatchReviewView.Bookmark batch() {
+      return batch;
     }
 
     ConflictView.Bookmark conflict() {
