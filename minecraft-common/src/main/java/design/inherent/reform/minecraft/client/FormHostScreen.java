@@ -257,6 +257,12 @@ abstract class FormHostScreen extends NativeFormScreen {
   }
 
   @Override
+  public void onFilesDrop(java.util.List<java.nio.file.Path> paths) {
+    mountedView();
+    if (mounted != null) mounted.onFilesDrop(paths);
+  }
+
+  @Override
   public void onClose() {
     if (mounted == null) super.onClose();
     else mounted.onClose();

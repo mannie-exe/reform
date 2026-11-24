@@ -153,6 +153,8 @@ abstract class FormView {
 
   public void tick() {}
 
+  public void onFilesDrop(java.util.List<java.nio.file.Path> paths) {}
+
   public void render(FormCanvas canvas, int x, int y, float delta) {}
 
   public Component getNarrationMessage() {

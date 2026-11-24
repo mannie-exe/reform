@@ -48,6 +48,13 @@ public sealed interface ClientDestination {
     }
   }
 
+  /** The admitted source/format import review; opening never reads a file, stages, or saves. */
+  record Import(DocumentId route) implements ClientDestination {
+    public Import {
+      Objects.requireNonNull(route);
+    }
+  }
+
   record Placement(DestinationId id) implements ClientDestination {
     public Placement {
       Objects.requireNonNull(id);

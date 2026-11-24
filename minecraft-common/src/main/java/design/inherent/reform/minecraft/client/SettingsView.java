@@ -2293,18 +2293,22 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     return Optional.empty();
   }
 
-  private void openImport() {
+  boolean acceptsImport() {
     var view = actions.view();
-    if (closed
-        || !isCurrent()
-        || saving
-        || loading
-        || pendingEdits > 0
-        || unsent()
-        || view.availability() != EditorActor.Availability.READY
-        || view.snapshot().isEmpty()
-        || view.pending().isPresent()
-        || view.review().isPresent()) return;
+    return !closed
+        && !saving
+        && !loading
+        && pendingEdits == 0
+        && !unsent()
+        && view.availability() == EditorActor.Availability.READY
+        && view.snapshot().isPresent()
+        && view.pending().isEmpty()
+        && view.review().isEmpty();
+  }
+
+  void openImport() {
+    if (!isCurrent() || !acceptsImport()) return;
+    var view = actions.view();
     var snapshot = view.snapshot().orElseThrow();
     var screen =
         new ImportScreen<>(
@@ -2325,6 +2329,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             },
             this::abandonEditing,
             Optional.ofNullable(declaredImports));
+    screen.withFieldOrder(fieldOrder());
+    screen.withFieldPresentation(presentation);
     handoff = true;
     try {
       openScreen(screen);

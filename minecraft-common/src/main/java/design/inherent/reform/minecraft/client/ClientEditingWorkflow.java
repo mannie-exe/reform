@@ -237,7 +237,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     return isOpen() ? Optional.ofNullable(overview.conflict) : Optional.empty();
   }
 
+  /** Cached selected import capture; this never reads, parses, stages or saves. */
+  public Optional<ClientImportInspection> importInspection() {
+    ClientSettingsRuntime.requireClientThread();
+    return isOpen() ? Optional.ofNullable(overview.imported) : Optional.empty();
+  }
+
   private ClientDestination destinationFor(WorkspaceNavigation.Key key) {
+    if (key.kind() == WorkspaceNavigation.Kind.IMPORT)
+      return new ClientDestination.Import(key.placement());
     if (key.kind() == WorkspaceNavigation.Kind.CONFLICT)
       return new ClientDestination.Conflict(key.placement());
     if (key.kind() == WorkspaceNavigation.Kind.DOCUMENT_OPERATION)
@@ -272,6 +280,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     ClientSettingsRuntime.requireClientThread();
     if (isOpen() && overview.operationInspection != null)
       return Optional.of(overview.operationInspection.destination());
+    if (isOpen() && overview.imported != null)
+      return Optional.of(new ClientDestination.Import(overview.importRoute));
     if (isOpen() && overview.conflict != null)
       return Optional.of(new ClientDestination.Conflict(overview.conflictRoute));
     if (isOpen() && overview.inspection != null)
@@ -319,6 +329,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         overview.operationInspection == null && overview.conflict != null
             ? overview.conflict.bookmark()
             : null;
+    var imported = overview.imported == null ? null : overview.imported.bookmark();
     var position = overview.navigation.position(overview.selectedKey).orElse(null);
     return new NavigationBookmark(
         navigationIdentity,
@@ -331,7 +342,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 overview.navigation.uiState(),
                 inspected,
                 operated,
-                conflicted)));
+                conflicted,
+                imported)));
   }
 
   NavigationAttempt restoreBookmark(NavigationBookmark bookmark) {
@@ -369,6 +381,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       target = new ClientDestination.Document(operation.route());
     if (target instanceof ClientDestination.Conflict conflict)
       target = new ClientDestination.Document(conflict.route());
+    if (target instanceof ClientDestination.Import imported)
+      target = new ClientDestination.Document(imported.route());
     if (target instanceof ClientDestination.View view) {
       if (!presentation.referenceTasks().containsKey(view.id())
           && !presentation.views().containsKey(view.id())) throw missingDestination();
@@ -701,6 +715,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         throw new PolicyRefusal(
             "inspection.input_unaccepted",
             "Finish or repair the current field input before opening inspection.");
+      if (attempt.target() instanceof ClientDestination.Import
+          && !Objects.requireNonNull(editor).presentation().acceptsImport())
+        throw new PolicyRefusal(
+            "import.input_unaccepted",
+            "Finish or repair the current field input before opening import review.");
       if (attempt.target() instanceof ClientDestination.Conflict
           && !Objects.requireNonNull(editor).presentation().acceptsConflict())
         throw new PolicyRefusal(
@@ -732,7 +751,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               ? overview.inspectionKey(requested.route())
               : attempt.target() instanceof ClientDestination.Conflict requested
                   ? overview.conflictKey(requested.route())
-                  : null,
+                  : attempt.target() instanceof ClientDestination.Import requested
+                      ? overview.importKey(requested.route())
+                      : null,
           attempt.target() instanceof ClientDestination.DocumentOperation operation
               ? Objects.requireNonNull(overview.operationViews.get(operation.handle()))
               : null);
@@ -741,6 +762,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       if (attempt.target() instanceof ClientDestination.Conflict requested)
         overview.revealConflict(requested.route(), Objects.requireNonNull(editor));
+      if (attempt.target() instanceof ClientDestination.Import requested)
+        overview.revealImport(requested.route(), Objects.requireNonNull(editor));
       if (attempt.target() instanceof ClientDestination.DocumentOperation
           && (overview.operationInspection == null
               || !overview.operationInspection.view().isCurrent()))
@@ -1105,11 +1128,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     entry.retiring = true;
     Throwable failure = null;
     try {
-      overview.retireInspection(previous.document());
+      try {
+        overview.retireInspection(previous.document());
+      } catch (RuntimeException | Error failed) {
+        failure = failed;
+      }
       try {
         previous.close();
       } catch (RuntimeException | Error failed) {
-        failure = failed;
+        if (failure == null) failure = failed;
+        else if (failure != failed) failure.addSuppressed(failed);
       }
       for (var item : List.copyOf(taskViews.entrySet())) {
         if (item.getValue().owner() != previous) continue;
@@ -1247,10 +1275,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   private void retire() {
     if (closed) return;
     closed = true;
-    overview.retireInspection();
+    Throwable failure = null;
+    try {
+      overview.retireInspection();
+    } catch (RuntimeException | Error failed) {
+      failure = failed;
+    }
     overview.cancelDeferredNavigation();
     supersedeNavigation();
-    Throwable failure = null;
     for (var task : List.copyOf(taskViews.values())) {
       try {
         task.lifetime().close();
@@ -1536,6 +1568,92 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private OperationBinding operationInspection;
     private final Map<java.util.UUID, OperationBinding> operationViews = new LinkedHashMap<>();
 
+    private ImportView<?> imported;
+    private DocumentId importRoute;
+    private final Map<DocumentId, ImportView<?>> imports = new LinkedHashMap<>();
+
+    private WorkspaceNavigation.Key importKey(DocumentId route) {
+      return new WorkspaceNavigation.Key(WorkspaceNavigation.Kind.IMPORT, route, Optional.empty());
+    }
+
+    private void hideImport() {
+      if (imported != null) imported.hide();
+      imported = null;
+      importRoute = null;
+    }
+
+    private void retireImports(DocumentId owner) {
+      var retired =
+          imports.values().stream()
+              .filter(view -> owner == null || view.document().equals(owner))
+              .toList();
+      Throwable failure = null;
+      for (var view : retired) {
+        imports.remove(view.document());
+        if (imported == view) {
+          imported = null;
+          importRoute = null;
+          navigation.task(null);
+        }
+        try {
+          view.retireForNavigation();
+        } catch (RuntimeException | Error failed) {
+          if (failure == null) failure = failed;
+          else if (failure != failed) failure.addSuppressed(failed);
+        }
+      }
+      if (failure instanceof RuntimeException failed) throw failed;
+      if (failure instanceof Error failed) throw failed;
+    }
+
+    private void revealImport(DocumentId route, ClientEditor<?> editor) {
+      var retained = imports.get(editor.document());
+      if (retained != null && retained.retained() && retained.borrows(editor.actions())) {
+        beforeRebuild();
+        hideInspection();
+        imported = retained;
+        importRoute = route;
+        navigation.task(importKey(route));
+        information.clear();
+        drawerOpen = false;
+        rebuildWidgets();
+      } else editor.presentation().openImport();
+      if (imported == null || !imported.isCurrent())
+        throw new PolicyRefusal(
+            "import.input_unaccepted",
+            "Finish or repair the current field input before opening import review.");
+    }
+
+    private boolean adoptImport(ImportScreen<?> screen) {
+      var admitted =
+          entries.values().stream()
+              .filter(
+                  bound ->
+                      bound.editor != null
+                          && bound.editor.isOpen()
+                          && screen.borrows(bound.editor.actions()))
+              .toList();
+      if (admitted.isEmpty()) return false;
+      beforeRebuild();
+      var borrowed = screen.borrowView();
+      var route =
+          admitted.stream()
+              .map(bound -> bound.form.route())
+              .filter(id -> id.equals(actionRoute))
+              .findFirst()
+              .orElse(admitted.getFirst().form.route());
+      hideInspection();
+      var replaced = imports.put(borrowed.document(), borrowed);
+      if (replaced != null) replaced.retireForNavigation();
+      imported = borrowed;
+      importRoute = route;
+      navigation.task(importKey(route));
+      information.clear();
+      drawerOpen = false;
+      rebuildWidgets();
+      return true;
+    }
+
     private DocumentActionsView documentMenu;
     private DocumentId documentMenuRoute;
 
@@ -1652,7 +1770,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private MetadataView metadata() {
       return operationInspection != null
           ? operationInspection.view()
-          : conflict != null ? conflict : inspection != null ? inspection : documentMenu;
+          : conflict != null
+              ? conflict
+              : imported != null ? imported : inspection != null ? inspection : documentMenu;
     }
 
     private WorkspaceNavigation.Key operationKey(ClientDestination target) {
@@ -1758,6 +1878,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     }
 
     private void hideInspection() {
+      hideImport();
       hideDocumentMenu();
       hideOperation();
       hideConflict();
@@ -1800,6 +1921,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       inspections.clear();
       inspection = null;
       inspectionRoute = null;
+      retireImports(null);
     }
 
     private void retireInspection(DocumentId document) {
@@ -1810,17 +1932,29 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       retireOperations(document);
       retireConflicts(document);
       var retained = inspections.remove(document);
-      if (retained == null) return;
-      retained.retireForNavigation();
-      if (inspection == retained) {
-        inspection = null;
-        inspectionRoute = null;
-        navigation.task(null);
+      if (retained != null) {
+        retained.retireForNavigation();
+        if (inspection == retained) {
+          inspection = null;
+          inspectionRoute = null;
+          navigation.task(null);
+        }
       }
+      retireImports(document);
     }
 
     @Override
     protected boolean managedNavigation(Screen next) {
+      if (next instanceof ImportScreen<?> importing) return adoptImport(importing);
+      if (next == this
+          && NativeScreens.current(Minecraft.getInstance()) == this
+          && imported != null) {
+        beforeRebuild();
+        hideImport();
+        navigation.task(null);
+        rebuildWidgets();
+        return true;
+      }
       if (next instanceof DocumentActionsScreen actions) return adoptDocumentMenu(actions);
       if (next == this
           && NativeScreens.current(Minecraft.getInstance()) == this
@@ -2009,6 +2143,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (inspection != null) selected.put(inspectionRoute, List.of());
       if (conflict != null) selected.put(conflictRoute, List.of());
       if (documentMenu != null) selected.put(documentMenuRoute, List.of());
+      if (imported != null) selected.put(importRoute, List.of());
       for (var route : selected.keySet()) ensureOwner(route);
       var returned = resetList ? navigation.position(selectedKey).orElse(null) : null;
       if (returned != null && selected.containsKey(returned.owner()))
@@ -3044,10 +3179,13 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var captured = bookmark.navigation().map(NavigationBookmark.NavigationState::inspection);
       var operated = bookmark.navigation().map(NavigationBookmark.NavigationState::operation);
       var conflicted = bookmark.navigation().map(NavigationBookmark.NavigationState::conflict);
+      var importedState = bookmark.navigation().map(NavigationBookmark.NavigationState::imported);
       if (operationInspection != null && operated.isPresent()) {
         operationInspection.view().restore(operated.orElseThrow());
       } else if (conflict != null && conflicted.isPresent()) {
         conflict.restore(conflicted.orElseThrow());
+      } else if (imported != null && importedState.isPresent()) {
+        imported.restore(importedState.orElseThrow());
       } else if (inspection != null && captured.isPresent()) {
         inspection.restore(captured.orElseThrow());
       } else {
@@ -3095,6 +3233,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var previousInspection = inspection;
       var previousInspectionRoute = inspectionRoute;
       var previousOperation = operationInspection;
+      var previousImport = imported;
+      var previousImportRoute = importRoute;
       var previousMenu = documentMenu;
       var previousMenuRoute = documentMenuRoute;
       var previousConflict = conflict;
@@ -3156,6 +3296,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         inspection = previousInspection;
         inspectionRoute = previousInspectionRoute;
         operationInspection = previousOperation;
+        imported = previousImport;
+        importRoute = previousImportRoute;
         documentMenu = previousMenu;
         documentMenuRoute = previousMenuRoute;
         conflict = previousConflict;
@@ -3165,7 +3307,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 ? operationKey(previousOperation.destination())
                 : previousConflict != null
                     ? conflictKey(previousConflictRoute)
-                    : previousInspection == null ? null : inspectionKey(previousInspectionRoute));
+                    : previousImport != null
+                        ? importKey(previousImportRoute)
+                        : previousInspection == null
+                            ? null
+                            : inspectionKey(previousInspectionRoute));
         navigation.restoreUi(previousUi);
         selectedFilter = previousFilter;
         selectedKey = previousKey;

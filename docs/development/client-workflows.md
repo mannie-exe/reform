@@ -78,6 +78,14 @@ The root keeps its stable identity and location, and uses the same native focus,
 
 Conflict review uses the same task regions for its field index and complete comparisons. Narrow bodies retain one scrolling flow and a field selector. Choices remain with the existing conflict service through reflow and return; source revisions are available under Source details. Reading, choosing, resolving in the draft, and saving remain separate actions.
 
+### Retained import review
+
+An import over a retained workflow's exact `DocumentActions` stays in the original native root. `ImportScreen` remains the standalone host of the same body. `ClientDestination.Import(route)` opens or returns to that task through the normal READ and native-input guards. `workflow.importInspection()` exposes its cached `ClientImportInspection` only while that task is selected. Its `reviewedInput()` does not read, parse, stage, or save, and unavailable READ authority hides captured material.
+
+The source and explicit format controls sit beside the comparison when measured space supports it; otherwise both join the shared scrolling flow. Captions and comparison order follow the invoking form's presentation without changing the codec or issued comparison. Standalone callers may declare `withFieldOrder` and `withFieldPresentation` before mounting. Reflow and bookmarks retain native focus and independent region positions; they do not restore an older source selection or target revision.
+
+Choosing or dropping a file admits that source. **Preview import** performs the existing bounded read, parse, validation, and comparison. **Stage draft** uses that actual issued comparison and changes only the original draft. It does not save or apply; one Undo restores the previous draft. A changed target refuses staging until an explicit new preview. Returning to a cached import does not refresh it. Leaving the composed task requests cancellation of obsolete preview work and abandons a queued file chooser; an entered chooser still drains through the native dialog's actual completion. Retiring the owner closes the original import scope. Standalone Back retains its existing release behavior.
+
 ### Retained conflict review
 
 The generated conflict entry and `ClientDestination.Conflict(route)` open the owner's actual `DocumentConflicts` comparison inside the existing root. `ConflictScreen` remains the standalone host of the same `ConflictView`. Adoption requires the exact retained `DocumentActions`, not a matching document ID. The typed route refuses pending or rejected native input before changing the origin and reports a missing review after resolution.
