@@ -191,7 +191,18 @@ final class PlatformCustomViewChecks {
         search.setHighlightPos(5);
         focus(workflow.screen(), search);
         navigationState = workflow.navigation().bookmark();
-        press("Show: All");
+        var filter =
+            widgets(workflow.screen()).stream()
+                .filter(
+                    widget ->
+                        widget instanceof net.minecraft.client.gui.components.CycleButton<?>
+                            && widget.getMessage().getString().equals("Show: All"))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "bookmark filter changes through its actual native cycle control",
+            focus(workflow.screen(), filter));
+        click(workflow.screen(), filter);
         replace(workflow.screen(), input(workflow.screen(), "Search settings"), "Broken");
         var tools =
             widgets(workflow.screen()).stream()
@@ -229,7 +240,11 @@ final class PlatformCustomViewChecks {
                 && search.isFocused());
         check.accept(
             "public bookmark restores filter and admitted disclosure state without opening owners",
-            button(workflow.screen(), "Show: All") != null
+            widgets(workflow.screen()).stream()
+                    .anyMatch(
+                        widget ->
+                            widget instanceof net.minecraft.client.gui.components.CycleButton<?>
+                                && widget.getMessage().getString().equals("Show: All"))
                 && restored.filter().equals("ALL")
                 && restored.expandedCount()
                     == navigationState.navigation().orElseThrow().expandedCount()
