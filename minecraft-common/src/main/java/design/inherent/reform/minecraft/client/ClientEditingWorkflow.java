@@ -231,7 +231,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         : Optional.empty();
   }
 
+  /** Cached comparison and currently mounted native controls from the existing conflict service. */
+  public Optional<ClientConflictInspection> conflictInspection() {
+    ClientSettingsRuntime.requireClientThread();
+    return isOpen() ? Optional.ofNullable(overview.conflict) : Optional.empty();
+  }
+
   private ClientDestination destinationFor(WorkspaceNavigation.Key key) {
+    if (key.kind() == WorkspaceNavigation.Kind.CONFLICT)
+      return new ClientDestination.Conflict(key.placement());
     if (key.kind() == WorkspaceNavigation.Kind.DOCUMENT_OPERATION)
       return new ClientDestination.DocumentOperation(
           key.placement(), key.operation().orElseThrow());
@@ -264,6 +272,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     ClientSettingsRuntime.requireClientThread();
     if (isOpen() && overview.operationInspection != null)
       return Optional.of(overview.operationInspection.destination());
+    if (isOpen() && overview.conflict != null)
+      return Optional.of(new ClientDestination.Conflict(overview.conflictRoute));
     if (isOpen() && overview.inspection != null)
       return Optional.of(new ClientDestination.Inspection(overview.inspectionRoute));
     return !isOpen() || overview.selectedKey == null
@@ -273,6 +283,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   Optional<NavigationAttempt> navigateUp() {
     requireOverview();
+    if (overview.operationInspection != null && overview.conflict != null)
+      return Optional.of(openDestination(new ClientDestination.Conflict(overview.conflictRoute)));
     if (overview.operationInspection != null && overview.inspection != null)
       return Optional.of(
           openDestination(new ClientDestination.Inspection(overview.inspectionRoute)));
@@ -294,13 +306,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     requireOverview();
     overview.beforeRebuild();
     var inspected =
-        overview.operationInspection != null || overview.inspection == null
+        overview.operationInspection != null
+                || overview.conflict != null
+                || overview.inspection == null
             ? null
             : overview.inspection.bookmark();
     var operated =
         overview.operationInspection == null
             ? null
             : overview.operationInspection.view().bookmark();
+    var conflicted =
+        overview.operationInspection == null && overview.conflict != null
+            ? overview.conflict.bookmark()
+            : null;
     var position = overview.navigation.position(overview.selectedKey).orElse(null);
     return new NavigationBookmark(
         navigationIdentity,
@@ -312,7 +330,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 overview.selectedFilter.name(),
                 overview.navigation.uiState(),
                 inspected,
-                operated)));
+                operated,
+                conflicted)));
   }
 
   NavigationAttempt restoreBookmark(NavigationBookmark bookmark) {
@@ -348,6 +367,8 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       target = new ClientDestination.Document(inspection.route());
     if (target instanceof ClientDestination.DocumentOperation operation)
       target = new ClientDestination.Document(operation.route());
+    if (target instanceof ClientDestination.Conflict conflict)
+      target = new ClientDestination.Document(conflict.route());
     if (target instanceof ClientDestination.View view) {
       if (!presentation.referenceTasks().containsKey(view.id())
           && !presentation.views().containsKey(view.id())) throw missingDestination();
@@ -514,6 +535,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         return availability(
             DestinationAvailability.Kind.CLOSED, "editor.closed", "This editing context ended.");
       var observed = entry.editor.view();
+      if (target instanceof ClientDestination.Conflict && observed.review().isEmpty())
+        return availability(
+            DestinationAvailability.Kind.MISSING,
+            "navigation.conflict_missing",
+            "No conflict review is available for this document.");
       if (observed.availability() == EditorActor.Availability.LOADING)
         return availability(DestinationAvailability.Kind.PENDING, null, null);
       if (observed.availability() != EditorActor.Availability.READY)
@@ -675,6 +701,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         throw new PolicyRefusal(
             "inspection.input_unaccepted",
             "Finish or repair the current field input before opening inspection.");
+      if (attempt.target() instanceof ClientDestination.Conflict
+          && !Objects.requireNonNull(editor).presentation().acceptsConflict())
+        throw new PolicyRefusal(
+            "conflict.input_unaccepted",
+            "Finish or repair the current field input before opening conflict review.");
       var available = inspectDestination(attempt.target());
       if (available.kind() == DestinationAvailability.Kind.MISSING
           || available.kind() == DestinationAvailability.Kind.UNAVAILABLE) {
@@ -697,13 +728,19 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           editor,
           restoring,
           bookmark == null ? null : bookmark.navigation().orElse(null),
-          attempt.target() instanceof ClientDestination.Inspection,
+          attempt.target() instanceof ClientDestination.Inspection requested
+              ? overview.inspectionKey(requested.route())
+              : attempt.target() instanceof ClientDestination.Conflict requested
+                  ? overview.conflictKey(requested.route())
+                  : null,
           attempt.target() instanceof ClientDestination.DocumentOperation operation
               ? Objects.requireNonNull(overview.operationViews.get(operation.handle()))
               : null);
       if (attempt.target() instanceof ClientDestination.Inspection requested) {
         overview.revealInspection(requested.route(), Objects.requireNonNull(editor));
       }
+      if (attempt.target() instanceof ClientDestination.Conflict requested)
+        overview.revealConflict(requested.route(), Objects.requireNonNull(editor));
       if (attempt.target() instanceof ClientDestination.DocumentOperation
           && (overview.operationInspection == null
               || !overview.operationInspection.view().isCurrent()))
@@ -1499,8 +1536,89 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private OperationBinding operationInspection;
     private final Map<java.util.UUID, OperationBinding> operationViews = new LinkedHashMap<>();
 
+    private ConflictView<?> conflict;
+    private DocumentId conflictRoute;
+    private final Map<DocumentId, ConflictView<?>> conflicts = new LinkedHashMap<>();
+
+    private WorkspaceNavigation.Key conflictKey(DocumentId route) {
+      return new WorkspaceNavigation.Key(
+          WorkspaceNavigation.Kind.CONFLICT, route, Optional.empty());
+    }
+
+    private void hideConflict() {
+      if (conflict != null) conflict.hide();
+      conflict = null;
+      conflictRoute = null;
+    }
+
+    private void retireConflicts(DocumentId owner) {
+      var removed =
+          conflicts.values().stream()
+              .filter(view -> owner == null || view.document().equals(owner))
+              .toList();
+      for (var view : removed) {
+        view.retireForNavigation();
+        conflicts.remove(view.document());
+        if (conflict == view) {
+          conflict = null;
+          conflictRoute = null;
+          navigation.task(null);
+        }
+      }
+    }
+
+    private void revealConflict(DocumentId route, ClientEditor<?> editor) {
+      var retained = conflicts.get(editor.document());
+      if (retained != null && retained.retained() && retained.borrows(editor.actions())) {
+        beforeRebuild();
+        hideInspection();
+        conflict = retained;
+        conflictRoute = route;
+        navigation.task(conflictKey(route));
+        information.clear();
+        drawerOpen = false;
+        rebuildWidgets();
+      } else editor.presentation().openConflict();
+      if (conflict == null || !conflict.isCurrent())
+        throw new PolicyRefusal(
+            "conflict.input_unaccepted",
+            "Finish or repair the current field input before opening conflict review.");
+    }
+
+    private boolean adoptConflict(ConflictScreen<?> screen) {
+      var admitted =
+          entries.values().stream()
+              .filter(
+                  bound ->
+                      bound.editor != null
+                          && bound.editor.isOpen()
+                          && screen.borrows(bound.editor.actions()))
+              .toList();
+      if (admitted.isEmpty()) return false;
+      beforeRebuild();
+      var borrowed = screen.borrowView();
+      var route =
+          admitted.stream()
+              .map(bound -> bound.form.route())
+              .filter(id -> id.equals(actionRoute))
+              .findFirst()
+              .orElse(admitted.getFirst().form.route());
+      hideInspection();
+      var replaced = conflicts.put(borrowed.document(), borrowed);
+      if (replaced != null) replaced.retireForNavigation();
+      conflict = borrowed;
+      conflictRoute = route;
+      navigation.task(conflictKey(route));
+      information.clear();
+      drawerOpen = false;
+      rebuildWidgets();
+      return true;
+    }
+
     private MetadataView metadata() {
-      return operationInspection == null ? inspection : operationInspection.view();
+      return operationInspection != null
+          ? operationInspection.view()
+          : conflict != null ? conflict : inspection;
     }
 
     private WorkspaceNavigation.Key operationKey(ClientDestination target) {
@@ -1529,6 +1647,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       beforeRebuild();
       hideOperation();
       if (inspection != null) inspection.hide();
+      if (conflict != null) conflict.hide();
       operationInspection = binding;
       navigation.task(operationKey(binding.destination()));
       information.clear();
@@ -1606,6 +1725,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void hideInspection() {
       hideOperation();
+      hideConflict();
       if (inspection != null) inspection.hide();
       inspection = null;
       inspectionRoute = null;
@@ -1637,6 +1757,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void retireInspection() {
       retireOperations(null);
+      retireConflicts(null);
       navigation.task(null);
       for (var retained : inspections.values()) retained.retireForNavigation();
       inspections.clear();
@@ -1646,6 +1767,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     private void retireInspection(DocumentId document) {
       retireOperations(document);
+      retireConflicts(document);
       var retained = inspections.remove(document);
       if (retained == null) return;
       retained.retireForNavigation();
@@ -1659,11 +1781,24 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     @Override
     protected boolean managedNavigation(Screen next) {
       if (next instanceof OperationScreen<?> operation) return adoptOperation(operation);
+      if (next instanceof ConflictScreen<?> conflict) return adoptConflict(conflict);
       if (next == this
           && NativeScreens.current(Minecraft.getInstance()) == this
           && operationInspection != null) {
         beforeRebuild();
         hideOperation();
+        navigation.task(
+            conflict != null
+                ? conflictKey(conflictRoute)
+                : inspection == null ? null : inspectionKey(inspectionRoute));
+        rebuildWidgets();
+        return true;
+      }
+      if (next == this
+          && NativeScreens.current(Minecraft.getInstance()) == this
+          && conflict != null) {
+        beforeRebuild();
+        hideConflict();
         navigation.task(inspection == null ? null : inspectionKey(inspectionRoute));
         rebuildWidgets();
         return true;
@@ -1821,6 +1956,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var taskDeclaration = declaredTask();
       if (taskDeclaration != null) selected.put(taskDeclaration.route(), List.of());
       if (inspection != null) selected.put(inspectionRoute, List.of());
+      if (conflict != null) selected.put(conflictRoute, List.of());
       for (var route : selected.keySet()) ensureOwner(route);
       var returned = resetList ? navigation.position(selectedKey).orElse(null) : null;
       if (returned != null && selected.containsKey(returned.owner()))
@@ -2847,8 +2983,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       if (panel == null) return;
       var captured = bookmark.navigation().map(NavigationBookmark.NavigationState::inspection);
       var operated = bookmark.navigation().map(NavigationBookmark.NavigationState::operation);
+      var conflicted = bookmark.navigation().map(NavigationBookmark.NavigationState::conflict);
       if (operationInspection != null && operated.isPresent()) {
         operationInspection.view().restore(operated.orElseThrow());
+      } else if (conflict != null && conflicted.isPresent()) {
+        conflict.restore(conflicted.orElseThrow());
       } else if (inspection != null && captured.isPresent()) {
         inspection.restore(captured.orElseThrow());
       } else {
@@ -2881,7 +3020,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         ClientEditor<?> editor,
         boolean restoring,
         NavigationBookmark.NavigationState navigationState) {
-      mountDestination(selected, editor, restoring, navigationState, false, null);
+      mountDestination(selected, editor, restoring, navigationState, null, null);
     }
 
     private void mountDestination(
@@ -2889,21 +3028,25 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         ClientEditor<?> editor,
         boolean restoring,
         NavigationBookmark.NavigationState navigationState,
-        boolean inspecting,
+        WorkspaceNavigation.Key requestedTask,
         OperationBinding operation) {
       // Retain the old page before assigning new identity, including a focusless viewport.
       beforeRebuild();
       var previousInspection = inspection;
       var previousInspectionRoute = inspectionRoute;
       var previousOperation = operationInspection;
+      var previousConflict = conflict;
+      var previousConflictRoute = conflictRoute;
       if (operation == null) {
         hideInspection();
-        if (inspecting) navigation.task(inspectionKey(selected.route().orElseThrow()));
+        if (requestedTask != null) navigation.task(requestedTask);
       } else {
         hideOperation();
         if (inspection != null && !inspection.document().equals(operation.owner()))
           hideInspection();
         if (inspection != null) inspection.hide();
+        if (conflict != null && !conflict.document().equals(operation.owner())) hideConflict();
+        if (conflict != null) conflict.hide();
         operationInspection = operation;
         navigation.task(operationKey(operation.destination()));
       }
@@ -2951,10 +3094,14 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         inspection = previousInspection;
         inspectionRoute = previousInspectionRoute;
         operationInspection = previousOperation;
+        conflict = previousConflict;
+        conflictRoute = previousConflictRoute;
         navigation.task(
             previousOperation != null
                 ? operationKey(previousOperation.destination())
-                : previousInspection == null ? null : inspectionKey(previousInspectionRoute));
+                : previousConflict != null
+                    ? conflictKey(previousConflictRoute)
+                    : previousInspection == null ? null : inspectionKey(previousInspectionRoute));
         navigation.restoreUi(previousUi);
         selectedFilter = previousFilter;
         selectedKey = previousKey;

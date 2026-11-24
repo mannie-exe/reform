@@ -215,6 +215,7 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
   private PlatformThemeChecks themeChecks;
   private PlatformCustomViewChecks customViewChecks;
   private PlatformRootInspectionChecks rootInspectionChecks;
+  private PlatformRootConflictChecks rootConflictChecks;
   private List<design.inherent.reform.minecraft.client.ClientEditor<?>> abandonedEditors =
       List.of();
 
@@ -596,6 +597,9 @@ final class PlatformWorkspaceChecks implements PlatformFormProbe.Scene {
         if (rootInspectionChecks == null)
           rootInspectionChecks = new PlatformRootInspectionChecks(this::check, capture);
         if (!rootInspectionChecks.tick()) return false;
+        if (rootConflictChecks == null)
+          rootConflictChecks = new PlatformRootConflictChecks(this::check, capture);
+        if (!rootConflictChecks.tick()) return false;
         if (shellChecks == null) shellChecks = new PlatformShellChecks(this::check, capture);
         if (!shellChecks.tick()) return false;
         if (taskChecks == null) taskChecks = new PlatformTaskChecks(this::check, capture);

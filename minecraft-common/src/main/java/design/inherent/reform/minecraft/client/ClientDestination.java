@@ -41,6 +41,13 @@ public sealed interface ClientDestination {
     }
   }
 
+  /** The owner's existing conflict review; opening it neither resolves nor saves. */
+  record Conflict(DocumentId route) implements ClientDestination {
+    public Conflict {
+      Objects.requireNonNull(route);
+    }
+  }
+
   record Placement(DestinationId id) implements ClientDestination {
     public Placement {
       Objects.requireNonNull(id);

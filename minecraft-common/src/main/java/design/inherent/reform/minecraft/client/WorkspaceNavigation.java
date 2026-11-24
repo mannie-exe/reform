@@ -36,6 +36,7 @@ final class WorkspaceNavigation {
     DESTINATION,
     SECTION,
     INSPECTION,
+    CONFLICT,
     DOCUMENT_OPERATION,
     OPERATION_RESULT,
     FIELD

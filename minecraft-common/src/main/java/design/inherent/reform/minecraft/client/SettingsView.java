@@ -2456,14 +2456,18 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     } else fields(child, label(child));
   }
 
-  private void openConflict() {
-    if (closed
-        || saving
-        || loading
-        || pendingEdits > 0
-        || unsent()
-        || actions.view().review().isEmpty()
-        || actions.view().pending().isPresent()) return;
+  boolean acceptsConflict() {
+    return !closed
+        && !saving
+        && !loading
+        && pendingEdits == 0
+        && !unsent()
+        && actions.view().review().isPresent()
+        && actions.view().pending().isEmpty();
+  }
+
+  void openConflict() {
+    if (!acceptsConflict()) return;
     final ConflictScreen<T> screen;
     try {
       screen =
