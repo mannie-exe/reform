@@ -267,7 +267,21 @@ final class PlatformOperationPresentationChecks {
         check.accept(
             "technical disclosure exposes the same operation identity without another effect",
             screen.getNarrationMessage().getString().contains(identity.toString()) && starts == 1);
-        press(screen, back(screen));
+        var bookmark = workflow.navigation().bookmark();
+        press(screen, button(screen, "Hide technical details"));
+        navigation = workflow.navigation().restore(bookmark).completion().toCompletableFuture();
+        stage = 51;
+      }
+      case 51 -> {
+        if (!navigation.isDone()) return false;
+        check.accept(
+            "operation bookmark restores disclosure, handle and native result before acknowledgment",
+            navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED
+                && observed().orElseThrow().id().equals(identity)
+                && operation().getNarrationMessage().getString().contains(identity.toString())
+                && button(operation(), "Previous details").active
+                && starts == 1);
+        press(operation(), back(operation()));
         blocked = true;
         stage = 6;
       }

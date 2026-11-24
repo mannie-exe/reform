@@ -293,7 +293,10 @@ public final class ClientEditingWorkflow implements AutoCloseable {
   NavigationBookmark navigationBookmark() {
     requireOverview();
     overview.beforeRebuild();
-    var inspected = overview.inspection == null ? null : overview.inspection.bookmark();
+    var inspected =
+        overview.operationInspection != null || overview.inspection == null
+            ? null
+            : overview.inspection.bookmark();
     var operated =
         overview.operationInspection == null
             ? null
@@ -694,13 +697,17 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           editor,
           restoring,
           bookmark == null ? null : bookmark.navigation().orElse(null),
-          attempt.target() instanceof ClientDestination.Inspection);
+          attempt.target() instanceof ClientDestination.Inspection,
+          attempt.target() instanceof ClientDestination.DocumentOperation operation
+              ? Objects.requireNonNull(overview.operationViews.get(operation.handle()))
+              : null);
       if (attempt.target() instanceof ClientDestination.Inspection requested) {
         overview.revealInspection(requested.route(), Objects.requireNonNull(editor));
       }
-      if (attempt.target() instanceof ClientDestination.DocumentOperation operation)
-        overview.activateOperation(
-            Objects.requireNonNull(overview.operationViews.get(operation.handle())));
+      if (attempt.target() instanceof ClientDestination.DocumentOperation
+          && (overview.operationInspection == null
+              || !overview.operationInspection.view().isCurrent()))
+        throw new IllegalStateException("Requested operation result was not mounted");
       if (bookmark != null) overview.restorePosition(bookmark);
       attempt.finish(NavigationAttempt.Outcome.REVEALED, ValidationReport.VALID, null);
     } catch (RuntimeException failed) {
@@ -2874,7 +2881,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         ClientEditor<?> editor,
         boolean restoring,
         NavigationBookmark.NavigationState navigationState) {
-      mountDestination(selected, editor, restoring, navigationState, false);
+      mountDestination(selected, editor, restoring, navigationState, false, null);
     }
 
     private void mountDestination(
@@ -2882,11 +2889,24 @@ public final class ClientEditingWorkflow implements AutoCloseable {
         ClientEditor<?> editor,
         boolean restoring,
         NavigationBookmark.NavigationState navigationState,
-        boolean inspecting) {
+        boolean inspecting,
+        OperationBinding operation) {
       // Retain the old page before assigning new identity, including a focusless viewport.
       beforeRebuild();
-      hideInspection();
-      if (inspecting) navigation.task(inspectionKey(selected.route().orElseThrow()));
+      var previousInspection = inspection;
+      var previousInspectionRoute = inspectionRoute;
+      var previousOperation = operationInspection;
+      if (operation == null) {
+        hideInspection();
+        if (inspecting) navigation.task(inspectionKey(selected.route().orElseThrow()));
+      } else {
+        hideOperation();
+        if (inspection != null && !inspection.document().equals(operation.owner()))
+          hideInspection();
+        if (inspection != null) inspection.hide();
+        operationInspection = operation;
+        navigation.task(operationKey(operation.destination()));
+      }
       var previousUi = navigation.uiState();
       var previousFilter = selectedFilter;
       if (navigationState != null) {
@@ -2921,13 +2941,20 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       restoringDestination = restoring;
       navigation.beginMount();
       try {
-        if (editor == null) rebuildWidgets();
+        if (editor == null || operation != null) rebuildWidgets();
         else showEditor(editor, selected.target());
         navigation.endMount();
         navigation.visit(
             selectedKey, design.inherent.reform.presentation.FormCatalog.Limits.STANDARD);
       } catch (RuntimeException | Error failed) {
-        navigation.task(null);
+        hideOperation();
+        inspection = previousInspection;
+        inspectionRoute = previousInspectionRoute;
+        operationInspection = previousOperation;
+        navigation.task(
+            previousOperation != null
+                ? operationKey(previousOperation.destination())
+                : previousInspection == null ? null : inspectionKey(previousInspectionRoute));
         navigation.restoreUi(previousUi);
         selectedFilter = previousFilter;
         selectedKey = previousKey;

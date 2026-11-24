@@ -31,6 +31,7 @@ final class PlatformRootInspectionChecks {
   private DocumentReview reviewed;
   private CompletableFuture<NavigationAttempt.Result> pending;
   private NavigationBookmark bookmark;
+  private ClientDestination.DocumentOperation exported;
   private byte[] source;
   private String originalDistance;
   private EditBox originalLabelControl;
@@ -167,6 +168,8 @@ final class PlatformRootInspectionChecks {
         var output =
             workflow.operationInspection().flatMap(ClientOperationInspection::observedOperation);
         if (output.isEmpty() || !output.orElseThrow().terminal()) return false;
+        exported =
+            (ClientDestination.DocumentOperation) workflow.navigation().current().orElseThrow();
         check.accept(
             "captured export opens its original handle inside the same root",
             NativeScreens.current(client) == workflow.screen()
@@ -332,6 +335,33 @@ final class PlatformRootInspectionChecks {
                 && ((EditBox) retainedForm.fieldControl(distance).orElseThrow())
                     .getValue()
                     .equals("bad"));
+        enter(exported);
+        stage = 101;
+      }
+      case 101 -> {
+        if (!revealed()) return false;
+        check.accept(
+            "existing operation observation does not require accepting invalid native text",
+            workflow
+                    .operationInspection()
+                    .flatMap(ClientOperationInspection::observedOperation)
+                    .filter(value -> value.id().equals(exported.handle()))
+                    .isPresent()
+                && workflow.editor(route) == editor
+                && Arrays.equals(source, source()));
+        pending = workflow.navigation().up().orElseThrow().completion().toCompletableFuture();
+        stage = 102;
+      }
+      case 102 -> {
+        if (!revealed()) return false;
+        check.accept(
+            "operation return preserves the rejected native input and its valid dirty sibling",
+            ((EditBox) retainedForm.fieldControl(distance).orElseThrow()).getValue().equals("bad")
+                && ((EditBox) retainedForm.fieldControl(label).orElseThrow())
+                    .getValue()
+                    .equals("Retained inspection draft")
+                && editor.dirty()
+                && Arrays.equals(source, source()));
         replace(
             workflow.screen(),
             (EditBox) retainedForm.fieldControl(distance).orElseThrow(),
