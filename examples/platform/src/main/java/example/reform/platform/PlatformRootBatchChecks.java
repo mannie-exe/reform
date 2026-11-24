@@ -160,6 +160,9 @@ final class PlatformRootBatchChecks {
                 && inspection.submission().isEmpty()
                 && twin.view().snapshot().orElseThrow().version() == twinVersion);
         unchanged();
+        check.accept(
+            "batch bookmark captures an actual detail control",
+            focus(workflow.screen(), button(workflow.screen(), "Inspect fields")));
         bookmark = workflow.navigation().bookmark();
         press("Inspect fields");
         stage = 5;
@@ -236,6 +239,15 @@ final class PlatformRootBatchChecks {
                 && inspection.selectedDocument().orElseThrow().equals(TWIN)
                 && !button(workflow.screen(), "Save reviewed documents").active
                 && inspection.submission().isEmpty());
+        net.minecraft.client.gui.components.events.GuiEventListener focused =
+            workflow.screen().getFocused();
+        while (focused
+                instanceof
+                net.minecraft.client.gui.components.events.ContainerEventHandler container
+            && container.getFocused() != null) focused = container.getFocused();
+        check.accept(
+            "batch bookmark restores the native detail focus in the current child tree",
+            focused == button(workflow.screen(), "Inspect fields"));
         press("Refresh complete review");
         stage = 13;
       }
