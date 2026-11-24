@@ -73,6 +73,16 @@ A foreign client resource manager's real reload/close does not change the select
 
 The corrected Fabric run records 764/560 assertions. The earlier accepted NeoForge report records 1058/853 because it repeats one final completion assertion while later helpers run; excluding those repetitions gives 764/560. These are assertion records, not independent exhaustive cases, and the original reports remain unchanged. This evidence covers the identified opaque 2×2 still and native paths, not all PNG/alpha extremes, maximum preparation or frame costs, loaded-slot renderer shutdown, full accessibility, or other operating systems. Sprites, icons, copied items, blocks, block entities, curated entities, further customization, optional recipe integrations, and final combined consumer acceptance remain selected unfinished work.
 
+## 0.4 development: native decoder ownership
+
+Dev.60 has a retained native negative: a disposable one-shot fault thrown after actual `NativeImage.close()` returned showed its batch reservation incorrectly refunded to zero. The fault verifies that the native image was freed first; it tests uncertain cleanup reporting without leaking the test image. The game exited normally, and the runner correctly reported failure.
+
+Dev.61 owns the exact encoded native PNG buffer and the decoded RGBA image separately. All four library builds and packaged fixture classpaths pass. Actual NeoForge 1.21.1 and Fabric 26.3 workspace initial/reopen pairs pass, with four normal exits and fixture removal. They record 813/607 and 811/607 assertions respectively, not independent exhaustive test cases. The same fault leaves only the uncertain 32-byte image charged, releases the encoded buffer, and retains the exact cleanup cause once; closing the workflow does not silently refund it. No scene or GPU preparation follows the failed decode.
+
+The focused native worker controls check two-resource admission, the combined encoded-buffer/image byte boundary, exact successful peak accounting, occupied-ledger refusal and retry, cancellation without partial delivery, and damaged compressed pixels in an otherwise valid PNG container. Normal decoder refusal releases both reservations. The existing loaded-image source, real resource reload, missing asset, focus, and saved workspace checks remain green on those exact inputs. The first NeoForge positive pair before wiring the worker controls remains separately attributed; its 771/570 assertions do not prove the later worker cases.
+
+This accounting measures known native image and encoded-buffer payload. Native decoder scratch space, allocator overhead, catastrophic process failure, every possible cleanup fault, and the other two native client runtimes are not qualified by these pairs. Original Maven artifacts, the dev.60 negative, tested sources, and the earlier positive receipts remain unchanged. The complete selected 0.4 scope remains open.
+
 ## Stable 0.3.0 release qualification
 
 The 0.3.0 build passes `mise run check` and `mise run check:security`. It retains 590 core tests on each codec runtime, four packaged native consumers, eight public consumer inputs, tooling, Markdown, and workflow checks. Security review reports no release-blocking findings or source secrets; 31 explicitly classified supplied-runtime advisories remain visible. This is not a whole-game security certification.
