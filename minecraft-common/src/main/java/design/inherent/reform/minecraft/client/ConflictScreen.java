@@ -297,7 +297,7 @@ public final class ConflictScreen<T> extends NativeFormScreen {
                     });
         control.active = operation == null && current();
         controls.put(entry.path(), control);
-        panel.row(
+        panel.anchorRow(
             key + ":choice",
             caption,
             entry.wholeValue()
