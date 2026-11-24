@@ -1,5 +1,13 @@
 # Verification
 
+## 0.4 development: pending-close feedback
+
+Candidate `0.4.0-dev.80` at `41f27f4` passes the four-target `spotlessApply check build`, including 137 tooling tests. Its isolated native operation scene passes 42 checks per boot on all four minimum targets, with eight normal exits and disposable fixture removal. The exact original Maven inputs, named source archives, actual loaded archives, and public class-resource witnesses are retained separately.
+
+The same scene on dev.79 reproduced a stale close-blocking wait notice after cancellation had drained. Dev.80 keeps close blocked while the actual operation is pending, then removes only that notice while retaining the terminal handle and unrelated refusal feedback. The guard, persistence, and unknown-effect reconciliation policies are unchanged. Both game families' pending and terminal captures were inspected. This pure READ control does not replace Lootr's saved-but-application-unknown recovery check or qualify the complete 0.4 system.
+
+Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.80 --client --isolated-scene operations --timeout 240`, selecting each other target explicitly.
+
 ## 0.4 development: native recipe links
 
 Candidate `0.4.0-dev.79` at `2891227` passes the four-target `spotlessApply check build`, including 123 tooling tests, packaged consumer compilation, distribution checks, and the native recipe-policy regression. Twelve original Maven binaries, sources, and POMs, plus four named source archives, match the committed source. This is an unpublished development candidate; the full 0.4 and final combined Lootr acceptance remain open.
