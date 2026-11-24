@@ -38,7 +38,13 @@ final class PlatformConflictChecks implements PlatformFormProbe.Scene {
     return "conflict stage="
         + stage
         + ", screen="
-        + NativeScreens.current(client).getClass().getSimpleName();
+        + NativeScreens.current(client).getClass().getSimpleName()
+        + ", size="
+        + NativeScreens.current(client).width
+        + "x"
+        + NativeScreens.current(client).height
+        + ", guiScale="
+        + client.options.guiScale().get();
   }
 
   private final Minecraft client = Minecraft.getInstance();
@@ -223,7 +229,7 @@ final class PlatformConflictChecks implements PlatformFormProbe.Scene {
       }
       case 40 -> {
         client.options.guiScale().set(2);
-        NativeClientProbe.resize(client, 640, 480);
+        NativeClientProbe.resize(client, 320, 240);
         NativeClientProbe.reflow(client);
         stage = 41;
       }
