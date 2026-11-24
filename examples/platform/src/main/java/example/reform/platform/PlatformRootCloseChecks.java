@@ -131,6 +131,7 @@ final class PlatformRootCloseChecks {
       case 6 -> {
         NativeClientProbe.resize(client, width[0], height[0]);
         NativeClientProbe.reflow(client);
+        retiredDiscard = button(workflow.screen(), "Discard draft");
         check.accept(
             "Escape keeps editing through native input",
             NativeClientProbe.key(workflow.screen(), "key.keyboard.escape", true));
@@ -151,7 +152,7 @@ final class PlatformRootCloseChecks {
                 && field().getHighlighted().equals("los")
                 && editor.view().snapshot().orElseThrow().version() == version
                 && Arrays.equals(source, source()));
-        click(workflow.screen(), retiredDiscard);
+        NativeClientProbe.pressRetired(retiredDiscard);
         check.accept(
             "retired close callback cannot discard the retained owner",
             workflow.isOpen()
