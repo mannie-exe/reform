@@ -81,7 +81,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     final ClientTheme resolvedTheme;
     final Language language;
     java.util.Set<AbstractWidget> admittedTree;
-    boolean live = true, failed;
+    boolean live = true, failed, geometryOwned;
 
     AdaptedControl(FieldPath path, Control nativeControl, Component label) {
       this.path = path;
@@ -89,6 +89,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       this.nativeControl = nativeControl;
       resolvedTheme = theme();
       ClientControls.theme(nativeControl.widget(), resolvedTheme);
+      ControlSizing.preferred(nativeControl.widget());
       language = Language.getInstance();
       state = customState(path, nativeControl, false, resolvedTheme);
       var binding =
@@ -116,13 +117,26 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                     || controls.get(path) == null
                     || controls.get(path).token() != token
                     || !state.editable()
-                    || !customEditable(path, controls.get(path), true))
+                    || !customEditable(path, controls.get(path), true)
+                    || contribution != null
+                        && ControlSizing.geometryFailure(contribution.widget(), true) != null)
                   throw new PolicyRefusal(
-                      "presentation.control_unavailable", "This field control is unavailable.");
+                      new ValidationReport(
+                          List.of(
+                              design.inherent.reform.validation.Issue.error(
+                                  "presentation.control_unavailable",
+                                  path,
+                                  "This field control is unavailable.")),
+                          true));
                 if (raw.length() > state.maximumCharacters())
                   throw new PolicyRefusal(
-                      "presentation.control_input_limit",
-                      "The field input exceeds its native character allowance.");
+                      new ValidationReport(
+                          List.of(
+                              design.inherent.reform.validation.Issue.error(
+                                  "presentation.control_input_limit",
+                                  path,
+                                  "The field input exceeds its native character allowance.")),
+                          true));
                 updating = true;
                 try {
                   nativeControl.display().accept(raw);
@@ -143,12 +157,17 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         contribution = Objects.requireNonNull(controlAdapters.get(path).create(binding));
         if (contribution.preferred().height() < nativeControl.widget().getHeight())
           throw new IllegalArgumentException("The adapted control cannot shrink its native height");
-        var tree = controlTree(contribution.widget());
+        var tree = ControlSizing.nativeTree(contribution.widget());
         admittedTree = tree;
-        tree.forEach(widget -> ClientControls.theme(widget, resolvedTheme));
+        for (var widget : tree) {
+          var owner = ((NativeControlStyle) widget).reform$controlOwner();
+          if (owner != null && owner != token)
+            throw new IllegalArgumentException(
+                "A native control belongs to another field or retired binding");
+        }
         for (var other : adaptedControls.values())
           if (other.live && other.contribution != null)
-            for (var widget : controlTree(other.contribution.widget()))
+            for (var widget : ControlSizing.nativeTree(other.contribution.widget()))
               if (tree.contains(widget))
                 throw new IllegalArgumentException(
                     "An adapted control cannot borrow another field's widget");
@@ -156,6 +175,11 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           if (other.token() != token && tree.contains(other.widget()))
             throw new IllegalArgumentException(
                 "An adapted control cannot borrow another field's input");
+        tree.forEach(widget -> ControlSizing.own(widget, token));
+        tree.forEach(widget -> ClientControls.theme(widget, resolvedTheme));
+        ControlSizing.custom(contribution.widget(), admittedTree);
+        geometryOwned = true;
+        ControlSizing.geometryFailure(contribution.widget(), false);
         ControlSizing.offer(
             contribution.widget(),
             contribution.preferred().width(),
@@ -183,8 +207,10 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       boolean prior = updating;
       updating = true;
       try {
+        var geometryFailure = ControlSizing.geometryFailure(contribution.widget(), false);
+        if (geometryFailure != null) throw geometryFailure;
         contribution.synchronize().accept(state);
-        var currentTree = controlTree(contribution.widget());
+        var currentTree = ControlSizing.nativeTree(contribution.widget());
         if (!currentTree.equals(admittedTree))
           throw new IllegalArgumentException(
               "The mounted control tree must retain its declared identities");
@@ -194,7 +220,12 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         }
       } catch (RuntimeException error) {
         failed = true;
-        controlProblem(path, "presentation.control_update_failed", error);
+        controlProblem(
+            path,
+            ((NativeControlStyle) contribution.widget()).reform$controlGeometryFailure() == null
+                ? "presentation.control_update_failed"
+                : "presentation.control_geometry",
+            error);
         customRebuild = true;
         retire();
       } finally {
@@ -226,6 +257,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       if (!live) return;
       live = false;
       if (contribution != null) {
+        if (geometryOwned) ControlSizing.custom(contribution.widget(), null);
         boolean prior = updating;
         updating = true;
         try {
@@ -244,29 +276,6 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private final List<design.inherent.reform.validation.Issue> controlIssues = new ArrayList<>();
   private Throwable controlFailure;
   private boolean customRebuild;
-
-  private static java.util.Set<AbstractWidget> controlTree(AbstractWidget root) {
-    var seen =
-        java.util.Collections.newSetFromMap(
-            new java.util.IdentityHashMap<
-                net.minecraft.client.gui.components.events.GuiEventListener, Boolean>());
-    var widgets =
-        java.util.Collections.newSetFromMap(
-            new java.util.IdentityHashMap<AbstractWidget, Boolean>());
-    var pending =
-        new java.util.ArrayDeque<net.minecraft.client.gui.components.events.GuiEventListener>();
-    pending.push(root);
-    while (!pending.isEmpty()) {
-      var entry = pending.pop();
-      if (!seen.add(entry) || seen.size() > 64)
-        throw new IllegalArgumentException(
-            "A custom field control needs a bounded nonshared native tree");
-      if (entry instanceof AbstractWidget widget) widgets.add(widget);
-      if (entry instanceof net.minecraft.client.gui.components.events.ContainerEventHandler group)
-        for (var child : group.children()) pending.push(child);
-    }
-    return widgets;
-  }
 
   private void controlProblem(FieldPath path, String code, RuntimeException failed) {
     boolean first =
@@ -2012,6 +2021,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
               control.quantity());
       controls.put(path, control);
     }
+    ControlSizing.own(control.widget(), control.token());
     if (shape instanceof ValueShape.Reference<?> reference) {
       var source = sources.get(reference.source());
       var generation = widgetGeneration;

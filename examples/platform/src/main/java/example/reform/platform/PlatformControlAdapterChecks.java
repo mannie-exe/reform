@@ -38,7 +38,21 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
   private byte[] before;
   private Object ownerActions;
   private design.inherent.reform.edit.DraftRevision revision;
-  private boolean failFactory, failDisposal;
+  private boolean failFactory, failDisposal, malformedGeometry;
+  private long geometryFrame;
+  private design.inherent.reform.owner.OwnerContext authorityContext;
+  private ClientEditor<PlatformWorkflowExample.Preferences> authorityEditor;
+  private java.util.concurrent.CompletableFuture<
+          design.inherent.reform.presentation.graphics.DraftPreviewInput<
+              PlatformWorkflowExample.Preferences>>
+      readOnlyCapture;
+  private design.inherent.reform.edit.DraftRevision rejectedRevision;
+  private java.nio.file.Path authorityFile;
+  private boolean writable = true;
+  private int rejectedCursor;
+  private boolean readOnlyCaptured, rejectedRetained, reuseRetired;
+  private SelectionBox retiredWidget;
+
   private final RuntimeException factoryFailure =
       new IllegalStateException("controlled control factory failure");
   private final RuntimeException disposalFailure =
@@ -95,6 +109,13 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
     creates++;
     if (failFactory) throw factoryFailure;
     labelBinding = binding;
+    if (reuseRetired)
+      return new ClientControlAdapter.Control(
+          retiredWidget,
+          new FormGeometry.Size(180, 20),
+          state -> {},
+          Optional::empty,
+          () -> disposals++);
     var input = new SelectionBox(client.font, binding.label());
     replacement = input;
     input.setMaxLength(binding.state().maximumCharacters());
@@ -132,7 +153,8 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
   private ClientControlAdapter.Control wrapper(ClientControlAdapter.Binding binding) {
     creates++;
     distanceBinding = binding;
-    frame = new NativeControlFrame(binding.nativeControl());
+    frame = new NativeControlFrame(binding.nativeControl(), malformedGeometry);
+    if (malformedGeometry) geometryFrame = PlatformFrameObservations.sequence();
     return new ClientControlAdapter.Control(
         frame,
         new FormGeometry.Size(188, 28),
@@ -149,10 +171,81 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
   }
 
   private void open(FormPresentation presentation) {
+    labelBinding = null;
+    distanceBinding = null;
     editor =
         PlatformWorkflowExample.settings()
             .form(Component.literal("Custom native controls"), options(presentation))
             .open(parent);
+    NativeScreens.open(client, editor.screen());
+  }
+
+  private void openAuthority() {
+    malformedGeometry = false;
+    labelBinding = null;
+    distanceBinding = null;
+    var definition =
+        new design.inherent.reform.definition.DocumentDefinition<
+            PlatformWorkflowExample.Preferences>(
+            design.inherent.reform.definition.DocumentId.parse(
+                "reform_platform_example:control_authority"),
+            1,
+            PlatformWorkflowExample.DEFINITION.type(),
+            PlatformWorkflowExample.DEFINITION::defaults);
+    var json =
+        new design.inherent.reform.serialization.JsonLimits(262144, 128, 16384, 32768, 128, 4096);
+    var root = client.gameDirectory.toPath().toAbsolutePath().resolve("config");
+    authorityFile = root.resolve("reform_platform_example/control_authority.json");
+    check("authority fixture begins with its own absent source", !Files.exists(authorityFile));
+    authorityContext =
+        new design.inherent.reform.owner.OwnerContext(
+            client::execute,
+            NativeClientProbe.ioPool(),
+            () -> {
+              if (!client.isSameThread())
+                throw new IllegalStateException("Wrong fixture owner thread");
+            },
+            design.inherent.reform.owner.OwnerContext.Limits.STANDARD);
+    var access = authorityContext.access(() -> true, () -> writable);
+    var store =
+        new design.inherent.reform.storage.JsonStore<>(
+            definition,
+            new design.inherent.reform.storage.OwnedFile(
+                design.inherent.reform.storage.StorageBinding.newJson(root, definition.id()),
+                json.maximumBytes()),
+            design.inherent.reform.storage.JsonStore.Format.NEW_ENVELOPE,
+            json,
+            design.inherent.reform.edit.DraftLimits.CONFIGURATION);
+    var owner =
+        design.inherent.reform.owner.FileOwner.stagedFile(
+            authorityContext,
+            store,
+            32,
+            design.inherent.reform.owner.FileOwner.Initialization.DEFER_MISSING,
+            design.inherent.reform.owner.ApplicationEffects.root(
+                design.inherent.reform.owner.ApplicationEffects.Timing.OWNER_MANAGED,
+                "Fixture values are not applied."));
+    authorityEditor =
+        ClientEditors.open(
+            authorityContext,
+            access,
+            owner.open(access),
+            definition,
+            json,
+            actions ->
+                ClientEditor.retain(
+                    options(FormPresentation.EMPTY)
+                        .open(
+                            parent,
+                            Component.literal("Custom control authority"),
+                            Component.literal("Independent unsaved fixture"),
+                            definition,
+                            actions,
+                            new SettingsScreen.SubmissionLabels(
+                                Component.literal("Save fixture settings"),
+                                Component.literal("Save reviewed fixture settings"),
+                                Component.literal("Save fixture settings and close")))));
+    editor = authorityEditor;
     NativeScreens.open(client, editor.screen());
   }
 
@@ -337,10 +430,206 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
         check(
             "all custom control cases leave the actual owner source unchanged",
             Arrays.equals(before, Files.readAllBytes(file())));
-        NativeScreens.open(client, parent);
+        failDisposal = false;
+        malformedGeometry = true;
+        open(FormPresentation.EMPTY);
         stage = 11;
       }
       case 11 -> {
+        if (editor.view().availability() != EditorActor.Availability.READY
+            || editor.busy()
+            || distanceBinding == null
+            || PlatformFrameObservations.sequence() < geometryFrame + 4) return false;
+        driver.capture("control-custom-invalid-geometry.png", () -> stage = 112);
+        stage = 99;
+      }
+      case 112 -> {
+        check(
+            "malformed native child geometry refuses before field interaction",
+            editor.form().controlReport().issues().stream()
+                    .anyMatch(
+                        issue ->
+                            issue.code().equals("presentation.control_geometry")
+                                && issue.path().equals(DISTANCE))
+                && !distanceBinding.state().editable()
+                && refused(distanceBinding, "77")
+                && raw(DISTANCE).equals("64")
+                && editor.form().fieldControl(DISTANCE).orElseThrow() != frame);
+        try {
+          new ClientControlAdapter.Control(
+              net.minecraft.client.gui.components.Button.builder(
+                      Component.literal("Bad offer"), ignored -> {})
+                  .bounds(0, 0, 1, 20)
+                  .build(),
+              new FormGeometry.Size(1, 20),
+              state -> {});
+          throw new AssertionError("Unusable custom control width admitted");
+        } catch (IllegalArgumentException expected) {
+          check(
+              "unusable intrinsic control geometry refuses before any edit",
+              raw(DISTANCE).equals("64"));
+        }
+        check(
+            "geometry refusal preserves the source",
+            Arrays.equals(before, Files.readAllBytes(file())));
+        editor.close();
+        NativeScreens.open(client, parent);
+        stage = 12;
+      }
+      case 12 -> {
+        openAuthority();
+        stage = 13;
+      }
+      case 13 -> {
+        if (editor.view().availability() != EditorActor.Availability.READY
+            || editor.busy()
+            || labelBinding == null
+            || distanceBinding == null
+            || !labelBinding.state().editable()) return false;
+        distanceBinding.editRaw("77");
+        stage = 14;
+      }
+      case 14 -> {
+        if (editor.busy() || !raw(DISTANCE).equals("77")) return false;
+        writable = false;
+        rejectedRevision =
+            design.inherent.reform.edit.DraftRevision.of(editor.view().snapshot().orElseThrow());
+        readOnlyCapture =
+            authorityEditor
+                .capturePreview(
+                    design.inherent.reform.operation.OperationDescriptor.EntryPoint.GUI,
+                    rejectedRevision)
+                .completion()
+                .toCompletableFuture();
+        stage = 15;
+      }
+      case 15 -> {
+        if (!readOnlyCapture.isDone()) return false;
+        check(
+            "READ capture keeps the complete unsaved candidate without WRITE permission",
+            !writable
+                && readOnlyCapture.join().candidate().value().distance() == 77
+                && readOnlyCapture.join().candidate().value().label().equals("Example")
+                && !Files.exists(authorityFile));
+        readOnlyCaptured = true;
+        check(
+            "public native focus reaches the actual replacement",
+            editor.form().focusField(LABEL) && replacement.isFocused());
+        check(
+            "replacement consumes an actual native pointer",
+            NativeClientProbe.pointerDown(
+                editor.screen(), replacement.getX() + 6, replacement.getY() + 8));
+        NativeClientProbe.pointerUp(
+            editor.screen(), replacement.getX() + 6, replacement.getY() + 8);
+        replacement.setCursorPosition(replacement.getValue().length());
+        replacement.setHighlightPos(replacement.getValue().length());
+        check(
+            "replacement consumes an actual native character",
+            NativeClientProbe.character(editor.screen(), '!'));
+        stage = 16;
+      }
+      case 16 -> {
+        if (editor.busy()
+            || editor.actions().operations().stream()
+                .noneMatch(
+                    snapshot ->
+                        snapshot.state()
+                                == design.inherent.reform.operation.OperationSnapshot.State.REFUSED
+                            && snapshot.report().issues().stream()
+                                .anyMatch(issue -> issue.code().equals("owner.permission"))))
+          return false;
+        check(
+            "owner-refused native text retains its valid dirty sibling and older accepted value",
+            raw(DISTANCE).equals("77")
+                && raw(LABEL).equals("Example")
+                && labelBinding.state().raw().equals("Example!")
+                && replacement.getValue().equals("Example!")
+                && rejectedRevision.equals(
+                    design.inherent.reform.edit.DraftRevision.of(
+                        editor.view().snapshot().orElseThrow()))
+                && !editor.canSubmit()
+                && editor.form().controlReport().valid());
+        try {
+          authorityEditor.capturePreview(
+              design.inherent.reform.operation.OperationDescriptor.EntryPoint.GUI,
+              rejectedRevision);
+          throw new AssertionError(
+              "Rejected native text was captured as the old accepted candidate");
+        } catch (PolicyRefusal expected) {
+          check(
+              "unaccepted native text refuses complete preview rather than dropping it",
+              expected.report().issues().stream()
+                  .anyMatch(issue -> issue.code().equals("preview.input_unaccepted")));
+        }
+        check(
+            "native input epoch invalidates the earlier READ capture without an actor edit",
+            !authorityEditor.isPreviewCurrent(readOnlyCapture.join()));
+        rejectedCursor = replacement.getCursorPosition();
+        rejectedRetained = true;
+        driver.capture("control-custom-rejected-input.png", () -> stage = 17);
+        stage = 99;
+      }
+      case 17 -> {
+        NativeClientProbe.resize(client, 320, 240);
+        stage = 18;
+      }
+      case 18 -> {
+        if (!window(320, 240)) return false;
+        check(
+            "real reflow keeps permission-rejected native input and complete accepted draft",
+            replacement.getValue().equals("Example!")
+                && replacement.getCursorPosition() == rejectedCursor
+                && labelBinding.state().raw().equals("Example!")
+                && raw(DISTANCE).equals("77")
+                && raw(LABEL).equals("Example")
+                && !editor.canSubmit()
+                && !Files.exists(authorityFile));
+        NativeClientProbe.resize(client, originalWidth[0], originalHeight[0]);
+        stage = 19;
+      }
+      case 19 -> {
+        if (!window(originalWidth[0], originalHeight[0])) return false;
+        writable = true;
+        labelBinding.editRaw("Repaired");
+        stage = 20;
+      }
+      case 20 -> {
+        if (editor.busy() || !raw(LABEL).equals("Repaired") || !editor.canSubmit()) return false;
+        check(
+            "explicit authorized repair settles the same pipeline without saving",
+            raw(DISTANCE).equals("77")
+                && replacement.getValue().equals("Repaired")
+                && !Files.exists(authorityFile));
+        retiredWidget = replacement;
+        editor.close();
+        authorityContext.close();
+        check("authority fixture closes without creating its source", !Files.exists(authorityFile));
+        reuseRetired = true;
+        open(FormPresentation.EMPTY);
+        stage = 21;
+      }
+      case 21 -> {
+        if (editor.view().availability() != EditorActor.Availability.READY
+            || editor.busy()
+            || editor.form().fieldControl(LABEL).isEmpty()) return false;
+        check(
+            "a retired native widget cannot be borrowed into another input binding",
+            editor.form().fieldControl(LABEL).orElseThrow() != retiredWidget
+                && editor.form().controlReport().issues().stream()
+                    .anyMatch(
+                        issue ->
+                            issue.code().equals("presentation.control_factory_failed")
+                                && issue.path().equals(LABEL))
+                && raw(LABEL).equals("Example")
+                && retiredWidget.getValue().equals("Repaired"));
+        check(
+            "failed ownership admission preserves the actual original source",
+            Arrays.equals(before, Files.readAllBytes(file())));
+        editor.close();
+        NativeScreens.open(client, parent);
+        stage = 22;
+      }
+      case 22 -> {
         return true;
       }
       case 99 -> {}
@@ -354,12 +643,8 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
       labelBinding.editRaw("x".repeat(labelBinding.state().maximumCharacters() + 1));
       return false;
     } catch (PolicyRefusal expected) {
-      return expected
-          .report()
-          .issues()
-          .getFirst()
-          .code()
-          .equals("presentation.control_input_limit");
+      return expected.report().issues().getFirst().code().equals("presentation.control_input_limit")
+          && expected.report().issues().getFirst().path().equals(LABEL);
     }
   }
 
@@ -368,12 +653,8 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
       binding.editRaw(raw);
       return false;
     } catch (PolicyRefusal expected) {
-      return expected
-          .report()
-          .issues()
-          .getFirst()
-          .code()
-          .equals("presentation.control_unavailable");
+      return expected.report().issues().getFirst().code().equals("presentation.control_unavailable")
+          && expected.report().issues().getFirst().path().equals(binding.path());
     }
   }
 
@@ -397,11 +678,27 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
     result.addProperty("disposals", disposals);
     result.addProperty("nativeResponderCalls", labelEdits);
     result.addProperty("initialActorVersion", initialVersion);
+    result.addProperty("readOnlyCapture", readOnlyCaptured);
+    result.addProperty("permissionRejectedNativeInput", rejectedRetained);
     if (editor != null && editor.isOpen()) {
       result.addProperty(
           "actualActorVersion", editor.view().snapshot().map(value -> value.version()).orElse(-1L));
       result.addProperty("busy", editor.busy());
       result.addProperty("canSubmit", editor.canSubmit());
+      result.add(
+          "controlCodes",
+          new com.google.gson.Gson()
+              .toJsonTree(
+                  editor.form().controlReport().issues().stream()
+                      .map(issue -> issue.code())
+                      .toList()));
+      if (malformedGeometry && distanceBinding != null) {
+        result.addProperty("geometryBindingEditable", distanceBinding.state().editable());
+        result.addProperty("rootX", frame.getX());
+        result.addProperty("rootWidth", frame.getWidth());
+        result.addProperty("childX", frame.child.getX());
+        result.addProperty("childWidth", frame.child.getWidth());
+      }
     }
     return result;
   }
@@ -409,6 +706,7 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
   @Override
   public void close() {
     if (editor != null) editor.close();
+    if (authorityContext != null) authorityContext.close();
     NativeScreens.open(client, parent);
   }
 }

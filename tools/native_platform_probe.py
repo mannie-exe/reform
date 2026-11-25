@@ -452,7 +452,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                 native["authoring"]["captures"] = retain_captures(
                     fixture, reports, native["authoring"].get("captures", []), AUTHORING_CAPTURES, reopen)
             if isolated_scene == "controls":
-                roles = {"platform-control-custom-wide.png", "platform-control-custom-narrow.png"}
+                roles = {"platform-control-custom-wide.png", "platform-control-custom-narrow.png", "platform-control-custom-invalid-geometry.png", "platform-control-custom-rejected-input.png"}
                 for key in ("customControls", "sceneFailure"):
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)

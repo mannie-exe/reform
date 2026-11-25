@@ -67,7 +67,8 @@ public interface ClientControlAdapter {
       Objects.requireNonNull(synchronize);
       Objects.requireNonNull(selection);
       Objects.requireNonNull(dispose);
-      if (preferred.width() < 1 || preferred.height() < 20)
+      if (preferred.width() < design.inherent.reform.presentation.FormTokens.Control.MINIMUM_WIDTH
+          || preferred.height() < design.inherent.reform.presentation.FormTokens.Control.HEIGHT)
         throw new IllegalArgumentException("A native field control needs a usable intrinsic offer");
     }
 

@@ -14,6 +14,39 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 abstract class ControlStyleMixin implements NativeControlStyle {
   @Unique private ClientTheme reform$controlTheme;
   @Unique private boolean reform$inputArgb;
+  @Unique private ControlGeometry reform$geometry;
+  @Unique private RuntimeException reform$geometryFailure;
+  @Unique private Object reform$controlOwner;
+
+  @Override
+  public final Object reform$controlOwner() {
+    return reform$controlOwner;
+  }
+
+  @Override
+  public final void reform$controlOwner(Object owner) {
+    reform$controlOwner = owner;
+  }
+
+  @Override
+  public final ControlGeometry reform$controlGeometry() {
+    return reform$geometry;
+  }
+
+  @Override
+  public final void reform$controlGeometry(ControlGeometry geometry) {
+    reform$geometry = geometry;
+  }
+
+  @Override
+  public final RuntimeException reform$controlGeometryFailure() {
+    return reform$geometryFailure;
+  }
+
+  @Override
+  public final void reform$controlGeometryFailure(RuntimeException failure) {
+    reform$geometryFailure = failure;
+  }
 
   @Override
   public final ClientTheme reform$theme() {

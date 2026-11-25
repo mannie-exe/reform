@@ -13,17 +13,23 @@ final class NativeControlFrame extends AbstractWidget implements ContainerEventH
   final AbstractWidget child;
   private GuiEventListener focused;
   private boolean dragging;
+  private final boolean malformed;
   int parentActivations;
 
   NativeControlFrame(AbstractWidget child) {
+    this(child, false);
+  }
+
+  NativeControlFrame(AbstractWidget child, boolean malformed) {
     super(0, 0, child.getWidth() + 8, child.getHeight() + 8, child.getMessage());
     this.child = child;
+    this.malformed = malformed;
     place();
   }
 
   private void place() {
     if (child == null) return;
-    child.setPosition(getX() + 4, getY() + 4);
+    child.setPosition(getX() + (malformed ? getWidth() + 4 : 4), getY() + 4);
     child.setWidth(Math.max(1, getWidth() - 8));
     child.setHeight(Math.max(1, getHeight() - 8));
   }

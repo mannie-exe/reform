@@ -208,6 +208,7 @@ final class FormPanel extends ScrollFrame {
     for (var control : controls) {
       if (control instanceof NativeGraphicWidget graphic) graphic.theme(currentTheme);
       else ClientControls.theme(control, currentTheme);
+      ControlSizing.protect(control);
       if (control instanceof NavigationButton navigationButton)
         navigationButton.theme(currentTheme);
       else if (control instanceof InformationButton information) information.theme(currentTheme);
@@ -886,8 +887,10 @@ final class FormPanel extends ScrollFrame {
   }
 
   private void position() {
-    for (var at : positions)
+    for (var at : positions) {
       at.widget.setPosition(left + border + at.x, top + border + at.y - (int) scrollDistance);
+      ControlSizing.geometryFailure(at.widget, false);
+    }
   }
 
   @Override
