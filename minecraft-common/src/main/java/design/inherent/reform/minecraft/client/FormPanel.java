@@ -559,10 +559,25 @@ final class FormPanel extends ScrollFrame {
         : null;
   }
 
+  private final java.util.Map<String, String> focusRedirects = new java.util.HashMap<>();
+
+  void redirectFocus(String retiredAnchor, String liveAnchor) {
+    focusRedirects.put(retiredAnchor, liveAnchor);
+  }
+
   void restoreFocus(String key) {
+    if (key != null) {
+      for (var redirect : focusRedirects.entrySet())
+        if (key.equals(redirect.getKey()) || key.startsWith(redirect.getKey() + "/")) {
+          key = fieldFocus(redirect.getValue(), null);
+          jump(redirect.getValue());
+          break;
+        }
+    }
+    final String restoredKey = key;
     if (key != null)
       positions.stream()
-          .filter(p -> key.equals(p.key) && p.widget.active && p.widget.visible)
+          .filter(p -> restoredKey.equals(p.key) && p.widget.active && p.widget.visible)
           .findFirst()
           .ifPresent(
               p -> {

@@ -1,7 +1,9 @@
 package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.minecraft.client.ui.DisclosureParts;
 import design.inherent.reform.minecraft.client.ui.UiComponent;
+import design.inherent.reform.minecraft.client.ui.UiDisclosureFailure;
 import design.inherent.reform.minecraft.client.ui.UiRowFailure;
 import design.inherent.reform.minecraft.client.ui.ViewSpec;
 import design.inherent.reform.minecraft.client.ui.Views;
@@ -9,6 +11,8 @@ import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.ViewStateKey;
 import design.inherent.reform.presentation.ui.UiActionResult;
 import design.inherent.reform.presentation.ui.UiAvailability;
+import design.inherent.reform.presentation.ui.UiBindings;
+import design.inherent.reform.presentation.ui.UiCommand;
 import design.inherent.reform.presentation.ui.UiLimits;
 import design.inherent.reform.presentation.ui.UiRead;
 import design.inherent.reform.presentation.ui.UiScope;
@@ -55,6 +59,7 @@ final class MountedUiTree implements AutoCloseable {
   enum Kind {
     TEXT,
     ACTION,
+    DISCLOSURE,
     FIELD,
     OPEN,
     CLOSE
@@ -260,6 +265,12 @@ final class MountedUiTree implements AutoCloseable {
     UiActionResult lastResult;
     ForMount<?> repeated;
     final List<UiRead<?>> reads;
+    private boolean expanded;
+    private boolean expansionObserved;
+    private UiDisclosureFailure disclosureFailure;
+    private List<Row> disclosureRows = List.of();
+    private final java.util.Set<String> collapsedIds = new HashSet<>();
+    private UiCommand<Void> disclosureCommand;
     private Row cachedRow;
     private long[] observed;
 
@@ -279,6 +290,13 @@ final class MountedUiTree implements AutoCloseable {
             add(declared, action.help().dependencies());
             add(declared, action.command().dependencies());
           }
+          case ViewSpec.Disclosure disclosure -> {
+            disclosureCommand = UiBindings.toggle(disclosure.expanded());
+            add(declared, disclosureCommand.dependencies());
+            add(declared, disclosure.parts().label().dependencies());
+            add(declared, disclosure.parts().description().dependencies());
+            add(declared, disclosure.parts().collapsedSummary().dependencies());
+          }
           case ViewSpec.Section section -> add(declared, section.title().dependencies());
           case ViewSpec.FieldPart part -> {
             add(declared, List.of(part.field().state()));
@@ -292,6 +310,9 @@ final class MountedUiTree implements AutoCloseable {
             () -> {
               cachedRow = null;
               observed = null;
+              disclosureRows = List.of();
+              collapsedIds.clear();
+              disclosureFailure = null;
             });
         switch (spec) {
           case ViewSpec.Column column -> construct(column.children());
@@ -347,6 +368,10 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     void reconcile() {
+      if (spec instanceof ViewSpec.Disclosure disclosure) {
+        reconcileDisclosure(disclosure);
+        return;
+      }
       if (repeated != null) repeated.reconcile();
       if (spec instanceof ViewSpec.Show show) {
         boolean selected =
@@ -392,6 +417,95 @@ final class MountedUiTree implements AutoCloseable {
       for (var child : children) child.reconcile();
     }
 
+    private void reconcileDisclosure(ViewSpec.Disclosure disclosure) {
+      boolean next =
+          root.project(
+              List.of(disclosure.expanded().value()),
+              () -> {
+                var value = disclosure.expanded().value().snapshot();
+                if (value
+                    instanceof
+                    design.inherent.reform.presentation.ui.UiObservation.Unavailable<Boolean>
+                        missing) throw new ReadUnavailable(missing);
+                return value.value();
+              });
+      boolean changed = !expansionObserved || next != expanded;
+      expansionObserved = true;
+      expanded = next;
+      if (!expanded) {
+        if (changed) {
+          collapsedIds.clear();
+          if (branch != null) branch.identities(collapsedIds);
+          if (branch != null) branch.clearProjectedRows();
+          disclosureRows = List.of();
+          disclosureFailure = null;
+          if (disclosure.parts().retention() == DisclosureParts.Retention.DISPOSE
+              && branchScope != null) {
+            var previous = branchScope;
+            branchScope = null;
+            branch = null;
+            selectedBranch = null;
+            previous.close();
+          }
+        }
+        return;
+      }
+      collapsedIds.clear();
+      if (branch == null && !changed) return; // Explicit collapse/reopen retries failed admission.
+      try {
+        if (branch == null) selectBranch("content", disclosure.parts().content());
+        branch.reconcile();
+        var inputs = new ArrayList<UiRead<?>>();
+        branch.inputs(inputs);
+        disclosureRows =
+            root.project(
+                inputs,
+                () -> {
+                  requireAvailable(inputs);
+                  var current = new ArrayList<Row>();
+                  branch.rows(current);
+                  return List.copyOf(current);
+                });
+        disclosureFailure = null;
+      } catch (RuntimeException failed) {
+        if (failed instanceof DisclosureRetirementFailure) throw failed;
+        disclosureRows = List.of();
+        if (branch != null) branch.clearProjectedRows();
+        var report =
+            failed instanceof ReadUnavailable missing
+                ? missing.observation.report()
+                : failed instanceof PolicyRefusal refused
+                    ? refused.report()
+                    : new PolicyRefusal(
+                            "ui.disclosure_failed",
+                            "This content could not be shown. Close and reopen it to try again.")
+                        .report();
+        disclosureFailure = new UiDisclosureFailure(id, report, Optional.of(failed));
+      }
+    }
+
+    private void identities(java.util.Set<String> into) {
+      into.add(id);
+      for (var child : children) child.identities(into);
+      if (branch != null) branch.identities(into);
+    }
+
+    void focusRedirects(FormPanel panel) {
+      if (spec instanceof ViewSpec.Disclosure && !expanded) {
+        for (var hidden : collapsedIds) panel.redirectFocus(hidden, id);
+        return;
+      }
+      for (var child : children) child.focusRedirects(panel);
+      if (branch != null) branch.focusRedirects(panel);
+    }
+
+    void disclosureFailures(List<UiDisclosureFailure> into) {
+      if (disclosureFailure != null) into.add(disclosureFailure);
+      if (spec instanceof ViewSpec.Disclosure && !expanded) return;
+      for (var child : children) child.disclosureFailures(into);
+      if (branch != null) branch.disclosureFailures(into);
+    }
+
     private void selectBranch(String key, ViewSpec.Branch factory) {
       if (Objects.equals(selectedBranch, key)) return;
       var nextScope = scope.child();
@@ -401,6 +515,7 @@ final class MountedUiTree implements AutoCloseable {
         next.reconcile();
       } catch (RuntimeException | Error failed) {
         cleanup(nextScope, failed);
+        if (nextScope.releaseFailure().isPresent()) throw new DisclosureRetirementFailure(failed);
         throw failed;
       }
       var previous = branchScope;
@@ -428,12 +543,13 @@ final class MountedUiTree implements AutoCloseable {
     void inputs(List<UiRead<?>> into) {
       add(into, reads);
       for (var child : children) child.inputs(into);
-      if (branch != null) branch.inputs(into);
+      if (branch != null && !(spec instanceof ViewSpec.Disclosure)) branch.inputs(into);
     }
 
     void clearProjectedRows() {
       cachedRow = null;
       observed = null;
+      disclosureRows = List.of();
       for (var child : children) child.clearProjectedRows();
       if (branch != null) branch.clearProjectedRows();
     }
@@ -458,13 +574,35 @@ final class MountedUiTree implements AutoCloseable {
       }
       var current = projectedRow();
       if (current != null) {
-        if ((current.kind() == Kind.ACTION || current.kind() == Kind.FIELD)
+        if ((current.kind() == Kind.ACTION
+                || current.kind() == Kind.DISCLOSURE
+                || current.kind() == Kind.FIELD)
             && !inherited.available())
           current = new Row(this, current.kind(), current.label(), current.body(), inherited);
         into.add(current);
       }
       for (var child : children) child.rows(into, childrenAvailability);
-      if (branch != null) branch.rows(into, childrenAvailability);
+      if (spec instanceof ViewSpec.Disclosure) {
+        if (expanded) {
+          if (disclosureFailure != null)
+            into.add(
+                new Row(
+                    this,
+                    Kind.TEXT,
+                    Component.translatableWithFallback(
+                        "reform.ui.disclosure_unavailable", "This content is unavailable."),
+                    report(disclosureFailure.report()),
+                    UiAvailability.READY));
+          for (var row : disclosureRows) {
+            if (!childrenAvailability.available()
+                && (row.kind() == Kind.ACTION
+                    || row.kind() == Kind.DISCLOSURE
+                    || row.kind() == Kind.FIELD))
+              row = new Row(row.node(), row.kind(), row.label(), row.body(), childrenAvailability);
+            into.add(row);
+          }
+        }
+      } else if (branch != null) branch.rows(into, childrenAvailability);
       if (spec instanceof ViewSpec.Section)
         into.add(
             new Row(this, Kind.CLOSE, Component.empty(), Component.empty(), UiAvailability.READY));
@@ -483,6 +621,20 @@ final class MountedUiTree implements AutoCloseable {
                     text.title().resolve(),
                     text.body().resolve(),
                     UiAvailability.READY);
+            case ViewSpec.Disclosure disclosure -> {
+              var label = disclosure.parts().label().resolve();
+              var body = disclosure.parts().description().resolve().copy();
+              if (!expanded) join(body, disclosure.parts().collapsedSummary().resolve());
+              yield new Row(
+                  this,
+                  Kind.DISCLOSURE,
+                  Component.translatableWithFallback(
+                      expanded ? "reform.ui.disclosure_hide" : "reform.ui.disclosure_show",
+                      expanded ? "Hide %s" : "Show %s",
+                      label),
+                  body,
+                  disclosureCommand.availability());
+            }
             case ViewSpec.Action action ->
                 new Row(
                     this,
@@ -689,7 +841,9 @@ final class MountedUiTree implements AutoCloseable {
           rows.stream()
               .map(
                   row ->
-                      (row.kind() == Kind.ACTION || row.kind() == Kind.FIELD)
+                      (row.kind() == Kind.ACTION
+                              || row.kind() == Kind.DISCLOSURE
+                              || row.kind() == Kind.FIELD)
                           ? new Row(row.node(), row.kind(), row.label(), row.body(), blocked)
                           : row)
               .toList();
@@ -754,6 +908,7 @@ final class MountedUiTree implements AutoCloseable {
                   : failure instanceof PolicyRefusal refused
                       ? refused.report()
                       : ValidationReport.VALID));
+    tree.focusRedirects(panel);
     for (var row : rows) {
       switch (row.kind()) {
         case TEXT -> {
@@ -781,7 +936,7 @@ final class MountedUiTree implements AutoCloseable {
         }
         case OPEN -> panel.beginGroup(row.node().id, row.label());
         case CLOSE -> panel.endGroup();
-        case ACTION -> {
+        case ACTION, DISCLOSURE -> {
           var body = row.body().copy();
           if (!row.availability().available()) join(body, report(row.availability().report()));
           if (row.node().lastResult instanceof UiActionResult.Refused refused)
@@ -805,6 +960,20 @@ final class MountedUiTree implements AutoCloseable {
                             if (root.isOpen()) changed.run();
                           }),
                       theme)
+                  .createNarration(
+                      supplier -> {
+                        var narration = supplier.get().copy();
+                        if (row.kind() == Kind.DISCLOSURE)
+                          join(
+                              narration,
+                              Component.translatableWithFallback(
+                                  row.node().expanded
+                                      ? "reform.ui.expanded"
+                                      : "reform.ui.collapsed",
+                                  row.node().expanded ? "Expanded" : "Collapsed"));
+                        join(narration, body);
+                        return narration;
+                      })
                   .build();
           button.active =
               failure == null && row.node().scope.isOpen() && row.availability().available();
@@ -817,14 +986,37 @@ final class MountedUiTree implements AutoCloseable {
   }
 
   private void invoke(Node node) {
-    var action = (ViewSpec.Action) node.spec;
-    var available = root.project(action.command().dependencies(), action.command()::availability);
+    var command =
+        node.spec instanceof ViewSpec.Action action ? action.command() : node.disclosureCommand;
+    var available = root.project(command.dependencies(), command::availability);
     node.lastResult =
         available.available()
-            ? Objects.requireNonNull(action.command().invoke(null))
+            ? Objects.requireNonNull(command.invoke(null))
             : new UiActionResult.Refused(available.report(), Optional.empty());
     lastAction = node.lastResult;
     refresh(true);
+  }
+
+  List<UiDisclosureFailure> disclosureFailures() {
+    root.requireCurrent();
+    var failures = new ArrayList<UiDisclosureFailure>();
+    tree.disclosureFailures(failures);
+    return List.copyOf(failures);
+  }
+
+  private static void requireAvailable(List<UiRead<?>> inputs) {
+    for (var input : inputs)
+      if (input.snapshot()
+          instanceof design.inherent.reform.presentation.ui.UiObservation.Unavailable<?> missing)
+        throw new ReadUnavailable(missing);
+  }
+
+  private static final class DisclosureRetirementFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
+    DisclosureRetirementFailure(Throwable cause) {
+      super("Content retirement failed", cause);
+    }
   }
 
   private static void join(net.minecraft.network.chat.MutableComponent target, Component added) {

@@ -80,6 +80,10 @@ public final class ClientUiMount extends NativeViewport implements AutoCloseable
     return tree.rowFailures();
   }
 
+  public List<design.inherent.reform.minecraft.client.ui.UiDisclosureFailure> disclosureFailures() {
+    return tree.disclosureFailures();
+  }
+
   /** Explicit cached-observation/update boundary; never call this from paint or measurement. */
   public void update() {
     context.requireCurrent();

@@ -1,5 +1,6 @@
 package design.inherent.reform.minecraft.client.ui;
 
+import design.inherent.reform.presentation.ui.UiBinding;
 import design.inherent.reform.presentation.ui.UiCommand;
 import design.inherent.reform.presentation.ui.UiRead;
 import design.inherent.reform.value.ValueType;
@@ -27,6 +28,11 @@ public final class Views {
 
   public static ViewSpec section(String key, UiText title, List<ViewSpec> children) {
     return new ViewSpec.Section(key, title, children);
+  }
+
+  public static ViewSpec disclosure(
+      String key, UiBinding<Boolean> expanded, DisclosureParts parts) {
+    return new ViewSpec.Disclosure(key, expanded, parts);
   }
 
   public static ViewSpec show(

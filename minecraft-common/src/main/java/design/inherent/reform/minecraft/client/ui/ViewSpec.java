@@ -1,6 +1,7 @@
 package design.inherent.reform.minecraft.client.ui;
 
 import design.inherent.reform.minecraft.client.ClientFieldParts;
+import design.inherent.reform.presentation.ui.UiBinding;
 import design.inherent.reform.presentation.ui.UiCommand;
 import design.inherent.reform.presentation.ui.UiRead;
 import design.inherent.reform.presentation.ui.UiScope;
@@ -60,6 +61,15 @@ public sealed interface ViewSpec {
   @FunctionalInterface
   interface Branch {
     ViewSpec build(UiScope scope);
+  }
+
+  record Disclosure(String key, UiBinding<Boolean> expanded, DisclosureParts parts)
+      implements ViewSpec {
+    public Disclosure {
+      key = identity(key);
+      Objects.requireNonNull(expanded);
+      Objects.requireNonNull(parts);
+    }
   }
 
   record Show(String key, UiRead<Boolean> test, Branch yes, Branch no) implements ViewSpec {

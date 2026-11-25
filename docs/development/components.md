@@ -90,4 +90,14 @@ options.withComponent(FieldPath.ROOT.field("enabled"), (scope, parts) ->
 
 Field components share one form-owned `UiLimits.STANDARD` aggregate root, rather than multiplying the payload allowance for every field. Their local state survives native reflow and temporary hiding while the same owner/session/path remains. Hidden attachments cannot dispatch; removed paths, replaced sessions, and form closure retire their scopes. Cleanup closes the presentation root and leaves domain ownership to the existing editor lifecycle. A native replacement adapter or dedicated editor cannot also declare this component for the same field.
 
-This is the actual-form field-parts host. Arbitrary field mounting in caller-owned component trees, general Disclosure parts, loading/error boundaries, picker/completion, and the remaining revised layout/preview contracts are still in progress. Native and model qualification is recorded separately in verification.
+This is the actual-form field-parts host. Arbitrary field mounting in caller-owned component trees, loading/error boundaries, picker/completion, and the remaining revised layout/preview contracts are still in progress. Native and model qualification is recorded separately in verification.
+
+## Disclosure
+
+`Views.disclosure(key, expanded, parts)` uses an actual controlled `UiBinding<Boolean>`. `DisclosureParts` names the label, description, collapsed summary, lazy content factory, and explicit `RETAIN` or `DISPOSE` policy. `DisclosureParts.retained` preserves the admitted content scope and its local state while collapsed; `disposable` retires it and creates a new scope on reopening. Neither policy mounts hidden controls or invokes the content factory before first expansion. Retained observations share the existing aggregate limits and may still refresh on host turns; collapsing is not permission revocation.
+
+The native trigger uses Enter/Space, reports expanded/collapsed state, and includes the collapsed summary in its narration. Collapsing removes descendant input participation, rejects stale callbacks, and redirects a previously focused descendant to the live trigger. The caller-owned host still owns its surrounding screen focus and native resize lifecycle.
+
+Content failures clear projected content and leave the trigger available. `ClientUiMount.disclosureFailures()` reports the boundary identity, structured report, and actual cause. A failed construction is retried only after explicit collapse/reopen; an existing content source can recover through a fresh observation without recreating its scope. Failed cleanup remains a failed retirement. `UiBindings.toggle` invokes the current controlled value's actual command and never writes an optimistic expansion state after a pending or refused result.
+
+Disclosure does not replace a field's mandatory label/control/feedback family. Hiding a required field part still fails that field's composition contract. The upcoming picker/manual-ID surface must declare its canonical control ownership explicitly.

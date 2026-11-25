@@ -55,5 +55,37 @@ public final class UiBindings {
     };
   }
 
+  /**
+   * Toggle the current controlled value; pending or refused writes never change it optimistically.
+   */
+  public static UiCommand<Void> toggle(UiBinding<Boolean> binding) {
+    Objects.requireNonNull(binding);
+    var dependencies = new java.util.ArrayList<UiRead<?>>();
+    dependencies.add(binding.value());
+    dependencies.addAll(binding.changes().dependencies());
+    var reads = List.copyOf(dependencies);
+    return new UiCommand<>() {
+      @Override
+      public UiAvailability availability() {
+        var value = binding.value().snapshot();
+        if (value instanceof UiObservation.Unavailable<Boolean> missing)
+          return new UiAvailability(false, missing.report());
+        return binding.changes().availability();
+      }
+
+      @Override
+      public UiActionResult invoke(Void ignored) {
+        var ready = availability();
+        if (!ready.available()) return new UiActionResult.Refused(ready.report(), Optional.empty());
+        return binding.changes().invoke(!binding.value().snapshot().value());
+      }
+
+      @Override
+      public List<UiRead<?>> dependencies() {
+        return reads;
+      }
+    };
+  }
+
   private UiBindings() {}
 }

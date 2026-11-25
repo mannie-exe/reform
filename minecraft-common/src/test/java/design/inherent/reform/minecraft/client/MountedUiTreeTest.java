@@ -33,6 +33,217 @@ class MountedUiTreeTest {
   }
 
   @Test
+  void disclosureIsLazyAndExplicitlyRetainsOrDisposesItsContent() {
+    for (var retention :
+        design.inherent.reform.minecraft.client.ui.DisclosureParts.Retention.values()) {
+      try (var owner = host()) {
+        var expanded = new AtomicReference<UiLocal<Boolean>>();
+        var content = new AtomicReference<UiLocal<String>>();
+        var creates = new AtomicInteger();
+        var closes = new AtomicInteger();
+        var tree =
+            MountedUiTree.open(
+                ClientViewContext.borrow(owner),
+                UiLimits.STANDARD,
+                (scope, props) -> {
+                  expanded.set(
+                      scope.local(
+                          new ViewStateKey<>(
+                              DocumentId.parse("example:expansion"), ValueTypes.bool()),
+                          false));
+                  return Views.disclosure(
+                      "detail",
+                      design.inherent.reform.presentation.ui.UiBindings.local(expanded.get()),
+                      new design.inherent.reform.minecraft.client.ui.DisclosureParts(
+                          UiText.of(Component.literal("Details")),
+                          UiText.of(Component.literal("Help")),
+                          UiText.of(Component.literal("Selection retained")),
+                          branch -> {
+                            creates.incrementAndGet();
+                            branch.onRetire(closes::incrementAndGet);
+                            content.set(branch.local(textKey("detail_text"), "Initial"));
+                            return Views.text(
+                                "content",
+                                UiText.of(Component.empty()),
+                                UiText.from(content.get(), Component::literal));
+                          },
+                          retention));
+                },
+                "fixed");
+        assertEquals(0, creates.get());
+        assertEquals("Show Details", tree.snapshot().getFirst().label().getString());
+        assertTrue(tree.snapshot().getFirst().body().getString().contains("Selection retained"));
+        expanded.get().replace(true);
+        tree.refresh(false);
+        content.get().replace("Edited");
+        tree.refresh(false);
+        assertEquals("Edited", tree.snapshot().getLast().body().getString());
+        assertEquals("Hide Details", tree.snapshot().getFirst().label().getString());
+        assertFalse(tree.snapshot().getFirst().body().getString().contains("Selection retained"));
+        expanded.get().replace(false);
+        tree.refresh(false);
+        assertEquals(1, tree.snapshot().size());
+        boolean retained =
+            retention
+                == design.inherent.reform.minecraft.client.ui.DisclosureParts.Retention.RETAIN;
+        assertEquals(retained ? 0 : 1, closes.get());
+        expanded.get().replace(true);
+        tree.refresh(false);
+        assertEquals(retained ? "Edited" : "Initial", tree.snapshot().getLast().body().getString());
+        assertEquals(retained ? 1 : 2, creates.get());
+        tree.close();
+        assertEquals(creates.get(), closes.get());
+        assertEquals(0, tree.scope().usage().scopes());
+      }
+    }
+  }
+
+  @Test
+  void disclosureConstructionFailureKeepsTriggerAvailableAndRetriesOnlyAfterReopen() {
+    try (var owner = host()) {
+      var expanded = new AtomicReference<UiLocal<Boolean>>();
+      var unrelated = new AtomicReference<UiLocal<String>>();
+      var creates = new AtomicInteger();
+      var closes = new AtomicInteger();
+      var actual = new IllegalArgumentException("Exact failure");
+      var tree =
+          MountedUiTree.open(
+              ClientViewContext.borrow(owner),
+              UiLimits.STANDARD,
+              (scope, props) -> {
+                expanded.set(
+                    scope.local(
+                        new ViewStateKey<>(
+                            DocumentId.parse("example:failed_expansion"), ValueTypes.bool()),
+                        true));
+                unrelated.set(scope.local(textKey("unrelated_disclosure"), "first"));
+                return Views.disclosure(
+                    "detail",
+                    design.inherent.reform.presentation.ui.UiBindings.local(expanded.get()),
+                    design.inherent.reform.minecraft.client.ui.DisclosureParts.retained(
+                        UiText.of(Component.literal("Details")),
+                        UiText.from(unrelated.get(), Component::literal),
+                        UiText.of(Component.empty()),
+                        branch -> {
+                          branch.onRetire(closes::incrementAndGet);
+                          if (creates.incrementAndGet() == 1) throw actual;
+                          return Views.text(
+                              "recovered", Component.empty(), Component.literal("Recovered"));
+                        }));
+              },
+              "fixed");
+      assertTrue(tree.snapshot().getFirst().availability().available());
+      assertSame(actual, tree.disclosureFailures().getFirst().cause().orElseThrow());
+      assertEquals(1, closes.get(), "Partial admission must be refunded");
+      unrelated.get().replace("second");
+      tree.refresh(false);
+      assertEquals(1, creates.get(), "An unrelated update cannot repeat a failed factory");
+      expanded.get().replace(false);
+      tree.refresh(false);
+      expanded.get().replace(true);
+      tree.refresh(false);
+      assertTrue(tree.disclosureFailures().isEmpty());
+      assertEquals("Recovered", tree.snapshot().getLast().body().getString());
+      tree.close();
+      assertEquals(2, closes.get());
+    }
+  }
+
+  @Test
+  void disclosureContentReadLossClearsPrivateRowsWithoutDisablingTriggerAndRecoversSameScope() {
+    try (var owner = host()) {
+      var allowed = new boolean[] {true};
+      var access = owner.access(() -> allowed[0], () -> false);
+      var key = textKey("private_disclosure");
+      var saved =
+          new design.inherent.reform.presentation.ui.UiObservation.Available<>(
+              key.capture("Private details"), 1);
+      var creates = new AtomicInteger();
+      var tree =
+          MountedUiTree.open(
+              ClientViewContext.borrow(owner),
+              UiLimits.STANDARD,
+              (scope, props) ->
+                  Views.disclosure(
+                      "private",
+                      design.inherent.reform.presentation.ui.UiBindings.local(
+                          scope.local(
+                              new ViewStateKey<>(
+                                  DocumentId.parse("example:private_expansion"), ValueTypes.bool()),
+                              true)),
+                      design.inherent.reform.minecraft.client.ui.DisclosureParts.retained(
+                          UiText.of(Component.literal("Details")),
+                          UiText.of(Component.empty()),
+                          UiText.of(Component.empty()),
+                          branch -> {
+                            creates.incrementAndGet();
+                            var observed =
+                                branch.observe(
+                                    key,
+                                    () -> {
+                                      access.require(OwnerContext.Right.READ);
+                                      return saved;
+                                    });
+                            return Views.text(
+                                "content",
+                                UiText.of(Component.empty()),
+                                UiText.from(observed, Component::literal));
+                          })),
+              "fixed");
+      assertEquals("Private details", tree.snapshot().getLast().body().getString());
+      allowed[0] = false;
+      tree.refresh(false);
+      assertTrue(tree.snapshot().getFirst().availability().available());
+      assertTrue(
+          tree.snapshot().stream()
+              .noneMatch(row -> row.body().getString().contains("Private details")));
+      assertEquals(1, tree.disclosureFailures().size());
+      assertTrue(tree.failure().isEmpty(), "A content failure must stay inside its disclosure");
+      allowed[0] = true;
+      tree.refresh(false);
+      assertEquals("Private details", tree.snapshot().getLast().body().getString());
+      assertEquals(1, creates.get());
+      tree.close();
+    }
+  }
+
+  @Test
+  void controlledDisclosureToggleDoesNotInventAWriteWhenControllerRefuses() {
+    try (var owner = host();
+        var scope = UiScope.borrow(owner, UiLimits.STANDARD)) {
+      var value =
+          scope.local(
+              new ViewStateKey<>(DocumentId.parse("example:refused_expansion"), ValueTypes.bool()),
+              false);
+      var refusal = new PolicyRefusal("example.refused", "Not now").report();
+      var binding =
+          new design.inherent.reform.presentation.ui.UiBinding<Boolean>() {
+            public design.inherent.reform.presentation.ui.UiRead<Boolean> value() {
+              return value;
+            }
+
+            public design.inherent.reform.presentation.ui.UiCommand<Boolean> changes() {
+              return new design.inherent.reform.presentation.ui.UiCommand<>() {
+                public design.inherent.reform.presentation.ui.UiAvailability availability() {
+                  return design.inherent.reform.presentation.ui.UiAvailability.READY;
+                }
+
+                public design.inherent.reform.presentation.ui.UiActionResult invoke(
+                    Boolean ignored) {
+                  return new design.inherent.reform.presentation.ui.UiActionResult.Refused(
+                      refusal, java.util.Optional.empty());
+                }
+              };
+            }
+          };
+      assertInstanceOf(
+          design.inherent.reform.presentation.ui.UiActionResult.Refused.class,
+          design.inherent.reform.presentation.ui.UiBindings.toggle(binding).invoke(null));
+      assertFalse(value.snapshot().value());
+    }
+  }
+
+  @Test
   void unrelatedUpdatesDoNotReprojectTextOrReadiness() {
     try (var owner = host()) {
       var first = new AtomicReference<UiLocal<String>>();
