@@ -1,5 +1,7 @@
 # Configuration workflows for 0.4
 
+**Design supersession:** [Semantic interaction architecture](semantic-ui/README.md) owns the revised unpublished0.4 interaction contracts and the connected full reference design. This document retains the inherited baseline wherever not explicitly replaced; all38 acceptance obligations remain attributed. New semantic APIs are proposed, not available in dev.96.
+
 This is the owner-selected shared configuration-workflow contract for [presentation 0.4](presentation-0.4.md). The intent, source/Mobbin review, static A/B proposals, and owner review are complete. The owner selected both arrangements responsively: A is preferred when adjacent content fits; B serves narrower/taller contexts. This document records that final design decision, not an implemented or natively qualified interface.
 
 Static UI mockups and existing native evidence are permitted for this review. They do not authorize product code, candidates, consumer migration, native client launches, publication, or personal rollout. Illustrated feature content, a Wayfinder demonstration, RespackOpts, and Phase 2 remain outside the selected work.

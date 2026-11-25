@@ -1,0 +1,347 @@
+{
+  "formatVersion": 1,
+  "external": [
+    {
+      "label": "solid-release",
+      "url": "https://api.github.com/repos/solidjs/solid/releases/latest",
+      "sha256": "a0bbe09163b918286ad4952c501002359ced4e1065e882c92619613064f70eec",
+      "bytes": 7144,
+      "observedAt": "2026-11-25T09:43:03.367747+00:00"
+    },
+    {
+      "label": "base-release",
+      "url": "https://api.github.com/repos/mui/base-ui/releases/latest",
+      "sha256": "0d61f6b69d11ed9cfd5bca31835014dbe1fe4be33e1aa924adb904389b4c82bf",
+      "bytes": 10163,
+      "observedAt": "2026-11-25T09:43:03.589243+00:00"
+    },
+    {
+      "label": "apple-viewbuilder",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/viewbuilder.json",
+      "sha256": "5364db81929aca4c67936b8a2c1978a539c34a1d37a26f2f27b5080a13b5972b",
+      "bytes": 15822,
+      "observedAt": "2026-11-25T09:43:03.897243+00:00"
+    },
+    {
+      "label": "solid-ui-release",
+      "url": "https://api.github.com/repos/solidjs/solid/releases/tags/solid-js%402.0.3",
+      "sha256": "db4f3dd2508c14c9385893b507ebb28d1043f41cc0a295b6c0cdfa603d279095",
+      "bytes": 2283,
+      "observedAt": "2026-11-25T09:43:57.805834+00:00"
+    },
+    {
+      "label": "solid-ui-tag",
+      "url": "https://api.github.com/repos/solidjs/solid/git/ref/tags/solid-js%402.0.3",
+      "sha256": "0a55127e3d9cb2d1da74e6854342b99a2526b7aab7baf9099883e65b677ddb2e",
+      "bytes": 363,
+      "observedAt": "2026-11-25T09:43:58.025046+00:00"
+    },
+    {
+      "label": "base-tag",
+      "url": "https://api.github.com/repos/mui/base-ui/git/ref/tags/v1.9.0",
+      "sha256": "bd510d7a284ed1049e7019c52b143b80864e514f3723673fd527d7b64458422a",
+      "bytes": 317,
+      "observedAt": "2026-11-25T09:43:58.224196+00:00"
+    },
+    {
+      "label": "solid-tree",
+      "url": "https://api.github.com/repos/solidjs/solid/git/trees/68406c2077eff22c67f71db4a16bf7026ddceee1?recursive=1",
+      "sha256": "c933cd2f268308c27c819c362db769e43759d2d526da7831840c4856597cfc10",
+      "bytes": 1029786,
+      "observedAt": "2026-11-25T09:44:39.495453+00:00"
+    },
+    {
+      "label": "base-dereferenced-tag",
+      "url": "https://api.github.com/repos/mui/base-ui/git/tags/fdf262e246ce35b51e43e25489e219335cdd9dc4",
+      "sha256": "9572f44deeae72660a7fb426b9a9610d5ac7014f2243d3a0f3634dfa35b6a389",
+      "bytes": 648,
+      "observedAt": "2026-11-25T09:44:39.709924+00:00"
+    },
+    {
+      "label": "solid-0",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/documentation/solid-2.0/01-reactivity-batching-effects.md",
+      "sha256": "9d6b13783c140d62ce5305dbe67d4150f6f44597d8d1c1db67ac8e5c5a6d9199",
+      "bytes": 17469,
+      "observedAt": "2026-11-25T09:45:18.750942+00:00"
+    },
+    {
+      "label": "solid-1",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/documentation/solid-2.0/02-signals-derived-ownership.md",
+      "sha256": "1e05cd6b1d85a91af07e779c16f4f5feda36051c6f39443ea39f3c3c081e4f0e",
+      "bytes": 11320,
+      "observedAt": "2026-11-25T09:45:18.663119+00:00"
+    },
+    {
+      "label": "solid-2",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/documentation/solid-2.0/03-control-flow.md",
+      "sha256": "e6bf3219833762403b4e21763fd16f55a839165d21ebcea359cd9e2f7b8bd910",
+      "bytes": 27838,
+      "observedAt": "2026-11-25T09:45:18.743666+00:00"
+    },
+    {
+      "label": "solid-3",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/documentation/solid-2.0/05-async-data.md",
+      "sha256": "a2f4706d6726b08a75ad198508162c8c21ce414da093d4124d7fd5b6bec51489",
+      "bytes": 35528,
+      "observedAt": "2026-11-25T09:45:18.756837+00:00"
+    },
+    {
+      "label": "solid-4",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/documentation/solid-2.0/06-actions-optimistic.md",
+      "sha256": "6d53b041af4c36294d08cbd869df91fb5c8da327f636d68c7c9682ef56aeeded",
+      "bytes": 16241,
+      "observedAt": "2026-11-25T09:45:18.847373+00:00"
+    },
+    {
+      "label": "solid-5",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/documentation/solid-2.0/08-dev-diagnostics.md",
+      "sha256": "e411234b8260710157437478c2d3a782fd1cae6be61e4e26a042b47528583da7",
+      "bytes": 209169,
+      "observedAt": "2026-11-25T09:45:18.991579+00:00"
+    },
+    {
+      "label": "solid-6",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/documentation/solid-2.0/MIGRATION.md",
+      "sha256": "0d41c0717b8759f8f3417b25cf5697000699186454ec7775b0521d1438c16d99",
+      "bytes": 47459,
+      "observedAt": "2026-11-25T09:45:18.989677+00:00"
+    },
+    {
+      "label": "solid-flow-source",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/packages/solid/src/client/flow.ts",
+      "sha256": "efe4f4e5bc8aac5f2f2d1be8ddc0d5afa70b65647b2b907615c84c601d631522",
+      "bytes": 23095,
+      "observedAt": "2026-11-25T09:45:18.952134+00:00"
+    },
+    {
+      "label": "solid-package",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/packages/solid/package.json",
+      "sha256": "ee6f273347dc03c8c123466f95ebef5d2209de03cd37ec04a6c750dd7e257007",
+      "bytes": 3902,
+      "observedAt": "2026-11-25T09:45:19.027501+00:00"
+    },
+    {
+      "label": "base-tree",
+      "url": "https://api.github.com/repos/mui/base-ui/git/trees/ad7ecda5296b0295b41a51ecb01fce6204acd099?recursive=1",
+      "sha256": "ab55f5ba2ac65e72e4ba67adb8f8c31f997ea0163d496be57bb622f08656917b",
+      "bytes": 977014,
+      "observedAt": "2026-11-25T09:45:19.467655+00:00"
+    },
+    {
+      "label": "apple-state",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/state.json",
+      "sha256": "11d4498717f5d5fbf08f51fff963504eb9809ed4ba3d3c8d56e4dd5c13349c35",
+      "bytes": 38501,
+      "observedAt": "2026-11-25T09:45:19.176446+00:00"
+    },
+    {
+      "label": "apple-binding",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/binding.json",
+      "sha256": "d2bf490adfa1b90d12d808362d5f87c2af7146a988119e0dfe377a1f7c4e9101",
+      "bytes": 35787,
+      "observedAt": "2026-11-25T09:45:19.171145+00:00"
+    },
+    {
+      "label": "apple-environment",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/environment.json",
+      "sha256": "0ab1746c8a27af3ca8afcaf32fe1b05823b1205298adaa56b53df16d8794ed0b",
+      "bytes": 23114,
+      "observedAt": "2026-11-25T09:45:19.191842+00:00"
+    },
+    {
+      "label": "apple-viewmodifier",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/viewmodifier.json",
+      "sha256": "be1cb1857a4d473e0a26a4533280bf56bb68ed803eb586f19215fb804c38e290",
+      "bytes": 29038,
+      "observedAt": "2026-11-25T09:45:19.337439+00:00"
+    },
+    {
+      "label": "apple-layout",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/layout.json",
+      "sha256": "793e177192bdf140823d14d7253bc23c37d50461330cd4cb2aab395e92a63b38",
+      "bytes": 45788,
+      "observedAt": "2026-11-25T09:45:19.478216+00:00"
+    },
+    {
+      "label": "apple-navigationstack",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/navigationstack.json",
+      "sha256": "a06a3a371d8d415835aa56c1e28b54ad40cb8ffac29b393856d239eb2c891fae",
+      "bytes": 25265,
+      "observedAt": "2026-11-25T09:45:19.352404+00:00"
+    },
+    {
+      "label": "apple-accessibilitychildbehavior",
+      "url": "https://developer.apple.com/tutorials/data/documentation/swiftui/accessibilitychildbehavior.json",
+      "sha256": "66fe013eb7e1c785a1ae5910b54d5a910f1b027fcbc7a55ea7e58938eace54a3",
+      "bytes": 11463,
+      "observedAt": "2026-11-25T09:45:19.485245+00:00"
+    },
+    {
+      "label": "base-AutocompleteRoot",
+      "url": "https://raw.githubusercontent.com/mui/base-ui/ad7ecda5296b0295b41a51ecb01fce6204acd099/packages/react/src/autocomplete/root/AutocompleteRoot.tsx",
+      "sha256": "5759566edb741954534a4b70e5976f1b8ef8a70a6ca68a4ad83eae45652c9003",
+      "bytes": 12347,
+      "observedAt": "2026-11-25T09:46:31.069286+00:00"
+    },
+    {
+      "label": "base-ComboboxRoot",
+      "url": "https://raw.githubusercontent.com/mui/base-ui/ad7ecda5296b0295b41a51ecb01fce6204acd099/packages/react/src/combobox/root/ComboboxRoot.tsx",
+      "sha256": "ff918495997fc559259b00d3529574ae099937d458b0f056a2af9324a60d3087",
+      "bytes": 7462,
+      "observedAt": "2026-11-25T09:46:31.088900+00:00"
+    },
+    {
+      "label": "base-DialogRoot",
+      "url": "https://raw.githubusercontent.com/mui/base-ui/ad7ecda5296b0295b41a51ecb01fce6204acd099/packages/react/src/dialog/root/DialogRoot.tsx",
+      "sha256": "68a0a045a4455d711e0cdd35a1a64357da7d7a351dbecf81a907f8cb8d918d84",
+      "bytes": 4788,
+      "observedAt": "2026-11-25T09:46:31.075422+00:00"
+    },
+    {
+      "label": "base-FieldRoot",
+      "url": "https://raw.githubusercontent.com/mui/base-ui/ad7ecda5296b0295b41a51ecb01fce6204acd099/packages/react/src/field/root/FieldRoot.tsx",
+      "sha256": "e07d65bffbb1fa2c98c4b8116a2fc1b8b1ea4134473011126f6d045518da6a78",
+      "bytes": 9655,
+      "observedAt": "2026-11-25T09:46:31.086527+00:00"
+    },
+    {
+      "label": "base-useRenderElement",
+      "url": "https://raw.githubusercontent.com/mui/base-ui/ad7ecda5296b0295b41a51ecb01fce6204acd099/packages/react/src/internals/useRenderElement.tsx",
+      "sha256": "ce4a7452d695745276ebff8041f97039b582e69fa602c42ca8d1376ab9704afb",
+      "bytes": 11497,
+      "observedAt": "2026-11-25T09:46:31.312798+00:00"
+    },
+    {
+      "label": "base-useControlled",
+      "url": "https://raw.githubusercontent.com/mui/base-ui/ad7ecda5296b0295b41a51ecb01fce6204acd099/packages/utils/src/useControlled.ts",
+      "sha256": "38ef0d4b30764275bbbd1f6e518e209b6a8b5dd74522b6b341efcb8b3d8f83e7",
+      "bytes": 4472,
+      "observedAt": "2026-11-25T09:46:31.312670+00:00"
+    },
+    {
+      "label": "solid-fundamentals",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/packages/signals/docs/RULES-FUNDAMENTALS.md",
+      "sha256": "3122665dfd2d4e3d4ba864454fe4c6ec0d81eec52036eb0b37ef2200e334ef76",
+      "bytes": 38027,
+      "observedAt": "2026-11-25T09:46:31.320653+00:00"
+    },
+    {
+      "label": "solid-derived",
+      "url": "https://raw.githubusercontent.com/solidjs/solid/68406c2077eff22c67f71db4a16bf7026ddceee1/packages/signals/docs/RULES-DERIVED.md",
+      "sha256": "ca9386005773837ddfad443ce39408247542e3ae1f27fb0d57ab1b014c4c0e6e",
+      "bytes": 65522,
+      "observedAt": "2026-11-25T09:46:31.307921+00:00"
+    }
+  ],
+  "local": [
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "core/src/main/java/design/inherent/reform/presentation/FormLayout.java",
+      "sha256": "f2c053b46ecbbdde8052c701a78bbeb79f8ed960a32c6156e33144c9c5da9656"
+    },
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "core/src/main/java/design/inherent/reform/reference/ReferenceSelection.java",
+      "sha256": "1261fb75c67b2ba51164d549c3fa05d383a234caa28f55bed0acbb9fea4f10f4"
+    },
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "core/src/main/java/design/inherent/reform/presentation/graphics/DraftPreviewInput.java",
+      "sha256": "2417f9b45ce7b8850eec1ea7cc3909e61d80d2afa6e0db876e6eb39e0f1e3867"
+    },
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "core/src/main/java/design/inherent/reform/presentation/graphics/GraphicRequest.java",
+      "sha256": "162d8f35a62af399dfadd57e2532fc2fd0f71014518892cc616fa97dfc1b552c"
+    },
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "minecraft-common/src/main/java/design/inherent/reform/minecraft/client/ClientGraphicHost.java",
+      "sha256": "77ab965ca72ba2242c6d65de157426d868af2cdf3408112fe58e80855b39a010"
+    },
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "minecraft-common/src/main/java/design/inherent/reform/minecraft/client/ClientReferenceTask.java",
+      "sha256": "45eb402bcdb1d604d90043fd163b170b8e35301606e1ee2168ac77e8c88a8906"
+    },
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "minecraft-common/src/main/java/design/inherent/reform/minecraft/client/ClientTaskGraphic.java",
+      "sha256": "f87995c4344cb91cd5814351e82b862de60897c43e2f703b6e20f59b6d15968b"
+    },
+    {
+      "project": "reform",
+      "revision": "719034fe81a796dca32b469b7983f6b058831460",
+      "path": "minecraft-common/src/main/java/design/inherent/reform/minecraft/client/ClientCustomView.java",
+      "sha256": "80a20370cf03c39fdd8d793b83ff04796580670afbb5f72e3864f83d9a0b1bfa"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "include/ui/Builders.hpp",
+      "sha256": "f064b81ef778aa1396c5cbe3be9893a7d2225e4c46108eb9e65861abfd84959c"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "include/ui/Semantics.hpp",
+      "sha256": "10a586ea2115894c0b8beade84520ba57228ec9636cac9770fc4f0e20f9afc59"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "include/ui/collections/Collection.hpp",
+      "sha256": "abf961f123903c032d98af1c217f1c46ec147b4d71b6d09f86d8051b9fb79346"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "include/layout/LayoutPrimitives.hpp",
+      "sha256": "f3b0012791a274f0916641740c72461fe79c103270aa17ecc0376c66f91dbdea"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "docs/ui/CONTRACTS.md",
+      "sha256": "b9bdd44a26f5993b847c45320ab5dc6887380406aaf4b5858e3f51bf7a97bed4"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "docs/ui/CONTROLS.md",
+      "sha256": "23491a42dbe933495b1f3ad1fc24b2ffcc672c2e9701083fc1c7b39a9bde3f7f"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "docs/ui/ASYNC.md",
+      "sha256": "0f8ebf8ff166e15455e32a9dfbc86b078392aa768d28a93d982bdd4aca1bbaa7"
+    },
+    {
+      "project": "playground",
+      "revision": "d7a1c9989b2596f062d5f0314474f011470fe902",
+      "path": "docs/ui/ACCESSIBILITY.md",
+      "sha256": "f66fee28e6ab39834af1f14a53027b7d0dfa62cd0a33ef9f940c2db7597f8a61"
+    },
+    {
+      "project": "lootr-styled",
+      "revision": "11b81833979d4161f879db9c371d87267562e599",
+      "path": "minecraft-common/src/main/java/design/inherent/lootr_styled/client/StyleWorkspace.java",
+      "sha256": "d0f91871abe2dc1f22ce574405471c08637bb1277346dd52f3b3f66ffe9291d3"
+    },
+    {
+      "project": "lootr-styled",
+      "revision": "11b81833979d4161f879db9c371d87267562e599",
+      "path": "minecraft-common/src/main/java/design/inherent/lootr_styled/client/StyleGraphicProvider.java",
+      "sha256": "aa747a91d5bbfce0ee2d1591911e8bc8df537e37b35ff0c4a4c51109193226b8"
+    }
+  ],
+  "limits": "Inspected source/documents only; no upstream/project build, browser/native execution or new runtime qualification."
+}

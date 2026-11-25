@@ -1,5 +1,7 @@
 # Presentation 0.4: migration and acceptance
 
+**Design supersession:** [Semantic interaction architecture](semantic-ui/README.md) owns the revised unpublished0.4 interaction contracts and the connected full reference design. This document retains the inherited baseline wherever not explicitly replaced; all38 acceptance obligations remain attributed. New semantic APIs are proposed, not available in dev.96.
+
 This document accompanies the proposed [presentation and navigation contract](presentation-0.4.md) and [construction/lifecycle API](presentation-0.4-api.md). It specifies later implementation and consumer migration; it does not activate either. Current product source, versions, examples, and qualified behavior remain 0.3. The selected design extension produced reviewed static A/B proposals; the owner chose automatic A-preferred responsive task layouts. No prototype, candidate, native run, consumer pin, or release follows from that design review.
 
 ## Public API responsibilities

@@ -35,6 +35,8 @@ See [custom workspace views](custom-views.md) for development body declarations,
 
 ## Proposed design
 
+[Semantic interaction architecture](../design/semantic-ui/README.md) is the current proposed revision of0.4 and its connected full-system reference. It specifies shared component/state/lifetime contracts inspired by SwiftUI, Solid2, BaseUI and Playground, with proposed APIs, seven examples, migration and acceptance. It is design-only; the existing implementation and version-attributed qualification remain separate.
+
 [Configuration workflows for 0.4](../design/configuration-workflows-0.4.md) defines the owner-selected shared-menu contract: adjacent A preferred with responsive focused/vertical B, retained task/input state, and truthful meta-workflow effects. Implemented task boundaries are documented in the workflow and composition references; verification owns the final combined qualification.
 
 [Presentation and navigation for 0.4](../design/presentation-0.4.md) defines the selected theme, workspace, Home, navigation, and graphics contracts. [Construction and lifecycle](../design/presentation-0.4-api.md) specifies admission, API inputs/results, read-only preview capture, and native resource retirement. The [migration and acceptance plan](../design/presentation-0.4-migration.md) separates existing services from remaining APIs and consumer work. Implemented development boundaries are documented in the workflow, composition, and preview references; the full specifications are not a claim of completion or released availability. Verification records exact tested artifacts and omissions.

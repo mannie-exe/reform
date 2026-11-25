@@ -1,5 +1,7 @@
 # Presentation 0.4: construction and lifecycle contracts
 
+**Design supersession:** [Semantic interaction architecture](semantic-ui/README.md) owns the revised unpublished0.4 interaction contracts and the connected full reference design. This document retains the inherited baseline wherever not explicitly replaced; all38 acceptance obligations remain attributed. New semantic APIs are proposed, not available in dev.96.
+
 This specification completes the API responsibilities in the [presentation design](presentation-0.4.md). It is proposed behavior, not implemented or qualified Java. Method sketches define inputs, outputs, ownership, and refusal semantics; implementation may adjust overload syntax without changing those contracts. [Migration and acceptance](presentation-0.4-migration.md) owns the delivery map and checks.
 
 ## Construction and admission
