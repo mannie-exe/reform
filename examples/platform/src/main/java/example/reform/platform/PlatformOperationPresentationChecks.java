@@ -37,6 +37,7 @@ final class PlatformOperationPresentationChecks {
   private OperationScreen.Outcome described;
   private long terminalFrame = -1;
   private boolean pendingCloseObserved, terminalCloseCleared, unrelatedNoticeRetained;
+  private String terminalReportedPhase, capturedTerminalNarration;
 
   static java.util.concurrent.CompletionStage<com.google.gson.JsonObject> run(
       ClientRegistration registration) {
@@ -67,6 +68,8 @@ final class PlatformOperationPresentationChecks {
                 value.addProperty("status", "PASS");
                 value.add("checks", checks.deepCopy());
                 value.addProperty("pendingCloseObserved", operation.pendingCloseObserved);
+                value.addProperty("terminalReportedPhase", operation.terminalReportedPhase);
+                value.addProperty("capturedTerminalNarration", operation.capturedTerminalNarration);
                 value.addProperty("terminalCloseCleared", operation.terminalCloseCleared);
                 value.addProperty("unrelatedNoticeRetained", operation.unrelatedNoticeRetained);
                 value.addProperty("starts", operation.starts);
@@ -183,6 +186,9 @@ final class PlatformOperationPresentationChecks {
               return result.thenApply(
                   value -> {
                     execution.checkpoint();
+                    execution.progress(
+                        new OperationSnapshot.Progress(
+                            "Inspection result received", 0, java.util.OptionalLong.empty(), ""));
                     return value;
                   });
             });
@@ -289,6 +295,12 @@ final class PlatformOperationPresentationChecks {
                 && screen.getNarrationMessage().getString().contains("No settings were saved")
                 && !screen.getNarrationMessage().getString().contains(identity.toString()));
         var terminalNarration = screen.getNarrationMessage().getString();
+        terminalReportedPhase = state.progress().phase();
+        capturedTerminalNarration = terminalNarration;
+        check.accept(
+            "terminal narration preserves an actual reported phase without a quantity",
+            state.progress().phase().equals("Inspection result received")
+                && terminalNarration.contains("Inspection result received"));
         check.accept(
             "terminal operation narration omits unreported progress and repeated punctuation",
             !terminalNarration.contains("running: 0 ")

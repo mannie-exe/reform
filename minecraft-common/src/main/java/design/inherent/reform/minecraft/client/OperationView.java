@@ -562,8 +562,9 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
     boolean quantity =
         progress.completed() > 0 || progress.total().isPresent() || !progress.unit().isBlank();
     if (!quantity) {
-      if (observed.terminal()
-          || progress.phase().isBlank()
+      if (progress.phase().isBlank()
+          || progress.phase().equalsIgnoreCase("queued")
+          || progress.phase().equalsIgnoreCase("running")
           || progress.phase().equalsIgnoreCase(observed.state().name())) return Optional.empty();
       return Optional.of(Component.literal(progress.phase()));
     }
