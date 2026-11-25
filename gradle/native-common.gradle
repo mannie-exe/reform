@@ -43,6 +43,12 @@ dependencies {
     testRuntimeOnly rootProject.libs.junit.launcher
 }
 
+tasks.named('test', Test) {
+    def runtimeDirectory = layout.buildDirectory.dir('test-runtime')
+    workingDir runtimeDirectory
+    doFirst { runtimeDirectory.get().asFile.mkdirs() }
+}
+
 tasks.named('processResources') {
     def metadata = [version: project.version.toString(), minecraft: target.minecraftVersion,
                     loader: target.loaderVersion, javaVersion: target.java,

@@ -16,6 +16,7 @@ loom {
 }
 
 dependencies {
+    testImplementation "net.fabricmc:fabric-loader-junit:${nativeTarget.loaderVersion}"
     minecraft "com.mojang:minecraft:${nativeTarget.minecraftVersion}"
     if (remapsMinecraft) {
         modCompileOnly "maven.modrinth:modmenu:${nativeTarget.modMenuVersion}"

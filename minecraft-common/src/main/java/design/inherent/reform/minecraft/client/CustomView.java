@@ -10,6 +10,7 @@ import net.minecraft.network.chat.Component;
 final class CustomView {
   private final ClientViewContext context;
   private final Supplier<ClientViewContent> source;
+  private final MountedUiTree ui;
   private ClientViewContent content;
   private RuntimeException failure;
   private Runnable rebuild;
@@ -32,17 +33,44 @@ final class CustomView {
       java.util.function.Consumer<FormPanel> focus) {
     this.context = context;
     this.source = source;
+    ui = null;
     this.graphics = graphics;
     this.focus = focus;
     context.onClose(this::closeGraphics);
     var ticking =
         design.inherent.reform.minecraft.internal.ClientSettingsRuntime.onTick(this::tick);
-    context.onClose(ticking::close);
+    try {
+      context.onClose(ticking::close);
+    } catch (RuntimeException | Error failed) {
+      ticking.close();
+      throw failed;
+    }
     content = Objects.requireNonNull(source.get()); // Reject failed admission before caching.
+  }
+
+  CustomView(
+      ClientViewContext context, MountedUiTree ui, java.util.function.Consumer<FormPanel> focus) {
+    this.context = context;
+    this.ui = ui;
+    source = null;
+    graphics = null;
+    this.focus = java.util.Objects.requireNonNull(focus);
+    var ticking =
+        design.inherent.reform.minecraft.internal.ClientSettingsRuntime.onTick(this::tick);
+    try {
+      context.onClose(ticking::close);
+    } catch (RuntimeException | Error failed) {
+      ticking.close();
+      throw failed;
+    }
   }
 
   void refresh() {
     context.requireCurrent();
+    if (ui != null) {
+      ui.refresh(true);
+      return;
+    }
     try {
       var next = Objects.requireNonNull(source.get());
       var declarations = new java.util.LinkedHashMap<String, ClientViewContent.LoadedGraphic<?>>();
@@ -70,6 +98,7 @@ final class CustomView {
 
   void hide() {
     generation = null;
+    if (ui != null) ui.hide();
     for (var view : loaded.values()) view.hide();
   }
 
@@ -78,6 +107,11 @@ final class CustomView {
     this.rebuild = Objects.requireNonNull(rebuild);
     var token = new Object();
     generation = token;
+    if (ui != null) {
+      ui.refresh(false);
+      ui.append(panel, theme, effect -> guarded(token, effect), rebuild, () -> focus.accept(panel));
+      return;
+    }
     if (failure != null)
       panel.row(
           "custom:projection-failed",
@@ -165,6 +199,10 @@ final class CustomView {
 
   private void tick() {
     if (!context.isOpen() || generation == null) return;
+    if (ui != null) {
+      if (ui.refresh(false)) rebuild.run();
+      return;
+    }
     for (var view : loaded.values()) {
       if (view.changed()) {
         rebuild.run();

@@ -355,6 +355,47 @@ class UiScopeTest {
   }
 
   @Test
+  void forcedHostRetirementCanUnregisterHooksEvenInsideAPureComputation() {
+    var owner = host();
+    var root = UiScope.borrow(owner, UiLimits.STANDARD);
+    var events = new ArrayList<String>();
+    var removed = root.onRetire(() -> events.add("unregistered"));
+    root.onRetire(removed::close);
+    root.derive(
+        text("close"),
+        List.of(),
+        inputs -> {
+          owner.close();
+          return "late";
+        });
+    assertFalse(root.isOpen());
+    assertTrue(root.releaseFailure().isEmpty());
+    assertEquals(List.of(), events);
+    assertEquals(new UiScope.Usage(0, 0, 0, 0, 0, 0), root.usage());
+  }
+
+  @Test
+  void liveProjectionStillCannotUnregisterLifecycleHooks() {
+    try (var owner = host()) {
+      var root = UiScope.borrow(owner, UiLimits.STANDARD);
+      var calls = new AtomicInteger();
+      var hook = root.onRetire(calls::incrementAndGet);
+      var result =
+          root.derive(
+              text("bad_cleanup"),
+              List.of(),
+              inputs -> {
+                hook.close();
+                return "bad";
+              });
+      code("ui.write_in_pure_phase", () -> result.snapshot().value());
+      assertEquals(1, root.usage().closeHooks());
+      root.close();
+      assertEquals(1, calls.get());
+    }
+  }
+
+  @Test
   void scopeAndCleanupLimitsRefuseWithoutAllocatingAndHooksCanBeUnregistered() {
     try (var owner = host();
         var scope = UiScope.borrow(owner, new UiLimits(2, 1, 1, 1, 1, 1, 32))) {
@@ -369,6 +410,112 @@ class UiScopeTest {
       child.close();
       assertEquals(0, calls.get());
       assertEquals(1, scope.usage().scopes());
+    }
+  }
+
+  @Test
+  void equalEncodedLocalDataDoesNotRecomputeOrAdvanceTheHostRevision() {
+    try (var owner = host();
+        var scope = UiScope.borrow(owner, UiLimits.STANDARD)) {
+      var input = scope.local(text("input"), "kept");
+      var calls = new AtomicInteger();
+      scope.derive(
+          text("projection"),
+          List.of(input),
+          in -> {
+            calls.incrementAndGet();
+            return in.value(input);
+          });
+      long before = scope.revision();
+      input.replace("kept");
+      assertEquals(before, scope.revision());
+      assertEquals(1, calls.get());
+    }
+  }
+
+  @Test
+  void explicitCachedSourcesRefreshWithoutAddingAChangeCapability() {
+    try (var owner = host();
+        var presentation = UiScope.borrow(owner, UiLimits.STANDARD)) {
+      var sourceRoot = UiScope.borrow(owner, UiLimits.STANDARD);
+      var original = sourceRoot.local(text("original"), "first");
+      var borrowed = presentation.observe(text("borrowed"), original);
+      assertFalse(borrowed instanceof UiLocal<?>);
+      original.replace("second");
+      assertEquals("first", borrowed.snapshot().value());
+      presentation.refreshObservations();
+      assertEquals("second", borrowed.snapshot().value());
+      long before = presentation.revision();
+      presentation.refreshObservations();
+      assertEquals(before, presentation.revision());
+      sourceRoot.close();
+      presentation.refreshObservations();
+      code("ui.scope_closed", () -> borrowed.snapshot().value());
+      assertEquals(0, presentation.usage().stateBytes());
+    }
+  }
+
+  @Test
+  void sourceRefreshIdentityIsPreservedEvenWhenItsDataIsEqual() {
+    try (var owner = host();
+        var scope = UiScope.borrow(owner, UiLimits.STANDARD)) {
+      var key = text("source");
+      var current =
+          new AtomicReference<UiObservation<String>>(
+              new UiObservation.Available<>(key.capture("same"), 1));
+      var read = scope.observe(text("borrowed"), current::get);
+      long prior = scope.revision();
+      current.set(new UiObservation.Available<>(key.capture("same"), 2));
+      scope.refreshObservations();
+      assertTrue(scope.revision() > prior);
+      assertEquals("same", read.snapshot().value());
+    }
+  }
+
+  @Test
+  void hostProjectionUsesOnlyDeclaredReadsAndCannotWriteOrReturnAfterHostClosure() {
+    var owner = host();
+    var scope = UiScope.borrow(owner, UiLimits.STANDARD);
+    var input = scope.local(text("input"), "kept");
+    assertEquals("kept", scope.project(List.of(input, input), () -> input.snapshot().value()));
+    code(
+        "ui.undeclared_dependency", () -> scope.project(List.of(), () -> input.snapshot().value()));
+    code(
+        "ui.write_in_pure_phase",
+        () ->
+            scope.project(
+                List.of(input),
+                () -> {
+                  input.replace("wrong");
+                  return "wrong";
+                }));
+    assertEquals("kept", input.snapshot().value());
+    code(
+        "owner.closed",
+        () ->
+            scope.project(
+                List.of(input),
+                () -> {
+                  owner.close();
+                  return "late";
+                }));
+    assertEquals(0, scope.usage().states());
+  }
+
+  @Test
+  void failedObservationConstructionRemovesItsOwnAdmission() {
+    try (var owner = host();
+        var scope = UiScope.borrow(owner, UiLimits.STANDARD)) {
+      var fatal = new AssertionError("source construction failed");
+      UiRead<String> source =
+          () -> {
+            throw fatal;
+          };
+      assertSame(
+          fatal, assertThrows(AssertionError.class, () -> scope.observe(text("source"), source)));
+      assertEquals(0, scope.usage().states());
+      assertEquals(0, scope.usage().stateBytes());
+      assertEquals("usable", scope.local(text("source"), "usable").snapshot().value());
     }
   }
 }

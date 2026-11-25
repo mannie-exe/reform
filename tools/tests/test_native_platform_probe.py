@@ -19,7 +19,8 @@ class OptionalAdmissionTests(unittest.TestCase):
                                ("captions", {}), ("captions", {"client": True, "workspace_client": True}),
                                ("references", {}), ("references", {"client": True, "workspace_client": True}),
                                ("entries", {}), ("entries", {"client": True, "workspace_client": True}),
-                               ("batches", {}), ("batches", {"client": True, "workspace_client": True})]:
+                               ("batches", {}), ("batches", {"client": True, "workspace_client": True}),
+                               ("components", {}), ("components", {"client": True, "workspace_client": True})]:
             with self.subTest(scene=scene, options=options), patch.object(platform, "select_library") as resolve:
                 with self.assertRaisesRegex(ValueError, "separate admitted isolated"):
                     platform.run("neoforge-1_21_1", None, 1, isolated_scene=scene, **options)
@@ -498,6 +499,22 @@ class PlatformOutcomeTests(unittest.TestCase):
                     self.native[name]["held"]["contextClosed"] = True
                 self.assertTrue(accepted())
                 del self.native[name]
+
+    def test_component_status_without_exact_mount_cleanup_and_source_facts_is_refused(self):
+        def accepted():
+            return successful_boot(self.process, self.native, self.library, self.target,
+                                   "0.20.1", required_scenarios=("semanticComponents",))
+        complete = {"status": "PASS", "passed": True, "sourceUnchanged": True,
+                    "retiredUiDataZero": True, "frameworkFactories": 1, "frameworkCloses": 1,
+                    "externalFactories": 1, "externalCloses": 1, "externalDraws": 8}
+        self.native["semanticComponents"] = dict(complete)
+        self.assertTrue(accepted())
+        for field in complete:
+            for wrong in [None, "true", False, {}, []]:
+                with self.subTest(field=field, wrong=wrong):
+                    self.native["semanticComponents"][field] = wrong
+                    self.assertFalse(accepted())
+            self.native["semanticComponents"][field] = complete[field]
 
     def test_held_stop_requires_truthful_storage_and_closed_delivery(self):
         for broken in [None, [], self.held_stops()[:1], list(reversed(self.held_stops()))]:

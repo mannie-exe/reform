@@ -37,7 +37,9 @@ public final class UiScope implements AutoCloseable {
     public void close() {
       if (action == null) return;
       kernel.owner.checkOwnerThread();
-      kernel.requireMutable();
+      // Actual host retirement may interrupt a trusted pure callback. Revoked scopes still need
+      // to unregister cleanup hooks; live projections must not change lifecycle subscriptions.
+      if (open) kernel.requireMutable();
       remove();
     }
 
@@ -75,14 +77,17 @@ public final class UiScope implements AutoCloseable {
       return cached;
     }
 
-    void publish(ViewStateKey.Snapshot<T> snapshot) {
+    boolean publish(ViewStateKey.Snapshot<T> snapshot) {
       requireCurrent();
+      if (cached instanceof UiObservation.Available<T> prior && prior.data().sameData(snapshot))
+        return false;
       int nextBytes = snapshot.encodedBytes();
       if (nextBytes > kernel.limits.maximumStateBytes() - (kernel.stateBytes - bytes))
         throw budget("Cached presentation data exceeds its declared byte allowance");
       kernel.stateBytes += (long) nextBytes - bytes;
       bytes = nextBytes;
       cached = new UiObservation.Available<>(snapshot, ++kernel.revision);
+      return true;
     }
 
     void unavailable(PolicyRefusal failure, Throwable cause) {
@@ -110,9 +115,57 @@ public final class UiScope implements AutoCloseable {
     public void replace(T value) {
       requireWrite();
       var captured = kernel.pure(Set.of(), () -> key.capture(value));
-      publish(captured);
+      if (!publish(captured)) return;
       kernel.invalidate(this);
       kernel.flush();
+    }
+  }
+
+  private final class Source<T> extends Node<T> {
+    final UiRead<T> source;
+    long seen = -1;
+
+    Source(ViewStateKey<T> key, UiRead<T> source) {
+      super(key);
+      this.source = source;
+    }
+
+    void refresh() {
+      if (!isOpen()) return;
+      try {
+        var next = kernel.pure(Set.of(source), source::snapshot);
+        requireCurrent();
+        if (next.revision() == seen) return;
+        if (next instanceof UiObservation.Unavailable<T> missing) {
+          unavailable(new PolicyRefusal(missing.report()), missing.cause().orElse(null));
+        } else {
+          var captured = kernel.pure(Set.of(source), () -> key.capture(next.value()));
+          if (!publish(captured))
+            cached = new UiObservation.Available<>(captured, ++kernel.revision);
+        }
+        seen = next.revision();
+        kernel.invalidate(this);
+      } catch (RuntimeException failed) {
+        if (!open || !kernel.owner.isOpen()) return;
+        var refusal =
+            failed instanceof PolicyRefusal policy
+                ? policy
+                : refusal(
+                    "ui.observation_unavailable",
+                    "This cached observation is unavailable; inspect its cause");
+        if (!(cached instanceof UiObservation.Unavailable<T> prior)
+            || !prior.report().equals(refusal.report())) {
+          unavailable(refusal, failed);
+          kernel.invalidate(this);
+        }
+        seen = -1;
+      }
+    }
+
+    @Override
+    void retire() {
+      kernel.sources.remove(this);
+      super.retire();
     }
   }
 
@@ -181,6 +234,7 @@ public final class UiScope implements AutoCloseable {
     final OwnerContext owner;
     final UiLimits limits;
     final Set<UiScope.Projection<?>> dirty = new LinkedHashSet<>();
+    final Set<UiScope.Source<?>> sources = new LinkedHashSet<>();
     Set<? extends UiRead<?>> reading;
     int scopes = 1, states, projections, dependencies, closeHooks, batch;
     long revision, stateBytes;
@@ -236,16 +290,16 @@ public final class UiScope implements AutoCloseable {
 
   private final Kernel kernel;
   private final UiScope parent;
-  private final String key;
+  private final Object key;
   private final int depth;
-  private final Map<String, UiScope> children = new LinkedHashMap<>();
+  private final Map<Object, UiScope> children = new LinkedHashMap<>();
   private final Map<DocumentId, Node<?>> nodes = new LinkedHashMap<>();
   private final Set<CloseHook> hooks = new LinkedHashSet<>();
   private volatile boolean open = true;
   private volatile Throwable releaseFailure;
   private volatile Usage retiredUsage;
 
-  private UiScope(Kernel kernel, UiScope parent, String key) {
+  private UiScope(Kernel kernel, UiScope parent, Object key) {
     this.kernel = kernel;
     this.parent = parent;
     this.key = key;
@@ -262,6 +316,37 @@ public final class UiScope implements AutoCloseable {
 
   public boolean isOpen() {
     return open && kernel.owner.isOpen();
+  }
+
+  /** Cached update identity for a host's update loop, not a render-time projection callback. */
+  public long revision() {
+    requireCurrent();
+    return kernel.revision;
+  }
+
+  public UiLimits limits() {
+    return kernel.limits;
+  }
+
+  /**
+   * Projects an admitted native description from explicit cached reads. It adds no retained graph
+   * edges and cannot mutate this kernel. Native rendering consumes the returned cached description.
+   */
+  public <T> T project(List<? extends UiRead<?>> inputs, Supplier<T> projection) {
+    requireWrite();
+    Objects.requireNonNull(projection);
+    if (inputs.size() > kernel.limits.maximumDependencies())
+      throw budget("Presentation projection input admission is full");
+    Set<UiRead<?>> admitted = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    for (var input : inputs) {
+      if (!(input instanceof UiScope.Node<?> node)
+          || node.scope().kernel != kernel
+          || !node.scope().isOpen()) throw mismatch();
+      admitted.add(input);
+    }
+    T result = kernel.pure(admitted, projection);
+    requireCurrent();
+    return result;
   }
 
   public void requireCurrent() {
@@ -281,6 +366,16 @@ public final class UiScope implements AutoCloseable {
       throw new IllegalArgumentException("A bounded stable component key is required");
     var existing = children.get(childKey);
     if (existing != null) return existing;
+    return createChild(childKey);
+  }
+
+  /** An independently owned child; internal component scopes cannot collide with authored keys. */
+  public UiScope child() {
+    requireWrite();
+    return createChild(new Object());
+  }
+
+  private UiScope createChild(Object childKey) {
     if (depth >= kernel.limits.maximumDepth() || kernel.scopes >= kernel.limits.maximumScopes())
       throw budget("Presentation scope admission is full");
     var child = new UiScope(kernel, this, childKey);
@@ -305,6 +400,56 @@ public final class UiScope implements AutoCloseable {
     nodes.put(state.id(), cell);
     kernel.states++;
     return cell;
+  }
+
+  /**
+   * Borrows an existing cached observation, not an IO or permission callback. The host explicitly
+   * refreshes it outside paint. No change command, accepted draft, or source authority is created.
+   */
+  public <T> UiRead<T> observe(ViewStateKey<T> state, UiRead<T> source) {
+    requireWrite();
+    Objects.requireNonNull(state);
+    Objects.requireNonNull(source);
+    if (source instanceof UiScope.Node<?> node && node.scope().kernel == kernel)
+      throw refusal("ui.binding_mismatch", "Use a declared derivation for this root's own reads");
+    var existing = nodes.get(state.id());
+    if (existing != null) {
+      if (existing.key != state
+          || !(existing instanceof UiScope.Source<?> observed)
+          || observed.source != source) throw mismatch();
+      @SuppressWarnings("unchecked")
+      var typed = (UiRead<T>) existing;
+      return typed;
+    }
+    if (kernel.states >= kernel.limits.maximumStates())
+      throw budget("Presentation observation admission is full");
+    var observed = new Source<>(state, source);
+    nodes.put(state.id(), observed);
+    kernel.states++;
+    kernel.sources.add(observed);
+    try {
+      observed.refresh();
+    } catch (Error failed) {
+      if (nodes.remove(state.id(), observed)) {
+        kernel.states--;
+        observed.retire();
+      }
+      throw failed;
+    }
+    kernel.flush();
+    return observed;
+  }
+
+  /** Polls only explicitly borrowed cached observations on the actual host's update turn. */
+  public void refreshObservations() {
+    requireWrite();
+    kernel.batch++;
+    try {
+      for (var observed : List.copyOf(kernel.sources)) observed.refresh();
+    } finally {
+      kernel.batch--;
+      if (isOpen()) kernel.flush();
+    }
   }
 
   /** Dependencies must be live reads from this root, declared once with a stable computation. */
@@ -442,7 +587,7 @@ public final class UiScope implements AutoCloseable {
       }
     }
     for (var node : nodes.values()) {
-      if (node instanceof UiScope.Cell<?>) kernel.states--;
+      if (!(node instanceof UiScope.Projection<?>)) kernel.states--;
       node.retire();
     }
     nodes.clear();

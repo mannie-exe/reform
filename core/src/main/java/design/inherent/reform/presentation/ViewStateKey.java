@@ -96,5 +96,10 @@ public final class ViewStateKey<S> {
     public int encodedBytes() {
       return json.getBytes(StandardCharsets.UTF_8).length;
     }
+
+    /** Exact retained data identity; it does not compare captions or another key's schema. */
+    public boolean sameData(Snapshot<?> other) {
+      return other != null && key == other.key && json.equals(other.json);
+    }
   }
 }

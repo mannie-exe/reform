@@ -11,4 +11,9 @@ neoForge {
             sourceSet project(':core').sourceSets.main
         }
     }
+    // Official ModDev JUnit integration supplies the actual game classpath for client model tests.
+    unitTest {
+        enable()
+        testedMod = mods.reform
+    }
 }

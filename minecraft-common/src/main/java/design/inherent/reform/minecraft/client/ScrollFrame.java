@@ -32,6 +32,12 @@ public abstract class ScrollFrame extends NativeViewport {
 
   protected abstract void drawPanel(FormCanvas canvas, int relativeY, int x, int y);
 
+  /** Ends viewport capture on hide/replacement without replaying a synthetic input event. */
+  final void cancelPointerCapture() {
+    thumbDragging = false;
+    setDragging(false);
+  }
+
   private int maximumScroll() {
     return Math.max(0, getContentHeight() - height + border);
   }

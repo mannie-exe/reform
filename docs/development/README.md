@@ -37,6 +37,8 @@ See [custom workspace views](custom-views.md) for development body declarations,
 
 [Scoped presentation state](scoped-state.md) documents the first implemented revised-0.4 foundation: borrowed host lifetimes, retained local cells, declared cached projections, budgets, and cleanup. It is usable without a document/workspace; the complete semantic mounting and component experience remains under development.
 
+[Mounted native components](components.md) describes the initial shared declaration/runtime used by framework bodies and caller-owned screens, including explicit update/reflow/retirement and cached-read/command contracts. The full picker/field/layout/preview experience and its native qualification remain in progress.
+
 [Semantic interaction architecture](../design/semantic-ui/README.md) is the current proposed revision of0.4 and its connected full-system reference. It specifies shared component/state/lifetime contracts inspired by SwiftUI, Solid2, BaseUI and Playground, with proposed APIs, seven examples, migration and acceptance. It is design-only; the existing implementation and version-attributed qualification remain separate.
 
 [Configuration workflows for 0.4](../design/configuration-workflows-0.4.md) defines the owner-selected shared-menu contract: adjacent A preferred with responsive focused/vertical B, retained task/input state, and truthful meta-workflow effects. Implemented task boundaries are documented in the workflow and composition references; verification owns the final combined qualification.
