@@ -60,6 +60,8 @@ final class MountedUiTree implements AutoCloseable {
     TEXT,
     ACTION,
     DISCLOSURE,
+    CHOICE_LIST,
+    QUERY_INPUT,
     FIELD,
     OPEN,
     CLOSE
@@ -271,6 +273,13 @@ final class MountedUiTree implements AutoCloseable {
     private List<Row> disclosureRows = List.of();
     private final java.util.Set<String> collapsedIds = new HashSet<>();
     private UiCommand<Void> disclosureCommand;
+    private ChoiceListWidget listWidget;
+    private NativeQueryInput queryWidget;
+    private design.inherent.reform.minecraft.client.ui.ChoiceListData listData;
+    private Optional<String> listActive = Optional.empty();
+    private java.util.Set<String> listAccepted = java.util.Set.of();
+    private design.inherent.reform.presentation.ui.PickerState.Query queryValue;
+    private boolean lifecycleActive;
     private Row cachedRow;
     private long[] observed;
 
@@ -290,6 +299,22 @@ final class MountedUiTree implements AutoCloseable {
             add(declared, action.help().dependencies());
             add(declared, action.command().dependencies());
           }
+          case ViewSpec.ChoiceList list -> {
+            var parts = list.parts();
+            add(declared, parts.label().dependencies());
+            add(declared, parts.help().dependencies());
+            add(declared, List.of(parts.data(), parts.active().value(), parts.accepted()));
+            add(declared, parts.active().changes().dependencies());
+            add(declared, parts.accept().dependencies());
+          }
+          case ViewSpec.QueryInput query -> {
+            var parts = query.parts();
+            add(declared, parts.label().dependencies());
+            add(declared, parts.help().dependencies());
+            add(declared, List.of(parts.value()));
+            add(declared, parts.changes().dependencies());
+            add(declared, parts.submit().dependencies());
+          }
           case ViewSpec.Disclosure disclosure -> {
             disclosureCommand = UiBindings.toggle(disclosure.expanded());
             add(declared, disclosureCommand.dependencies());
@@ -308,6 +333,13 @@ final class MountedUiTree implements AutoCloseable {
         reads = List.copyOf(declared);
         scope.onRetire(
             () -> {
+              suspend();
+              if (listWidget != null) listWidget.clear();
+              if (queryWidget != null) {
+                queryWidget.changed = () -> {};
+                queryWidget.submit = () -> {};
+                queryWidget.setValue("");
+              }
               cachedRow = null;
               observed = null;
               disclosureRows = List.of();
@@ -315,6 +347,7 @@ final class MountedUiTree implements AutoCloseable {
               disclosureFailure = null;
             });
         switch (spec) {
+          case ViewSpec.Managed managed -> children.add(new Node(managed.content(), scope));
           case ViewSpec.Column column -> construct(column.children());
           case ViewSpec.Section section -> construct(section.children());
           case ViewSpec.Component<?> component -> children.add(component(component));
@@ -365,6 +398,54 @@ final class MountedUiTree implements AutoCloseable {
 
     private void construct(List<ViewSpec> descriptions) {
       for (var description : descriptions) children.add(new Node(description, scope));
+    }
+
+    void beforeObserve() {
+      retainInputs();
+      updateManaged();
+    }
+
+    void retainInputs() {
+      if (spec instanceof ViewSpec.QueryInput query && queryWidget != null && queryWidget.active)
+        pollQuery(query);
+      for (var child : children) child.retainInputs();
+      if (branch != null && (!(spec instanceof ViewSpec.Disclosure) || expanded))
+        branch.retainInputs();
+    }
+
+    private void updateManaged() {
+      if (spec instanceof ViewSpec.Managed managed) {
+        lifecycleActive = true;
+        managed.lifecycle().update();
+      }
+      for (var child : children) child.updateManaged();
+      if (branch != null && (!(spec instanceof ViewSpec.Disclosure) || expanded))
+        branch.updateManaged();
+    }
+
+    private void pollQuery(ViewSpec.QueryInput query) {
+      var next =
+          new design.inherent.reform.presentation.ui.PickerState.Query(
+              queryWidget.getValue(), queryWidget.getCursorPosition(), queryWidget.selection());
+      if (!next.equals(queryValue)) {
+        execute(this, query.parts().changes(), next);
+        // This is the observed native buffer, not an optimistic domain edit acknowledgement.
+        queryValue = next;
+      }
+    }
+
+    void suspend() {
+      if (lifecycleActive && spec instanceof ViewSpec.Managed managed) {
+        lifecycleActive = false;
+        managed.lifecycle().suspend();
+      }
+      if (listWidget != null) listWidget.detach();
+      if (queryWidget != null) {
+        queryWidget.changed = () -> {};
+        queryWidget.submit = () -> {};
+      }
+      for (var child : children) child.suspend();
+      if (branch != null) branch.suspend();
     }
 
     void reconcile() {
@@ -436,7 +517,11 @@ final class MountedUiTree implements AutoCloseable {
         if (changed) {
           collapsedIds.clear();
           if (branch != null) branch.identities(collapsedIds);
-          if (branch != null) branch.clearProjectedRows();
+          if (branch != null) {
+            branch.retainInputs();
+            branch.suspend();
+            branch.clearProjectedRows();
+          }
           disclosureRows = List.of();
           disclosureFailure = null;
           if (disclosure.parts().retention() == DisclosureParts.Retention.DISPOSE
@@ -550,6 +635,14 @@ final class MountedUiTree implements AutoCloseable {
       cachedRow = null;
       observed = null;
       disclosureRows = List.of();
+      listData = null;
+      listActive = Optional.empty();
+      listAccepted = java.util.Set.of();
+      if (listWidget != null) listWidget.clear();
+      if (queryWidget != null) {
+        queryWidget.setValue("");
+        queryValue = null;
+      }
       for (var child : children) child.clearProjectedRows();
       if (branch != null) branch.clearProjectedRows();
     }
@@ -576,7 +669,9 @@ final class MountedUiTree implements AutoCloseable {
       if (current != null) {
         if ((current.kind() == Kind.ACTION
                 || current.kind() == Kind.DISCLOSURE
-                || current.kind() == Kind.FIELD)
+                || current.kind() == Kind.FIELD
+                || current.kind() == Kind.CHOICE_LIST
+                || current.kind() == Kind.QUERY_INPUT)
             && !inherited.available())
           current = new Row(this, current.kind(), current.label(), current.body(), inherited);
         into.add(current);
@@ -597,7 +692,9 @@ final class MountedUiTree implements AutoCloseable {
             if (!childrenAvailability.available()
                 && (row.kind() == Kind.ACTION
                     || row.kind() == Kind.DISCLOSURE
-                    || row.kind() == Kind.FIELD))
+                    || row.kind() == Kind.FIELD
+                    || row.kind() == Kind.CHOICE_LIST
+                    || row.kind() == Kind.QUERY_INPUT))
               row = new Row(row.node(), row.kind(), row.label(), row.body(), childrenAvailability);
             into.add(row);
           }
@@ -621,6 +718,31 @@ final class MountedUiTree implements AutoCloseable {
                     text.title().resolve(),
                     text.body().resolve(),
                     UiAvailability.READY);
+            case ViewSpec.ChoiceList list -> {
+              var parts = list.parts();
+              listData = parts.data().snapshot().value();
+              listActive = parts.active().value().snapshot().value();
+              listAccepted = java.util.Set.copyOf(parts.accepted().snapshot().value());
+              yield new Row(
+                  this,
+                  Kind.CHOICE_LIST,
+                  parts.label().resolve(),
+                  parts.help().resolve(),
+                  parts.active().changes().availability());
+            }
+            case ViewSpec.QueryInput query -> {
+              var parts = query.parts();
+              queryValue = parts.value().snapshot().value();
+              if (queryValue.text().length() > parts.maximumCharacters())
+                throw new PolicyRefusal(
+                    "ui.query_limit", "The query exceeds this control's declared text allowance.");
+              yield new Row(
+                  this,
+                  Kind.QUERY_INPUT,
+                  parts.label().resolve(),
+                  parts.help().resolve(),
+                  parts.changes().availability());
+            }
             case ViewSpec.Disclosure disclosure -> {
               var label = disclosure.parts().label().resolve();
               var body = disclosure.parts().description().resolve().copy();
@@ -696,6 +818,7 @@ final class MountedUiTree implements AutoCloseable {
   private Node tree;
   private long sequence, revision = -1;
   private Object attachment;
+  private boolean attached;
   private List<Row> rows = List.of();
   private RuntimeException failure;
   private ClientFieldParts<?> requiredField;
@@ -795,10 +918,13 @@ final class MountedUiTree implements AutoCloseable {
 
   private boolean refresh(boolean force, boolean observe) {
     root.requireCurrent();
-    if (observe) root.refreshObservations();
-    if (!force && root.revision() == revision) return false;
-    attachment = null;
     try {
+      if (observe) {
+        prepareRefresh();
+        root.refreshObservations();
+      }
+      if (!force && root.revision() == revision) return false;
+      attachment = null;
       tree.reconcile();
       var inputs = new ArrayList<UiRead<?>>();
       tree.inputs(inputs);
@@ -825,6 +951,7 @@ final class MountedUiTree implements AutoCloseable {
         // Permission/context loss is not a stale-content offer. Remove previously disclosed values
         // and controls without recreating the actual owner or source.
         rows = List.of();
+        tree.suspend();
         tree.clearProjectedRows();
         revision = root.revision();
         return true;
@@ -843,7 +970,9 @@ final class MountedUiTree implements AutoCloseable {
                   row ->
                       (row.kind() == Kind.ACTION
                               || row.kind() == Kind.DISCLOSURE
-                              || row.kind() == Kind.FIELD)
+                              || row.kind() == Kind.FIELD
+                              || row.kind() == Kind.CHOICE_LIST
+                              || row.kind() == Kind.QUERY_INPUT)
                           ? new Row(row.node(), row.kind(), row.label(), row.body(), blocked)
                           : row)
               .toList();
@@ -852,8 +981,18 @@ final class MountedUiTree implements AutoCloseable {
     return true;
   }
 
+  void prepareRefresh() {
+    root.requireCurrent();
+    if (attached && tree != null) tree.beforeObserve();
+  }
+
   void hide() {
+    attached = false;
     attachment = null;
+    if (tree != null) {
+      tree.retainInputs();
+      tree.suspend();
+    }
   }
 
   boolean isOpen() {
@@ -894,6 +1033,7 @@ final class MountedUiTree implements AutoCloseable {
     root.requireCurrent();
     Object token = new Object();
     attachment = token;
+    attached = true;
     if (failure != null)
       panel.row(
           nativePrefix + "failure",
@@ -933,6 +1073,88 @@ final class MountedUiTree implements AutoCloseable {
                   ? Component.empty()
                   : report(row.availability().report()),
               widgets.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
+        }
+        case CHOICE_LIST -> {
+          var node = row.node();
+          var parts = ((ViewSpec.ChoiceList) node.spec).parts();
+          if (node.listWidget == null) node.listWidget = new ChoiceListWidget(row.label());
+          var widget = node.listWidget;
+          widget.setMessage(row.label());
+          widget.active = failure == null && row.availability().available();
+          var data = node.listData;
+          widget.prepare(
+              data,
+              node.listActive,
+              node.listAccepted,
+              parts.visibleRows(),
+              parts.overscan(),
+              theme,
+              key ->
+                  dispatch(
+                      token,
+                      node,
+                      hostGuard,
+                      changed,
+                      () -> execute(node, parts.active().changes(), Optional.of(key))),
+              key ->
+                  dispatch(
+                      token,
+                      node,
+                      hostGuard,
+                      changed,
+                      () -> {
+                        if (node.listData != data
+                            || data.items().stream()
+                                .noneMatch(item -> item.key().equals(key) && item.enabled()))
+                          return;
+                        execute(node, parts.accept(), key);
+                      }));
+          ControlSizing.offer(
+              widget,
+              theme
+                  .values()
+                  .value(design.inherent.reform.presentation.ThemeValues.Role.CONTROL_TEXT_INPUT),
+              widget.getHeight());
+          var help = row.body().copy();
+          if (!row.availability().available()) join(help, report(row.availability().report()));
+          if (node.lastResult instanceof UiActionResult.Refused refused)
+            join(help, report(refused.report()));
+          panel.field(node.id, row.label(), help, widget);
+        }
+        case QUERY_INPUT -> {
+          var node = row.node();
+          var query = (ViewSpec.QueryInput) node.spec;
+          var parts = query.parts();
+          if (node.queryWidget == null)
+            node.queryWidget = new NativeQueryInput(Minecraft.getInstance().font, row.label());
+          var widget = node.queryWidget;
+          ClientControls.theme(widget, theme);
+          widget.setMessage(row.label());
+          widget.setMaxLength(parts.maximumCharacters());
+          if (!widget.getValue().equals(node.queryValue.text()))
+            widget.setValue(node.queryValue.text());
+          widget.setCursorPosition(node.queryValue.caret());
+          widget.setHighlightPos(node.queryValue.anchor());
+          widget.active = failure == null && row.availability().available();
+          widget.setEditable(widget.active);
+          widget.changed =
+              () -> dispatch(token, node, hostGuard, changed, () -> node.pollQuery(query));
+          widget.submit =
+              () ->
+                  dispatch(
+                      token,
+                      node,
+                      hostGuard,
+                      changed,
+                      () -> {
+                        node.pollQuery(query);
+                        execute(node, parts.submit(), null);
+                      });
+          var help = row.body().copy();
+          if (!row.availability().available()) join(help, report(row.availability().report()));
+          if (node.lastResult instanceof UiActionResult.Refused refused)
+            join(help, report(refused.report()));
+          panel.field(node.id, row.label(), help, widget);
         }
         case OPEN -> panel.beginGroup(row.node().id, row.label());
         case CLOSE -> panel.endGroup();
@@ -982,6 +1204,44 @@ final class MountedUiTree implements AutoCloseable {
         }
       }
     }
+  }
+
+  private void dispatch(
+      Object token,
+      Node node,
+      Function<Runnable, Runnable> guard,
+      Runnable changed,
+      Runnable action) {
+    guard
+        .apply(
+            () -> {
+              if (!root.isOpen() || attachment != token || !node.scope.isOpen()) return;
+              if (refresh(false)) {
+                // A query event includes the native buffer just polled by prepareRefresh.
+                // Keep Enter on that same live input; source/list events still reject stale data.
+                if (!(node.spec instanceof ViewSpec.QueryInput)
+                    || rows.stream()
+                        .noneMatch(row -> row.node() == node && row.availability().available())) {
+                  if (root.isOpen()) changed.run();
+                  return;
+                }
+              }
+              action.run();
+              if (root.isOpen()) {
+                refresh(true);
+                changed.run();
+              }
+            })
+        .run();
+  }
+
+  private <T> void execute(Node node, UiCommand<T> command, T input) {
+    var ready = root.project(command.dependencies(), command::availability);
+    node.lastResult =
+        ready.available()
+            ? Objects.requireNonNull(command.invoke(input))
+            : new UiActionResult.Refused(ready.report(), Optional.empty());
+    lastAction = node.lastResult;
   }
 
   private void invoke(Node node) {

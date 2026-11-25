@@ -64,5 +64,17 @@ public final class Views {
     return new ViewSpec.Switch(key, cases, fallback, exclusive);
   }
 
+  public static ViewSpec choiceList(String key, ChoiceListParts parts) {
+    return new ViewSpec.ChoiceList(key, parts);
+  }
+
+  public static ViewSpec queryInput(String key, QueryInputParts parts) {
+    return new ViewSpec.QueryInput(key, parts);
+  }
+
+  public static ViewSpec managed(String key, UiMountLifecycle lifecycle, ViewSpec content) {
+    return new ViewSpec.Managed(key, lifecycle, content);
+  }
+
   private Views() {}
 }

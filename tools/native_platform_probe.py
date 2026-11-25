@@ -273,6 +273,13 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                      and native["semanticComponents"].get("boundFieldsVerified") is True
                      and native["semanticComponents"].get("textInputVerified") is True
                      and native["semanticComponents"].get("disclosureVerified") is True
+                     and native["semanticComponents"].get("nativeChoicesVerified") is True
+                     and type(native["semanticComponents"].get("nativeQuerySubmits")) is int
+                     and native["semanticComponents"]["nativeQuerySubmits"] == 2
+                     and type(native["semanticComponents"].get("mountLifecycleUpdates")) is int
+                     and native["semanticComponents"]["mountLifecycleUpdates"] > 0
+                     and type(native["semanticComponents"].get("mountLifecycleSuspends")) is int
+                     and native["semanticComponents"]["mountLifecycleSuspends"] >= 2
                      and type(native["semanticComponents"].get("disclosureFactories")) is int
                      and native["semanticComponents"]["disclosureFactories"] == 2
                      and type(native["semanticComponents"].get("disclosureCloses")) is int

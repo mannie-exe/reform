@@ -4,7 +4,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 
 /** Observe the native selection setter without reflection or a second text/value authority. */
-final class FormEditBox extends NativeTextInput {
+class FormEditBox extends NativeTextInput {
   private int anchor;
   private int maximumCharacters;
   private boolean acceptsInput;

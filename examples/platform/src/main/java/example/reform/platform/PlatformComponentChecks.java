@@ -62,6 +62,11 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private UiLocal<Boolean> disclosureExpanded;
   private UiLocal<Integer> disclosureCount;
   private int disclosureFactories, disclosureCloses, disclosureChecks;
+  private int listChecks, querySubmits, lifecycleUpdates, lifecycleSuspends;
+  private UiLocal<Optional<String>> choiceActive;
+  private UiLocal<java.util.Set<String>> choiceAccepted;
+  private PickerState.Query queryBuffer = PickerState.Query.atEnd("");
+  private int queryRevision;
   private boolean keyedRowsVerified;
   private boolean boundFieldsVerified,
       textInputVerified,
@@ -177,6 +182,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         "counter",
         UiText.of(text("Retained component")),
         List.of(
+            nativeChoices(scope),
             Views.text(
                 "value",
                 UiText.of(text("Current count")),
@@ -257,6 +263,175 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
                 UiText.of(text("Repair rows")),
                 UiText.of(Component.empty()),
                 localAction(() -> items.replace(List.of("a:First", "b:Second"))))));
+  }
+
+  private ViewSpec nativeChoices(UiScope scope) {
+    choiceActive =
+        scope.local(
+            new ViewStateKey<>(
+                DocumentId.parse("fixture:active_choice"),
+                ValueTypes.optional(
+                    ValueTypes.text(128),
+                    design.inherent.reform.value.ValueShape.OptionalEncoding.NULL_OR_VALUE)),
+            Optional.empty());
+    choiceAccepted =
+        scope.local(
+            new ViewStateKey<>(
+                DocumentId.parse("fixture:accepted_choice"),
+                ValueTypes.set(ValueTypes.text(128), 1)),
+            java.util.Set.of());
+    var items = new java.util.ArrayList<ChoiceListData.Item>();
+    for (int i = 0; i < 1000; i++)
+      items.add(new ChoiceListData.Item("choice:" + i, "Choice " + i, "Detail " + i, i != 1));
+    var data = new ChoiceListData("initial", items, java.util.OptionalLong.empty());
+    var key =
+        new UiReadKey<ChoiceListData>(
+            DocumentId.parse("fixture:choice_window"),
+            design.inherent.reform.value.SnapshotPolicy.immutable(),
+            design.inherent.reform.value.SnapshotContext.Limits.CONFIGURATION,
+            200000,
+            value -> 100000);
+    var captured = key.capture(data);
+    var dataRead = scope.observe(key, () -> new UiObservation.Available<>(captured, 1));
+    var queryKey =
+        new UiReadKey<PickerState.Query>(
+            DocumentId.parse("fixture:query"),
+            design.inherent.reform.value.SnapshotPolicy.immutable(),
+            design.inherent.reform.value.SnapshotContext.Limits.CONFIGURATION,
+            2048,
+            value -> 64 + 2L * value.text().length());
+    queryBuffer = PickerState.Query.atEnd("");
+    queryRevision = 1;
+    var queryRead =
+        scope.observe(
+            queryKey,
+            () -> new UiObservation.Available<>(queryKey.capture(queryBuffer), queryRevision));
+    var changes =
+        new UiCommand<PickerState.Query>() {
+          public UiAvailability availability() {
+            return UiAvailability.READY;
+          }
+
+          public java.util.List<UiRead<?>> dependencies() {
+            return List.of(queryRead);
+          }
+
+          public UiActionResult invoke(PickerState.Query next) {
+            queryBuffer = next;
+            queryRevision++;
+            return new UiActionResult.Applied();
+          }
+        };
+    var accept =
+        new UiCommand<String>() {
+          public UiAvailability availability() {
+            return UiAvailability.READY;
+          }
+
+          public java.util.List<UiRead<?>> dependencies() {
+            return List.of(choiceAccepted);
+          }
+
+          public UiActionResult invoke(String key) {
+            choiceAccepted.replace(java.util.Set.of(key));
+            return new UiActionResult.Applied();
+          }
+        };
+    return Views.managed(
+        "native-choices",
+        new UiMountLifecycle() {
+          public void update() {
+            lifecycleUpdates++;
+          }
+
+          public void suspend() {
+            lifecycleSuspends++;
+          }
+        },
+        Views.column(
+            "controls",
+            List.of(
+                Views.choiceList(
+                    "choices",
+                    new ChoiceListParts(
+                        UiText.of(text("Available choices")),
+                        UiText.of(text("Choose an entry.")),
+                        dataRead,
+                        UiBindings.local(choiceActive),
+                        choiceAccepted,
+                        accept,
+                        4,
+                        2)),
+                Views.queryInput(
+                    "search",
+                    new QueryInputParts(
+                        UiText.of(text("Search choices")),
+                        UiText.of(text("Search available values.")),
+                        queryRead,
+                        changes,
+                        localAction(() -> querySubmits++),
+                        128)))));
+  }
+
+  private void verifyNativeChoices(Screen screen) {
+    var list =
+        widgets(screen).stream()
+            .filter(w -> w.getMessage().getString().equals("Available choices"))
+            .findFirst()
+            .orElseThrow();
+    check(
+        "one native list controls a thousand choices",
+        widgets(screen).stream()
+                .filter(w -> w.getMessage().getString().startsWith("Choice "))
+                .count()
+            == 0);
+    check("list takes native keyboard focus", focus(screen, list));
+    NativeClientProbe.key(screen, "key.keyboard.down", true);
+    NativeClientProbe.key(screen, "key.keyboard.down", false);
+    check("native list remains focused after navigation reflow", list.isFocused());
+    check(
+        "arrow navigation does not accept",
+        choiceActive.snapshot().value().equals(Optional.of("choice:0"))
+            && choiceAccepted.snapshot().value().isEmpty());
+    NativeClientProbe.key(screen, "key.keyboard.down", true);
+    NativeClientProbe.key(screen, "key.keyboard.down", false);
+    check(
+        "native navigation skips disabled choices",
+        choiceActive.snapshot().value().equals(Optional.of("choice:2")));
+    NativeClientProbe.key(screen, "key.keyboard.enter", true);
+    NativeClientProbe.key(screen, "key.keyboard.enter", false);
+    check(
+        "native Enter explicitly accepts current choice",
+        choiceAccepted.snapshot().value().equals(java.util.Set.of("choice:2")));
+    NativeClientProbe.key(screen, "key.keyboard.end", true);
+    NativeClientProbe.key(screen, "key.keyboard.end", false);
+    check(
+        "End navigates a bounded virtual window",
+        choiceActive.snapshot().value().equals(Optional.of("choice:999")));
+    var narration = NativeClientProbe.narration(list::updateNarration);
+    check(
+        "list narration retains full current title without invented total",
+        narration.contains("Choice 999") && !narration.contains("of 1000"));
+    var input =
+        (EditBox)
+            widgets(screen).stream()
+                .filter(w -> w.getMessage().getString().equals("Search choices"))
+                .findFirst()
+                .orElseThrow();
+    check("query takes native focus", focus(screen, input));
+    input.setValue("native search");
+    input.setCursorPosition(3);
+    input.setHighlightPos(1);
+    int submits = querySubmits;
+    NativeClientProbe.key(screen, "key.keyboard.enter", true);
+    NativeClientProbe.key(screen, "key.keyboard.enter", false);
+    check(
+        "Enter flushes latest native query and selection once",
+        querySubmits == submits + 1
+            && queryBuffer.text().equals("native search")
+            && queryBuffer.caret() == 3
+            && queryBuffer.anchor() == 1);
+    listChecks++;
   }
 
   private UiCommand<Void> localAction(Runnable action) {
@@ -456,6 +631,9 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
       case 1 -> {
         if (PlatformFrameObservations.sequence() - beforeFrames < 8) return false;
         check(
+            "unopened component lifecycle remains unadmitted",
+            lifecycleUpdates == 0 && lifecycleSuspends == 0);
+        check(
             "unopened field components remain lazy",
             fieldFactories == 0 && secondFieldFactories == 0 && nativeFieldScope == null);
         check(
@@ -474,6 +652,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
       case 2 -> {
         if (!arrived()) return false;
         check("framework mounts exactly one component factory", frameworkCreates == 1);
+        verifyNativeChoices(workflow.screen());
         verifyDisclosure(workflow.screen());
         retired = button(workflow.screen(), "Increment");
         press(workflow.screen(), "Increment");
@@ -539,6 +718,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
       }
       case 5 -> {
         if (!arrived()) return false;
+        check("framework hide suspends attached component work", lifecycleSuspends >= 1);
         NativeClientProbe.pressRetired(retired);
         check("hidden framework callback cannot edit retained state", frameworkState.value() == 1);
         navigation =
@@ -881,6 +1061,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
       case 7 -> {
         if (external.mount == null) return false;
         check("caller-owned screen mounts one component without a workflow", externalCreates == 1);
+        verifyNativeChoices(external);
         verifyDisclosure(external);
         press(external, "Increment");
         check(
@@ -1195,6 +1376,10 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   @Override
   public JsonObject report() {
     var report = new JsonObject();
+    report.addProperty("nativeChoicesVerified", complete && listChecks == 2);
+    report.addProperty("nativeQuerySubmits", querySubmits);
+    report.addProperty("mountLifecycleUpdates", lifecycleUpdates);
+    report.addProperty("mountLifecycleSuspends", lifecycleSuspends);
     report.addProperty("status", complete ? "PASS" : "RUNNING");
     report.addProperty("passed", complete);
     report.addProperty("sourceUnchanged", complete);

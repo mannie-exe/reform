@@ -136,11 +136,14 @@ public final class ClientUiMount extends NativeViewport implements AutoCloseable
         () -> reflow(this.bounds, this.theme),
         () -> setFocused(next));
     next.finish(0);
+    // Old and new panels may refer to the same retained native control. Clear the old
+    // container's focus before restoring that control, so it cannot clear the new focus.
+    if (old != null) old.cancelPointerCapture();
+    if (wasFocused) setFocused((GuiEventListener) null);
     if (bookmark != null) next.restore(bookmark);
     next.restoreFocus(focus);
     this.bounds = bounds;
     this.theme = theme;
-    if (old != null) old.cancelPointerCapture();
     panel = next;
     if (wasFocused) setFocused(next);
   }

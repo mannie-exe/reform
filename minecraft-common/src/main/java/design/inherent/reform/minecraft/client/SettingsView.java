@@ -4162,6 +4162,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       rebuildWidgets();
     }
     if (componentScope != null) {
+      for (var entry : composedFields.entrySet())
+        if (visibleFields.contains(entry.getKey())) entry.getValue().tree.prepareRefresh();
       componentScope.refreshObservations();
       boolean changed = false;
       for (var entry : composedFields.entrySet())

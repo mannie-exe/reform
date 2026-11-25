@@ -45,6 +45,18 @@ Call `mount.update()` on the host's update turn and `mount.reflow(bounds, theme)
 
 Rendering/extraction uses the prepared native panel only. It does not invoke component factories, text projection functions, source refresh, document actions, or worker entry. Stale, hidden, or retired attachment callbacks refuse; native activation rechecks current command readiness before invoking that same command. Native keyboard, pointer, focus, narration, clipping, scrolling, and geometry reuse the existing game adapters and `FormPanel`.
 
+## List, query, and attached work
+
+`Views.choiceList(key, ChoiceListParts)` mounts one native focus target, rather than a button for every entry. Its bounded `ChoiceListData` window carries stable keys, titles, supplemental detail, enabled state, and an optional source-supplied total. Duplicate keys, more than 4096 admitted metadata entries, and a total smaller than the window refuse. The finite window allowance does not narrow the source domain. A missing total is unknown, and a current window index is not a global position.
+
+The controlled active key and the accepted key set are independent reads. Arrow, Home/End, and Page Up/Down navigation change only the active key and skip disabled entries. Enter/Space or click invokes the declared acceptance command; the list does not stage a document value itself. The native widget prepares at most its visible rows plus bounded overscan, retains a surviving first-visible key within the same data generation, and resets the viewport when the generation changes. Scrolling and scrollbar dragging do not accept an entry. Full active-row title and supplemental detail remain in narration; clipped list text is not a replacement for the inspection surface.
+
+`Views.queryInput(key, QueryInputParts)` uses the native EditBox for UI-local query text, caret, and selection. Its controlled query read and change command are separate from the Enter submission command. The mount samples the actual buffer before source observation and before hiding; rendering performs no query or source work. Enter flushes the current native buffer through the same live input even when that observation requires reflow. List/source callbacks still reject stale data. An overlong controlled query refuses instead of silently truncating that read. This control is not a document ID input or a second document draft; canonical field input and completion must use the actual `ClientTextInput` path.
+
+`Views.managed(key, lifecycle, content)` declares bounded attached work within that node's owned scope. `UiMountLifecycle.update()` runs on the owner update turn, after native query sampling and before cached source observation, only after actual attachment. Construction and paint never invoke it. `suspend()` runs when an entered subtree is hidden, withdrawn, or retired; retained Disclosure content keeps local state but suspends its work. The component must register final resource ownership with its scope and borrow, rather than close, unrelated document/source services. No timer, executor, actor, or global scheduler is created. Framework bodies drive this turn; a caller-owned host continues to call its mount's `update()`.
+
+These are shared native primitives, not a completed reference picker. The core controller still exposes one bounded current page. Continuous retained paging, the shared inline/task picker assembly, canonical field control surface, source-stamped manual-ID completion, and preview orchestration remain selected work. Existing reference screens have not yet been replaced by this component assembly.
+
 ## Cached reads and actual commands
 
 ### Actual field bindings

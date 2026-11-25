@@ -43,6 +43,28 @@ public sealed interface ViewSpec {
     }
   }
 
+  record ChoiceList(String key, ChoiceListParts parts) implements ViewSpec {
+    public ChoiceList {
+      key = identity(key);
+      Objects.requireNonNull(parts);
+    }
+  }
+
+  record QueryInput(String key, QueryInputParts parts) implements ViewSpec {
+    public QueryInput {
+      key = identity(key);
+      Objects.requireNonNull(parts);
+    }
+  }
+
+  record Managed(String key, UiMountLifecycle lifecycle, ViewSpec content) implements ViewSpec {
+    public Managed {
+      key = identity(key);
+      Objects.requireNonNull(lifecycle);
+      Objects.requireNonNull(content);
+    }
+  }
+
   record Column(String key, List<ViewSpec> children) implements ViewSpec {
     public Column {
       key = identity(key);

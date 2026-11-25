@@ -506,7 +506,9 @@ class PlatformOutcomeTests(unittest.TestCase):
                                    "0.20.1", required_scenarios=("semanticComponents",))
         complete = {"status": "PASS", "passed": True, "sourceUnchanged": True,
                     "retiredUiDataZero": True, "keyedRowsVerified": True, "boundFieldsVerified": True, "boundFieldOperations": ["first", "second"], "textInputVerified": True, "disclosureVerified": True, "disclosureFactories": 2, "disclosureCloses": 2, "fieldPartsVerified": True, "standaloneFieldPartsVerified": True, "standaloneFieldPartFactories": 1, "standaloneFieldPartCloses": 1, "fieldPartFactories": 1, "fieldPartCloses": 1, "secondFieldPartFactories": 1, "secondFieldPartCloses": 1, "textInputOperations": ["raw", "repair"], "keyedRowFactories": 4, "keyedRowCloses": 4, "frameworkFactories": 1, "frameworkCloses": 1,
-                    "externalFactories": 1, "externalCloses": 1, "externalDraws": 8}
+                    "externalFactories": 1, "externalCloses": 1, "externalDraws": 8,
+                    "nativeChoicesVerified": True, "nativeQuerySubmits": 2,
+                    "mountLifecycleUpdates": 8, "mountLifecycleSuspends": 2}
         self.native["semanticComponents"] = dict(complete)
         self.assertTrue(accepted())
         for field in complete:
