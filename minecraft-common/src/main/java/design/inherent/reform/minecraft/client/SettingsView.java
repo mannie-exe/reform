@@ -276,6 +276,108 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private final List<design.inherent.reform.validation.Issue> controlIssues = new ArrayList<>();
   private Throwable controlFailure;
   private boolean customRebuild;
+  private Map<FieldPath, ClientEntryPresentation> entryPresentations = Map.of();
+  private final Map<FieldPath, FormPanel.EntryArtwork> entryArtwork = new LinkedHashMap<>();
+  private final List<EntryGraphic> entryGraphics = new ArrayList<>();
+
+  private final class EntryGraphic implements ClientEntryGraphic {
+    private final FieldPath path;
+    private final String slot;
+    private final design.inherent.reform.owner.OwnerContext lifetime;
+    private ClientEntryGraphic content;
+
+    EntryGraphic(FieldPath path, String slot, ClientEntryGraphic.Factory factory) {
+      this.path = path;
+      this.slot = slot;
+      lifetime =
+          new design.inherent.reform.owner.OwnerContext(
+              minecraft::execute,
+              ClientSettingsRuntime.workers(),
+              ClientSettingsRuntime::requireClientThread,
+              design.inherent.reform.owner.OwnerContext.Limits.STANDARD);
+      try {
+        content = Objects.requireNonNull(factory.create(new ClientViewContext(lifetime)));
+        lifetime.requireOwner();
+        lifetime.onClose(content::close);
+      } catch (RuntimeException failed) {
+        fail(failed);
+      }
+    }
+
+    private void fail(RuntimeException failed) {
+      content = null;
+      try {
+        lifetime.close();
+      } catch (RuntimeException cleanup) {
+        failed.addSuppressed(cleanup);
+      }
+      if (controlIssues.stream()
+          .noneMatch(
+              issue ->
+                  issue.path().equals(path)
+                      && issue.code().equals("presentation.entry_" + slot + "_failed"))) {
+        if (controlFailure == null) controlFailure = failed;
+        else if (controlFailure != failed) controlFailure.addSuppressed(failed);
+        controlIssues.add(
+            design.inherent.reform.validation.Issue.error(
+                "presentation.entry_" + slot + "_failed",
+                path,
+                "The field artwork failed; its settings remain available for editing."));
+      }
+      notice = text("entry_graphic_failed", "The field artwork failed; settings remain editable.");
+      customRebuild = true;
+    }
+
+    public void render(
+        FormCanvas canvas,
+        net.minecraft.client.gui.Font font,
+        design.inherent.reform.presentation.FormGeometry.Placement bounds,
+        ClientTheme theme) {
+      if (content == null || !lifetime.isOpen()) return;
+      try {
+        content.render(canvas, font, bounds, theme);
+      } catch (RuntimeException failed) {
+        fail(failed);
+      }
+    }
+
+    public void close() {
+      content = null;
+      try {
+        lifetime.close();
+      } catch (RuntimeException failed) {
+        fail(failed);
+      }
+    }
+  }
+
+  private EntryGraphic entryGraphic(
+      FieldPath path, String slot, ClientEntryGraphic.Factory factory) {
+    var graphic = new EntryGraphic(path, slot, factory);
+    entryGraphics.add(graphic);
+    return graphic;
+  }
+
+  private void prepareEntry(FieldPath path, String rowKey) {
+    var entry = entryPresentations.get(path);
+    if (entry == null) return;
+    var artwork =
+        entryArtwork.computeIfAbsent(
+            path,
+            ignored ->
+                new FormPanel.EntryArtwork(
+                    entry.eyebrow(),
+                    entry.leading().map(ClientEntryPresentation.Leading::preferred),
+                    entry
+                        .leading()
+                        .map(leading -> entryGraphic(path, "leading", leading.factory()))
+                        .orElse(null),
+                    entry
+                        .background()
+                        .map(factory -> entryGraphic(path, "background", factory))
+                        .orElse(null)));
+    panel.entryArtwork(rowKey, artwork);
+  }
 
   private void controlProblem(FieldPath path, String code, RuntimeException failed) {
     boolean first =
@@ -640,6 +742,29 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             "Inline controls require an actual declared scalar path");
     }
     controlAdapters = declared;
+  }
+
+  void withEntries(Map<FieldPath, ClientEntryPresentation> entries) {
+    if (activated || requested || closed)
+      throw new IllegalStateException("Field slots must be declared before activation");
+    var declared = Map.copyOf(entries);
+    if (declared.size() > 256)
+      throw new IllegalArgumentException("Too many field slot declarations");
+    for (var path : declared.keySet()) {
+      var shape =
+          design.inherent.reform.edit.DraftTypes.declaredAt(definition.type(), path).shape();
+      while (shape instanceof ValueShape.OptionalValue<?>
+          || shape instanceof ValueShape.Defaulted<?>) {
+        shape =
+            shape instanceof ValueShape.OptionalValue<?> optional
+                ? optional.element().shape()
+                : ((ValueShape.Defaulted<?>) shape).element().shape();
+      }
+      if (!(shape instanceof ValueShape.Scalar || shape instanceof ValueShape.Reference<?>))
+        throw new IllegalArgumentException(
+            "Field slots require an actual scalar or reference path");
+    }
+    entryPresentations = declared;
   }
 
   private Component defaultsLabel() {
@@ -2112,6 +2237,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         new TitledReference(
             path, reference.source(), choose, referenceTitles.get(reference.source()), help);
     titledReferences.put(path, titled);
+    prepareEntry(path, key(path) + ":editor");
     panel.relatedField(
         key(path) + ":editor",
         expandedEditors.contains(path) ? null : relationship(path),
@@ -2182,6 +2308,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void fieldRow(FieldPath path, Component label, AbstractWidget... widgets) {
+    if (!expandedEditors.contains(path) || !titledReferences.containsKey(path))
+      prepareEntry(path, key(path));
     var row = new ArrayList<>(List.of(widgets));
     var base = controls.get(path);
     if (base != null && controlAdapters.containsKey(path)) {
@@ -2225,14 +2353,32 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         declared.isPresent()
             ? CatalogHelp.describe(declared.orElseThrow())
             : Language.getInstance().has(key) ? Component.translatable(key) : Component.empty();
-    if (controlIssues.stream().anyMatch(issue -> issue.path().equals(path))) {
+    var entry = entryPresentations.get(path);
+    if (entry != null && entry.leading().isPresent()) {
+      var description = entry.leading().orElseThrow().description();
+      purpose =
+          purpose.getString().isEmpty()
+              ? description
+              : purpose.copy().append("\n").append(description);
+    }
+    if (controlIssues.stream()
+        .anyMatch(
+            issue ->
+                issue.path().equals(path) && !issue.code().startsWith("presentation.entry_"))) {
       var feedback =
           text(
               "custom_control_failed_field",
               "Custom control failed; the standard control is available.");
-      return purpose.getString().isEmpty()
-          ? feedback
-          : purpose.copy().append("\n").append(feedback);
+      purpose =
+          purpose.getString().isEmpty() ? feedback : purpose.copy().append("\n").append(feedback);
+    }
+    if (controlIssues.stream()
+        .anyMatch(
+            issue -> issue.path().equals(path) && issue.code().startsWith("presentation.entry_"))) {
+      var feedback =
+          text("entry_graphic_failed_field", "Field artwork failed; settings remain editable.");
+      purpose =
+          purpose.getString().isEmpty() ? feedback : purpose.copy().append("\n").append(feedback);
     }
     return purpose;
   }
@@ -3927,6 +4073,10 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void disposePresentation() {
+    entryGraphics.forEach(EntryGraphic::close);
+    entryGraphics.clear();
+    entryArtwork.clear();
+    entryPresentations = Map.of();
     adaptedControls.values().forEach(AdaptedControl::rememberSelection);
     adaptedControls.values().forEach(AdaptedControl::retire);
     adaptedControls.clear();

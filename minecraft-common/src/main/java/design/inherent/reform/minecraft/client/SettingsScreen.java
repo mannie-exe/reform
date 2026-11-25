@@ -238,6 +238,12 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     return this;
   }
 
+  /** Optional measured field artwork and eyebrow, declared before activation. */
+  public SettingsScreen<T> withEntries(Map<FieldPath, ClientEntryPresentation> entries) {
+    view.withEntries(entries);
+    return this;
+  }
+
   void focusAfterLoad(FieldPath path) {
     view.focusAfterLoad(path);
   }

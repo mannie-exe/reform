@@ -205,6 +205,19 @@ final class FormPanel extends ScrollFrame {
       int boundary,
       String relationship,
       ClientTheme.TextRole labelRole) {
+    var artwork = entryArtwork.get(key);
+    if (field && artwork != null && !artwork.eyebrow().getString().isEmpty())
+      label =
+          Component.empty()
+              .append(
+                  currentTheme
+                      .text(ClientTheme.TextRole.SUPPORT, artwork.eyebrow())
+                      .copy()
+                      .withStyle(
+                          style ->
+                              style.withColor(currentTheme.color(ClientTheme.TextRole.SUPPORT))))
+              .append("\n")
+              .append(label);
     for (var control : controls) {
       if (control instanceof NativeGraphicWidget graphic) graphic.theme(currentTheme);
       else ClientControls.theme(control, currentTheme);
@@ -232,6 +245,29 @@ final class FormPanel extends ScrollFrame {
 
   private record Layout(
       Row row, int x, int y, int height, int textWidth, int textY, int summaryY, boolean stacked) {}
+
+  record EntryArtwork(
+      Component eyebrow,
+      java.util.Optional<FormGeometry.Size> leadingOffer,
+      ClientEntryGraphic leading,
+      ClientEntryGraphic background) {}
+
+  private record ArtworkLayout(
+      Row row,
+      EntryArtwork content,
+      int x,
+      int y,
+      int width,
+      int height,
+      int leadingWidth,
+      int leadingHeight) {}
+
+  private final java.util.Map<String, EntryArtwork> entryArtwork = new java.util.HashMap<>();
+  private final java.util.Map<Row, ArtworkLayout> artworkLayout = new java.util.IdentityHashMap<>();
+
+  void entryArtwork(String key, EntryArtwork content) {
+    entryArtwork.put(key, content);
+  }
 
   private record Outline(
       int left, int width, int top, int bottom, int labelWidth, ClientTheme theme) {}
@@ -607,6 +643,7 @@ final class FormPanel extends ScrollFrame {
     positions.clear();
     layout.clear();
     outlines.clear();
+    artworkLayout.clear();
     sections = new SectionNavigation();
     for (int i = 0; i < rows.size(); i++) {
       var row = rows.get(i);
@@ -717,6 +754,19 @@ final class FormPanel extends ScrollFrame {
       if (at.row != row) continue;
       int delta = sharedHeight - at.height;
       if (delta == 0) return;
+      var artwork = artworkLayout.get(row);
+      if (artwork != null)
+        artworkLayout.put(
+            row,
+            new ArtworkLayout(
+                row,
+                artwork.content,
+                artwork.x,
+                artwork.y,
+                artwork.width,
+                sharedHeight,
+                artwork.leadingWidth,
+                artwork.leadingHeight));
       int offset = at.stacked ? delta : delta / 2;
       for (int j = 0; j < positions.size(); j++) {
         var position = positions.get(j);
@@ -740,16 +790,21 @@ final class FormPanel extends ScrollFrame {
   }
 
   private int minimumWidth(Row row) {
-    return Math.max(
-        Math.min(
-            client.font.width(row.label),
-            row.theme.values().value(ThemeValues.Role.MEASURE_LABEL_PREFERRED_LIMIT)),
-        Math.max(
-            1,
-            FormGeometry.minimumControlWidth(
-                row.preferred,
-                row.theme.values().value(ThemeValues.Role.SPACE_INLINE),
-                joins(row))));
+    int leading =
+        entryArtwork.containsKey(row.key)
+            ? entryArtwork.get(row.key).leadingOffer().map(FormGeometry.Size::width).orElse(0)
+            : 0;
+    return (leading == 0 ? 0 : leading + row.theme.values().value(ThemeValues.Role.SPACE_INLINE))
+        + Math.max(
+            Math.min(
+                client.font.width(row.label),
+                row.theme.values().value(ThemeValues.Role.MEASURE_LABEL_PREFERRED_LIMIT)),
+            Math.max(
+                1,
+                FormGeometry.minimumControlWidth(
+                    row.preferred,
+                    row.theme.values().value(ThemeValues.Role.SPACE_INLINE),
+                    joins(row))));
   }
 
   private record TextMeasure(int summaryY, int height) {}
@@ -773,6 +828,31 @@ final class FormPanel extends ScrollFrame {
   }
 
   private int measureRow(Row row, int left, int y, int wrap) {
+    var artwork = entryArtwork.get(row.key);
+    if (artwork == null) return measureContentRow(row, left, y, wrap);
+    int leading =
+        artwork.leadingOffer().map(size -> Math.min(size.width(), Math.max(0, wrap / 4))).orElse(0);
+    int leadingHeight =
+        leading == 0
+            ? 0
+            : artwork
+                .leadingOffer()
+                .map(size -> Math.max(1, size.height() * leading / size.width()))
+                .orElse(0);
+    int offset =
+        leading == 0
+            ? 0
+            : Math.min(wrap - 1, leading + row.theme.values().value(ThemeValues.Role.SPACE_INLINE));
+    int height =
+        Math.max(
+            leadingHeight, measureContentRow(row, left + offset, y, Math.max(1, wrap - offset)));
+    alignControls(row, height);
+    artworkLayout.put(
+        row, new ArtworkLayout(row, artwork, left, y, wrap, height, leading, leadingHeight));
+    return height;
+  }
+
+  private int measureContentRow(Row row, int left, int y, int wrap) {
     if (row.anchor != null) sections.add(row.anchor, y);
     if (row.heading) {
       int height = 12 + client.font.split(row.label, wrap).size() * client.font.lineHeight;
@@ -930,6 +1010,25 @@ final class FormPanel extends ScrollFrame {
       int y = relativeY + at.y;
       if (y + at.height < top || y >= bottom) continue;
       var row = at.row;
+      var artwork = artworkLayout.get(row);
+      if (artwork != null) {
+        int ax = left + border + artwork.x;
+        int ay = relativeY + artwork.y;
+        var background = artwork.content.background();
+        if (background != null)
+          drawArtwork(
+              graphics,
+              background,
+              new FormGeometry.Placement(ax, ay, artwork.width, artwork.height),
+              row.theme);
+        var leading = artwork.content.leading();
+        if (leading != null && artwork.leadingWidth > 0)
+          drawArtwork(
+              graphics,
+              leading,
+              new FormGeometry.Placement(ax, ay, artwork.leadingWidth, artwork.leadingHeight),
+              row.theme);
+      }
       if (navigation && !row.heading && row.controls.size() == 1)
         graphics.widget(row.controls.getFirst(), mx, my, 0);
       else {
@@ -960,6 +1059,20 @@ final class FormPanel extends ScrollFrame {
           if (widget.getY() + widget.getHeight() > top && widget.getY() < bottom)
             graphics.widget(widget, mx, my, 0);
       }
+    }
+  }
+
+  private void drawArtwork(
+      FormCanvas canvas,
+      ClientEntryGraphic graphic,
+      FormGeometry.Placement bounds,
+      ClientTheme theme) {
+    canvas.enableScissor(
+        bounds.x(), bounds.y(), bounds.x() + bounds.width(), bounds.y() + bounds.height());
+    try {
+      graphic.render(canvas, client.font, bounds, theme);
+    } finally {
+      canvas.disableScissor();
     }
   }
 

@@ -25,7 +25,8 @@ public record ClientFormOptions<T>(
     Function<DocumentDefinition<T>, Optional<FormInformation<T>>> information,
     Optional<DefaultsPresentation> defaults,
     Map<DocumentId, ReferenceTitles> referenceTitles,
-    Map<FieldPath, ClientControlAdapter> controls) {
+    Map<FieldPath, ClientControlAdapter> controls,
+    Map<FieldPath, ClientEntryPresentation> entries) {
   /** Presentation of the whole-document Defaults action; it changes no owner operation. */
   public record DefaultsPresentation(Component label, Component help) {
     public DefaultsPresentation {
@@ -53,9 +54,33 @@ public record ClientFormOptions<T>(
     Objects.requireNonNull(defaults);
     referenceTitles = Map.copyOf(referenceTitles);
     controls = Map.copyOf(controls);
+    entries = Map.copyOf(entries);
+    if (entries.size() > 256)
+      throw new IllegalArgumentException("Too many field slot declarations");
     if (controls.size() > 256) throw new IllegalArgumentException("Too many custom field controls");
     if (referenceTitles.size() > 128)
       throw new IllegalArgumentException("Too many titled reference sources");
+  }
+
+  public ClientFormOptions(
+      FormPresentation presentation,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> references,
+      Function<DocumentDefinition<T>, FieldEditors<T>> editors,
+      Function<DocumentDefinition<T>, Optional<ImportCatalog<T>>> imports,
+      Function<DocumentDefinition<T>, Optional<FormInformation<T>>> information,
+      Optional<DefaultsPresentation> defaults,
+      Map<DocumentId, ReferenceTitles> referenceTitles,
+      Map<FieldPath, ClientControlAdapter> controls) {
+    this(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        controls,
+        Map.of());
   }
 
   public ClientFormOptions(
@@ -137,13 +162,22 @@ public record ClientFormOptions<T>(
     defaults.ifPresent(value -> form.withDefaults(value.label(), value.help()));
     form.withReferenceTitles(referenceTitles);
     form.withControls(controls);
+    form.withEntries(entries);
     return form;
   }
 
   public ClientFormOptions<T> withInformation(
       Function<DocumentDefinition<T>, Optional<FormInformation<T>>> factory) {
     return new ClientFormOptions<>(
-        presentation, references, editors, imports, factory, defaults, referenceTitles, controls);
+        presentation,
+        references,
+        editors,
+        imports,
+        factory,
+        defaults,
+        referenceTitles,
+        controls,
+        entries);
   }
 
   /** Label and visible help for document defaults, independent of per-field Default controls. */
@@ -156,7 +190,8 @@ public record ClientFormOptions<T>(
         information,
         Optional.of(new DefaultsPresentation(label, help)),
         referenceTitles,
-        controls);
+        controls,
+        entries);
   }
 
   /** Opt into titled selectors for this source; raw IDs remain explicitly editable. */
@@ -164,7 +199,15 @@ public record ClientFormOptions<T>(
     var selected = new java.util.LinkedHashMap<>(referenceTitles);
     selected.put(Objects.requireNonNull(source), Objects.requireNonNull(titles));
     return new ClientFormOptions<>(
-        presentation, references, editors, imports, information, defaults, selected, controls);
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        selected,
+        controls,
+        entries);
   }
 
   /** Replace or wrap one declared scalar control without replacing its owner or edit pipeline. */
@@ -180,6 +223,26 @@ public record ClientFormOptions<T>(
         information,
         defaults,
         referenceTitles,
+        selected,
+        entries);
+  }
+
+  /**
+   * Declare optional slots for one actual scalar/reference field; no editing capability is added.
+   */
+  public ClientFormOptions<T> withEntry(FieldPath path, ClientEntryPresentation entry) {
+    var selected = new java.util.LinkedHashMap<>(entries);
+    if (selected.putIfAbsent(Objects.requireNonNull(path), Objects.requireNonNull(entry)) != null)
+      throw new IllegalArgumentException("Field slots may be declared only once");
+    return new ClientFormOptions<>(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        controls,
         selected);
   }
 }
