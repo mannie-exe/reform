@@ -1,5 +1,6 @@
 package design.inherent.reform.minecraft.client.ui;
 
+import design.inherent.reform.minecraft.client.ClientFieldParts;
 import design.inherent.reform.presentation.ui.UiCommand;
 import design.inherent.reform.presentation.ui.UiRead;
 import design.inherent.reform.presentation.ui.UiScope;
@@ -28,6 +29,16 @@ public sealed interface ViewSpec {
       Objects.requireNonNull(label);
       Objects.requireNonNull(help);
       Objects.requireNonNull(command);
+    }
+  }
+
+  /** A capability-bound part of one actual field, not an arbitrary native widget. */
+  record FieldPart(String key, ClientFieldParts<?> field, ClientFieldParts.Role role)
+      implements ViewSpec {
+    public FieldPart {
+      key = identity(key);
+      Objects.requireNonNull(field);
+      Objects.requireNonNull(role);
     }
   }
 

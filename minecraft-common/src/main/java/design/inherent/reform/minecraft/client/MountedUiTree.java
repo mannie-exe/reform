@@ -55,6 +55,7 @@ final class MountedUiTree implements AutoCloseable {
   enum Kind {
     TEXT,
     ACTION,
+    FIELD,
     OPEN,
     CLOSE
   }
@@ -265,7 +266,7 @@ final class MountedUiTree implements AutoCloseable {
     Node(ViewSpec spec, UiScope parent) {
       this.spec = Objects.requireNonNull(spec);
       scope = parent.child();
-      id = "ui:" + (sequence = Math.incrementExact(sequence));
+      id = nativePrefix + (sequence = Math.incrementExact(sequence));
       try {
         var declared = new ArrayList<UiRead<?>>();
         switch (spec) {
@@ -279,6 +280,11 @@ final class MountedUiTree implements AutoCloseable {
             add(declared, action.command().dependencies());
           }
           case ViewSpec.Section section -> add(declared, section.title().dependencies());
+          case ViewSpec.FieldPart part -> {
+            add(declared, List.of(part.field().state()));
+            add(declared, part.field().labelText().dependencies());
+            add(declared, part.field().descriptionText().dependencies());
+          }
           default -> {}
         }
         reads = List.copyOf(declared);
@@ -452,7 +458,8 @@ final class MountedUiTree implements AutoCloseable {
       }
       var current = projectedRow();
       if (current != null) {
-        if (current.kind() == Kind.ACTION && !inherited.available())
+        if ((current.kind() == Kind.ACTION || current.kind() == Kind.FIELD)
+            && !inherited.available())
           current = new Row(this, current.kind(), current.label(), current.body(), inherited);
         into.add(current);
       }
@@ -483,6 +490,40 @@ final class MountedUiTree implements AutoCloseable {
                     action.label().resolve(),
                     action.help().resolve(),
                     Objects.requireNonNull(action.command().availability()));
+            case ViewSpec.FieldPart part -> {
+              var field = part.field();
+              var state = field.state().snapshot().value();
+              yield switch (part.role()) {
+                case LABEL ->
+                    new Row(
+                        this,
+                        Kind.TEXT,
+                        field.labelText().resolve(),
+                        Component.empty(),
+                        UiAvailability.READY);
+                case DESCRIPTION ->
+                    new Row(
+                        this,
+                        Kind.TEXT,
+                        Component.empty(),
+                        field.descriptionText().resolve(),
+                        UiAvailability.READY);
+                case FEEDBACK ->
+                    new Row(
+                        this,
+                        Kind.TEXT,
+                        Component.empty(),
+                        report(state.validation()),
+                        UiAvailability.READY);
+                case CONTROL ->
+                    new Row(
+                        this,
+                        Kind.FIELD,
+                        field.labelText().resolve(),
+                        Component.empty(),
+                        UiAvailability.READY);
+              };
+            }
             case ViewSpec.Section section ->
                 new Row(
                     this,
@@ -498,21 +539,28 @@ final class MountedUiTree implements AutoCloseable {
     }
   }
 
+  private final String nativePrefix = "ui:" + java.util.UUID.randomUUID() + ":";
   private final UiScope root;
   private Node tree;
   private long sequence, revision = -1;
   private Object attachment;
   private List<Row> rows = List.of();
   private RuntimeException failure;
+  private ClientFieldParts<?> requiredField;
   private UiActionResult lastAction;
 
   private MountedUiTree(ClientViewContext context, UiLimits limits) {
-    root = context.openScope(limits);
+    this(context.openScope(limits));
+  }
+
+  private MountedUiTree(UiScope admitted) {
+    root = admitted;
     root.onRetire(
         () -> {
           attachment = null;
           tree = null;
           rows = List.of();
+          requiredField = null;
         });
   }
 
@@ -533,6 +581,51 @@ final class MountedUiTree implements AutoCloseable {
     }
   }
 
+  static MountedUiTree field(
+      UiScope parent,
+      ClientFieldComponent component,
+      Function<UiScope, ClientFieldParts<?>> parts) {
+    var mounted = new MountedUiTree(parent.child());
+    try {
+      mounted.requiredField = Objects.requireNonNull(parts.apply(mounted.root));
+      mounted.tree =
+          mounted.new Node(component.build(mounted.root, mounted.requiredField), mounted.root);
+      mounted.refreshCached(true);
+      return mounted;
+    } catch (RuntimeException | Error failed) {
+      cleanup(mounted.root, failed);
+      throw failed;
+    }
+  }
+
+  private void fieldParts(List<Row> rows) {
+    var families =
+        new java.util.IdentityHashMap<
+            ClientFieldParts<?>, java.util.EnumSet<ClientFieldParts.Role>>();
+    for (var row : rows) {
+      if (!(row.node().spec instanceof ViewSpec.FieldPart part)) continue;
+      if (part.field() != requiredField || !part.field().belongsTo(root))
+        throw new PolicyRefusal(
+            "ui.foreign_field_part", "Field parts must belong to this mounted field.");
+      var roles =
+          families.computeIfAbsent(
+              part.field(), ignored -> java.util.EnumSet.noneOf(ClientFieldParts.Role.class));
+      if (!roles.add(part.role()))
+        throw new PolicyRefusal("ui.duplicate_field_part", "Use each field part only once.");
+    }
+    if (requiredField != null && !families.containsKey(requiredField))
+      throw new PolicyRefusal(
+          "ui.missing_field_part", "A field needs its label, control, and feedback parts.");
+    for (var roles : families.values())
+      if (!roles.containsAll(
+          java.util.EnumSet.of(
+              ClientFieldParts.Role.LABEL,
+              ClientFieldParts.Role.CONTROL,
+              ClientFieldParts.Role.FEEDBACK)))
+        throw new PolicyRefusal(
+            "ui.missing_field_part", "A field needs its label, control, and feedback parts.");
+  }
+
   private void add(List<UiRead<?>> target, List<UiRead<?>> inputs) {
     if (inputs.size() > root.limits().maximumDependencies() - target.size())
       throw new PolicyRefusal(
@@ -541,8 +634,16 @@ final class MountedUiTree implements AutoCloseable {
   }
 
   boolean refresh(boolean force) {
+    return refresh(force, true);
+  }
+
+  boolean refreshCached(boolean force) {
+    return refresh(force, false);
+  }
+
+  private boolean refresh(boolean force, boolean observe) {
     root.requireCurrent();
-    root.refreshObservations();
+    if (observe) root.refreshObservations();
     if (!force && root.revision() == revision) return false;
     attachment = null;
     try {
@@ -560,6 +661,7 @@ final class MountedUiTree implements AutoCloseable {
                     throw new ReadUnavailable(missing);
                 var current = new ArrayList<Row>();
                 tree.rows(current);
+                fieldParts(current);
                 return List.copyOf(current);
               });
       failure = null;
@@ -587,7 +689,7 @@ final class MountedUiTree implements AutoCloseable {
           rows.stream()
               .map(
                   row ->
-                      row.kind() == Kind.ACTION
+                      (row.kind() == Kind.ACTION || row.kind() == Kind.FIELD)
                           ? new Row(row.node(), row.kind(), row.label(), row.body(), blocked)
                           : row)
               .toList();
@@ -640,7 +742,7 @@ final class MountedUiTree implements AutoCloseable {
     attachment = token;
     if (failure != null)
       panel.row(
-          "ui:failure",
+          nativePrefix + "failure",
           failure instanceof ReadUnavailable
               ? Component.translatableWithFallback(
                   "reform.ui.content_unavailable", "This content is unavailable.")
@@ -654,7 +756,29 @@ final class MountedUiTree implements AutoCloseable {
                       : ValidationReport.VALID));
     for (var row : rows) {
       switch (row.kind()) {
-        case TEXT -> panel.anchorRow(row.node().id, row.label(), row.body());
+        case TEXT -> {
+          if (!(row.node().spec instanceof ViewSpec.FieldPart)
+              || !row.label().getString().isBlank()
+              || !row.body().getString().isBlank())
+            panel.anchorRow(row.node().id, row.label(), row.body());
+        }
+        case FIELD -> {
+          var part = (ViewSpec.FieldPart) row.node().spec;
+          var widgets = part.field().widgets();
+          if (failure != null || !row.availability().available()) {
+            for (var widget : widgets) {
+              widget.active = false;
+              if (widget instanceof FormEditBox input) input.setEditable(false);
+            }
+          }
+          panel.field(
+              row.node().id,
+              Component.empty(),
+              row.availability().available()
+                  ? Component.empty()
+                  : report(row.availability().report()),
+              widgets.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
+        }
         case OPEN -> panel.beginGroup(row.node().id, row.label());
         case CLOSE -> panel.endGroup();
         case ACTION -> {

@@ -238,6 +238,12 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     return this;
   }
 
+  /** Semantic field parts over the same native input, declared before activation. */
+  public SettingsScreen<T> withComponents(Map<FieldPath, ClientFieldComponent> components) {
+    view.withComponents(components);
+    return this;
+  }
+
   /** Optional measured field artwork and eyebrow, declared before activation. */
   public SettingsScreen<T> withEntries(Map<FieldPath, ClientEntryPresentation> entries) {
     view.withEntries(entries);

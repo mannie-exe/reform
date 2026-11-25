@@ -1,6 +1,6 @@
 # Mounted native components
 
-The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. Implemented declarations include text, actions, columns, sections, nested components, conditional and keyed case branches, keyed collections, and bounded decorative repetition. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Core owner-backed field observations/edit commands and their retained-client input adapter are available. Intrinsic field parts, loading/error boundaries, picker/completion, broader layout/modifiers, and preview orchestration remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
+The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. Implemented declarations include text, actions, columns, sections, nested components, conditional and keyed case branches, keyed collections, and bounded decorative repetition. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Core owner-backed field observations/edit commands and their retained-client input adapter are available. General field hosting/disclosure parts, loading/error boundaries, picker/completion, broader layout/modifiers, and preview orchestration remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
 
 ## One declaration and two hosts
 
@@ -74,3 +74,20 @@ The shared model tests exercise factory-once behavior, cached projection, actual
 `replacements()` accepts a `Replacement` with an opaque stamp from that same binding, a `[start,end)` range, replacement text, and the resulting caret/anchor. Offsets use Java UTF-16 units. The command rechecks the actual owner, current input identity, complete draft revision, native input epoch, raw text, and selection before changing anything. Stale or cross-binding stamps, invalid ranges/selections, surrogate-pair splits, and over-limit results refuse before native mutation or operation submission. Character limits never silently truncate completion text. The stamp is neither portable bookmark data nor a permission grant.
 
 An admitted text change goes through the same quantity mapping, retained input, version acknowledgment, and actual owner edit as native typing. `Pending` carries that actual operation handle; an admitted invalid value remains repairable in the original buffer and follows the original validation/submission guards. A selection-only change returns `Applied` without an actor edit. This is the input-command foundation for completion and intrinsic field parts, not an implementation of a completion catalogue, popup, inline picker, rejected-input/IME support, or the complete revised form API.
+
+## Composed form fields
+
+`ClientFormOptions.withComponent(path, component)` declares a scalar/reference field composition in the actual generated form. `SettingsScreen.withComponents` supplies the same boundary for a standalone form. The component runs once per admitted field/session lifetime and receives its scope and `ClientFieldParts`. `parts.binding()` is the actual owner/path/type binding; `parts.input()` lazily borrows the same text-input command path when the field uses text rather than a cycle. There is no second native input, actor, draft, or save action.
+
+A field family provides `label`, `description`, `control`, and `feedback` descriptions. `parts.standard(key)` assembles a vertical standard variant. Exactly one label, control, and feedback part is required; description is optional. Missing, duplicated, or foreign parts refuse before native attachment. A composition can add ordinary shared component text/actions/flow around those parts. Native controls keep their original caption semantics, quantities, validation, source actions, and responders; component declarations cannot inject an arbitrary widget into the description.
+
+```java
+options.withComponent(FieldPath.ROOT.field("enabled"), (scope, parts) ->
+    Views.column("enabled", List.of(
+        parts.label("label"), parts.description("description"),
+        parts.control("control"), parts.feedback("feedback"))));
+```
+
+Field components share one form-owned `UiLimits.STANDARD` aggregate root, rather than multiplying the payload allowance for every field. Their local state survives native reflow and temporary hiding while the same owner/session/path remains. Hidden attachments cannot dispatch; removed paths, replaced sessions, and form closure retire their scopes. Cleanup closes the presentation root and leaves domain ownership to the existing editor lifecycle. A native replacement adapter or dedicated editor cannot also declare this component for the same field.
+
+This is the actual-form field-parts host. Arbitrary field mounting in caller-owned component trees, general Disclosure parts, loading/error boundaries, picker/completion, and the remaining revised layout/preview contracts are still in progress. Native and model qualification is recorded separately in verification.

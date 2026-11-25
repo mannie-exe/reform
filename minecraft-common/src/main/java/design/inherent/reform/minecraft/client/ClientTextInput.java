@@ -154,6 +154,10 @@ public final class ClientTextInput implements AutoCloseable {
     return new ClientTextInput(scope, editor.presentation(), path);
   }
 
+  static ClientTextInput bind(UiScope scope, SettingsView<?> form, FieldPath path) {
+    return new ClientTextInput(scope, form, path);
+  }
+
   public UiRead<State> state() {
     return state;
   }

@@ -272,6 +272,108 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     }
   }
 
+  private Map<FieldPath, ClientFieldComponent> fieldComponents = Map.of();
+  private final Map<FieldPath, ComposedField> composedFields = new LinkedHashMap<>();
+  private design.inherent.reform.owner.OwnerContext componentLifetime;
+  private design.inherent.reform.presentation.ui.UiScope componentScope;
+
+  private final class ComposedField {
+    final FieldPath path;
+    List<AbstractWidget> widgets;
+    MountedUiTree tree;
+
+    ComposedField(FieldPath path, Component label, List<AbstractWidget> widgets) {
+      this.path = path;
+      this.widgets = List.copyOf(widgets);
+      if (componentScope == null) {
+        componentLifetime =
+            new design.inherent.reform.owner.OwnerContext(
+                minecraft::execute,
+                ClientSettingsRuntime.workers(),
+                ClientSettingsRuntime::requireClientThread,
+                design.inherent.reform.owner.OwnerContext.Limits.STANDARD);
+        componentScope =
+            design.inherent.reform.presentation.ui.UiScope.borrow(
+                componentLifetime, design.inherent.reform.presentation.ui.UiLimits.STANDARD);
+      }
+      tree =
+          MountedUiTree.field(
+              componentScope, fieldComponents.get(path), scope -> parts(scope, label));
+    }
+
+    private <V> ClientFieldParts<V> bindParts(
+        design.inherent.reform.presentation.ui.UiScope scope,
+        Component label,
+        design.inherent.reform.value.ValueType<V> type) {
+      var binding =
+          design.inherent.reform.presentation.ui.FieldBinding.bind(
+              scope,
+              actions,
+              path,
+              type,
+              new design.inherent.reform.presentation.ui.FieldFrontend() {
+                public Optional<Input> input() {
+                  return boundFieldInput(path);
+                }
+
+                public design.inherent.reform.presentation.ui.UiAvailability editing() {
+                  return canStage(path)
+                      ? design.inherent.reform.presentation.ui.UiAvailability.READY
+                      : design.inherent.reform.presentation.ui.UiAvailability.blocked(
+                          "field.input_unaccepted",
+                          "Finish or repair the current input before choosing another value.");
+                }
+
+                public design.inherent.reform.presentation.ui.UiAvailability submission() {
+                  return canSubmit()
+                      ? design.inherent.reform.presentation.ui.UiAvailability.READY
+                      : design.inherent.reform.presentation.ui.UiAvailability.blocked(
+                          "field.submission_unavailable",
+                          "Resolve the draft's pending input, validation, or review before saving.");
+                }
+              });
+      return new ClientFieldParts<>(
+          scope,
+          binding,
+          design.inherent.reform.minecraft.client.ui.UiText.of(label),
+          design.inherent.reform.minecraft.client.ui.UiText.of(fieldHelp(path)),
+          () -> this.widgets,
+          new java.util.function.Supplier<>() {
+            private ClientTextInput input;
+
+            public Optional<ClientTextInput> get() {
+              if (!(controls.get(path).widget() instanceof FormEditBox)) return Optional.empty();
+              if (input == null) input = ClientTextInput.bind(scope, SettingsView.this, path);
+              return Optional.of(input);
+            }
+          });
+    }
+
+    private ClientFieldParts<?> parts(
+        design.inherent.reform.presentation.ui.UiScope scope, Component label) {
+      return bindParts(
+          scope, label, design.inherent.reform.edit.DraftTypes.declaredAt(definition.type(), path));
+    }
+
+    void append() {
+      tree.refreshCached(false);
+      tree.append(
+          panel,
+          theme(),
+          effect ->
+              () -> {
+                if (!closed && isCurrent() && visibleFields.contains(path)) effect.run();
+              },
+          () -> customRebuild = true,
+          () -> setFocused(panel));
+    }
+
+    void close() {
+      widgets = List.of();
+      tree.close();
+    }
+  }
+
   private Map<FieldPath, ClientControlAdapter> controlAdapters = Map.of();
   private final Map<FieldPath, AdaptedControl> adaptedControls = new LinkedHashMap<>();
   private final List<design.inherent.reform.validation.Issue> controlIssues = new ArrayList<>();
@@ -742,7 +844,31 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         throw new IllegalArgumentException(
             "Inline controls require an actual declared scalar path");
     }
+    if (declared.keySet().stream().anyMatch(fieldComponents::containsKey))
+      throw new IllegalArgumentException(
+          "Declare at most one native adapter or component per field");
     controlAdapters = declared;
+  }
+
+  void withComponents(Map<FieldPath, ClientFieldComponent> components) {
+    if (activated || requested || closed)
+      throw new IllegalStateException("Field components must be declared before activation");
+    var declared = Map.copyOf(components);
+    if (declared.size() > 256 || declared.keySet().stream().anyMatch(controlAdapters::containsKey))
+      throw new IllegalArgumentException(
+          "Declare at most one native adapter or component per field");
+    for (var path : declared.keySet()) {
+      var type = design.inherent.reform.edit.DraftTypes.declaredAt(definition.type(), path);
+      var shape = type.shape();
+      if (shape instanceof ValueShape.Reference<?> reference) shape = reference.element().shape();
+      if (fieldEditors.at(path, type).isPresent())
+        throw new IllegalArgumentException(
+            "A dedicated field editor cannot also declare inline parts");
+      if (!(shape instanceof ValueShape.Scalar))
+        throw new IllegalArgumentException(
+            "Field components require an actual declared scalar path");
+    }
+    fieldComponents = declared;
   }
 
   void withEntries(Map<FieldPath, ClientEntryPresentation> entries) {
@@ -1621,6 +1747,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     Component modelError = null;
     if (current.snapshot().isPresent()) {
       var snapshot = current.snapshot().orElseThrow();
+      if (!snapshot.session().equals(formSession)) closeFieldComponents();
       if (!snapshot.session().equals(formSession) || snapshot.generation() != formGeneration)
         inputPositions.clear();
       formSession = snapshot.session();
@@ -1691,6 +1818,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (composition.selections().isEmpty()) {
       visibleFields.clear();
       bodyVisible = false;
+      composedFields.values().forEach(field -> field.tree.hide());
       adaptedControls.values().forEach(AdaptedControl::rememberSelection);
       adaptedControls.values().forEach(AdaptedControl::retire);
       adaptedControls.clear();
@@ -1767,6 +1895,14 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         formLayout.stream()
             .map(FormModel.Layout::path)
             .collect(java.util.stream.Collectors.toSet());
+    for (var entry : List.copyOf(composedFields.entrySet())) {
+      if (retained.contains(entry.getKey())) {
+        if (!visibleFields.contains(entry.getKey())) entry.getValue().tree.hide();
+      } else {
+        composedFields.remove(entry.getKey());
+        entry.getValue().close();
+      }
+    }
     controls.keySet().retainAll(retained);
     local.keySet().retainAll(retained);
     versions.keySet().retainAll(retained);
@@ -2028,7 +2164,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (editor.isEmpty()
         && shape instanceof ValueShape.Reference<?> reference
         && referenceTitles.containsKey(reference.source())) {
-      titledReference(path, label, reference);
+      if (fieldComponents.containsKey(path)) scalarContents(field, label);
+      else titledReference(path, label, reference);
       if (!expandedEditors.contains(path)) return;
       panel.beginGroup(key(path) + ":manual_id", text("manual_reference_id", "Manual ID"));
       try {
@@ -2433,8 +2570,22 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     }
     row.add(informationButton(path, label));
     if (hasAvailability(path)) row.add(availabilityButton(path, label));
-    panel.relatedField(
-        key(path), relationship(path), label, fieldHelp(path), row.toArray(AbstractWidget[]::new));
+    if (fieldComponents.containsKey(path)) {
+      var composed = composedFields.get(path);
+      if (composed == null) {
+        composed = new ComposedField(path, label, row);
+        composedFields.put(path, composed);
+      }
+      composed.widgets = List.copyOf(row);
+      panel.anchor(key(path));
+      composed.append();
+    } else
+      panel.relatedField(
+          key(path),
+          relationship(path),
+          label,
+          fieldHelp(path),
+          row.toArray(AbstractWidget[]::new));
     var control = controls.get(path);
     if (control != null && control.quantity() != null)
       panel.keepTogether(control.quantity().less, control.quantity().more);
@@ -3938,7 +4089,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             if (!summary.getString().isEmpty()) help = help.copy().append("\n").append(summary);
             summary = help;
           }
-          panel.summary(key(path), summary);
+          if (!fieldComponents.containsKey(path)) panel.summary(key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
             if (input instanceof NativeTextInput themed)
               themed.valueRole(
@@ -4009,6 +4160,14 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (customRebuild) {
       customRebuild = false;
       rebuildWidgets();
+    }
+    if (componentScope != null) {
+      componentScope.refreshObservations();
+      boolean changed = false;
+      for (var entry : composedFields.entrySet())
+        if (visibleFields.contains(entry.getKey()))
+          changed |= entry.getValue().tree.refreshCached(false);
+      if (changed && isCurrent()) rebuildWidgets();
     }
     revealRequestedFocus();
     refreshReferenceTitles();
@@ -4199,7 +4358,17 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     openScreen(parent);
   }
 
+  private void closeFieldComponents() {
+    composedFields.clear();
+    var lifetime = componentLifetime;
+    componentLifetime = null;
+    componentScope = null;
+    if (lifetime != null) lifetime.close();
+  }
+
   private void disposePresentation() {
+    closeFieldComponents();
+    fieldComponents = Map.of();
     entryGraphics.forEach(EntryGraphic::close);
     entryGraphics.clear();
     entryArtwork.clear();

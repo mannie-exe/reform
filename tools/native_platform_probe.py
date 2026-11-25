@@ -272,6 +272,15 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                      and native["semanticComponents"].get("keyedRowsVerified") is True
                      and native["semanticComponents"].get("boundFieldsVerified") is True
                      and native["semanticComponents"].get("textInputVerified") is True
+                     and native["semanticComponents"].get("fieldPartsVerified") is True
+                     and type(native["semanticComponents"].get("fieldPartFactories")) is int
+                     and native["semanticComponents"]["fieldPartFactories"] == 1
+                     and type(native["semanticComponents"].get("fieldPartCloses")) is int
+                     and native["semanticComponents"]["fieldPartCloses"] == 1
+                     and type(native["semanticComponents"].get("secondFieldPartFactories")) is int
+                     and native["semanticComponents"]["secondFieldPartFactories"] == 1
+                     and type(native["semanticComponents"].get("secondFieldPartCloses")) is int
+                     and native["semanticComponents"]["secondFieldPartCloses"] == 1
                      and type(native["semanticComponents"].get("textInputOperations")) is list
                      and len(native["semanticComponents"]["textInputOperations"]) == 2
                      and all(isinstance(value, str) and value for value in native["semanticComponents"]["textInputOperations"])

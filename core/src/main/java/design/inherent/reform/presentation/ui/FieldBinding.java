@@ -32,7 +32,7 @@ public final class FieldBinding<T, V> implements AutoCloseable {
   private final FieldFrontend frontend;
   private final UiReadKey<FieldState<V>> key;
   private final UiRead<FieldState<V>> state;
-  private UiObservation.Available<FieldState<V>> cached;
+  private WeakReference<UiSnapshot<FieldState<V>>> cached;
   private WeakReference<design.inherent.reform.owner.EditorActor.View<T>> observedView;
   private long revision;
 
@@ -175,16 +175,19 @@ public final class FieldBinding<T, V> implements AutoCloseable {
       }
       var nativeInput = frontend.input();
       var submission = editing.available() ? frontend.submission() : editing;
-      boolean sameView = cached != null && observedView != null && observedView.get() == view;
+      var previousSnapshot = cached == null ? null : cached.get();
+      boolean sameView =
+          previousSnapshot != null && observedView != null && observedView.get() == view;
       if (sameView) {
-        var previous = cached.data().value();
+        var previous = previousSnapshot.value();
         if (previous.input().equals(nativeInput)
             && previous.editing().equals(editing)
-            && previous.submission().equals(submission)) return cached;
+            && previous.submission().equals(submission))
+          return new UiObservation.Available<>(previousSnapshot, revision);
       }
       FieldState<V> next;
       if (sameView) {
-        var previous = cached.data().value();
+        var previous = previousSnapshot.value();
         next =
             new FieldState<>(
                 previous.revision(),
@@ -238,14 +241,15 @@ public final class FieldBinding<T, V> implements AutoCloseable {
                 inspected.failure());
       }
       var captured = key.capture(next);
-      if (cached == null || !cached.data().sameData(captured)) {
+      if (previousSnapshot == null || !previousSnapshot.sameData(captured)) {
         if (revision == Long.MAX_VALUE)
           throw new PolicyRefusal(
               "field.epoch_exhausted", "Reopen this field before further edits.");
-        cached = new UiObservation.Available<>(captured, ++revision);
-      }
+        revision++;
+      } else captured = previousSnapshot;
       observedView = new WeakReference<>(view);
-      return cached;
+      cached = new WeakReference<>(captured);
+      return new UiObservation.Available<>(captured, revision);
     } catch (RuntimeException | Error failed) {
       cached = null;
       observedView = null;

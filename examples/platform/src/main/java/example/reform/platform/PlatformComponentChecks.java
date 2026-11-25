@@ -60,7 +60,15 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private final HashMap<String, UiScope> rowScopes = new HashMap<>();
   private int rowFactories, rowCloses;
   private boolean keyedRowsVerified;
-  private boolean boundFieldsVerified, textInputVerified;
+  private boolean boundFieldsVerified, textInputVerified, fieldPartsVerified;
+  private int fieldFactories, fieldCloses, secondFieldFactories, secondFieldCloses;
+  private UiScope secondNativeFieldScope;
+  private ClientFieldParts<?> secondNativeFieldParts;
+  private UiScope nativeFieldScope;
+  private UiLocal<Integer> nativeFieldLocal;
+  private ClientFieldParts<?> nativeFieldParts;
+  private Button oldFieldAction;
+  private ClientTextInput.Stamp hiddenInputStamp;
   private ClientTextInput textInput;
   private ClientTextInput.Stamp priorTextStamp;
   private design.inherent.reform.operation.OperationHandle<?> textOperation;
@@ -259,7 +267,41 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         settingsBytes = Files.readAllBytes(settingsPath);
         settingsAttributes = Files.readAttributes(settingsPath, BasicFileAttributes.class);
         NativeClientProbe.size(client, originalWidth, originalHeight);
-        var form = PlatformWorkflowExample.settings().form(text("Unopened document"));
+        var options =
+            new ClientFormOptions<PlatformWorkflowExample.Preferences>(
+                    FormPresentation.EMPTY, java.util.Map.of())
+                .withComponent(
+                    FieldPath.ROOT.field("distance"),
+                    (scope, parts) -> {
+                      fieldFactories++;
+                      scope.onRetire(() -> fieldCloses++);
+                      nativeFieldScope = scope;
+                      nativeFieldParts = parts;
+                      nativeFieldLocal = scope.local(COUNT, 0);
+                      return Views.column(
+                          "distance",
+                          List.of(
+                              parts.label("label"),
+                              parts.description("description"),
+                              parts.control("input"),
+                              Views.action(
+                                  "local",
+                                  UiText.of(text("Field local state")),
+                                  UiText.from(nativeFieldLocal, n -> text("Field count " + n)),
+                                  increment(nativeFieldLocal, nativeFieldLocal::replace)),
+                              parts.feedback("feedback")));
+                    });
+        options =
+            options.withComponent(
+                FieldPath.ROOT.field("label"),
+                (scope, parts) -> {
+                  secondFieldFactories++;
+                  scope.onRetire(() -> secondFieldCloses++);
+                  secondNativeFieldScope = scope;
+                  secondNativeFieldParts = parts;
+                  return parts.standard("label");
+                });
+        var form = PlatformWorkflowExample.settings().form(text("Unopened document"), options);
         var category =
             new ClientWorkflowLayout.Category(PAGE, text("Components"), text("View-local state"));
         var layout =
@@ -305,6 +347,9 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
       }
       case 1 -> {
         if (PlatformFrameObservations.sequence() - beforeFrames < 8) return false;
+        check(
+            "unopened field components remain lazy",
+            fieldFactories == 0 && secondFieldFactories == 0 && nativeFieldScope == null);
         check(
             "unopened Home constructs no component or document editor",
             frameworkCreates == 0
@@ -434,6 +479,59 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         originalDistance =
             ((DraftNode.Scalar) distanceBinding.state().snapshot().value().draft()).raw();
         originalLabel = ((DraftNode.Scalar) labelBinding.state().snapshot().value().draft()).raw();
+        check(
+            "field parts bind the original definition and owner",
+            fieldFactories == 1
+                && nativeFieldParts.binding().identity().definition()
+                    == boundEditor.actions().definition()
+                && nativeFieldParts
+                    .binding()
+                    .identity()
+                    .context()
+                    .equals(boundEditor.actions().context()));
+        var labelInput = fieldInput("label");
+        check(
+            "two composed fields have independent native focus identities",
+            labelInput.isFocused()
+                && !((EditBox)
+                        boundEditor
+                            .form()
+                            .fieldControl(FieldPath.ROOT.field("distance"))
+                            .orElseThrow())
+                    .isFocused());
+        check(
+            "two composed fields share the same aggregate presentation ledger",
+            nativeFieldScope.usage().equals(secondNativeFieldScope.usage())
+                && secondFieldFactories == 1);
+        press(workflow.screen(), "Field local state");
+        oldFieldAction = button(workflow.screen(), "Field local state");
+        check(
+            "field-local native action edits only its scoped state",
+            nativeFieldLocal.snapshot().value() == 1 && !boundEditor.dirty());
+        NativeClientProbe.resize(client, 320, 240);
+        stage = 27;
+      }
+      case 27 -> {
+        int[] width = {0}, height = {0};
+        NativeClientProbe.size(client, width, height);
+        if (width[0] != 320 || height[0] != 240) return false;
+        check(
+            "narrow form keeps the same field component lifetime",
+            fieldFactories == 1 && nativeFieldLocal.snapshot().value() == 1);
+        NativeClientProbe.resize(client, originalWidth[0], originalHeight[0]);
+        stage = 28;
+      }
+      case 28 -> {
+        int[] width = {0}, height = {0};
+        NativeClientProbe.size(client, width, height);
+        if (width[0] != originalWidth[0] || height[0] != originalHeight[0]) return false;
+        check(
+            "restored form retains field-local state and actual editor",
+            fieldFactories == 1
+                && nativeFieldLocal.snapshot().value() == 1
+                && workflow.editor(PlatformWorkflowExample.DEFINITION) == boundEditor);
+        NativeClientProbe.pressRetired(oldFieldAction);
+        check("old field attachment cannot replay", nativeFieldLocal.snapshot().value() == 1);
         replace(workflow.screen(), fieldInput("distance"), "bad");
         stage = 21;
       }
@@ -467,6 +565,16 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         fieldScope.refreshObservations();
         var state = labelBinding.state().snapshot().value();
         if (!state.value().orElseThrow().equals("Semantic sibling")) return false;
+        nativeFieldScope.refreshObservations();
+        check(
+            "second field parts observe the same actual sibling edit",
+            secondNativeFieldParts
+                .state()
+                .snapshot()
+                .value()
+                .value()
+                .orElseThrow()
+                .equals("Semantic sibling"));
         check(
             "actual field operation preserves the invalid sibling and retained editor",
             workflow.editor(PlatformWorkflowExample.DEFINITION) == boundEditor
@@ -597,7 +705,59 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         }
         check("retired field binding cannot expose its old cached data", retiredReadRefused);
         boundFieldsVerified = true;
+        nativeFieldScope.refreshObservations();
+        hiddenInputStamp =
+            nativeFieldParts.input().orElseThrow().state().snapshot().value().stamp();
+        oldFieldAction = button(workflow.screen(), "Field local state");
+        navigation =
+            workflow
+                .navigation()
+                .open(new ClientDestination.Home())
+                .completion()
+                .toCompletableFuture();
+        stage = 30;
+      }
+      case 30 -> {
+        if (!arrived()) return false;
+        NativeClientProbe.pressRetired(oldFieldAction);
+        check(
+            "hidden field part callback is retired without losing its state",
+            nativeFieldLocal.snapshot().value() == 1);
+        var denied =
+            nativeFieldParts
+                .input()
+                .orElseThrow()
+                .replacements()
+                .invoke(new ClientTextInput.Replacement(hiddenInputStamp, 0, 0, "late", 0, 0));
+        check("hidden field raw command cannot edit", denied instanceof UiActionResult.Refused);
+        navigation =
+            workflow
+                .navigation()
+                .open(new ClientDestination.Document(PlatformWorkflowExample.DEFINITION.id()))
+                .completion()
+                .toCompletableFuture();
+        stage = 31;
+      }
+      case 31 -> {
+        if (!arrived() || boundEditor.busy()) return false;
+        check(
+            "field return preserves owner and component state without remount",
+            fieldFactories == 1
+                && fieldCloses == 0
+                && nativeFieldLocal.snapshot().value() == 1
+                && workflow.editor(PlatformWorkflowExample.DEFINITION) == boundEditor);
+        check(
+            "second field component also retains its lifetime",
+            secondFieldFactories == 1 && secondFieldCloses == 0);
+        fieldPartsVerified = true;
         workflow.close();
+        check(
+            "field component close releases its own aggregate state",
+            secondFieldCloses == 1
+                && !secondNativeFieldScope.isOpen()
+                && fieldCloses == 1
+                && nativeFieldScope.usage().scopes() == 0
+                && nativeFieldScope.usage().stateBytes() == 0);
         check(
             "workflow closes component tree and charged presentation data",
             frameworkCloses == 1
@@ -808,6 +968,11 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     report.addProperty("keyedRowsVerified", complete && keyedRowsVerified);
     report.addProperty("boundFieldsVerified", complete && boundFieldsVerified);
     report.addProperty("textInputVerified", complete && textInputVerified);
+    report.addProperty("fieldPartsVerified", complete && fieldPartsVerified);
+    report.addProperty("fieldPartFactories", fieldFactories);
+    report.addProperty("fieldPartCloses", fieldCloses);
+    report.addProperty("secondFieldPartFactories", secondFieldFactories);
+    report.addProperty("secondFieldPartCloses", secondFieldCloses);
     report.add("textInputOperations", textOperations.deepCopy());
     report.add("boundFieldOperations", fieldOperations.deepCopy());
     report.addProperty("keyedRowFactories", rowFactories);

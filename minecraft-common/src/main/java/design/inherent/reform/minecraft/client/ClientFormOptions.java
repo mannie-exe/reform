@@ -26,7 +26,8 @@ public record ClientFormOptions<T>(
     Optional<DefaultsPresentation> defaults,
     Map<DocumentId, ReferenceTitles> referenceTitles,
     Map<FieldPath, ClientControlAdapter> controls,
-    Map<FieldPath, ClientEntryPresentation> entries) {
+    Map<FieldPath, ClientEntryPresentation> entries,
+    Map<FieldPath, ClientFieldComponent> components) {
   /** Presentation of the whole-document Defaults action; it changes no owner operation. */
   public record DefaultsPresentation(Component label, Component help) {
     public DefaultsPresentation {
@@ -55,11 +56,38 @@ public record ClientFormOptions<T>(
     referenceTitles = Map.copyOf(referenceTitles);
     controls = Map.copyOf(controls);
     entries = Map.copyOf(entries);
+    components = Map.copyOf(components);
+    if (components.size() > 256 || components.keySet().stream().anyMatch(controls::containsKey))
+      throw new IllegalArgumentException(
+          "Declare at most one native adapter or component per field");
     if (entries.size() > 256)
       throw new IllegalArgumentException("Too many field slot declarations");
     if (controls.size() > 256) throw new IllegalArgumentException("Too many custom field controls");
     if (referenceTitles.size() > 128)
       throw new IllegalArgumentException("Too many titled reference sources");
+  }
+
+  public ClientFormOptions(
+      FormPresentation presentation,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> references,
+      Function<DocumentDefinition<T>, FieldEditors<T>> editors,
+      Function<DocumentDefinition<T>, Optional<ImportCatalog<T>>> imports,
+      Function<DocumentDefinition<T>, Optional<FormInformation<T>>> information,
+      Optional<DefaultsPresentation> defaults,
+      Map<DocumentId, ReferenceTitles> referenceTitles,
+      Map<FieldPath, ClientControlAdapter> controls,
+      Map<FieldPath, ClientEntryPresentation> entries) {
+    this(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        controls,
+        entries,
+        Map.of());
   }
 
   public ClientFormOptions(
@@ -162,6 +190,7 @@ public record ClientFormOptions<T>(
     defaults.ifPresent(value -> form.withDefaults(value.label(), value.help()));
     form.withReferenceTitles(referenceTitles);
     form.withControls(controls);
+    form.withComponents(components);
     form.withEntries(entries);
     return form;
   }
@@ -177,7 +206,8 @@ public record ClientFormOptions<T>(
         defaults,
         referenceTitles,
         controls,
-        entries);
+        entries,
+        components);
   }
 
   /** Label and visible help for document defaults, independent of per-field Default controls. */
@@ -191,7 +221,8 @@ public record ClientFormOptions<T>(
         Optional.of(new DefaultsPresentation(label, help)),
         referenceTitles,
         controls,
-        entries);
+        entries,
+        components);
   }
 
   /** Opt into titled selectors for this source; raw IDs remain explicitly editable. */
@@ -207,7 +238,8 @@ public record ClientFormOptions<T>(
         defaults,
         selected,
         controls,
-        entries);
+        entries,
+        components);
   }
 
   /** Replace or wrap one declared scalar control without replacing its owner or edit pipeline. */
@@ -224,7 +256,26 @@ public record ClientFormOptions<T>(
         defaults,
         referenceTitles,
         selected,
-        entries);
+        entries,
+        components);
+  }
+
+  /** Compose actual field parts through the shared kernel and the original native input. */
+  public ClientFormOptions<T> withComponent(FieldPath path, ClientFieldComponent component) {
+    var selected = new java.util.LinkedHashMap<>(components);
+    if (selected.putIfAbsent(Objects.requireNonNull(path), Objects.requireNonNull(component))
+        != null) throw new IllegalArgumentException("A field component may be declared only once");
+    return new ClientFormOptions<>(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        controls,
+        entries,
+        selected);
   }
 
   /**
@@ -243,6 +294,7 @@ public record ClientFormOptions<T>(
         defaults,
         referenceTitles,
         controls,
-        selected);
+        selected,
+        components);
   }
 }
