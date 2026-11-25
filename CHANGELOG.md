@@ -9,9 +9,10 @@
 - Prepare bounded still images, sprites, copied items, block states, chest references, curated entities, and consumer meshes outside ordinary rendering. Retire native resources after their actual submitted uses, with explicit cancellation, source stamps, and failure accounting.
 - Offer optional view-only recipe links through admitted native or installed viewers, preserving the originating workflow and game inventory.
 - Retain complete owner scope across information, single and batch review, defaults, conflicts, imports, document actions, and dirty-close decisions. Keep confirmed saves, application failures, unknown results, and application-only retry distinct.
-- Display declared choice captions while preserving canonical values and repairable unknown input. Keep useful diagnostics visible and exact paths, codes, and revisions under technical details.
+- Display declared choice captions and consistent On/Off boolean observations while preserving canonical values and repairable unknown input. Keep useful diagnostics visible and exact paths, codes, and revisions under technical details.
 - Preserve meaningful reported operation progress and current refusal causes in native narration without repeated context or location paths.
 - Seal development coordinates from first publication and retain actual runtime archive identities separately from original Maven inputs. Expand native fixtures and maintenance guidance for the new presentation and resource lifetimes.
+- Reproduce clean and edited-source builds without anonymous-constructor debug-name drift or empty package directories changing source archives.
 
 ## 0.3.0
 

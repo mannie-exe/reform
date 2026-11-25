@@ -1,5 +1,13 @@
 # Implementation coverage
 
+## 0.4 development
+
+The selected presentation and interaction contracts are implemented in the unpublished development candidate. They include semantic themes and measured composition, stable header and Home, authored-order navigation and retained bookmarks, responsive chooser/inspection/action views, complete-document meta workflows, bounded graphics preparation and native retirement, and optional view-only recipe integrations. Lootr: Styled supplies the production profile catalogue and isolated model/artwork preview bindings over those shared services. Phase 2 and other consumers' production migrations remain separate.
+
+The [current verification](verification.md#04-development-frozen-local-candidate) distinguishes the final dev.95 caption checks from earlier combined native scenes and unchanged-class carry-forward evidence. The final frozen consumer input and joint local handoff are pending. Public publication and resolution are deliberately deferred; their absence does not turn a local-readiness goal into release authorization. Earlier released and development evidence below keeps its original scope.
+
+## Released baseline
+
 The 0.2.0 release carries the Phase 1 local settings, native control and command adapters, profile authoring and unsaved world recipes across four game/loader targets. Its qualification is recorded separately below, retaining the exact earlier development artifacts. [Verification](verification.md) records exact artifacts, sample sizes and remaining limits. [API](api.md) owns the public contracts. Skyweave's production 0.2 migration remains owner-deferred and is not a release gate; its public 0.1 binding is not evidence for the new library's actual Skyweave integration.
 
 | Capability                        | Delivered in Phase 1                                                                                                                                              | Evidence                                                                                                                             |

@@ -47,6 +47,8 @@ For an unpublished trial, `./gradlew :<target>:publishMavenJavaPublicationToStag
 
 ## CI and release procedure
 
+A release-ready handoff may stop at an immutable unpublished development candidate when that is the selected delivery state. Complete local builds, staged artifact resolution, relevant native and consumer checks, source-archive reproduction, documentation, and security review first. Record the exact candidate and remaining limits. Do not create a stable coordinate, tag, draft release, or public upload merely to complete local readiness. Hosted CI and fresh public dependency resolution remain explicitly deferred until delivery is authorized; neither is claimed by local staging.
+
 The build workflow checks Linux, Windows and Intel macOS with the declared Java 21/25 toolchains, plus Markdown and workflow syntax. Its reusable Trivy workflow is a release dependency. Security scanning also runs weekly and on explicit dispatch. Every action is pinned to a commit. Pull requests use read-only Gradle caches, and only the release job receives write access to repository contents.
 
 The POM producer uses UTF-8 and LF endings on every platform. The tag job compares the complete target-derived asset set from all three runners byte for byte. A mismatch, missing artifact, dirty source, incorrect version/tag, or existing staging directory stops preparation. `tools/release.py` adds the tagged source ZIP and SHA-256/SHA-512 manifests, then creates a draft GitHub release. Repeated creation cannot overwrite a published release.
