@@ -756,7 +756,9 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
             secondFieldCloses == 1
                 && !secondNativeFieldScope.isOpen()
                 && fieldCloses == 1
-                && nativeFieldScope.usage().scopes() == 0
+                && nativeFieldScope.usage().states() == 0
+                && !nativeFieldScope.isOpen()
+                && !boundEditor.isOpen()
                 && nativeFieldScope.usage().stateBytes() == 0);
         check(
             "workflow closes component tree and charged presentation data",
