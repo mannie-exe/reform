@@ -60,7 +60,11 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private final HashMap<String, UiScope> rowScopes = new HashMap<>();
   private int rowFactories, rowCloses;
   private boolean keyedRowsVerified;
-  private boolean boundFieldsVerified;
+  private boolean boundFieldsVerified, textInputVerified;
+  private ClientTextInput textInput;
+  private ClientTextInput.Stamp priorTextStamp;
+  private design.inherent.reform.operation.OperationHandle<?> textOperation;
+  private final JsonArray textOperations = new JsonArray();
   private ClientEditor<PlatformWorkflowExample.Preferences> boundEditor;
   private UiScope fieldScope;
   private UiScope.Usage fieldBaseline;
@@ -474,7 +478,88 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         stage = -1;
       }
       case 25 -> {
-        replace(workflow.screen(), fieldInput("distance"), originalDistance);
+        var nativeInput = fieldInput("distance");
+        textInput = ClientTextInput.bind(fieldScope, boundEditor, FieldPath.ROOT.field("distance"));
+        var state = textInput.state().snapshot().value();
+        check(
+            "native text binding borrows the same invalid input",
+            state.raw().equals("bad") && state.editable());
+        int before = boundEditor.actions().operations().size();
+        var selectionOnly =
+            textInput
+                .replacements()
+                .invoke(new ClientTextInput.Replacement(state.stamp(), 0, 0, "", 0, 0));
+        check(
+            "selection-only input action creates no actor operation",
+            selectionOnly instanceof UiActionResult.Applied
+                && boundEditor.actions().operations().size() == before);
+        fieldScope.refreshObservations();
+        state = textInput.state().snapshot().value();
+        var pureRequest = new ClientTextInput.Replacement(state.stamp(), 0, 0, "old", 0, 0);
+        var pureResult =
+            fieldScope.project(List.of(), () -> textInput.replacements().invoke(pureRequest));
+        check(
+            "pure projection cannot change the actual native input",
+            pureResult instanceof UiActionResult.Refused refused
+                && refused.report().issues().getFirst().code().equals("ui.write_in_pure_phase"));
+        textRefused(
+            new ClientTextInput.Replacement(state.stamp(), -1, 0, "", 0, 0), "field.input_range");
+        textRefused(
+            new ClientTextInput.Replacement(
+                state.stamp(), 0, 0, "x".repeat(state.maximumCharacters() + 1), 0, 0),
+            "field.input_limit");
+        textRefused(
+            new ClientTextInput.Replacement(state.stamp(), 0, 0, "", -1, 0), "field.input_range");
+        try (var foreign =
+            ClientTextInput.bind(fieldScope, boundEditor, FieldPath.ROOT.field("distance"))) {
+          textRefused(
+              new ClientTextInput.Replacement(
+                  foreign.state().snapshot().value().stamp(), 0, 0, "", 0, 0),
+              "field.input_stale");
+        }
+        nativeInput.setCursorPosition(state.caret() == 0 ? 1 : 0);
+        textRefused(
+            new ClientTextInput.Replacement(state.stamp(), 0, 0, "", 0, 0), "field.input_stale");
+        fieldScope.refreshObservations();
+        state = textInput.state().snapshot().value();
+        priorTextStamp = state.stamp();
+        check(
+            "refused completions do not mutate actor or native text",
+            boundEditor.actions().operations().size() == before
+                && nativeInput.getValue().equals("bad")
+                && ((DraftNode.Scalar) distanceBinding.state().snapshot().value().draft())
+                    .raw()
+                    .equals("bad"));
+        textOperation = textEdit(new ClientTextInput.Replacement(state.stamp(), 1, 2, "X", 2, 1));
+        stage = 26;
+      }
+      case 26 -> {
+        if (!textOperation.completion().toCompletableFuture().isDone() || boundEditor.busy())
+          return false;
+        fieldScope.refreshObservations();
+        var state = textInput.state().snapshot().value();
+        check(
+            "range completion uses actual input acknowledgment and preserves selection",
+            state.raw().equals("bXd")
+                && state.caret() == 2
+                && state.anchor() == 1
+                && distanceBinding.state().snapshot().value().input().orElseThrow().accepted()
+                && ((DraftNode.Scalar) distanceBinding.state().snapshot().value().draft())
+                    .raw()
+                    .equals("bXd")
+                && boundEditor.actions().operation(textOperation.snapshot().id()).isPresent());
+        textRefused(
+            new ClientTextInput.Replacement(priorTextStamp, 0, 3, "old", 3, 3),
+            "field.input_stale");
+        textOperation =
+            textEdit(
+                new ClientTextInput.Replacement(
+                    state.stamp(),
+                    0,
+                    state.raw().length(),
+                    originalDistance,
+                    originalDistance.length(),
+                    originalDistance.length()));
         stage = 23;
       }
       case 23 -> {
@@ -494,7 +579,11 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         if (!((DraftNode.Scalar) labelBinding.state().snapshot().value().draft())
             .raw()
             .equals(originalLabel)) return false;
+        var closedStamp = textInput.state().snapshot().value().stamp();
         fieldScope.close();
+        textRefused(
+            new ClientTextInput.Replacement(closedStamp, 0, 0, "old", 0, 0), "ui.scope_closed");
+        textInputVerified = true;
         check(
             "binding close retires observations while the actual editor stays open",
             boundEditor.isOpen()
@@ -625,6 +714,25 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     return handle;
   }
 
+  private void textRefused(ClientTextInput.Replacement replacement, String code) {
+    var result = textInput.replacements().invoke(replacement);
+    check(
+        "text input refuses " + code,
+        result instanceof UiActionResult.Refused refused
+            && refused.report().issues().stream().anyMatch(issue -> issue.code().equals(code)));
+  }
+
+  private design.inherent.reform.operation.OperationHandle<?> textEdit(
+      ClientTextInput.Replacement replacement) {
+    var result = textInput.replacements().invoke(replacement);
+    check(
+        "text replacement returns its actual registered operation",
+        result instanceof UiActionResult.Pending);
+    var operation = ((UiActionResult.Pending) result).operation();
+    textOperations.add(operation.snapshot().id().toString());
+    return operation;
+  }
+
   private final class ExternalScreen extends NativeFormScreen {
     final OwnerContext host =
         new OwnerContext(
@@ -699,6 +807,8 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     report.addProperty("retiredUiDataZero", complete);
     report.addProperty("keyedRowsVerified", complete && keyedRowsVerified);
     report.addProperty("boundFieldsVerified", complete && boundFieldsVerified);
+    report.addProperty("textInputVerified", complete && textInputVerified);
+    report.add("textInputOperations", textOperations.deepCopy());
     report.add("boundFieldOperations", fieldOperations.deepCopy());
     report.addProperty("keyedRowFactories", rowFactories);
     report.addProperty("keyedRowCloses", rowCloses);

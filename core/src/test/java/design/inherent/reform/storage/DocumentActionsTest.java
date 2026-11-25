@@ -326,11 +326,29 @@ class DocumentActionsTest {
               () ->
                   design.inherent.reform.presentation.ui.UiScope.borrow(
                       h.context, design.inherent.reform.presentation.ui.UiLimits.STANDARD));
+      var nativeInput =
+          new java.util.concurrent.atomic.AtomicReference<>(
+              new design.inherent.reform.presentation.ui.FieldFrontend.Input(
+                  "original", 1, 0, 0, true, false));
+      var frontend =
+          new design.inherent.reform.presentation.ui.FieldFrontend() {
+            public java.util.Optional<Input> input() {
+              return java.util.Optional.of(nativeInput.get());
+            }
+
+            public design.inherent.reform.presentation.ui.UiAvailability editing() {
+              return design.inherent.reform.presentation.ui.UiAvailability.READY;
+            }
+
+            public design.inherent.reform.presentation.ui.UiAvailability submission() {
+              return editing();
+            }
+          };
       var binding =
           h.nativeCall(
               () ->
                   design.inherent.reform.presentation.ui.FieldBinding.bind(
-                      scope, h.actions, FieldPath.ROOT.field("label"), counted));
+                      scope, h.actions, FieldPath.ROOT.field("label"), counted, frontend));
       int before = decodeCalls.get();
       h.nativeCall(
           () -> {
@@ -338,6 +356,20 @@ class DocumentActionsTest {
             return null;
           });
       assertEquals(before, decodeCalls.get());
+      h.nativeCall(
+          () -> {
+            for (int i = 1; i <= 7; i++) {
+              nativeInput.set(
+                  new design.inherent.reform.presentation.ui.FieldFrontend.Input(
+                      "original", 1, i, 0, true, false));
+              scope.refreshObservations();
+              assertEquals(i, binding.state().snapshot().value().input().orElseThrow().caret());
+            }
+            return null;
+          });
+      assertEquals(
+          before, decodeCalls.get(), "Caret-only updates must not decode the actual field again");
+
       int operations = h.nativeCall(() -> h.actions.operations().size());
       var refusal =
           h.nativeCall(

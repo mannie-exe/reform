@@ -271,6 +271,10 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                      and native["semanticComponents"].get("retiredUiDataZero") is True
                      and native["semanticComponents"].get("keyedRowsVerified") is True
                      and native["semanticComponents"].get("boundFieldsVerified") is True
+                     and native["semanticComponents"].get("textInputVerified") is True
+                     and type(native["semanticComponents"].get("textInputOperations")) is list
+                     and len(native["semanticComponents"]["textInputOperations"]) == 2
+                     and all(isinstance(value, str) and value for value in native["semanticComponents"]["textInputOperations"])
                      and type(native["semanticComponents"].get("boundFieldOperations")) is list
                      and len(native["semanticComponents"]["boundFieldOperations"]) == 2
                      and all(isinstance(value, str) and value for value in native["semanticComponents"]["boundFieldOperations"])

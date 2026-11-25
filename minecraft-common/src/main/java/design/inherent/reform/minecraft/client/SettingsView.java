@@ -31,6 +31,7 @@ import design.inherent.reform.presentation.FormPresentation;
 import design.inherent.reform.presentation.FormTarget;
 import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.presentation.NumericInput;
+import design.inherent.reform.presentation.ui.UiActionResult;
 import design.inherent.reform.reference.CollectionSelection;
 import design.inherent.reform.reference.ReferenceActions;
 import design.inherent.reform.reference.ReferenceSelection;
@@ -1070,6 +1071,93 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             input.selection(),
             Objects.equals(versions.get(path), acceptedVersions.get(path)),
             pendingWork()));
+  }
+
+  ClientTextInput.State textInput(FieldPath path, Object producer) {
+    ClientSettingsRuntime.requireClientThread();
+    actions.requireInspection();
+    var control = controls.get(path);
+    if (closed
+        || !isCurrent()
+        || !visibleFields.contains(path)
+        || control == null
+        || !(control.widget() instanceof FormEditBox input))
+      throw new PolicyRefusal(
+          "field.input_unavailable", "Reveal this field's text input before editing.");
+    boolean editable = customEditable(path, control, true);
+    try {
+      actions.requireEditing();
+    } catch (PolicyRefusal refused) {
+      editable = false;
+    }
+    return new ClientTextInput.State(
+        new ClientTextInput.Stamp(
+            producer,
+            control.token(),
+            design.inherent.reform.edit.DraftRevision.of(actions.view().snapshot().orElseThrow()),
+            previewInputEpoch,
+            input.getValue(),
+            input.getCursorPosition(),
+            input.selection()),
+        input.getValue(),
+        input.getCursorPosition(),
+        input.selection(),
+        input.maximumCharacters(),
+        editable);
+  }
+
+  UiActionResult replaceTextInput(
+      FieldPath path, Object producer, ClientTextInput.Replacement replacement) {
+    var current = textInput(path, producer);
+    if (!current.stamp().equals(replacement.expected()))
+      throw new PolicyRefusal(
+          "field.input_stale", "The input changed. Refresh the suggestion before choosing it.");
+    actions.requireEditing();
+    if (!current.editable())
+      throw new PolicyRefusal("field.input_unavailable", "This field input is unavailable.");
+    int start = replacement.start(), end = replacement.end();
+    if (start < 0
+        || end < start
+        || end > current.raw().length()
+        || !textBoundary(current.raw(), start)
+        || !textBoundary(current.raw(), end))
+      throw new PolicyRefusal(
+          "field.input_range", "Choose a complete range within the current input.");
+    long length = (long) current.raw().length() - (end - start) + replacement.text().length();
+    if (length > current.maximumCharacters())
+      throw new PolicyRefusal(
+          "field.input_limit", "The replacement exceeds this input's character allowance.");
+    String next =
+        current.raw().substring(0, start) + replacement.text() + current.raw().substring(end);
+    if (replacement.caret() < 0
+        || replacement.caret() > next.length()
+        || replacement.anchor() < 0
+        || replacement.anchor() > next.length()
+        || !textBoundary(next, replacement.caret())
+        || !textBoundary(next, replacement.anchor()))
+      throw new PolicyRefusal(
+          "field.input_range", "Place the selection within the resulting input.");
+    var control = controls.get(path);
+    var input = (FormEditBox) control.widget();
+    if (!current.raw().equals(next)) {
+      boolean prior = updating;
+      updating = true;
+      try {
+        control.display().accept(next);
+      } finally {
+        updating = prior;
+      }
+    }
+    input.setCursorPosition(replacement.caret());
+    input.setHighlightPos(replacement.anchor());
+    return edit(path, control.token(), next);
+  }
+
+  private static boolean textBoundary(String value, int offset) {
+    return offset == 0
+        || offset == value.length()
+        || !Character.isHighSurrogate(value.charAt(offset - 1))
+        || !Character.isLowSurrogate(value.charAt(offset));
   }
 
   boolean canStage(FieldPath path) {
@@ -3412,12 +3500,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     } else feedback();
   }
 
-  private void edit(FieldPath path, Object token, String value) {
-    if (closed || !isCurrent() || !visibleFields.contains(path)) return;
+  private UiActionResult edit(FieldPath path, Object token, String value) {
+    if (closed || !isCurrent() || !visibleFields.contains(path))
+      return new UiActionResult.Applied();
     var current = controls.get(path);
-    if (current == null || current.token() != token) return;
-    if (!locallyAvailable(path)) return;
-    if (updating || value.equals(local.get(path))) return;
+    if (current == null || current.token() != token) return new UiActionResult.Applied();
+    if (!locallyAvailable(path)) return new UiActionResult.Applied();
+    if (updating || value.equals(local.get(path))) return new UiActionResult.Applied();
     advancePreviewInput();
     if (current.quantity() != null) {
       current.quantity().input = current.quantity().input.edit(value);
@@ -3425,10 +3514,10 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     }
     local.put(path, value);
     versions.put(path, ++version);
-    submit(path, value);
+    return submit(path, value);
   }
 
-  private void submit(FieldPath path, String value) {
+  private UiActionResult submit(FieldPath path, String value) {
     var control = controls.get(path);
     var submittedVersion = versions.get(path);
     var target = control.target();
@@ -3438,31 +3527,52 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             : control.quantity().input.action().orElseThrow();
     pendingEdits++;
     notice = null;
-    action(() -> actions.edit(EntryPoint.GUI, new DraftEdit(target, input)))
-        .whenComplete(
-            (result, failed) ->
-                minecraft.execute(
-                    () -> {
-                      pendingEdits--;
-                      if (failed == null
-                          && controls.get(path) != null
-                          && controls.get(path).token() == control.token())
-                        acceptedVersions.merge(path, submittedVersion, Math::max);
-                      if (failed != null) {
-                        notice = failure(failed);
-                        controls
-                            .values()
-                            .forEach(
-                                item -> {
-                                  if (item.quantity() != null) item.quantity().deferred = false;
-                                });
-                      }
-                      if (isCurrent()) {
-                        feedback();
-                        if (failed == null) flushContinuous();
-                      }
-                    }));
+    UiActionResult admission;
+    CompletionStage<?> completion;
+    try {
+      var admitted = actions.edit(EntryPoint.GUI, new DraftEdit(target, input));
+      admission = new UiActionResult.Pending(admitted);
+      completion = DocumentActions.result(admitted);
+    } catch (RuntimeException refused) {
+      admission =
+          new UiActionResult.Refused(
+              refused instanceof PolicyRefusal policy
+                  ? policy.report()
+                  : new ValidationReport(
+                      List.of(
+                          design.inherent.reform.validation.Issue.error(
+                              "field.input_failed",
+                              path,
+                              "The field edit failed. Check the retained input before retrying.")),
+                      true),
+              Optional.of(refused));
+      completion = java.util.concurrent.CompletableFuture.failedFuture(refused);
+    }
+    completion.whenComplete(
+        (result, failed) ->
+            minecraft.execute(
+                () -> {
+                  pendingEdits--;
+                  if (failed == null
+                      && controls.get(path) != null
+                      && controls.get(path).token() == control.token())
+                    acceptedVersions.merge(path, submittedVersion, Math::max);
+                  if (failed != null) {
+                    notice = failure(failed);
+                    controls
+                        .values()
+                        .forEach(
+                            item -> {
+                              if (item.quantity() != null) item.quantity().deferred = false;
+                            });
+                  }
+                  if (isCurrent()) {
+                    feedback();
+                    if (failed == null) flushContinuous();
+                  }
+                }));
     feedback();
+    return admission;
   }
 
   private void flushContinuous() {

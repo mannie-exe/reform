@@ -15,6 +15,7 @@ import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.SnapshotContext;
 import design.inherent.reform.value.SnapshotPolicy;
 import design.inherent.reform.value.ValueType;
+import java.lang.ref.WeakReference;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -32,7 +33,7 @@ public final class FieldBinding<T, V> implements AutoCloseable {
   private final UiReadKey<FieldState<V>> key;
   private final UiRead<FieldState<V>> state;
   private UiObservation.Available<FieldState<V>> cached;
-  private design.inherent.reform.owner.EditorActor.View<T> observedView;
+  private WeakReference<design.inherent.reform.owner.EditorActor.View<T>> observedView;
   private long revision;
 
   private FieldBinding(
@@ -174,47 +175,68 @@ public final class FieldBinding<T, V> implements AutoCloseable {
       }
       var nativeInput = frontend.input();
       var submission = editing.available() ? frontend.submission() : editing;
-      if (cached != null && observedView == view) {
+      boolean sameView = cached != null && observedView != null && observedView.get() == view;
+      if (sameView) {
         var previous = cached.data().value();
         if (previous.input().equals(nativeInput)
             && previous.editing().equals(editing)
             && previous.submission().equals(submission)) return cached;
       }
-      var inspected =
-          current.draft().inspectField(identity.type(), identity.path(), current.jsonLimits());
-      var issues =
-          new ValidationReport(
-              view.validation().issues().stream()
-                  .filter(
-                      issue ->
-                          issue.path().startsWith(identity.path())
-                              || identity.path().startsWith(issue.path())
-                              || issue.related().stream()
-                                  .anyMatch(
-                                      p ->
-                                          p.startsWith(identity.path())
-                                              || identity.path().startsWith(p)))
-                  .toList(),
-              view.validation().complete());
-      var next =
-          new FieldState<>(
-              DraftRevision.of(current),
-              new design.inherent.reform.edit.DraftTarget(
-                  current.session(),
-                  current.generation(),
-                  Optional.of(current.version()),
-                  identity.path()),
-              raw,
-              inspected.value(),
-              view.inputs().getOrDefault(identity.path(), inspected.input()),
-              issues.and(inspected.report()),
-              nativeInput,
-              active,
-              view.changedAt(identity.path()),
-              editing,
-              submission,
-              inspected.encodedBytes(),
-              inspected.failure());
+      FieldState<V> next;
+      if (sameView) {
+        var previous = cached.data().value();
+        next =
+            new FieldState<>(
+                previous.revision(),
+                previous.target(),
+                previous.draft(),
+                previous.value(),
+                previous.parse(),
+                previous.validation(),
+                nativeInput,
+                previous.active(),
+                previous.changed(),
+                editing,
+                submission,
+                previous.encodedValueBytes(),
+                previous.observationFailure());
+      } else {
+        var inspected =
+            current.draft().inspectField(identity.type(), identity.path(), current.jsonLimits());
+        var issues =
+            new ValidationReport(
+                view.validation().issues().stream()
+                    .filter(
+                        issue ->
+                            issue.path().startsWith(identity.path())
+                                || identity.path().startsWith(issue.path())
+                                || issue.related().stream()
+                                    .anyMatch(
+                                        p ->
+                                            p.startsWith(identity.path())
+                                                || identity.path().startsWith(p)))
+                    .toList(),
+                view.validation().complete());
+        next =
+            new FieldState<>(
+                DraftRevision.of(current),
+                new design.inherent.reform.edit.DraftTarget(
+                    current.session(),
+                    current.generation(),
+                    Optional.of(current.version()),
+                    identity.path()),
+                raw,
+                inspected.value(),
+                view.inputs().getOrDefault(identity.path(), inspected.input()),
+                issues.and(inspected.report()),
+                nativeInput,
+                active,
+                view.changedAt(identity.path()),
+                editing,
+                submission,
+                inspected.encodedBytes(),
+                inspected.failure());
+      }
       var captured = key.capture(next);
       if (cached == null || !cached.data().sameData(captured)) {
         if (revision == Long.MAX_VALUE)
@@ -222,7 +244,7 @@ public final class FieldBinding<T, V> implements AutoCloseable {
               "field.epoch_exhausted", "Reopen this field before further edits.");
         cached = new UiObservation.Available<>(captured, ++revision);
       }
-      observedView = view;
+      observedView = new WeakReference<>(view);
       return cached;
     } catch (RuntimeException | Error failed) {
       cached = null;
