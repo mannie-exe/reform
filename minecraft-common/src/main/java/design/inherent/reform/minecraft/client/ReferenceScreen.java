@@ -592,7 +592,8 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   }
 
   private static String readable(String value) {
-    return value.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+    String words = value.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+    return words.isEmpty() ? words : Character.toUpperCase(words.charAt(0)) + words.substring(1);
   }
 
   private static String clip(String value, int maximum) {

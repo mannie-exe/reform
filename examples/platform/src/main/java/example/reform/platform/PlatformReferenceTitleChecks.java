@@ -47,7 +47,7 @@ final class PlatformReferenceTitleChecks {
   private final int[] chooserWidth = new int[1], chooserHeight = new int[1];
   private final JsonArray chooserLayouts = new JsonArray();
   private OperationHandle<?> save;
-  private byte[] original;
+  private byte[] original, missingSource;
   private int stage;
   private boolean complete;
   private final JsonArray observedHelp = new JsonArray();
@@ -553,12 +553,36 @@ final class PlatformReferenceTitleChecks {
         check(
             "a retired raw callback cannot alter the collapsed reference",
             raw("block").equals("minecraft:missing"));
+        missingSource = savedBytes();
+        press((Button) field("block"));
+        stage = 110;
+      }
+      case 110 -> {
+        var popup = NativeScreens.current(client);
+        if (!popup.getClass().getSimpleName().equals("ReferenceScreen")) return false;
+        var narration = popup.getNarrationMessage().getString();
+        if (!narration.toLowerCase(java.util.Locale.ROOT).contains("unknown reference"))
+          return false;
+        check(
+            "unknown reference status uses sentence case in visible and narrated fallback labels",
+            narration.contains("Unknown reference")
+                && !narration.contains("\nunknown reference")
+                && measuredText(popup).contains("Unknown reference")
+                && !button(popup, "Use selection").active
+                && raw("block").equals("minecraft:missing")
+                && Arrays.equals(missingSource, savedBytes()));
+        popup.onClose();
+        stage = 111;
+      }
+      case 111 -> {
+        if (NativeScreens.current(client) != workflow.screen() || !ready()) return false;
         check(
             "an unbound titled source keeps its explicit unavailable state",
             !field("unbound").active);
         press(action("Unbound", "Edit ID"));
         edit("unbound", "modpack:missing");
-        next("repair an unbound source without inventing catalogue data");
+        stage = 12;
+        progress.accept("repair an unbound source without inventing catalogue data");
       }
       case 12 -> {
         if (!ready() || !raw("unbound").equals("modpack:missing")) return false;
