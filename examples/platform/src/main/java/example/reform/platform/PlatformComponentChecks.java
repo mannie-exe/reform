@@ -189,7 +189,18 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
             new ClientWorkflowLayout.Category(PAGE, text("Components"), text("View-local state"));
         var layout =
             new ClientWorkflowLayout(
-                List.of(new ClientWorkflowLayout.Group(List.of(category), List.of(), List.of())),
+                List.of(
+                    new ClientWorkflowLayout.Group(List.of(category), List.of(), List.of()),
+                    new ClientWorkflowLayout.Group(
+                        List.of(
+                            new ClientWorkflowLayout.Category(
+                                DocumentId.parse("fixture:semantic_settings"),
+                                text("Settings"),
+                                Component.empty())),
+                        List.of(
+                            new ClientWorkflowLayout.Placement(
+                                form.route(), form.route(), form.title(), Optional.empty())),
+                        List.of())),
                 List.of());
         var body =
             ClientCustomView.component(

@@ -1,5 +1,15 @@
 # Verification
 
+## Revised 0.4: shared component foundation
+
+The revised semantic interaction work supersedes the earlier UX acceptance below. Dev.99 implements bounded scoped state, cached declared reads, conditional components, and guarded actions through one native component model. `ClientCustomView.component` mounts that model within the existing workflow; `ClientUiMount` mounts it in a caller-owned screen without creating a document, workflow, executor, or persistence path. These are implemented foundations, not completion of the revised candidate.
+
+The four-target `check build` passes. The core suite runs 693 tests on each pinned serialization runtime; shared native model tests run on all four target classpaths. Retained negative cases demonstrate forced-retirement cleanup, failed source-construction admission, and read revocation. The corrected model releases admission after construction failure, allows cleanup after actual retirement while refusing live pure-phase mutation, and clears previously disclosed content when the admitted read becomes unavailable. Recovery retains the actual source and component identity. Headless model checks do not establish native rendering.
+
+The isolated `components` scene qualifies the same public framework and caller-owned mounts in actual packaged clients. It checks lazy Home admission, one component factory per lifetime, keyboard and pointer actions, native narration, cached steady frames, retained identity/state/focus through a real 320×240 window and return, conditional cleanup, rejected hidden callbacks, and zero charged presentation state after close. Closing the mount leaves its borrowed host open. These presentation counters are not heap or GPU measurements. The first fixture failed before mounting because its registered document lacked a required navigation placement; correcting only the fixture preserves the same immutable library inputs.
+
+The remaining keyed flows, owner-backed fields/raw input, bounded picker/list/completion, semantic layout/navigation, truthful draft/audition capture, automatic preview policy, and actual revised consumer integration remain open. Earlier local readiness belongs to its recorded inputs and UX, not this revised scope. No publication or personal-instance action is selected.
+
 ## 0.4 development: frozen local candidate
 
 Candidate `0.4.0-dev.96` at `e2e057f` passes the four-target `check build`, including 137 tooling tests. A clean committed source archive separately executes all eighty build tasks without the task-output cache, runs 671 core tests on each pinned serialization runtime, and reproduces all twelve Maven binaries, source archives, and POMs byte for byte. Resolved dependency, mapping, and toolchain caches are reused; this is not cold public resolution or hosted cross-platform qualification.
