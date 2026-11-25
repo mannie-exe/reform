@@ -8,7 +8,11 @@ An independent deferred-missing file owner separately qualifies READ-only captur
 
 Two retained observer negatives distinguish authority from receipt creation: draft editing requires READ rather than WRITE, and admission can refuse before recording an operation handle. The final fixture checks actual permission feedback, unchanged accepted state, retained native text, and preview refusal. These corrections change no product behavior. `check build` passes in 63 seconds, including 137 tooling tests; the twelve original Maven inputs and four named source archives remain unchanged.
 
-Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.84 --client --isolated-scene controls --timeout 240`, selecting the other targets explicitly. This remains a standalone-form qualification. Composed-workspace custom controls, their theme/font reload behavior, arbitrary widget safety, and the complete 0.4 combined-consumer gate remain separate.
+The expanded fixture also passes all four native initial/reopen pairs with 45 checks per boot over the same dev.84 binaries. A composed workspace applies declared role colors and bold value styles to both native input and replacement. Home removes the input from the active tree; its old callback refuses while the actor and draft remain. Fresh document selection preserves text and selection, while explicit `NavigationBookmark` restoration separately restores editing focus. Actual German/Unicode reload and restoration retain the complete invalid-and-valid sibling draft, actor/actions, revision, focus, caret, selection, and styles. Repair and workspace closure leave the file unchanged. Both game families' localized frames were inspected.
+
+The retained workspace observer negatives distinguish cached state from current admission and fresh selection from bookmark restoration. Neither established a product defect. Four packaged consumer compilations and 44 runner tests pass after that fixture-only extension; the original Maven inputs remain unchanged.
+
+Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.84 --client --isolated-scene controls --timeout 240`, selecting the other targets explicitly. These standalone and composed-workspace cases do not certify arbitrary widgets, all language scripts or themes, physical IME, or the complete 0.4 combined-consumer gate.
 
 ## 0.4 development: inline native control bindings
 

@@ -52,6 +52,15 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
   private int rejectedCursor;
   private boolean readOnlyCaptured, rejectedRetained, reuseRetired;
   private SelectionBox retiredWidget;
+  private ClientEditingWorkflow workspace;
+  private java.util.concurrent.CompletableFuture<NavigationAttempt.Result> workspaceNavigation;
+  private ClientEditor<?> workspaceEditor;
+  private Object workspaceActions;
+  private NavigationBookmark workspaceBookmark;
+  private String originalLanguage;
+  private boolean originalUnicode, localeChanged, workspaceQualified;
+  private net.minecraft.locale.Language previousLanguage;
+  private java.util.concurrent.CompletableFuture<Void> resourceReload;
 
   private final RuntimeException factoryFailure =
       new IllegalStateException("controlled control factory failure");
@@ -629,12 +638,242 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
         stage = 22;
       }
       case 22 -> {
+        reuseRetired = false;
+        labelBinding = null;
+        distanceBinding = null;
+        var presentation =
+            ClientWorkspacePresentation.standard(
+                    new WorkspaceIdentity(
+                        design.inherent.reform.definition.DocumentId.parse(
+                            "reform_platform_example:custom_control_workspace"),
+                        Component.literal("Custom control workspace")))
+                .withTextStyle(
+                    ClientTheme.TextRole.VALUE,
+                    net.minecraft.network.chat.Style.EMPTY.withBold(true))
+                .withTheme(
+                    design.inherent.reform.presentation.ThemePatch.empty()
+                        .set(
+                            design.inherent.reform.presentation.ThemeValues.Role.TEXT, 0xffeeffdd));
+        workspace =
+            ClientEditingWorkflow.open(
+                parent,
+                List.of(
+                    PlatformWorkflowExample.settings()
+                        .form(
+                            Component.literal("Retained custom controls"),
+                            options(FormPresentation.EMPTY))),
+                presentation);
+        NativeScreens.open(client, workspace.screen());
+        workspaceNavigation =
+            workspace
+                .navigation()
+                .open(new ClientDestination.Document(PlatformWorkflowExample.DEFINITION.id()))
+                .completion()
+                .toCompletableFuture();
+        stage = 23;
+      }
+      case 23 -> {
+        if (!workspaceRevealed()) return false;
+        editor = workspace.editor(PlatformWorkflowExample.DEFINITION.id());
+        workspaceEditor = editor;
+        stage = 24;
+      }
+      case 24 -> {
+        if (editor.busy()
+            || labelBinding == null
+            || distanceBinding == null
+            || !labelBinding.state().editable()) return false;
+        check(
+            "composed native controls inherit declared theme before interaction",
+            labelBinding.state().theme().inputStyle().isBold()
+                && nativeTheme(replacement).inputStyle().isBold()
+                && ((NativeControlStyle) nested()).reform$theme().inputStyle().isBold());
+        workspaceActions = editor.form().editingActions();
+        nested().setValue("bad");
+        replacement.setValue("Workspace");
+        stage = 25;
+      }
+      case 25 -> {
+        if (editor.busy() || !raw(DISTANCE).equals("bad") || !raw(LABEL).equals("Workspace"))
+          return false;
+        check(
+            "composed field focus enters actual replacement",
+            editor.form().focusField(LABEL) && replacement.isFocused());
+        replacement.setCursorPosition(3);
+        replacement.setHighlightPos(1);
+        revision = revision();
+        retiredBinding = labelBinding;
+        workspaceBookmark = workspace.navigation().bookmark();
+        driver.capture("control-workspace-dirty.png", () -> stage = 26);
+        stage = 99;
+      }
+      case 26 -> {
+        workspaceNavigation =
+            workspace
+                .navigation()
+                .open(new ClientDestination.Home())
+                .completion()
+                .toCompletableFuture();
+        stage = 27;
+      }
+      case 27 -> {
+        if (!workspaceRevealed()) return false;
+        check(
+            "Home hides custom input without losing the retained owner or admitting old callbacks",
+            workspace.navigation().current().orElseThrow() instanceof ClientDestination.Home
+                && workspace.editor(PlatformWorkflowExample.DEFINITION.id()) == workspaceEditor
+                && editor.form().fieldControl(LABEL).isEmpty()
+                && refused(retiredBinding, "hidden")
+                && revision().equals(revision)
+                && raw(DISTANCE).equals("bad")
+                && raw(LABEL).equals("Workspace")
+                && Arrays.equals(before, Files.readAllBytes(file())));
+        workspaceNavigation =
+            workspace
+                .navigation()
+                .open(new ClientDestination.Document(PlatformWorkflowExample.DEFINITION.id()))
+                .completion()
+                .toCompletableFuture();
+        stage = 28;
+      }
+      case 28 -> {
+        if (!workspaceRevealed()
+            || editor.form().fieldControl(LABEL).isEmpty()
+            || !labelBinding.state().editable()) return false;
+        check(
+            "fresh document selection retains the same custom owner and native input",
+            workspace.editor(PlatformWorkflowExample.DEFINITION.id()) == workspaceEditor
+                && editor.form().editingActions() == workspaceActions
+                && revision().equals(revision)
+                && raw(DISTANCE).equals("bad")
+                && replacement.getValue().equals("Workspace")
+                && replacement.getCursorPosition() == 3
+                && replacement.anchor == 1
+                && !editor.canSubmit());
+        workspaceNavigation =
+            workspace.navigation().restore(workspaceBookmark).completion().toCompletableFuture();
+        stage = 281;
+      }
+      case 281 -> {
+        if (!workspaceRevealed()) return false;
+        check(
+            "explicit bookmark return restores actual custom input focus and selection",
+            replacement.isFocused()
+                && replacement.getCursorPosition() == 3
+                && replacement.anchor == 1
+                && revision().equals(revision));
+        originalLanguage = client.getLanguageManager().getSelected();
+        originalUnicode = client.options.forceUnicodeFont().get();
+        previousLanguage = net.minecraft.locale.Language.getInstance();
+        check(
+            "custom control locale fixture has actual German language resources",
+            client.getLanguageManager().getLanguages().containsKey("de_de"));
+        client.options.forceUnicodeFont().set(!originalUnicode);
+        client.getLanguageManager().setSelected("de_de");
+        localeChanged = true;
+        retiredBinding = labelBinding;
+        resourceReload = client.reloadResourcePacks();
+        stage = 29;
+      }
+      case 29 -> {
+        if (!resourceReload.isDone()
+            || editor.busy()
+            || editor.form().fieldControl(LABEL).isEmpty()
+            || !labelBinding.state().editable()) return false;
+        resourceReload.join();
+        check(
+            "native font and language reload preserve custom controls and complete invalid draft",
+            net.minecraft.locale.Language.getInstance() != previousLanguage
+                && client.isEnforceUnicode() != originalUnicode
+                && workspace.editor(PlatformWorkflowExample.DEFINITION.id()) == workspaceEditor
+                && editor.form().editingActions() == workspaceActions
+                && revision().equals(revision)
+                && raw(DISTANCE).equals("bad")
+                && raw(LABEL).equals("Workspace")
+                && replacement.getValue().equals("Workspace")
+                && replacement.getCursorPosition() == 3
+                && replacement.anchor == 1
+                && replacement.isFocused()
+                && labelBinding.state().theme().inputStyle().isBold()
+                && nativeTheme(replacement).inputStyle().isBold()
+                && !retiredBinding.state().editable()
+                && refused(retiredBinding, "pre-reload")
+                && !editor.canSubmit()
+                && Arrays.equals(before, Files.readAllBytes(file())));
+        driver.capture("control-workspace-localized.png", () -> stage = 30);
+        stage = 99;
+      }
+      case 30 -> {
+        previousLanguage = net.minecraft.locale.Language.getInstance();
+        client.options.forceUnicodeFont().set(originalUnicode);
+        client.getLanguageManager().setSelected(originalLanguage);
+        resourceReload = client.reloadResourcePacks();
+        stage = 31;
+      }
+      case 31 -> {
+        if (!resourceReload.isDone()
+            || editor.busy()
+            || editor.form().fieldControl(LABEL).isEmpty()
+            || !labelBinding.state().editable()) return false;
+        resourceReload.join();
+        check(
+            "restoring native language and font retains custom input caret and focus",
+            net.minecraft.locale.Language.getInstance() != previousLanguage
+                && client.isEnforceUnicode() == originalUnicode
+                && revision().equals(revision)
+                && raw(DISTANCE).equals("bad")
+                && replacement.getValue().equals("Workspace")
+                && replacement.getCursorPosition() == 3
+                && replacement.anchor == 1
+                && replacement.isFocused()
+                && labelBinding.state().theme().inputStyle().isBold());
+        localeChanged = false;
+        distanceBinding.editRaw("64");
+        labelBinding.editRaw("Example");
+        stage = 32;
+      }
+      case 32 -> {
+        if (editor.busy()
+            || !editor.canSubmit()
+            || !raw(DISTANCE).equals("64")
+            || !raw(LABEL).equals("Example")) return false;
+        check(
+            "composed custom control repair restores source values without save or owner replacement",
+            workspace.editor(PlatformWorkflowExample.DEFINITION.id()) == workspaceEditor
+                && editor.form().editingActions() == workspaceActions
+                && Arrays.equals(before, Files.readAllBytes(file())));
+        retiredBinding = labelBinding;
+        workspace.close();
+        check(
+            "workspace closure retires custom bindings without rewriting the source",
+            !workspace.isOpen()
+                && !editor.isOpen()
+                && !retiredBinding.state().editable()
+                && refused(retiredBinding, "closed workspace")
+                && Arrays.equals(before, Files.readAllBytes(file())));
+        workspaceQualified = true;
+        NativeScreens.open(client, parent);
+        stage = 33;
+      }
+      case 33 -> {
         return true;
       }
       case 99 -> {}
       default -> throw new AssertionError("Unexpected custom control stage");
     }
     return false;
+  }
+
+  private static ClientTheme nativeTheme(
+      net.minecraft.client.gui.components.AbstractWidget widget) {
+    return ((NativeControlStyle) widget).reform$theme();
+  }
+
+  private boolean workspaceRevealed() {
+    if (!workspaceNavigation.isDone()) return false;
+    if (workspaceNavigation.join().outcome() != NavigationAttempt.Outcome.REVEALED)
+      throw new AssertionError("Workspace navigation refused: " + workspaceNavigation.join());
+    return true;
   }
 
   private boolean overflowRefused() {
@@ -679,6 +918,7 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
     result.addProperty("initialActorVersion", initialVersion);
     result.addProperty("readOnlyCapture", readOnlyCaptured);
     result.addProperty("permissionRejectedNativeInput", rejectedRetained);
+    result.addProperty("workspaceThemeLocale", workspaceQualified);
     if (editor != null && editor.isOpen()) {
       result.addProperty(
           "actualActorVersion", editor.view().snapshot().map(value -> value.version()).orElse(-1L));
@@ -688,6 +928,14 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
       result.addProperty("writable", writable);
       result.addProperty("labelRaw", raw(LABEL));
       result.addProperty("nativeLabel", replacement.getValue());
+      result.addProperty("nativeCursor", replacement.getCursorPosition());
+      result.addProperty("nativeAnchor", replacement.anchor);
+      result.addProperty("nativeFocused", replacement.isFocused());
+      if (labelBinding != null)
+        result.addProperty("bindingEditable", labelBinding.state().editable());
+      if (workspace != null && workspace.isOpen())
+        result.addProperty(
+            "workspaceLocation", workspace.navigation().current().orElseThrow().toString());
       result.add(
           "operationReports",
           new com.google.gson.Gson()
@@ -717,7 +965,12 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
 
   @Override
   public void close() {
-    if (editor != null) editor.close();
+    if (workspace != null) workspace.close();
+    else if (editor != null) editor.close();
+    if (localeChanged) {
+      client.options.forceUnicodeFont().set(originalUnicode);
+      client.getLanguageManager().setSelected(originalLanguage);
+    }
     if (authorityContext != null) authorityContext.close();
     NativeScreens.open(client, parent);
   }
