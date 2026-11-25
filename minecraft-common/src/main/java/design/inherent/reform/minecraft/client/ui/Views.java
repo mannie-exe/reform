@@ -2,7 +2,9 @@ package design.inherent.reform.minecraft.client.ui;
 
 import design.inherent.reform.presentation.ui.UiCommand;
 import design.inherent.reform.presentation.ui.UiRead;
+import design.inherent.reform.value.ValueType;
 import java.util.List;
+import java.util.function.Function;
 import net.minecraft.network.chat.Component;
 
 /** Standard descriptions; the native host supplies scope, layout, input, and retirement. */
@@ -34,6 +36,26 @@ public final class Views {
 
   public static <P> ViewSpec component(String key, UiComponent<P> factory, P props) {
     return new ViewSpec.Component<>(key, factory, props);
+  }
+
+  public static <I> ViewSpec forEach(
+      String key,
+      UiRead<List<I>> items,
+      ValueType<I> itemType,
+      int maximumRows,
+      Function<I, String> itemKey,
+      ViewSpec.RowFactory<I> row) {
+    return new ViewSpec.ForEach<>(key, items, itemType, maximumRows, itemKey, row);
+  }
+
+  public static ViewSpec repeat(
+      String key, UiRead<Integer> count, int from, int maximumSlots, ViewSpec.SlotFactory row) {
+    return new ViewSpec.Repeat(key, count, from, maximumSlots, row);
+  }
+
+  public static ViewSpec switchOn(
+      String key, List<ViewSpec.Case> cases, ViewSpec.Branch fallback, boolean exclusive) {
+    return new ViewSpec.Switch(key, cases, fallback, exclusive);
   }
 
   private Views() {}

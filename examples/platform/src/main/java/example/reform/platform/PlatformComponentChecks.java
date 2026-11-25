@@ -14,6 +14,7 @@ import design.inherent.reform.value.ValueTypes;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -50,6 +51,11 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private CompletableFuture<NavigationAttempt.Result> navigation;
   private ExternalScreen external;
   private UiLocal<Integer> externalState;
+  private UiLocal<List<String>> activeRows;
+  private final HashMap<String, UiLocal<Integer>> rowState = new HashMap<>();
+  private final HashMap<String, UiScope> rowScopes = new HashMap<>();
+  private int rowFactories, rowCloses;
+  private boolean keyedRowsVerified;
   private Button retired;
   private Path settingsPath;
   private byte[] settingsBytes;
@@ -103,6 +109,13 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
 
   private ViewSpec counter(UiScope scope, UiRead<Integer> count, IntConsumer edit) {
     var expanded = scope.local(OPEN, true);
+    var itemType = ValueTypes.text(128);
+    var items =
+        scope.local(
+            new ViewStateKey<>(
+                DocumentId.parse("fixture:semantic_rows"), ValueTypes.list(itemType, 4)),
+            List.of("a:First", "b:Second"));
+    activeRows = items;
     UiCommand<Void> toggle =
         new UiCommand<>() {
           public UiAvailability availability() {
@@ -151,7 +164,53 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
                   return Views.text(
                       "body", text("Detail"), text("This branch has its own lifetime."));
                 },
-                branch -> Views.text("body", text("Detail hidden"), Component.empty()))));
+                branch -> Views.text("body", text("Detail hidden"), Component.empty())),
+            Views.forEach(
+                "rows",
+                items,
+                itemType,
+                4,
+                s -> s.substring(0, 1),
+                (row, key, item, index) -> {
+                  rowFactories++;
+                  row.onRetire(() -> rowCloses++);
+                  var local = row.local(COUNT, 0);
+                  rowState.put(key, local);
+                  rowScopes.put(key, row);
+                  return Views.action(
+                      "value",
+                      UiText.from(item, Component::literal),
+                      UiText.from(local, n -> text("Row count " + n)),
+                      increment(local, local::replace));
+                }),
+            Views.action(
+                "move",
+                UiText.of(text("Move rows")),
+                UiText.of(Component.empty()),
+                localAction(() -> items.replace(List.of("b:Updated", "a:First")))),
+            Views.action(
+                "break",
+                UiText.of(text("Break rows")),
+                UiText.of(Component.empty()),
+                localAction(() -> items.replace(List.of("a:First", "a:Duplicate")))),
+            Views.action(
+                "repair",
+                UiText.of(text("Repair rows")),
+                UiText.of(Component.empty()),
+                localAction(() -> items.replace(List.of("a:First", "b:Second"))))));
+  }
+
+  private UiCommand<Void> localAction(Runnable action) {
+    return new UiCommand<>() {
+      public UiAvailability availability() {
+        return UiAvailability.READY;
+      }
+
+      public UiActionResult invoke(Void ignored) {
+        action.run();
+        return new UiActionResult.Applied();
+      }
+    };
   }
 
   private void press(Screen screen, String label) {
@@ -253,6 +312,40 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
             frameworkState.value() == 1
                 && workflow.documents().stream()
                     .noneMatch(ClientEditingWorkflow.DocumentState::opened));
+        press(workflow.screen(), "a:First");
+        var oldRow = button(workflow.screen(), "a:First");
+        press(workflow.screen(), "Move rows");
+        check(
+            "keyed move updates native order and values without recreating row state",
+            rowFactories == 2
+                && rowState.get("a").snapshot().value() == 1
+                && button(workflow.screen(), "b:Updated").getY()
+                    < button(workflow.screen(), "a:First").getY());
+        press(workflow.screen(), "Break rows");
+        var blockedRow = button(workflow.screen(), "a:First");
+        check(
+            "duplicate keys retain earlier rows disabled with an available repair control",
+            !blockedRow.active && button(workflow.screen(), "Repair rows").active);
+        NativeClientProbe.pressRetired(oldRow);
+        NativeClientProbe.pressRetired(blockedRow);
+        check(
+            "retired and currently disabled row callbacks cannot bypass list failure",
+            rowState.get("a").snapshot().value() == 1);
+        press(workflow.screen(), "Repair rows");
+        check(
+            "actual native repair restores retained keyed rows without a new factory",
+            rowFactories == 2
+                && rowState.get("a").snapshot().value() == 1
+                && button(workflow.screen(), "a:First").active
+                && button(workflow.screen(), "b:Second").active);
+        // A cached callback must observe a newly changed input even before the next host update.
+        var notYetRefreshed = button(workflow.screen(), "a:First");
+        activeRows.replace(List.of("b:Updated"));
+        NativeClientProbe.pressRetired(notYetRefreshed);
+        check(
+            "dispatch refresh rejects a row removed before the next host turn",
+            !rowScopes.get("a").isOpen() && rowFactories == 2);
+        keyedRowsVerified = true;
         beforeProjection = projections;
         beforeFrames = PlatformFrameObservations.sequence();
         stage = 3;
@@ -464,6 +557,9 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     report.addProperty("passed", complete);
     report.addProperty("sourceUnchanged", complete);
     report.addProperty("retiredUiDataZero", complete);
+    report.addProperty("keyedRowsVerified", complete && keyedRowsVerified);
+    report.addProperty("keyedRowFactories", rowFactories);
+    report.addProperty("keyedRowCloses", rowCloses);
     report.add("checks", checks.deepCopy());
     report.addProperty("frameworkFactories", frameworkCreates);
     report.addProperty("frameworkCloses", frameworkCloses);

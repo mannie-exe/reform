@@ -1,6 +1,6 @@
 # Mounted native components
 
-The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. The first implemented declarations are text, actions, columns, sections, nested components, and conditional branches. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Keyed collections, owner field/input bindings, picker/completion, broader layout/modifiers, and preview orchestration remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
+The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. Implemented declarations include text, actions, columns, sections, nested components, conditional and keyed case branches, keyed collections, and bounded decorative repetition. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Owner field/input bindings, loading/error boundaries, picker/completion, broader layout/modifiers, and preview orchestration remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
 
 ## One declaration and two hosts
 
@@ -16,6 +16,20 @@ UiComponent<String> body = (scope, purpose) -> {
 ```
 
 Descriptions carry stable sibling keys, not widgets or another document draft. Duplicate sibling keys refuse. Each mounted node owns an independent child scope; native reflow retains that logical identity while replacing attachments. Conditional factories are lazy. Switching a condition admits the new branch before retiring the old branch and its local state. Ancestor state remains retained. Factory failure attempts partial cleanup and does not close the borrowed host. A later pure-projection failure retains earlier content with disabled actions and useful feedback until a valid update recovers. Unavailable inputs, including permission/context loss, clear previously disclosed rows instead; they are not an offer to keep showing stale private values. Recovery uses the same admitted source and component lifetime.
+
+### Keyed and positional flow
+
+`Views.forEach(key, items, itemType, maximumRows, itemKey, row)` borrows a cached immutable list read and the exact element `ValueType`. The explicit finite row allowance is presentation admission, not a restriction on the domain or a silent truncation policy. `itemKey` returns a stable nonempty string of at most 256 characters. The complete key vector and element snapshots are validated before row reconciliation. Duplicate, missing, or over-budget keys retain the previous row offer with feedback and disabled row actions; controls outside that collection remain available for repair.
+
+The row factory receives its own scope, stable key, a current item read, and a current logical-index read. It runs once for that key's admitted lifetime. Move/update retains the scope and its local state while publishing current item/index observations. Removing a key retires its scope; reintroducing it creates a fresh lifetime. Do not capture the initial item as if it were permanently current. Row data lives in an internal child scope, so runtime state keys do not collide with authored row locals.
+
+A failed row factory releases partial state and offers a disabled-free feedback row in that same slot, without shifting later values. `ClientUiMount.rowFailures()` exposes the mounted collection identity, row key, stable `ui.row_failed` report, and actual cause. A new source observation retries failed rows while preserving healthy siblings. Cleanup failures remain failures; they are not recast as successful fallback retirement. If the admitted source becomes unavailable, copied item/index state and row scopes retire before recovery. No earlier private row is retained as an available offer.
+
+`Views.switchOn(key, cases, fallback, exclusive)` selects cases in authored order using cached boolean reads. Each case has a unique stable key and a lazy branch factory. Ordinary mode selects the first match; exclusive mode refuses ambiguity before changing the current branch. Switching retires old branch state and preserves ancestor state.
+
+`Views.repeat(key, count, from, maximumSlots, row)` is for fixed positional decoration or skeleton slots. Counts must be nonnegative and within the explicit finite allowance; the declared index range must not overflow. Surviving slots retain their scopes, removed slots retire, and an unavailable/invalid count withdraws the slot offer with feedback. Use keyed `forEach`, not positional repetition, for editable persistent rows.
+
+Native action dispatch refreshes admitted cached observations before invocation. A callback from a replaced attachment or a removed/blocked row cannot become current merely because it still holds a button reference. This freshness check does not replace actual owner authority checks.
 
 ### Framework body
 

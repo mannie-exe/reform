@@ -269,6 +269,10 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                  or (native["semanticComponents"].get("passed") is True
                      and native["semanticComponents"].get("sourceUnchanged") is True
                      and native["semanticComponents"].get("retiredUiDataZero") is True
+                     and native["semanticComponents"].get("keyedRowsVerified") is True
+                     and all(type(native["semanticComponents"].get(key)) is int
+                             and native["semanticComponents"][key] == 4
+                             for key in ("keyedRowFactories", "keyedRowCloses"))
                      and all(type(native["semanticComponents"].get(key)) is int
                              and native["semanticComponents"][key] == 1
                              for key in ("frameworkFactories", "frameworkCloses", "externalFactories", "externalCloses"))

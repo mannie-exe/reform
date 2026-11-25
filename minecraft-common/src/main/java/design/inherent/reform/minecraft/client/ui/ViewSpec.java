@@ -3,9 +3,11 @@ package design.inherent.reform.minecraft.client.ui;
 import design.inherent.reform.presentation.ui.UiCommand;
 import design.inherent.reform.presentation.ui.UiRead;
 import design.inherent.reform.presentation.ui.UiScope;
+import design.inherent.reform.value.ValueType;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 
 /** Immutable component declarations. These carry no widget, active draft, or native resource. */
 public sealed interface ViewSpec {
@@ -55,6 +57,69 @@ public sealed interface ViewSpec {
       Objects.requireNonNull(test);
       Objects.requireNonNull(yes);
       Objects.requireNonNull(no);
+    }
+  }
+
+  @FunctionalInterface
+  interface RowFactory<I> {
+    ViewSpec build(UiScope scope, String key, UiRead<I> item, UiRead<Integer> index);
+  }
+
+  /** Keyed values, not positional widget recycling. Row reads always describe the current item. */
+  record ForEach<I>(
+      String key,
+      UiRead<List<I>> items,
+      ValueType<I> itemType,
+      int maximumRows,
+      Function<I, String> itemKey,
+      RowFactory<I> row)
+      implements ViewSpec {
+    public ForEach {
+      key = identity(key);
+      Objects.requireNonNull(items);
+      Objects.requireNonNull(itemType);
+      Objects.requireNonNull(itemKey);
+      Objects.requireNonNull(row);
+      if (maximumRows < 1)
+        throw new IllegalArgumentException("A finite positive row allowance is required");
+    }
+  }
+
+  @FunctionalInterface
+  interface SlotFactory {
+    ViewSpec build(UiScope scope, int slot);
+  }
+
+  /** Fixed positional decoration, not identity for editable domain rows. */
+  record Repeat(String key, UiRead<Integer> count, int from, int maximumSlots, SlotFactory row)
+      implements ViewSpec {
+    public Repeat {
+      key = identity(key);
+      Objects.requireNonNull(count);
+      Objects.requireNonNull(row);
+      if (maximumSlots < 1)
+        throw new IllegalArgumentException("A positive slot allowance is required");
+      Math.addExact(from, maximumSlots - 1);
+    }
+  }
+
+  record Case(String key, UiRead<Boolean> test, Branch content) {
+    public Case {
+      key = identity(key);
+      Objects.requireNonNull(test);
+      Objects.requireNonNull(content);
+    }
+  }
+
+  record Switch(String key, List<Case> cases, Branch fallback, boolean exclusive)
+      implements ViewSpec {
+    public Switch {
+      key = identity(key);
+      cases = List.copyOf(cases);
+      Objects.requireNonNull(fallback);
+      var keys = new HashSet<String>();
+      for (var entry : cases)
+        if (!keys.add(entry.key())) throw new IllegalArgumentException("Duplicate switch case key");
     }
   }
 

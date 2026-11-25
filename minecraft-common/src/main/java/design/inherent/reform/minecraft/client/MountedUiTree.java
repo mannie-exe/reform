@@ -1,15 +1,22 @@
 package design.inherent.reform.minecraft.client;
 
+import design.inherent.reform.definition.DocumentId;
 import design.inherent.reform.minecraft.client.ui.UiComponent;
+import design.inherent.reform.minecraft.client.ui.UiRowFailure;
 import design.inherent.reform.minecraft.client.ui.ViewSpec;
+import design.inherent.reform.minecraft.client.ui.Views;
 import design.inherent.reform.owner.PolicyRefusal;
+import design.inherent.reform.presentation.ViewStateKey;
 import design.inherent.reform.presentation.ui.UiActionResult;
 import design.inherent.reform.presentation.ui.UiAvailability;
 import design.inherent.reform.presentation.ui.UiLimits;
 import design.inherent.reform.presentation.ui.UiRead;
 import design.inherent.reform.presentation.ui.UiScope;
 import design.inherent.reform.validation.ValidationReport;
+import design.inherent.reform.value.ValueTypes;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -54,6 +61,193 @@ final class MountedUiTree implements AutoCloseable {
 
   record Row(Node node, Kind kind, Component label, Component body, UiAvailability availability) {}
 
+  private record Keyed<I>(String key, ViewStateKey.Snapshot<I> value) {}
+
+  private record Vector<I>(long revision, List<Keyed<I>> items) {}
+
+  private final class ForMount<I> {
+    private final Node owner;
+    private final ViewSpec.ForEach<I> spec;
+    private final ViewStateKey<I> itemKey;
+    private final ViewStateKey<Integer> indexKey;
+    private LinkedHashMap<String, Entry> entries = new LinkedHashMap<>();
+    private long revision = -1;
+    private RuntimeException problem;
+
+    private final class Entry {
+      final UiScope scope;
+      final UiLocalPair data;
+      final Node node;
+      final UiRowFailure failure;
+
+      private final class UiLocalPair {
+        final design.inherent.reform.presentation.ui.UiLocal<I> item;
+        final design.inherent.reform.presentation.ui.UiLocal<Integer> index;
+
+        UiLocalPair(UiScope scope, Keyed<I> current, int position) {
+          item = scope.local(itemKey, current.value().value());
+          index = scope.local(indexKey, position);
+        }
+      }
+
+      Entry(Keyed<I> current, int position) {
+        var admitted = owner.scope.child();
+        Node content;
+        UiLocalPair values;
+        UiRowFailure problem = null;
+        try {
+          values = new UiLocalPair(admitted.child(), current, position);
+          content =
+              new Node(
+                  spec.row().build(admitted, current.key(), values.item, values.index), admitted);
+        } catch (RuntimeException failed) {
+          cleanup(admitted, failed);
+          // A cleanup failure cannot be recast as a usable fallback or a successful retirement.
+          if (failed.getSuppressed().length != 0) throw failed;
+          var report =
+              new PolicyRefusal(
+                      "ui.row_failed",
+                      "This item could not be shown. Update the list to try again.")
+                  .report();
+          problem = new UiRowFailure(owner.id, current.key(), report, Optional.of(failed));
+          admitted = owner.scope.child();
+          values = null;
+          try {
+            content =
+                new Node(
+                    Views.text(
+                        "unavailable",
+                        Component.translatableWithFallback(
+                            "reform.ui.item_unavailable", "Item unavailable"),
+                        report(report)),
+                    admitted);
+          } catch (RuntimeException | Error fallbackFailed) {
+            fallbackFailed.addSuppressed(failed);
+            cleanup(admitted, fallbackFailed);
+            throw fallbackFailed;
+          }
+        } catch (Error failed) {
+          cleanup(admitted, failed);
+          throw failed;
+        }
+        scope = admitted;
+        data = values;
+        node = content;
+        failure = problem;
+      }
+    }
+
+    ForMount(Node owner, ViewSpec.ForEach<I> spec) {
+      this.owner = owner;
+      this.spec = spec;
+      itemKey = new ViewStateKey<>(DocumentId.parse("reform:ui_row_item"), spec.itemType());
+      indexKey =
+          new ViewStateKey<>(
+              DocumentId.parse("reform:ui_row_index"),
+              ValueTypes.integer(0, spec.maximumRows() - 1));
+    }
+
+    void reconcile() {
+      try {
+        applyVector();
+        problem = null;
+      } catch (RuntimeException failed) {
+        problem = failed;
+      }
+    }
+
+    private void applyVector() {
+      final Vector<I> source;
+      try {
+        source =
+            root.project(
+                List.of(spec.items()),
+                () -> {
+                  var observation = spec.items().snapshot();
+                  if (observation
+                      instanceof
+                      design.inherent.reform.presentation.ui.UiObservation.Unavailable<List<I>>
+                          missing) throw new ReadUnavailable(missing);
+                  if (observation.revision() == revision) return new Vector<I>(revision, List.of());
+                  var values = observation.value();
+                  if (values.size() > spec.maximumRows())
+                    throw new PolicyRefusal(
+                        "ui.row_limit", "This list exceeds its declared view allowance.");
+                  var keys = new HashSet<String>();
+                  var next = new ArrayList<Keyed<I>>(values.size());
+                  for (var item : values) {
+                    String key = spec.itemKey().apply(item);
+                    if (key == null || key.isBlank() || key.length() > 256)
+                      throw new PolicyRefusal(
+                          "ui.row_key", "Every item needs a bounded stable key.");
+                    if (!keys.add(key))
+                      throw new PolicyRefusal(
+                          "ui.duplicate_row_key", "This list contains duplicate item keys.");
+                    next.add(new Keyed<>(key, itemKey.capture(item)));
+                  }
+                  return new Vector<>(observation.revision(), List.copyOf(next));
+                });
+      } catch (ReadUnavailable missing) {
+        var retired = entries;
+        entries = new LinkedHashMap<>();
+        owner.children.clear();
+        revision = -1;
+        for (var entry : retired.values()) cleanup(entry.scope, missing);
+        throw missing;
+      }
+      if (source.revision() == revision) return;
+      var next = new LinkedHashMap<String, Entry>();
+      var created = new ArrayList<Entry>();
+      try {
+        for (int i = 0; i < source.items().size(); i++) {
+          var current = source.items().get(i);
+          var entry = entries.get(current.key());
+          if (entry == null || entry.failure != null) {
+            entry = new Entry(current, i);
+            created.add(entry);
+          }
+          next.put(current.key(), entry);
+        }
+        root.update(
+            () -> {
+              int position = 0;
+              for (var current : source.items()) {
+                var entry = next.get(current.key());
+                if (entry.data != null) {
+                  entry.data.item.replace(current.value().value());
+                  entry.data.index.replace(position);
+                }
+                position++;
+              }
+            });
+      } catch (RuntimeException | Error failed) {
+        for (var entry : created) cleanup(entry.scope, failed);
+        throw failed;
+      }
+      var previous = entries;
+      entries = next;
+      owner.children.clear();
+      for (var entry : next.values()) owner.children.add(entry.node);
+      revision = source.revision();
+      Throwable retirement = null;
+      for (var old : previous.entrySet()) {
+        if (next.get(old.getKey()) == old.getValue()) continue;
+        try {
+          old.getValue().scope.close();
+        } catch (RuntimeException | Error failed) {
+          if (retirement == null) retirement = failed;
+          else if (retirement != failed) retirement.addSuppressed(failed);
+        }
+      }
+      if (retirement instanceof RuntimeException failed) throw failed;
+      if (retirement instanceof Error failed) throw failed;
+    }
+
+    void failures(List<UiRowFailure> into) {
+      for (var entry : entries.values()) if (entry.failure != null) into.add(entry.failure);
+    }
+  }
+
   final class Node {
     final ViewSpec spec;
     final UiScope scope;
@@ -61,8 +255,9 @@ final class MountedUiTree implements AutoCloseable {
     final List<Node> children = new ArrayList<>();
     UiScope branchScope;
     Node branch;
-    Boolean condition;
+    String selectedBranch;
     UiActionResult lastResult;
+    ForMount<?> repeated;
 
     Node(ViewSpec spec, UiScope parent) {
       this.spec = Objects.requireNonNull(spec);
@@ -73,6 +268,39 @@ final class MountedUiTree implements AutoCloseable {
           case ViewSpec.Column column -> construct(column.children());
           case ViewSpec.Section section -> construct(section.children());
           case ViewSpec.Component<?> component -> children.add(component(component));
+          case ViewSpec.ForEach<?> each -> repeated = new ForMount<>(this, each);
+          case ViewSpec.Repeat repeat -> {
+            var type =
+                ValueTypes.integer(
+                    repeat.from(), Math.addExact(repeat.from(), repeat.maximumSlots() - 1));
+            var indices =
+                scope.derive(
+                    new ViewStateKey<>(
+                        DocumentId.parse("reform:ui_repeat_slots"),
+                        ValueTypes.list(type, repeat.maximumSlots())),
+                    List.of(repeat.count()),
+                    inputs -> {
+                      int count = inputs.value(repeat.count());
+                      if (count < 0 || count > repeat.maximumSlots())
+                        throw new PolicyRefusal(
+                            "ui.slot_limit",
+                            "The decorative slot count exceeds its declared allowance.");
+                      var values = new ArrayList<Integer>(count);
+                      for (int i = 0; i < count; i++) values.add(repeat.from() + i);
+                      return List.copyOf(values);
+                    });
+            repeated =
+                new ForMount<>(
+                    this,
+                    new ViewSpec.ForEach<>(
+                        repeat.key(),
+                        indices,
+                        type,
+                        repeat.maximumSlots(),
+                        Object::toString,
+                        (slot, key, item, index) ->
+                            repeat.row().build(slot, item.snapshot().value())));
+          }
           default -> {}
         }
       } catch (RuntimeException | Error failed) {
@@ -90,6 +318,7 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     void reconcile() {
+      if (repeated != null) repeated.reconcile();
       if (spec instanceof ViewSpec.Show show) {
         boolean selected =
             root.project(
@@ -102,25 +331,69 @@ final class MountedUiTree implements AutoCloseable {
                           missing) throw new ReadUnavailable(missing);
                   return current.value();
                 });
-        if (condition == null || condition != selected) {
-          var nextScope = scope.child();
-          final Node next;
-          try {
-            next = new Node((selected ? show.yes() : show.no()).build(nextScope), nextScope);
-            next.reconcile();
-          } catch (RuntimeException | Error failed) {
-            cleanup(nextScope, failed);
-            throw failed;
-          }
-          var previous = branchScope;
-          branchScope = nextScope;
-          branch = next;
-          condition = selected;
-          if (previous != null) previous.close();
-        }
-        branch.reconcile();
+        selectBranch(selected ? "yes" : "no", selected ? show.yes() : show.no());
+      } else if (spec instanceof ViewSpec.Switch choice) {
+        var dependencies = new ArrayList<UiRead<?>>();
+        for (var candidate : choice.cases()) add(dependencies, List.of(candidate.test()));
+        var selected =
+            root.project(
+                dependencies,
+                () -> {
+                  ViewSpec.Case first = null;
+                  for (var candidate : choice.cases()) {
+                    var current = candidate.test().snapshot();
+                    if (current
+                        instanceof
+                        design.inherent.reform.presentation.ui.UiObservation.Unavailable<Boolean>
+                            missing) throw new ReadUnavailable(missing);
+                    if (!current.value()) continue;
+                    if (first != null)
+                      throw new PolicyRefusal(
+                          "ui.ambiguous_case", "More than one exclusive view case is selected.");
+                    first = candidate;
+                    if (!choice.exclusive()) break;
+                  }
+                  return first;
+                });
+        selectBranch(
+            selected == null ? "" : selected.key(),
+            selected == null ? choice.fallback() : selected.content());
       }
+      if (branch != null) branch.reconcile();
       for (var child : children) child.reconcile();
+    }
+
+    private void selectBranch(String key, ViewSpec.Branch factory) {
+      if (Objects.equals(selectedBranch, key)) return;
+      var nextScope = scope.child();
+      final Node next;
+      try {
+        next = new Node(factory.build(nextScope), nextScope);
+        next.reconcile();
+      } catch (RuntimeException | Error failed) {
+        cleanup(nextScope, failed);
+        throw failed;
+      }
+      var previous = branchScope;
+      branchScope = nextScope;
+      branch = next;
+      selectedBranch = key;
+      if (previous != null) previous.close();
+    }
+
+    void failures(List<UiRowFailure> into) {
+      if (repeated != null) repeated.failures(into);
+      for (var child : children) child.failures(into);
+      if (branch != null) branch.failures(into);
+    }
+
+    Optional<RuntimeException> collectionFailure() {
+      if (repeated != null && repeated.problem != null) return Optional.of(repeated.problem);
+      for (var child : children) {
+        var failed = child.collectionFailure();
+        if (failed.isPresent()) return failed;
+      }
+      return branch == null ? Optional.empty() : branch.collectionFailure();
     }
 
     void inputs(List<UiRead<?>> into) {
@@ -142,6 +415,23 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     void rows(List<Row> into) {
+      rows(into, UiAvailability.READY);
+    }
+
+    void rows(List<Row> into, UiAvailability inherited) {
+      var childrenAvailability = inherited;
+      if (repeated != null && repeated.problem != null) {
+        var diagnosis = diagnostic(repeated.problem);
+        childrenAvailability = new UiAvailability(false, diagnosis);
+        into.add(
+            new Row(
+                this,
+                Kind.TEXT,
+                Component.translatableWithFallback(
+                    "reform.ui.list_unavailable", "This list could not update."),
+                report(diagnosis),
+                UiAvailability.READY));
+      }
       switch (spec) {
         case ViewSpec.Text text ->
             into.add(
@@ -158,7 +448,9 @@ final class MountedUiTree implements AutoCloseable {
                     Kind.ACTION,
                     action.label().resolve(),
                     action.help().resolve(),
-                    Objects.requireNonNull(action.command().availability())));
+                    inherited.available()
+                        ? Objects.requireNonNull(action.command().availability())
+                        : inherited));
         case ViewSpec.Section section ->
             into.add(
                 new Row(
@@ -169,8 +461,8 @@ final class MountedUiTree implements AutoCloseable {
                     UiAvailability.READY));
         default -> {}
       }
-      for (var child : children) child.rows(into);
-      if (branch != null) branch.rows(into);
+      for (var child : children) child.rows(into, childrenAvailability);
+      if (branch != null) branch.rows(into, childrenAvailability);
       if (spec instanceof ViewSpec.Section)
         into.add(
             new Row(this, Kind.CLOSE, Component.empty(), Component.empty(), UiAvailability.READY));
@@ -292,11 +584,19 @@ final class MountedUiTree implements AutoCloseable {
   }
 
   Optional<RuntimeException> failure() {
-    return Optional.ofNullable(failure);
+    if (failure != null) return Optional.of(failure);
+    return tree == null ? Optional.empty() : tree.collectionFailure();
   }
 
   Optional<UiActionResult> lastAction() {
     return Optional.ofNullable(lastAction);
+  }
+
+  List<UiRowFailure> rowFailures() {
+    root.requireCurrent();
+    var failures = new ArrayList<UiRowFailure>();
+    tree.failures(failures);
+    return List.copyOf(failures);
   }
 
   void append(
@@ -340,6 +640,11 @@ final class MountedUiTree implements AutoCloseable {
                           () -> {
                             if (!root.isOpen() || attachment != token || !row.node().scope.isOpen())
                               return;
+                            if (refresh(false)) {
+                              if (root.isOpen()) changed.run();
+                              return;
+                            }
+                            if (!row.availability().available()) return;
                             panel.restoreFocus(row.node().id);
                             focusForAction.run();
                             invoke(row.node());
@@ -378,6 +683,13 @@ final class MountedUiTree implements AutoCloseable {
     return report.issues().isEmpty()
         ? Component.empty()
         : Component.literal(report.issues().getFirst().fallback());
+  }
+
+  private static ValidationReport diagnostic(RuntimeException failed) {
+    if (failed instanceof ReadUnavailable missing) return missing.observation.report();
+    if (failed instanceof PolicyRefusal refused) return refused.report();
+    return new PolicyRefusal("ui.collection_failed", "This list could not update. Try again.")
+        .report();
   }
 
   private static void cleanup(UiScope scope, Throwable cause) {

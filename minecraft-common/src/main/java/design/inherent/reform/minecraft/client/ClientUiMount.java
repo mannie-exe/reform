@@ -1,6 +1,7 @@
 package design.inherent.reform.minecraft.client;
 
 import design.inherent.reform.minecraft.client.ui.UiComponent;
+import design.inherent.reform.minecraft.client.ui.UiRowFailure;
 import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.ui.UiActionResult;
 import design.inherent.reform.presentation.ui.UiLimits;
@@ -73,6 +74,10 @@ public final class ClientUiMount extends NativeViewport implements AutoCloseable
 
   public Optional<UiActionResult> lastAction() {
     return tree.lastAction();
+  }
+
+  public List<UiRowFailure> rowFailures() {
+    return tree.rowFailures();
   }
 
   /** Explicit cached-observation/update boundary; never call this from paint or measurement. */
