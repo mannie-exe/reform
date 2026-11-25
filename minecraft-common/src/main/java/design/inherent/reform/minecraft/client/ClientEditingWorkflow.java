@@ -4211,7 +4211,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     @Override
     public Component getNarrationMessage() {
       if (!isOpen()) return title;
-      var message = title.copy().append("\n").append(scopeStatus());
+      var message = title.copy();
+      // Operation narration already includes this exact context under its named action.
+      if (!(metadata() instanceof OperationView<?>)) message.append("\n").append(scopeStatus());
       if (notice != null) message.append("\n").append(notice);
       if (metadata() != null) message.append("\n").append(metadata().getNarrationMessage());
       else if (activeTask != null) message.append("\n").append(activeTask.getNarrationMessage());

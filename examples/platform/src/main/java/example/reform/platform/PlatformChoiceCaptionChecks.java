@@ -188,6 +188,68 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
       }
       case 5 -> {
         enter(new ClientDestination.Document(DEFINITION.id()));
+        stage = 43;
+      }
+      case 43 -> {
+        if (!revealed() || editor.busy() || !editor.canSubmit()) return false;
+        check(
+            "submission review starts from the actual current field",
+            editor.form().focusField(MODE_PATH));
+        var review = button(workflow.screen(), "Review changes…");
+        if (!review.active) return false;
+        click(workflow.screen(), review);
+        stage = 44;
+      }
+      case 44 -> {
+        if (workflow.inspection().flatMap(ClientInspection::reviewedInput).isEmpty()) return false;
+        var text = rendered();
+        check(
+            "submission review keeps selected typed values ahead of the full change list",
+            workflow.inspection().orElseThrow().selectedField().orElseThrow().equals(MODE_PATH)
+                && text.contains("Whole document, including settings outside the current section.")
+                && text.indexOf("Draft at capture") >= 0
+                && text.indexOf("Draft at capture") < text.indexOf(" → ")
+                && text.contains("On (\"ON\")")
+                && workflow.editor(DEFINITION.id()) == editor
+                && Arrays.equals(original, Files.readAllBytes(source)));
+        capture("choice-submission.png", 45);
+      }
+      case 45 -> {
+        enter(new ClientDestination.Document(DEFINITION.id()));
+        stage = 40;
+      }
+      case 40 -> {
+        if (!revealed() || editor.busy()) return false;
+        workflow.reviewAll();
+        stage = 41;
+      }
+      case 41 -> {
+        var batch = workflow.batchInspection().flatMap(ClientBatchInspection::reviewedInput);
+        if (batch.isEmpty()) return false;
+        var value =
+            batch.orElseThrow().entries().stream()
+                .filter(entry -> entry.document().equals(DEFINITION.id()))
+                .findFirst()
+                .orElseThrow()
+                .review()
+                .entries()
+                .stream()
+                .filter(entry -> entry.path().equals(MODE_PATH))
+                .findFirst()
+                .orElseThrow();
+        check(
+            "actual complete Batch view projects typed choice captions without another owner or write",
+            value.baseline().equals("\"AUTO\"")
+                && value.draft().equals("\"ON\"")
+                && value.choiceValues().draft().orElseThrow().fallback().equals("On")
+                && rendered().contains("On (\"ON\")")
+                && workflow.editor(DEFINITION.id()) == editor
+                && editor.form().editingActions() == actions
+                && Arrays.equals(original, Files.readAllBytes(source)));
+        capture("choice-batch.png", 42);
+      }
+      case 42 -> {
+        enter(new ClientDestination.Document(DEFINITION.id()));
         stage = 6;
       }
       case 6 -> {

@@ -563,6 +563,9 @@ public final class PlatformTaskChecks {
             "actual mounted task root narrates the same provider cause",
             workflow.screen().getNarrationMessage().getString().contains(cause));
         check.accept(
+            "task narration separates already punctuated notices from the failure cause",
+            !workflow.screen().getNarrationMessage().getString().contains(".."));
+        check.accept(
             "refused preview preserves dirty owner and allocates no graphics",
             prepares.get() == 1
                 && actual == workflow.editor(DEFINITION.id())

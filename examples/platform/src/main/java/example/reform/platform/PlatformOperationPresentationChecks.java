@@ -264,6 +264,17 @@ final class PlatformOperationPresentationChecks {
         check.accept(
             "named action dispatches once and exposes the actual pending operation",
             starts == 1 && !state.terminal());
+        var narration = operation().getNarrationMessage().getString();
+        check.accept(
+            "pending operation narration keeps its context once without placeholder counts",
+            narration.split(
+                            java.util.regex.Pattern.quote("Read values without saving settings."),
+                            -1)
+                        .length
+                    == 2
+                && !narration.contains("Cancellation requested: false")
+                && !narration.contains("running: 0 ")
+                && !narration.contains(".."));
         result.complete("Values inspected. No settings were saved.");
         stage = 3;
       }
@@ -277,6 +288,12 @@ final class PlatformOperationPresentationChecks {
                 && state.state() == OperationSnapshot.State.COMPLETED
                 && screen.getNarrationMessage().getString().contains("No settings were saved")
                 && !screen.getNarrationMessage().getString().contains(identity.toString()));
+        var terminalNarration = screen.getNarrationMessage().getString();
+        check.accept(
+            "terminal operation narration omits unreported progress and repeated punctuation",
+            !terminalNarration.contains("running: 0 ")
+                && !terminalNarration.contains("Cancellation requested: false")
+                && !terminalNarration.contains(".."));
         check.accept(
             "wide operation separates summary from captured details", taskPanels(screen) == 2);
         check.accept(

@@ -274,23 +274,10 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
       boolean hasSummary = !summary.getString().isEmpty();
       if (hasSummary) panel.row("primary:result", text("result", "Result"), summary);
       panel.row("primary:state", text("state", "Actual state"), stateLabel(observed.state()));
-      var progress = observed.progress();
-      if (!observed.terminal()
-          || progress.completed() > 0
-          || progress.total().isPresent()
-          || !progress.unit().isEmpty())
-        panel.row(
-            "primary:progress",
-            text("progress", "Reported progress"),
-            text(
-                "progress_detail",
-                "%s: %s %s · total %s",
-                progress.phase(),
-                progress.completed(),
-                progress.unit(),
-                progress.total().isPresent()
-                    ? Long.toString(progress.total().getAsLong())
-                    : text("unknown_total", "unknown").getString()));
+      reportedProgress()
+          .ifPresent(
+              progress ->
+                  panel.row("primary:progress", text("progress", "Reported progress"), progress));
       if (!hasSummary) {
         panel.row(
             "primary:effects",
@@ -568,28 +555,48 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
     };
   }
 
+  /** The same reported facts serve visible progress and narration; no placeholder counts. */
+  private Optional<Component> reportedProgress() {
+    if (observed == null) return Optional.empty();
+    var progress = observed.progress();
+    boolean quantity =
+        progress.completed() > 0 || progress.total().isPresent() || !progress.unit().isBlank();
+    if (!quantity) {
+      if (observed.terminal()
+          || progress.phase().isBlank()
+          || progress.phase().equalsIgnoreCase(observed.state().name())) return Optional.empty();
+      return Optional.of(Component.literal(progress.phase()));
+    }
+    Component count =
+        progress.total().isPresent()
+            ? text(
+                "progress_count_total",
+                "%s of %s",
+                progress.completed(),
+                progress.total().getAsLong())
+            : Component.literal(Long.toString(progress.completed()));
+    var message = Component.empty();
+    if (!progress.phase().isBlank()) message.append(progress.phase()).append(": ");
+    message.append(count);
+    if (!progress.unit().isBlank()) message.append(" ").append(progress.unit());
+    return Optional.of(message);
+  }
+
   @Override
   public Component getNarrationMessage() {
-    var message =
-        title
-            .copy()
-            .append(". ")
-            .append(contextLabel)
-            .append(". ")
-            .append(
-                observed == null
-                    ? text("unavailable", "This operation is unavailable to the current context.")
-                    : text(
-                        "narration_summary",
-                        "State %s. %s: %s %s. Cancellation requested: %s.",
-                        stateLabel(observed.state()),
-                        observed.progress().phase(),
-                        observed.progress().completed(),
-                        observed.progress().unit(),
-                        observed.cancellationRequested()));
-    if (outcome != null) message.append(". ").append(outcome.summary());
-    if (technical && observed != null)
-      message.append(". ").append(observed.operation() + " " + observed.id());
+    var message = title.copy();
+    if (!contextLabel.getString().isBlank()) message.append("\n").append(contextLabel);
+    if (observed == null)
+      return message
+          .append("\n")
+          .append(text("unavailable", "This operation is unavailable to the current context."));
+    message.append("\n").append(stateLabel(observed.state()));
+    reportedProgress().ifPresent(progress -> message.append("\n").append(progress));
+    if (observed.cancellationRequested()
+        && observed.state() != OperationSnapshot.State.CANCELLATION_REQUESTED)
+      message.append("\n").append(text("cancellation_recorded", "Cancellation was requested."));
+    if (outcome != null) message.append("\n").append(outcome.summary());
+    if (technical) message.append("\n").append(observed.operation() + " " + observed.id());
     return message;
   }
 

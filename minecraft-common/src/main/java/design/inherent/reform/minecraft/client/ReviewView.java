@@ -396,7 +396,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
       if (!contextLabel.getString().isEmpty()) fieldPanel.row(Component.empty(), contextLabel);
     }
     chrome.mountActions(this::addRenderableWidget, fieldPanel);
-    narration = title.copy().append(". ").append(contextLabel);
+    narration = title.copy().append("\n").append(contextLabel);
     if (review != null) content();
     else panel.row(text("source", "Source and values"), status());
     if (notice != null) panel.row("detail:notice", text("notice", "View status"), notice);
@@ -489,7 +489,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
           "primary:no_matches",
           text("no_matches", "No matching fields"),
           text("selection_retained", "The selected capture remains visible."));
-    if (submission.isPresent()) changes();
+    if (submission.isPresent()) changeScope();
     if (!current())
       fieldPanel.row(
           "primary:stale",
@@ -508,7 +508,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
             bounds -> {
               var title = text("numeric_bounds", "Numeric bounds");
               panel.row("numeric_bounds", title, bounds);
-              narration = narration.copy().append(". ").append(title).append(": ").append(bounds);
+              narration = narration.copy().append("\n").append(title).append(": ").append(bounds);
             });
     value(
         Value.BASELINE,
@@ -539,7 +539,8 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
                     text(
                         "application_unknown",
                         "No application boundary is declared for this field. Saving does not certify live effects.")));
-    narration = narration.copy().append(". ").append(label(selected));
+    narration = narration.copy().append("\n").append(label(selected));
+    if (submission.isPresent()) changedValues();
     sourceFacts();
     diagnosis();
   }
@@ -551,7 +552,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
         "detail:capture",
         text("basis", "Capture"),
         text("capture_help", "Refresh this view to capture the draft again."));
-    narration = narration.copy().append(". ").append(source);
+    narration = narration.copy().append("\n").append(source);
     var toggle =
         indexButton(
             sourceDetails
@@ -638,7 +639,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
               basis.source().location().ifPresent(location -> value.append("\n").append(location));
               var caption = text("recipe_basis", "Draft recipe basis");
               panel.row("detail:recipe-basis", caption, value);
-              narration = narration.copy().append(". ").append(caption).append(". ").append(value);
+              narration = narration.copy().append("\n").append(caption).append("\n").append(value);
             });
   }
 
@@ -727,7 +728,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
     narration =
         narration
             .copy()
-            .append(". ")
+            .append("\n")
             .append(title)
             .append(": ")
             .append(
@@ -784,7 +785,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
     callback.accept(target);
   }
 
-  private void changes() {
+  private void changeScope() {
     var comparison = review.comparison();
     panel.heading(text("changes", "Changes in this capture"));
     panel.row(
@@ -806,7 +807,10 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
     panel.row(text("summary", "Compared with the observed baseline"), summary);
     submitBlocked()
         .ifPresent(reason -> panel.row(text("before_submit", "Before submitting"), reason));
-    var changes = comparison.changes();
+  }
+
+  private void changedValues() {
+    var changes = review.comparison().changes();
     int pages = Math.max(1, (changes.size() + ISSUE_PAGE - 1) / ISSUE_PAGE);
     changePage = Math.clamp(changePage, 0, pages - 1);
     if (pages > 1) {
@@ -1233,7 +1237,7 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
 
   @Override
   public Component getNarrationMessage() {
-    return narration.copy().append(". ").append(status());
+    return narration.copy().append("\n").append(status());
   }
 
   @Override

@@ -536,23 +536,23 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
 
   @Override
   public Component getNarrationMessage() {
-    var message = title.copy().append(". ").append(sourceLabel()).append(". ").append(status());
-    inspectedTitle().ifPresent(label -> message.append(". ").append(label));
-    if (searchNotice != null) message.append(". ").append(searchNotice);
-    if (lookupNotice != null) message.append(". ").append(lookupNotice);
+    var message = title.copy().append("\n").append(sourceLabel()).append("\n").append(status());
+    inspectedTitle().ifPresent(label -> message.append("\n").append(label));
+    if (searchNotice != null) message.append("\n").append(searchNotice);
+    if (lookupNotice != null) message.append("\n").append(lookupNotice);
     selection
         .resolution()
         .filter(ignored -> selection.current())
         .ifPresent(
             result ->
                 message
-                    .append(". ")
+                    .append("\n")
                     .append(
                         Component.translatableWithFallback(
                             "reform.reference.status."
                                 + result.status().name().toLowerCase(java.util.Locale.ROOT),
                             readable(result.status().name())))
-                    .append(". ")
+                    .append("\n")
                     .append(
                         result.status() == ReferenceResolution.Status.RESOLVED
                             ? ReferencePreview.format(result.preview())
