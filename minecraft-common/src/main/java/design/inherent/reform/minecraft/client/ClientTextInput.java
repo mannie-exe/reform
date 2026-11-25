@@ -102,13 +102,7 @@ public final class ClientTextInput implements AutoCloseable {
     this.view = view;
     scope = parent.child();
     try {
-      var key =
-          new UiReadKey<State>(
-              DocumentId.parse("reform:native_text_input"),
-              SnapshotPolicy.immutable(),
-              SnapshotContext.Limits.CONFIGURATION,
-              parent.limits().maximumStateBytes(),
-              value -> 128L + 2L * value.raw().length());
+      var key = readKey(parent.limits().maximumStateBytes());
       scope.onRetire(
           () -> {
             this.view = null;
@@ -141,6 +135,19 @@ public final class ClientTextInput implements AutoCloseable {
       }
       throw failed;
     }
+  }
+
+  static UiReadKey<State> readKey(long allowance) {
+    return new UiReadKey<>(
+        DocumentId.parse("reform:native_text_input"),
+        SnapshotPolicy.immutable(),
+        SnapshotContext.Limits.CONFIGURATION,
+        allowance,
+        value ->
+            256L
+                + 2L * value.raw().length()
+                + 2L * value.stamp().draft.sourceRevision().length()
+                + 2L * value.stamp().draft.document().toString().length());
   }
 
   public static ClientTextInput bind(UiScope scope, ClientEditor<?> editor, FieldPath path) {
