@@ -12,7 +12,7 @@ Download the combined `reform-0.3.0-mc<game>-<loader>.jar` for your exact game a
 
 ## Development
 
-The development branch targets 0.4.0 presentation, navigation, and preview APIs. These builds are unpublished; trials need the exact candidate and hashes from their handoff. Use the 0.3.0 release tag for released examples. Implemented contracts live in [presentation](docs/development/presentation.md) and [preview preparation](docs/development/previews.md); qualification and remaining limits live in [verification](docs/development/verification.md).
+The development branch contains the locally qualified, unpublished 0.4.0 presentation, navigation, and preview APIs. Trials need the exact candidate and hashes from their handoff. Use the 0.3.0 release tag for released examples. Implemented contracts live in [presentation](docs/development/presentation.md) and [preview preparation](docs/development/previews.md); the final library and Lootr: Styled qualification and measured limits live in [verification](docs/development/verification.md). Publication remains deferred.
 
 Launch Gradle with JDK 25 and have JDK 21 available for the selected toolchains. Python 3.11 or newer runs repository tools. The wrapper, target matrix and version catalog define the build. [mise](https://mise.jdx.dev/) supplies the pinned Markdown formatter and workflow checker.
 
