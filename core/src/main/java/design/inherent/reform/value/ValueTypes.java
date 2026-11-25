@@ -206,6 +206,12 @@ public final class ValueTypes {
     return new ReferenceType<>(element, source);
   }
 
+  /** One owner-declared choice label mapping; codecs and snapshots stay unchanged. */
+  public static <T> ValueType<T> choiceDisplay(
+      ValueType<T> element, design.inherent.reform.presentation.ChoiceDisplay display) {
+    return new ChoiceType<>(element, display);
+  }
+
   public static <N extends Number> ValueType<N> numericDisplay(
       ValueType<N> element, design.inherent.reform.presentation.NumericDisplay display) {
     return new NumericType<>(element, display);

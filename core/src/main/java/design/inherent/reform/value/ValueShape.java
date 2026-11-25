@@ -33,8 +33,19 @@ public sealed interface ValueShape
       NumericDomain domain,
       int maximumLength,
       List<String> choices,
-      java.util.Optional<design.inherent.reform.presentation.NumericDisplay> numericDisplay)
+      java.util.Optional<design.inherent.reform.presentation.NumericDisplay> numericDisplay,
+      java.util.Optional<design.inherent.reform.presentation.ChoiceDisplay> choiceDisplay)
       implements ValueShape {
+    /** Preserve numeric and plain scalar declarations without choice labels. */
+    public Scalar(
+        ScalarKind kind,
+        NumericDomain domain,
+        int maximumLength,
+        List<String> choices,
+        java.util.Optional<design.inherent.reform.presentation.NumericDisplay> numericDisplay) {
+      this(kind, domain, maximumLength, choices, numericDisplay, java.util.Optional.empty());
+    }
+
     public Scalar(
         ScalarKind kind,
         BigDecimal minimum,
@@ -67,6 +78,15 @@ public sealed interface ValueShape
       Objects.requireNonNull(domain).requireRepresentable(kind);
       choices = List.copyOf(choices);
       Objects.requireNonNull(numericDisplay);
+      Objects.requireNonNull(choiceDisplay);
+      if (choiceDisplay.isPresent()) {
+        if (kind != ScalarKind.CHOICE)
+          throw new IllegalArgumentException("Choice display requires a declared choice scalar");
+        for (var caption : choiceDisplay.orElseThrow().captions())
+          if (!choices.contains(caption.value()))
+            throw new IllegalArgumentException(
+                "Caption names an undeclared choice: " + caption.value());
+      }
       if (numericDisplay.isPresent()
           && (kind == ScalarKind.BOOLEAN || kind == ScalarKind.TEXT || kind == ScalarKind.CHOICE))
         throw new IllegalArgumentException("Numeric display metadata needs a numeric scalar");
