@@ -80,6 +80,8 @@ WORKSPACE_CAPTURES = {
     'platform-loaded-texture.png',
     'platform-operation-small.png',
     'platform-operation-wide.png',
+    'platform-operation-close-pending.png',
+    'platform-operation-close-terminal.png',
     'platform-shell-canvas-failure.png',
     'platform-shell-document.png',
     'platform-shell-home.png',

@@ -101,6 +101,8 @@ class OptionalAdmissionTests(unittest.TestCase):
 class CaptureRetentionTests(unittest.TestCase):
     def test_complete_declared_workspace_roles_survive_retention(self):
         names = sorted(platform.WORKSPACE_CAPTURES)
+        self.assertIn("platform-operation-close-pending.png", names)
+        self.assertIn("platform-operation-close-terminal.png", names)
         with tempfile.TemporaryDirectory() as directory:
             fixture, reports = Path(directory) / "fixture", Path(directory) / "reports"
             fixture.mkdir()
