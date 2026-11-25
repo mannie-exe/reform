@@ -49,6 +49,7 @@ final class PlatformBatchFailureChecks {
   private CompletableFuture<Void> pending;
   private DocumentBatch.Review review;
   private OperationHandle<DocumentBatch.Result> submission;
+  private OperationHandle<DocumentBatch.Result> repeat;
   private Path firstPath, secondPath;
   private byte[] secondSource;
   private int mode, stage;
@@ -294,6 +295,23 @@ final class PlatformBatchFailureChecks {
                   && !summary.startsWith("Saved")
                   && result.outcomes().get(1).operation().isEmpty());
         }
+        var ownerOperation = result.outcomes().getFirst().operation().orElseThrow().id().toString();
+        String ordinary = String.join("\n", measuredText(current));
+        check.accept(
+            "Stopped Batch keeps raw identities out of ordinary outcome feedback: " + mode,
+            !ordinary.contains(result.review().toString()) && !ordinary.contains(ownerOperation));
+        click(current, button(current, "Show technical details"));
+        String technical = String.join("\n", measuredText(current));
+        check.accept(
+            "Stopped Batch technical disclosure retains exact reviewed and actual operation IDs: "
+                + mode,
+            technical.contains(result.review().toString()) && technical.contains(ownerOperation));
+        click(current, button(current, "Hide technical details"));
+        check.accept(
+            "Hiding Batch technical facts preserves same result and write counts: " + mode,
+            screen.submission().orElseThrow() == submission
+                && firstWrites.get() == 2
+                && secondWrites.get() == 1);
         stage = 9;
         if (capture == null) leaveResult();
         else capture.accept("batch-edge-" + mode + ".png", this::leaveResult);
@@ -306,10 +324,16 @@ final class PlatformBatchFailureChecks {
             screen.reviewedInput().orElseThrow() == review
                 && !button(screen, "Save reviewed documents").active
                 && screen.submission().orElseThrow() == submission);
-        var repeat = batch.commit(EntryPoint.GUI, review);
+        repeat = batch.commit(EntryPoint.GUI, review);
+        stage = 6;
+      }
+      case 6 -> {
+        if (!repeat.snapshot().terminal()) return false;
         check.accept(
             "Rejected repeat never rewrites saved or uncertain source: " + mode,
             repeat.snapshot().state() == OperationSnapshot.State.REFUSED
+                && repeat.snapshot().report().issues().stream()
+                    .anyMatch(issue -> issue.code().equals("batch.review"))
                 && firstWrites.get() == 2
                 && secondWrites.get() == 1);
         first.close();
