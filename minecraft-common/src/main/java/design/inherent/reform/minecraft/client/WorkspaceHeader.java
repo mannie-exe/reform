@@ -220,7 +220,8 @@ final class WorkspaceHeader implements AutoCloseable {
                                 .append(": ")
                                 .append(location))
                     .build();
-            button.setTooltip(Tooltip.create(location));
+            // The custom narration already contains this complete path.
+            button.setTooltip(Tooltip.create(location, null));
             panel.actions("workspace:location", button);
           }
           case CANVAS -> {
@@ -288,7 +289,7 @@ final class WorkspaceHeader implements AutoCloseable {
                             .append(full))
                 .build();
         button.active = !leaf;
-        button.setTooltip(Tooltip.create(full));
+        button.setTooltip(Tooltip.create(full, null));
         buttons.add(button);
         x += button.getWidth() + gap;
       }
@@ -308,7 +309,7 @@ final class WorkspaceHeader implements AutoCloseable {
                           .append(": ")
                           .append(full))
               .build();
-      button.setTooltip(Tooltip.create(full));
+      button.setTooltip(Tooltip.create(full, null));
       buttons.add(button);
     }
     return List.copyOf(buttons);

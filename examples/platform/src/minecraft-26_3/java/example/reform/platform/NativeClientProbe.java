@@ -136,6 +136,11 @@ final class NativeClientProbe {
     SDLVideo.SDL_SetWindowSize(client.getWindow().handle(), width, height);
   }
 
+  /** Logical screen reflow only; this does not resize the OS window. */
+  static void resizeScreen(Screen screen, int width, int height) {
+    screen.resize(width, height);
+  }
+
   static void reflow(Minecraft client) {
     client.resizeGui();
   }

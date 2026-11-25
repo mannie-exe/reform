@@ -83,6 +83,24 @@ final class PlatformShellChecks implements AutoCloseable {
         .resolve("config/reform_platform_example/workflow_preferences.json");
   }
 
+  private void checkLocationNarration(String offer) {
+    var locations =
+        widgets(workflow.screen()).stream()
+            .map(widget -> NativeClientProbe.narration(widget::updateNarration))
+            .filter(
+                message ->
+                    message.startsWith("Location: ") || message.startsWith("Current location: "))
+            .toList();
+    check.accept(
+        "actual " + offer + " location controls narrate the full path exactly once: " + locations,
+        !locations.isEmpty()
+            && locations.stream()
+                .allMatch(
+                    message ->
+                        message.contains("Home / ")
+                            && message.indexOf("Home / ") == message.lastIndexOf("Home / ")));
+  }
+
   private ClientWorkspacePresentation presentation(boolean fail) {
     var header =
         new HeaderComposition(
@@ -305,6 +323,12 @@ final class PlatformShellChecks implements AutoCloseable {
         var distanceControl = opened.form().fieldControl(distance);
         if (distanceControl.isEmpty()
             || !widgets(workflow.screen()).contains(distanceControl.orElseThrow())) return false;
+        checkLocationNarration("initial");
+        int width = workflow.screen().width, height = workflow.screen().height;
+        NativeClientProbe.resizeScreen(workflow.screen(), 320, 240);
+        checkLocationNarration("compact logical reflow");
+        NativeClientProbe.resizeScreen(workflow.screen(), width, height);
+        checkLocationNarration("restored");
         click(workflow.screen(), button(workflow.screen(), "Appearance"));
         click(workflow.screen(), button(workflow.screen(), "Distance tuning"));
         var orderedNavigation =

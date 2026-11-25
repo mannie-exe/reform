@@ -110,6 +110,11 @@ final class NativeClientProbe {
     GLFW.glfwSetWindowSize(client.getWindow().getWindow(), width, height);
   }
 
+  /** Logical screen reflow only; this does not resize the OS window. */
+  static void resizeScreen(Screen screen, int width, int height) {
+    screen.resize(Minecraft.getInstance(), width, height);
+  }
+
   static void reflow(Minecraft client) {
     client.resizeDisplay();
   }
