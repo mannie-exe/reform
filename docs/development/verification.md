@@ -1,5 +1,11 @@
 # Verification
 
+## 0.4 development: review order and reported progress
+
+Candidate `0.4.0-dev.89` at `7c2e9ea` passes the four-target check/build, including 137 tooling checks. Its operation and caption scenes each pass initial/reopen pairs on all four targets: 45 operation and 15 caption assertions per boot, with sixteen normal exits and removed fixtures. Actual single-document submission review keeps scope and changed-field count first, followed by the selected comparison and then the full change list. Native complete review retains typed captions and canonical values without saving.
+
+Visible and narrated operation progress share the same reported facts. Automatic empty zero-count placeholders are omitted; meaningful quantities, cancellation requests, outcome, cause, and technical details remain. An actual dev.88 negative caught a descriptive phase being dropped after completion. Dev.89 retains that phase without repeating the operation context or adding punctuation between complete narration sections. The exact negative, original inputs, actual runtime archives, reports, and source snapshots are retained. One Fabric 26.3 pair recovered only its recorded example README from the matching immutable Git blob after a documentation edit; all executable sources passed strict byte checks. This is scoped operation/review qualification, with task narration and final combined acceptance remaining separate.
+
 ## 0.4 development: optional field slots
 
 Candidate `0.4.0-dev.87` at `48b3cd7` passes the four-target build, including 137 tooling checks. Its independent entry-slot fixture passes thirteen assertions per boot on every minimum target, with eight normal exits and removed fixtures. The same actual owner and native input combine an eyebrow, leading artwork, alternative text, background, and a native control adapter. Duplicate declarations and unusable offers refuse before factory entry. Real 320×240 resize and return retain the invalid count, valid dirty label, revision, caret, selection, and focused input, without recreating either graphic or writing the source.
