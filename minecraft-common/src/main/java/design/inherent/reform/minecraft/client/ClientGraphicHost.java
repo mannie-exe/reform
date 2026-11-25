@@ -426,7 +426,7 @@ public final class ClientGraphicHost implements AutoCloseable {
       return new NativeGraphicWidget(description) {
         @Override
         protected Component graphicNarration() {
-          return getMessage().copy().append(". ").append(label(state));
+          return getMessage().copy().append(". ").append(statusNarration());
         }
 
         @Override
@@ -487,6 +487,14 @@ public final class ClientGraphicHost implements AutoCloseable {
           }
         }
       };
+    }
+
+    Component statusNarration() {
+      var message = Component.literal(label(state));
+      var problems = report.and(cleanupReport);
+      if (!problems.issues().isEmpty())
+        message.append(". ").append(ClientStatusScreen.reason(problems, Component.empty()));
+      return message;
     }
 
     private void closeGraphic() {

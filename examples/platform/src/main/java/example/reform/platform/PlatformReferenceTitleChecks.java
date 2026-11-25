@@ -353,13 +353,36 @@ final class PlatformReferenceTitleChecks {
       case 5 -> {
         var popup = NativeScreens.current(client);
         if (!popup.getClass().getSimpleName().equals("ReferenceScreen")) return false;
-        replace(popup, input(popup, "Reference ID"), "minecraft:oak_planks");
-        press(button(popup, "Inspect"));
-        next("inspect a real registry choice through the shared browser");
+        replace(popup, input(popup, "Search"), "minecraft:oak_planks");
+        press(button(popup, "Search"));
+        stage = 55;
+      }
+      case 55 -> {
+        var popup = NativeScreens.current(client);
+        var choice =
+            widgets(popup).stream()
+                .filter(Button.class::isInstance)
+                .map(Button.class::cast)
+                .filter(value -> value.getMessage().getString().equals("minecraft:oak_planks"))
+                .findFirst();
+        if (choice.isEmpty() || !choice.orElseThrow().active) return false;
+        var selected = choice.orElseThrow();
+        String narration = NativeNarrationProbe.read(selected);
+        check(
+            "field chooser narrates its choice title once rather than repeating its tooltip",
+            narration.indexOf("minecraft:oak_planks")
+                == narration.lastIndexOf("minecraft:oak_planks"));
+        press(selected);
+        stage = 6;
+        progress.accept("inspect a real registry choice through the shared browser");
       }
       case 6 -> {
         var popup = NativeScreens.current(client);
         if (!button(popup, "Use selection").active) return false;
+        check(
+            "field chooser keeps the inspected title in its measured detail heading",
+            measuredText(popup).stream().anyMatch(value -> value.equals("minecraft:oak_planks"))
+                && popup.getNarrationMessage().getString().contains("minecraft:oak_planks"));
         chooserLookup = observed(popup, "lookup");
         chooserSearch = observed(popup, "search");
         NativeClientProbe.size(client, chooserWidth, chooserHeight);

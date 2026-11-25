@@ -4214,6 +4214,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var message = title.copy().append("\n").append(scopeStatus());
       if (notice != null) message.append("\n").append(notice);
       if (metadata() != null) message.append("\n").append(metadata().getNarrationMessage());
+      else if (activeTask != null) message.append("\n").append(activeTask.getNarrationMessage());
       boolean completeScope =
           closeDecision != null
               || reviewChoices != null

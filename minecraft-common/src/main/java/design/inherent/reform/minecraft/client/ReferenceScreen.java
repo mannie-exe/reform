@@ -41,6 +41,7 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   private ReferenceSelection.Search search;
   private ReferenceSelection.Lookup<V> lookup;
   private Component notice, searchNotice, lookupNotice;
+  private ReferencePage.Choice<String> inspectedChoice;
   private boolean started, staging, returning, closed, wasCurrent = true;
 
   ReferenceScreen(
@@ -143,7 +144,9 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
         searchButton);
     panel.endGroup();
     appendChoices(panel);
-    details.beginGroup("detail:selection", text("selection", "Selected value"));
+    rememberInspectedChoice();
+    details.beginGroup(
+        "detail:selection", inspectedTitle().orElseGet(() -> text("selection", "Selected value")));
     selection
         .resolution()
         .filter(ignored -> selection.current())
@@ -250,12 +253,10 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
                           key.setValue(choice.key());
                           resolve(choice.key());
                         });
-                inspect.setTooltip(
-                    net.minecraft.client.gui.components.Tooltip.create(
-                        Component.literal(
-                            choice.label().equals(choice.key())
-                                ? choice.label()
-                                : choice.label() + "\n" + choice.key())));
+                if (!choice.label().equals(choice.key()))
+                  inspect.setTooltip(
+                      net.minecraft.client.gui.components.Tooltip.create(
+                          Component.literal(choice.key())));
                 target.row(
                     "primary:choice:" + choice.key(),
                     Component.empty(),
@@ -274,6 +275,34 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
               }
             });
     target.endGroup();
+  }
+
+  private void rememberInspectedChoice() {
+    if (!selection.current()) {
+      inspectedChoice = null;
+      return;
+    }
+    var selected = selection.selectedKey();
+    if (selected.isEmpty()) {
+      inspectedChoice = null;
+      return;
+    }
+    var id = selected.orElseThrow();
+    if (inspectedChoice != null && !inspectedChoice.key().equals(id)) inspectedChoice = null;
+    selection
+        .page()
+        .filter(page -> page.availability() == ReferencePage.Availability.READY)
+        .flatMap(
+            page -> page.choices().stream().filter(choice -> choice.key().equals(id)).findFirst())
+        .ifPresent(choice -> inspectedChoice = choice);
+  }
+
+  private Optional<Component> inspectedTitle() {
+    return inspectedChoice != null
+            && selection.current()
+            && selection.selectedKey().filter(inspectedChoice.key()::equals).isPresent()
+        ? Optional.of(Component.literal(inspectedChoice.label()))
+        : Optional.empty();
   }
 
   private void rememberPresentation() {
@@ -417,6 +446,7 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
       var next = refresh.get();
       selection.close();
       selection = next;
+      inspectedChoice = null;
       search = null;
       lookup = null;
       notice = null;
@@ -507,6 +537,7 @@ final class ReferenceScreen<T, V> extends NativeFormScreen {
   @Override
   public Component getNarrationMessage() {
     var message = title.copy().append(". ").append(sourceLabel()).append(". ").append(status());
+    inspectedTitle().ifPresent(label -> message.append(". ").append(label));
     if (searchNotice != null) message.append(". ").append(searchNotice);
     if (lookupNotice != null) message.append(". ").append(lookupNotice);
     selection

@@ -686,7 +686,11 @@ final class ReferenceTaskView<T, V> extends FormView implements AutoCloseable {
 
   @Override
   public Component getNarrationMessage() {
-    return text("catalogue", "Catalogue").copy().append(". ").append(notice);
+    var message = text("catalogue", "Catalogue").copy();
+    if (!notice.getString().isEmpty()) message.append(". ").append(notice);
+    if (graphicFailure != null) message.append(". ").append(reason(graphicFailure));
+    if (graphicView != null) message.append(". ").append(graphicView.statusNarration());
+    return message;
   }
 
   @Override

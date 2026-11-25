@@ -67,6 +67,7 @@ public final class PlatformTaskChecks {
       sourceCloses = new AtomicInteger(),
       providerCloses = new AtomicInteger(),
       prepares = new AtomicInteger();
+  private final AtomicBoolean refuseNextPreview = new AtomicBoolean(true);
   private final AtomicReference<Config> captured = new AtomicReference<>();
   private final UUID resources = UUID.randomUUID(), generation = UUID.randomUUID();
   private ClientEditingWorkflow workflow;
@@ -288,6 +289,15 @@ public final class PlatformTaskChecks {
                                           "Task provider worker ran on client");
                                     var value = request.input().candidate().value();
                                     captured.set(value);
+                                    if (refuseNextPreview.compareAndSet(true, false))
+                                      return new GraphicScenePreparation.Refused(
+                                          new design.inherent.reform.validation.ValidationReport(
+                                              List.of(
+                                                  design.inherent.reform.validation.Issue.error(
+                                                      "fixture.preview.refused",
+                                                      FieldPath.ROOT,
+                                                      "The selected material needs a tint; choose a different profile.")),
+                                              true));
                                     return new GraphicScenePreparation.Ready(
                                         new GraphicSceneData(
                                             request.stamp(),
@@ -534,8 +544,48 @@ public final class PlatformTaskChecks {
                         focus(workflow.screen(), prepare));
                     suppress = true;
                     click(workflow.screen(), prepare);
-                    stage = 7;
+                    stage = 40;
                   });
+            });
+      }
+      case 40 -> {
+        if (graphic().snapshot().state() != ClientGraphicHost.State.REFUSED) return false;
+        String cause = "The selected material needs a tint; choose a different profile.";
+        var viewport =
+            widgets(workflow.screen()).stream()
+                .filter(widget -> widget.getMessage().getString().equals("Draft preview"))
+                .findFirst()
+                .orElseThrow();
+        check.accept(
+            "refused viewport narrates the actual actionable provider cause",
+            NativeClientProbe.narration(viewport::updateNarration).contains(cause));
+        check.accept(
+            "actual mounted task root narrates the same provider cause",
+            workflow.screen().getNarrationMessage().getString().contains(cause));
+        check.accept(
+            "refused preview preserves dirty owner and allocates no graphics",
+            prepares.get() == 1
+                && actual == workflow.editor(DEFINITION.id())
+                && actual.dirty()
+                && graphic()
+                    .snapshot()
+                    .report()
+                    .issues()
+                    .getFirst()
+                    .code()
+                    .equals("fixture.preview.refused")
+                && workflow.graphics(LIMITS, 2).nativeOwnership().bytes() == 0
+                && workflow.graphics(LIMITS, 2).retainedOutput().bytes() == 0
+                && Arrays.equals(bytes, source()));
+        stage = 20;
+        capture.accept(
+            "task-preview-refused.png",
+            () -> {
+              var prepare = button(workflow.screen(), "Prepare draft preview");
+              if (!focus(workflow.screen(), prepare))
+                throw new AssertionError("Recovery prepare is unreachable");
+              click(workflow.screen(), prepare);
+              stage = 7;
             });
       }
       case 7 -> {
@@ -545,7 +595,7 @@ public final class PlatformTaskChecks {
         draws = 0;
         check.accept(
             "task preview captures complete unsaved owner rather than highlighted replacement",
-            prepares.get() == 1
+            prepares.get() == 2
                 && captured.get().equals(new Config("fixture:blue", "fixture:inherited"))
                 && Arrays.equals(bytes, source()));
         check.accept(
@@ -591,7 +641,7 @@ public final class PlatformTaskChecks {
             "leaving task retires actual preview and preserves dirty editor without recompile",
             actual == workflow.editor(DEFINITION.id())
                 && actual.dirty()
-                && prepares.get() == 1
+                && prepares.get() == 2
                 && Arrays.equals(bytes, source()));
         pending =
             workflow
@@ -610,7 +660,7 @@ public final class PlatformTaskChecks {
                 && workflow.editor(DEFINITION.id()) == actual
                 && sources.get() == 1
                 && providers.get() == 1
-                && prepares.get() == 1);
+                && prepares.get() == 2);
         discarding = true;
         try {
           workflow.discard(DEFINITION.id());
@@ -666,7 +716,7 @@ public final class PlatformTaskChecks {
         check.accept(
             "changing subject invalidates old preview without preparing another",
             graphic().snapshot().state() == ClientGraphicHost.State.STALE
-                && prepares.get() == 1
+                && prepares.get() == 2
                 && ready.state().closing());
         workflow.showHome();
         stage = 9;
@@ -733,7 +783,7 @@ public final class PlatformTaskChecks {
                 && providers.get() == 2
                 && raw("models").equals("fixture:default")
                 && raw("artwork").equals("fixture:default")
-                && prepares.get() == 1
+                && prepares.get() == 2
                 && references.isOpen()
                 && Arrays.equals(bytes, source()));
         actual = fresh;
@@ -782,7 +832,7 @@ public final class PlatformTaskChecks {
         check.accept(
             "narrow preview reflow retains the exact prepared scene without compilation",
             ((GraphicPreparation.Ready) graphic().preparation().orElseThrow()).graphic() == ready
-                && prepares.get() == 1);
+                && prepares.get() == 2);
         stage = 20;
         capture.accept(
             "task-preview-small.png",
@@ -807,9 +857,9 @@ public final class PlatformTaskChecks {
         if (!previewFocused()) return false;
         assertViewportVisible();
         check.accept(
-            "return from narrow preserves image focus and one complete unsaved preparation",
+            "return from narrow preserves image focus and the same complete unsaved preparation",
             ((GraphicPreparation.Ready) graphic().preparation().orElseThrow()).graphic() == ready
-                && prepares.get() == 1
+                && prepares.get() == 2
                 && Arrays.equals(bytes, source()));
         stage = 20;
         capture.accept(
@@ -920,7 +970,7 @@ public final class PlatformTaskChecks {
         "Show preview reveals the full native viewport in its actual pane",
         widget.getY() >= bounds.y()
             && widget.getBottom() <= bounds.y() + bounds.height()
-            && prepares.get() == 1);
+            && prepares.get() == 2);
   }
 
   private void assertPatternPixels(String filename) {

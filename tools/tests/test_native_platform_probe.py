@@ -16,7 +16,8 @@ class OptionalAdmissionTests(unittest.TestCase):
         for scene, options in [("unknown", {"client": True}), ("operations", {}),
                                ("operations", {"client": True, "workspace_client": True}),
                                ("operations", {"client": True, "recipe_viewer": "jei"}),
-                               ("captions", {}), ("captions", {"client": True, "workspace_client": True})]:
+                               ("captions", {}), ("captions", {"client": True, "workspace_client": True}),
+                               ("references", {}), ("references", {"client": True, "workspace_client": True})]:
             with self.subTest(scene=scene, options=options), patch.object(platform, "select_library") as resolve:
                 with self.assertRaisesRegex(ValueError, "separate admitted isolated"):
                     platform.run("neoforge-1_21_1", None, 1, isolated_scene=scene, **options)
