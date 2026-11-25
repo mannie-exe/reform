@@ -47,6 +47,12 @@ subprojects {
             options.release = release
             options.encoding = 'UTF-8'
             options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+            if (name == 'compileJava') {
+                // javac copies anonymous-constructor debug names differently when its superclass
+                // comes from a binary instead of this source compilation. Keep producer bytes stable.
+                options.incremental = false
+                inputs.property('reformCompilerMode', 'full-source')
+            }
         }
         tasks.withType(Test).configureEach {
             useJUnitPlatform()
@@ -55,6 +61,7 @@ subprojects {
         tasks.withType(AbstractArchiveTask).configureEach {
             preserveFileTimestamps = false
             reproducibleFileOrder = true
+            includeEmptyDirs = false
         }
         tasks.withType(Jar).configureEach {
             from rootProject.file('LICENSE'), rootProject.file('NOTICE')
