@@ -21,9 +21,8 @@ public final class ChoicePresentation {
 
   public static Optional<ChoiceDisplay.Caption> caption(
       ValueShape.Scalar shape, DraftNode.Scalar value) {
-    if (shape.kind() != ValueShape.ScalarKind.CHOICE
-        || value.unitInput().isPresent()
-        || !shape.choices().contains(value.raw())) return Optional.empty();
+    if (shape.kind() != ValueShape.ScalarKind.CHOICE || value.unitInput().isPresent())
+      return Optional.empty();
     return shape.choiceDisplay().flatMap(display -> display.caption(value.raw()));
   }
 

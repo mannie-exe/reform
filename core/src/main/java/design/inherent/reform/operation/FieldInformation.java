@@ -36,7 +36,16 @@ public record FieldInformation(
       State state,
       Optional<String> text,
       Optional<String> reason,
-      Optional<NumericDisplay.Caption> numericCaption) {
+      Optional<NumericDisplay.Caption> numericCaption,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> choiceCaption) {
+    public Value(
+        State state,
+        Optional<String> text,
+        Optional<String> reason,
+        Optional<NumericDisplay.Caption> numericCaption) {
+      this(state, text, reason, numericCaption, Optional.empty());
+    }
+
     public Value(State state, Optional<String> text, Optional<String> reason) {
       this(state, text, reason, Optional.empty());
     }
@@ -46,9 +55,10 @@ public record FieldInformation(
       Objects.requireNonNull(text);
       Objects.requireNonNull(reason);
       Objects.requireNonNull(numericCaption);
+      Objects.requireNonNull(choiceCaption);
       if ((state == State.PRESENT) != text.isPresent()
           || (state == State.UNAVAILABLE) != reason.isPresent()
-          || state != State.PRESENT && numericCaption.isPresent())
+          || state != State.PRESENT && (numericCaption.isPresent() || choiceCaption.isPresent()))
         throw new IllegalArgumentException(
             "Field information must distinguish known, absent and unavailable values");
     }
@@ -185,10 +195,12 @@ public record FieldInformation(
       ValueType<?> root, DraftTree tree, FieldPath path, DraftDescriptions text) {
     if (!tree.contains(path)) return Value.absent();
     var node = tree.at(path);
+    var type = DraftTypes.at(root, tree, path);
     return new Value(
         State.PRESENT,
         Optional.of(text.render(node)),
         Optional.empty(),
-        text.caption(DraftTypes.at(root, tree, path), node));
+        text.caption(type, node),
+        text.choiceCaption(type, node));
   }
 }

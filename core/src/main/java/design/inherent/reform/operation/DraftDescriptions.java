@@ -45,6 +45,18 @@ final class DraftDescriptions {
     return caption;
   }
 
+  Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> choiceCaption(
+      ValueType<?> type, DraftNode node) {
+    var caption = design.inherent.reform.presentation.ChoicePresentation.caption(type, node);
+    caption.ifPresent(
+        value -> {
+          account(value.value());
+          account(value.translationKey());
+          account(value.fallback());
+        });
+    return caption;
+  }
+
   private void node(DraftNode node, StringBuilder out) {
     if (++nodes > maximumNodes) throw exhausted();
     switch (node) {

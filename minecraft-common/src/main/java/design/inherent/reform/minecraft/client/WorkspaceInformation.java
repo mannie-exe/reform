@@ -329,8 +329,10 @@ final class WorkspaceInformation {
     var detail =
         switch (value.state()) {
           case PRESENT ->
-              design.inherent.reform.minecraft.NumericComponents.value(
-                  value.numericCaption(), Component.literal(value.text().orElseThrow()));
+              design.inherent.reform.minecraft.ChoiceComponents.value(
+                  value.choiceCaption(),
+                  design.inherent.reform.minecraft.NumericComponents.value(
+                      value.numericCaption(), Component.literal(value.text().orElseThrow())));
           case ABSENT -> text("absent", "Absent in this observation");
           case UNAVAILABLE ->
               text("not_observed", "Not available")

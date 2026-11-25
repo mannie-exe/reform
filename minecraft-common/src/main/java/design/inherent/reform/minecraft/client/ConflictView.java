@@ -359,9 +359,21 @@ final class ConflictView<T> extends MetadataView implements ClientConflictInspec
         panel.section(key, caption);
         FieldLabels.help(actions.definition().id(), entry.path(), fieldPresentation.catalog())
             .ifPresent(help -> panel.row(key + ":purpose", Component.empty(), help));
-        panel.row(key + ":baseline", baseline(), Component.literal(entry.baseline()));
-        panel.row(key + ":observed", observed(), Component.literal(entry.observed()));
-        panel.row(key + ":draft", text("draft", "Your draft"), Component.literal(entry.draft()));
+        panel.row(
+            key + ":baseline",
+            baseline(),
+            design.inherent.reform.minecraft.ChoiceComponents.value(
+                entry.baselineChoiceCaption(), Component.literal(entry.baseline())));
+        panel.row(
+            key + ":observed",
+            observed(),
+            design.inherent.reform.minecraft.ChoiceComponents.value(
+                entry.observedChoiceCaption(), Component.literal(entry.observed())));
+        panel.row(
+            key + ":draft",
+            text("draft", "Your draft"),
+            design.inherent.reform.minecraft.ChoiceComponents.value(
+                entry.draftChoiceCaption(), Component.literal(entry.draft())));
         var selected =
             choices.containsKey(entry.path())
                 ? Choice.valueOf(choices.get(entry.path()).name())

@@ -468,12 +468,16 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
           text(
               "before_after",
               "Before: %s\nDraft: %s",
-              design.inherent.reform.minecraft.NumericComponents.value(
-                  field.numericValues().baseline(),
-                  Component.literal(ReviewText.preview(field.baseline()))),
-              design.inherent.reform.minecraft.NumericComponents.value(
-                  field.numericValues().draft(),
-                  Component.literal(ReviewText.preview(field.draft())))));
+              design.inherent.reform.minecraft.ChoiceComponents.value(
+                  field.choiceValues().baseline(),
+                  design.inherent.reform.minecraft.NumericComponents.value(
+                      field.numericValues().baseline(),
+                      Component.literal(ReviewText.preview(field.baseline())))),
+              design.inherent.reform.minecraft.ChoiceComponents.value(
+                  field.choiceValues().draft(),
+                  design.inherent.reform.minecraft.NumericComponents.value(
+                      field.numericValues().draft(),
+                      Component.literal(ReviewText.preview(field.draft()))))));
     }
     if (compared && changes.isEmpty())
       detail.row(

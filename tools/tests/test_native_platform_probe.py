@@ -15,7 +15,8 @@ class OptionalAdmissionTests(unittest.TestCase):
     def test_isolated_scene_refuses_unknown_or_mixed_scope_before_resolution(self):
         for scene, options in [("unknown", {"client": True}), ("operations", {}),
                                ("operations", {"client": True, "workspace_client": True}),
-                               ("operations", {"client": True, "recipe_viewer": "jei"})]:
+                               ("operations", {"client": True, "recipe_viewer": "jei"}),
+                               ("captions", {}), ("captions", {"client": True, "workspace_client": True})]:
             with self.subTest(scene=scene, options=options), patch.object(platform, "select_library") as resolve:
                 with self.assertRaisesRegex(ValueError, "separate admitted isolated"):
                     platform.run("neoforge-1_21_1", None, 1, isolated_scene=scene, **options)
@@ -449,7 +450,7 @@ class PlatformOutcomeTests(unittest.TestCase):
             self.native["workflow"][field] = True
 
     def test_requested_native_scenario_needs_its_own_success(self):
-        for name in ["world", "recipe", "authoring", "initializationFailure", "nativeCommands", "nativeSearch", "connector", "clientCommands", "workspace", "workflow", "operations", "customControls"]:
+        for name in ["world", "recipe", "authoring", "initializationFailure", "nativeCommands", "nativeSearch", "connector", "clientCommands", "workspace", "workflow", "operations", "customControls", "choiceCaptions"]:
             with self.subTest(scenario=name):
                 def accepted():
                     return successful_boot(self.process, self.native, self.library,

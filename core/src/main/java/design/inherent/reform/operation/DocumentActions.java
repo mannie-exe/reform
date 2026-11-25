@@ -54,7 +54,21 @@ public final class DocumentActions<T> implements AutoCloseable {
     }
   }
 
-  public record Change(FieldPath path, String beforeJson, String afterJson) {}
+  public record Change(
+      FieldPath path,
+      String beforeJson,
+      String afterJson,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> beforeChoiceCaption,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> afterChoiceCaption) {
+    public Change(FieldPath path, String beforeJson, String afterJson) {
+      this(path, beforeJson, afterJson, Optional.empty(), Optional.empty());
+    }
+
+    public Change {
+      java.util.Objects.requireNonNull(beforeChoiceCaption);
+      java.util.Objects.requireNonNull(afterChoiceCaption);
+    }
+  }
 
   public record Comparison(
       DraftRevision draft, boolean authoredChanges, List<Change> changes, ValidationReport report) {

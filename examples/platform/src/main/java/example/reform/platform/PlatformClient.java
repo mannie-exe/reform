@@ -151,7 +151,9 @@ public final class PlatformClient {
           || recipeLinksScenario
           || nativeRecipeScenario
           || "operations".equals(isolatedScene)
-          || "controls".equals(isolatedScene)) PlatformWorkflowExample.register(registration);
+          || "controls".equals(isolatedScene)
+          || "captions".equals(isolatedScene)) PlatformWorkflowExample.register(registration);
+      if ("captions".equals(isolatedScene)) PlatformChoiceCaptionChecks.register(registration);
       if (workspaceScenario) {
         PlatformWorkspaceChecks.register(registration);
         PlatformTaskChecks.register(registration);
@@ -320,6 +322,11 @@ public final class PlatformClient {
         case 7 -> {
           if (!pending.isDone()) return;
           report.add("nativeKeys", (JsonObject) pending.join());
+          if ("captions".equals(isolatedScene)) {
+            pending = PlatformChoiceCaptionChecks.run(clientRegistration).toCompletableFuture();
+            stage = 33;
+            return;
+          }
           if ("controls".equals(isolatedScene)) {
             pending = PlatformControlAdapterChecks.run(clientRegistration).toCompletableFuture();
             stage = 32;
@@ -531,6 +538,11 @@ public final class PlatformClient {
         case 30 -> {
           if (!pending.isDone()) return;
           report.add("nativeRecipes", (JsonObject) pending.join());
+          beginShutdown();
+        }
+        case 33 -> {
+          if (!pending.isDone()) return;
+          report.add("choiceCaptions", (JsonObject) pending.join());
           beginShutdown();
         }
         case 32 -> {

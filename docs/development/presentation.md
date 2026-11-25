@@ -132,6 +132,16 @@ The generated row keeps **Show fields** alongside the auxiliary entry, allowing 
 
 Pure comparison checks cover extracted geometry/navigation, bounded active form structure and catalog identity/admission. Compilation covers pinned API linkage. The opt-in native example fixture separately exercises recursive/reference/catalog controls, actual JSON save/reopen and selected native language/font reload. [Verification](verification.md) records exact artifacts, observations and limitations. Physical IME, host clipboard, spoken narration, native rendering on other operating systems and maximum document/heap cost retain explicit qualification limits. Shared composition, consumer migrations, dedicated/integrated owners and the installed pack have separate exact-artifact receipts in that record. Service measurements do not establish native frame timing or long-session retention.
 
+## Known-choice value captions
+
+`ValueTypes.choiceDisplay(original, display)` adds a `ChoiceDisplay` to an actual declared choice type. It delegates the original codec, decode diagnostics, snapshot policy, and equivalence. Declare captions against canonical values, for example `new ChoiceDisplay.Caption("AUTO", "example.mode.auto", "Auto")`. Apply the metadata before wrapping an enum in an optional or field-default policy. Unlisted values retain their original presentation; a caption cannot invent an admissible value or change schema/default/serialization behavior.
+
+Each immutable declaration admits at most 256 distinct captions, with bounded values, translation keys, and fallback labels. The known-value index is built once. Generated choice buttons measure and display the localized caption while dispatching the canonical value. Their tooltip keeps the exact value available. Unknown or malformed input retains its raw text and normal validation/repair path. Default and absent optional states remain distinct from an explicit selected choice.
+
+Inspection, contextual information, batch review, source conflict, and import comparison receive optional typed captions beside their complete raw observations. Native detail values display the label with the exact captured value; raw report fields and export bytes remain unchanged. No label is recovered by parsing rendered descriptions or diagnostic messages. Metadata is accounted against the existing capture/comparison limits, and unavailable observations do not acquire a guessed label. Legacy capture constructors leave caption facts absent. These annotations grant no read, edit, save, or application authority.
+
+This is development work for 0.4. The native qualification and exact artifact record belongs in [verification](verification.md); compilation alone does not establish the complete editing and inspection behavior.
+
 ## Inline native control adapters
 
 `ClientFormOptions.withControl(path, adapter)` declares one `ClientControlAdapter` for an actual scalar or reference path. Existing option constructors and generated controls remain the defaults. `SettingsScreen.withControls` supports the same declaration before activation. Duplicate registrations, undeclared paths, and structural targets refuse; declaration does not enter a source or construct a widget.

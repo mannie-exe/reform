@@ -2968,7 +2968,9 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             value ->
                 scalar.kind() == ValueShape.ScalarKind.BOOLEAN
                     ? value.equals("true") ? text("on", "On") : text("off", "Off")
-                    : Component.literal(value);
+                    : design.inherent.reform.minecraft.ChoiceComponents.label(
+                        scalar.choiceDisplay().flatMap(display -> display.caption(value)),
+                        Component.literal(value));
         var button =
             NativeCycles.<String>builder(caption, raw, choices)
                 .displayOnlyValue()
@@ -3596,6 +3598,15 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                 availableHere
                     && !loading
                     && current.availability() == EditorActor.Availability.READY;
+          if (control.cycle()
+              && control.shape() instanceof ValueShape.Scalar scalar
+              && scalar.choiceDisplay().isPresent()) {
+            var hint =
+                availableHere
+                    ? Component.literal(local.get(path))
+                    : dependencyText(path).copy().append("\n").append(local.get(path));
+            control.widget().setTooltip(Tooltip.create(hint));
+          }
           if (control.quantity() != null) {
             var quantity = control.quantity();
             boolean available =

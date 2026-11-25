@@ -59,7 +59,35 @@ public final class DocumentConflicts<T> implements AutoCloseable {
       boolean wholeValue,
       String baseline,
       String observed,
-      String draft) {}
+      String draft,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> baselineChoiceCaption,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> observedChoiceCaption,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> draftChoiceCaption) {
+    public Entry(
+        FieldPath path,
+        Optional<String> selector,
+        boolean wholeValue,
+        String baseline,
+        String observed,
+        String draft) {
+      this(
+          path,
+          selector,
+          wholeValue,
+          baseline,
+          observed,
+          draft,
+          Optional.empty(),
+          Optional.empty(),
+          Optional.empty());
+    }
+
+    public Entry {
+      Objects.requireNonNull(baselineChoiceCaption);
+      Objects.requireNonNull(observedChoiceCaption);
+      Objects.requireNonNull(draftChoiceCaption);
+    }
+  }
 
   /** This service's actual issued instance is required; descriptive IDs grant no authority. */
   public static final class Preview {
@@ -390,7 +418,16 @@ public final class DocumentConflicts<T> implements AutoCloseable {
                   && value.draft() instanceof DraftNode.Scalar),
               text.render(value.baseline()),
               text.render(value.observed()),
-              text.render(value.draft())));
+              text.render(value.draft()),
+              fields
+                  .field(value.path())
+                  .flatMap(field -> text.choiceCaption(field.type(), value.baseline())),
+              fields
+                  .field(value.path())
+                  .flatMap(field -> text.choiceCaption(field.type(), value.observed())),
+              fields
+                  .field(value.path())
+                  .flatMap(field -> text.choiceCaption(field.type(), value.draft()))));
     }
     var preview =
         new Preview(

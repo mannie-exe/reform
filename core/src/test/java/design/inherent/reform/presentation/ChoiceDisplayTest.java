@@ -137,6 +137,8 @@ class ChoiceDisplayTest {
     var copied = new ChoiceDisplay(list);
     list.clear();
     assertEquals(3, copied.captions().size());
+    assertEquals(DISPLAY, copied);
+    assertEquals(DISPLAY.hashCode(), copied.hashCode());
     assertThrows(UnsupportedOperationException.class, () -> copied.captions().clear());
     assertThrows(
         IllegalArgumentException.class,
@@ -160,6 +162,21 @@ class ChoiceDisplayTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> ValueTypes.choiceDisplay(ValueTypes.integer(0, 2), DISPLAY));
+  }
+
+  @Test
+  void anExplicitDeclaredBlankChoiceIsNotConfusedWithOmissionOrInvalidInput() {
+    var caption = new ChoiceDisplay.Caption("", "fixture.none", "None");
+    var shape =
+        new ValueShape.Scalar(
+            ValueShape.ScalarKind.CHOICE,
+            design.inherent.reform.value.NumericDomain.closed(null, null),
+            -1,
+            List.of(""),
+            Optional.empty(),
+            Optional.of(new ChoiceDisplay(List.of(caption))));
+    assertEquals(Optional.of(caption), ChoicePresentation.caption(shape, new DraftNode.Scalar("")));
+    assertTrue(ChoicePresentation.caption(shape, new DraftNode.Scalar(" ")).isEmpty());
   }
 
   @Test

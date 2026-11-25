@@ -514,17 +514,20 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
         Value.BASELINE,
         text("baseline", "Observed baseline"),
         Optional.of(entry.baseline()),
-        entry.numericValues().baseline());
+        entry.numericValues().baseline(),
+        entry.choiceValues().baseline());
     value(
         Value.DRAFT,
         text("draft", "Draft at capture"),
         Optional.of(entry.draft()),
-        entry.numericValues().draft());
+        entry.numericValues().draft(),
+        entry.choiceValues().draft());
     value(
         Value.EFFECTIVE,
         text("effective", "Observed effective value"),
         entry.effective(),
-        entry.numericValues().effective());
+        entry.numericValues().effective(),
+        entry.choiceValues().effective());
     panel.row(
         "detail:application",
         text("application", "Application timing"),
@@ -708,16 +711,19 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
       Value kind,
       Component title,
       Optional<String> value,
-      Optional<design.inherent.reform.presentation.NumericDisplay.Caption> caption) {
+      Optional<design.inherent.reform.presentation.NumericDisplay.Caption> caption,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> choiceCaption) {
     String raw = value.orElseGet(() -> text("no_value", "No qualified value details").getString());
     boolean limited = raw.length() > SUMMARY_CHARACTERS;
     Component summary =
-        design.inherent.reform.minecraft.NumericComponents.value(
-            caption,
-            Component.literal(
-                limited && !expanded.contains(kind)
-                    ? raw.substring(0, SUMMARY_CHARACTERS) + "…"
-                    : raw));
+        design.inherent.reform.minecraft.ChoiceComponents.value(
+            choiceCaption,
+            design.inherent.reform.minecraft.NumericComponents.value(
+                caption,
+                Component.literal(
+                    limited && !expanded.contains(kind)
+                        ? raw.substring(0, SUMMARY_CHARACTERS) + "…"
+                        : raw)));
     narration =
         narration
             .copy()
@@ -725,9 +731,12 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
             .append(title)
             .append(": ")
             .append(
-                design.inherent.reform.minecraft.NumericComponents.value(
-                    caption,
-                    Component.literal(limited ? raw.substring(0, SUMMARY_CHARACTERS) + "…" : raw)));
+                design.inherent.reform.minecraft.ChoiceComponents.value(
+                    choiceCaption,
+                    design.inherent.reform.minecraft.NumericComponents.value(
+                        caption,
+                        Component.literal(
+                            limited ? raw.substring(0, SUMMARY_CHARACTERS) + "…" : raw))));
     if (limited) {
       var token = widgets;
       var expand =
@@ -840,10 +849,15 @@ final class ReviewView<T> extends MetadataView implements ClientInspection {
       var change = changes.get(index);
       var application = review.applicationEffects().forField(change.path());
       var detail =
-          Component.literal(
-              ReviewText.preview(change.beforeJson())
-                  + " → "
-                  + ReviewText.preview(change.afterJson()));
+          design.inherent.reform.minecraft.ChoiceComponents.value(
+                  change.beforeChoiceCaption(),
+                  Component.literal(ReviewText.preview(change.beforeJson())))
+              .copy()
+              .append(" → ")
+              .append(
+                  design.inherent.reform.minecraft.ChoiceComponents.value(
+                      change.afterChoiceCaption(),
+                      Component.literal(ReviewText.preview(change.afterJson()))));
       detail
           .append("\n")
           .append(

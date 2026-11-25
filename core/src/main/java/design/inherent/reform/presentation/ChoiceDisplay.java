@@ -1,16 +1,16 @@
 package design.inherent.reform.presentation;
 
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 /** Known-choice labels only; canonical input and owner validation are never replaced. */
-public record ChoiceDisplay(List<Caption> captions) {
+public final class ChoiceDisplay {
   public record Caption(String value, String translationKey, String fallback) {
     public Caption {
-      if (Objects.requireNonNull(value).isBlank()
-          || value.length() > 4096
+      if (Objects.requireNonNull(value).length() > 4096
           || Objects.requireNonNull(translationKey).isBlank()
           || translationKey.length() > 256
           || Objects.requireNonNull(fallback).isBlank()
@@ -19,17 +19,39 @@ public record ChoiceDisplay(List<Caption> captions) {
     }
   }
 
-  public ChoiceDisplay {
-    captions = List.copyOf(captions);
-    if (captions.size() > 256) throw new IllegalArgumentException("Too many choice captions");
-    var seen = new HashSet<String>();
-    for (var caption : captions)
-      if (!seen.add(caption.value()))
+  private final List<Caption> captions;
+  private final Map<String, Caption> byValue;
+
+  public ChoiceDisplay(List<Caption> captions) {
+    this.captions = List.copyOf(captions);
+    if (this.captions.size() > 256) throw new IllegalArgumentException("Too many choice captions");
+    var index = new LinkedHashMap<String, Caption>();
+    for (var caption : this.captions)
+      if (index.putIfAbsent(caption.value(), caption) != null)
         throw new IllegalArgumentException("Duplicate choice caption: " + caption.value());
+    byValue = Map.copyOf(index);
+  }
+
+  public List<Caption> captions() {
+    return captions;
   }
 
   public Optional<Caption> caption(String raw) {
-    Objects.requireNonNull(raw);
-    return captions.stream().filter(value -> value.value().equals(raw)).findFirst();
+    return Optional.ofNullable(byValue.get(Objects.requireNonNull(raw)));
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return other instanceof ChoiceDisplay display && captions.equals(display.captions);
+  }
+
+  @Override
+  public int hashCode() {
+    return captions.hashCode();
+  }
+
+  @Override
+  public String toString() {
+    return "ChoiceDisplay[captions=" + captions + "]";
   }
 }

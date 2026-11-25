@@ -489,7 +489,13 @@ final class ImportView<T> extends MetadataView implements ClientImportInspection
         detail.row(
             "detail:change:" + index++,
             fieldLabel(change.path()),
-            text("before_after", "Before: %s\nAfter: %s", change.beforeJson(), change.afterJson()));
+            text(
+                "before_after",
+                "Before: %s\nAfter: %s",
+                design.inherent.reform.minecraft.ChoiceComponents.value(
+                    change.beforeChoiceCaption(), Component.literal(change.beforeJson())),
+                design.inherent.reform.minecraft.ChoiceComponents.value(
+                    change.afterChoiceCaption(), Component.literal(change.afterJson()))));
     }
     if (!review.importedValidation().valid() && review.stageable())
       detail.row(

@@ -52,6 +52,36 @@ final class TypedDifferences {
         : encoded.toString();
   }
 
+  private static <V>
+      java.util.Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> choiceCaption(
+          ValueType<V> type, JsonElement encoded) {
+    if (encoded == null) return java.util.Optional.empty();
+    var shape = type.shape();
+    for (int depth = 0; depth < 128; depth++) {
+      if (shape instanceof ValueShape.Defaulted<?> wrapped) shape = wrapped.element().shape();
+      else if (shape instanceof ValueShape.OptionalValue<?> wrapped)
+        shape = wrapped.element().shape();
+      else break;
+    }
+    if (!(shape instanceof ValueShape.Scalar scalar) || scalar.choiceDisplay().isEmpty())
+      return java.util.Optional.empty();
+    var draft =
+        design.inherent.reform.edit.DraftTree.from(
+            type, value(type, encoded), design.inherent.reform.edit.DraftLimits.CONFIGURATION);
+    return design.inherent.reform.presentation.ChoicePresentation.caption(type, draft.root());
+  }
+
+  private static long captionCost(
+      java.util.Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> caption) {
+    return caption
+        .map(
+            value ->
+                (long) value.value().length()
+                    + value.translationKey().length()
+                    + value.fallback().length())
+        .orElse(0L);
+  }
+
   private void visit(ValueType<?> type, FieldPath path, JsonElement first, JsonElement second) {
     if (equivalent(type, first, second)) return;
     if (type.shape() instanceof ValueShape.Alternative alternative) {
@@ -75,12 +105,20 @@ final class TypedDifferences {
             second.getAsJsonObject().get(field.id()));
     } else {
       String before = json(type, first), after = json(type, second);
-      long next = characters + path.toString().length() + before.length() + (long) after.length();
+      var beforeCaption = choiceCaption(type, first);
+      var afterCaption = choiceCaption(type, second);
+      long next =
+          characters
+              + path.toString().length()
+              + before.length()
+              + (long) after.length()
+              + captionCost(beforeCaption)
+              + captionCost(afterCaption);
       if (changes.size() >= maximumChanges || next > maximumCharacters)
         throw new PolicyRefusal(
             "compare.limit", "The complete comparison exceeds its declared bounds");
       characters = next;
-      changes.add(new DocumentActions.Change(path, before, after));
+      changes.add(new DocumentActions.Change(path, before, after, beforeCaption, afterCaption));
     }
   }
 }

@@ -35,6 +35,21 @@ public final class DocumentReview {
     }
   }
 
+  /** Optional known-choice labels accompany, and never replace, complete raw observations. */
+  public record ChoiceValues(
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> baseline,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> draft,
+      Optional<design.inherent.reform.presentation.ChoiceDisplay.Caption> effective) {
+    public static final ChoiceValues EMPTY =
+        new ChoiceValues(Optional.empty(), Optional.empty(), Optional.empty());
+
+    public ChoiceValues {
+      Objects.requireNonNull(baseline);
+      Objects.requireNonNull(draft);
+      Objects.requireNonNull(effective);
+    }
+  }
+
   /** Complete raw-value projection bounds, separate from owner work and transport/heap limits. */
   public record Limits(int maximumFields, int maximumNodes, int maximumCharacters) {
     public static final Limits STANDARD = new Limits(512, 65536, 524288);
@@ -54,7 +69,29 @@ public final class DocumentReview {
       String draft,
       Optional<String> effective,
       Optional<ApplicationEffects.Rule> application,
-      NumericValues numericValues) {
+      NumericValues numericValues,
+      ChoiceValues choiceValues) {
+    public Entry(
+        FieldPath path,
+        String selector,
+        boolean wholeValue,
+        String baseline,
+        String draft,
+        Optional<String> effective,
+        Optional<ApplicationEffects.Rule> application,
+        NumericValues numericValues) {
+      this(
+          path,
+          selector,
+          wholeValue,
+          baseline,
+          draft,
+          effective,
+          application,
+          numericValues,
+          ChoiceValues.EMPTY);
+    }
+
     public Entry(
         FieldPath path,
         String selector,
@@ -75,6 +112,7 @@ public final class DocumentReview {
       Objects.requireNonNull(effective);
       Objects.requireNonNull(application);
       Objects.requireNonNull(numericValues);
+      Objects.requireNonNull(choiceValues);
     }
   }
 
@@ -282,7 +320,13 @@ public final class DocumentReview {
                   text.caption(field.type(), observed.snapshot().draft().at(field.path())),
                   values == null
                       ? Optional.empty()
-                      : text.caption(field.type(), values.at(field.path())))));
+                      : text.caption(field.type(), values.at(field.path()))),
+              new ChoiceValues(
+                  text.choiceCaption(field.type(), observed.baseline().at(field.path())),
+                  text.choiceCaption(field.type(), observed.snapshot().draft().at(field.path())),
+                  values == null
+                      ? Optional.empty()
+                      : text.choiceCaption(field.type(), values.at(field.path())))));
     }
     return new DocumentReview(
         target,
