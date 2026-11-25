@@ -469,7 +469,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), WORKSPACE_CAPTURES, reopen)
             if isolated_scene == "captions":
-                roles = {"platform-choice-controls.png", "platform-choice-review.png", "platform-choice-batch.png", "platform-choice-submission.png", "platform-choice-information.png", "platform-choice-invalid.png", "platform-choice-import.png", "platform-choice-conflict.png"}
+                roles = {"platform-choice-controls.png", "platform-choice-review.png", "platform-choice-boolean-review.png", "platform-choice-batch.png", "platform-choice-submission.png", "platform-choice-information.png", "platform-choice-invalid.png", "platform-choice-import.png", "platform-choice-conflict.png"}
                 for key in ("choiceCaptions", "sceneFailure"):
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)

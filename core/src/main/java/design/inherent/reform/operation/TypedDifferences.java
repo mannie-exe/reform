@@ -63,7 +63,8 @@ final class TypedDifferences {
         shape = wrapped.element().shape();
       else break;
     }
-    if (!(shape instanceof ValueShape.Scalar scalar) || scalar.choiceDisplay().isEmpty())
+    if (!(shape instanceof ValueShape.Scalar scalar)
+        || scalar.kind() != ValueShape.ScalarKind.BOOLEAN && scalar.choiceDisplay().isEmpty())
       return java.util.Optional.empty();
     var draft =
         design.inherent.reform.edit.DraftTree.from(

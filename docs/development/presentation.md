@@ -158,6 +158,8 @@ Each immutable declaration admits at most 256 distinct captions, with bounded va
 
 Inspection, contextual information, batch review, source conflict, and import comparison receive optional typed captions beside their complete raw observations. Native detail values display the label with the exact captured value; raw report fields and export bytes remain unchanged. No label is recovered by parsing rendered descriptions or diagnostic messages. Metadata is accounted against the existing capture/comparison limits, and unavailable observations do not acquire a guessed label. Legacy capture constructors leave caption facts absent. These annotations grant no read, edit, save, or application authority.
 
+Booleans use the built-in On and Off labels in controls and typed observations. Review and comparison values retain the exact captured boolean beside the label. These defaults apply only to declared booleans with canonical `true` or `false` input; text containing those words and malformed boolean input remain raw. Absent optional values, inherited overrides, and unavailable observations do not acquire a selected-value label. `ChoiceDisplay` declarations remain restricted to declared choice scalars.
+
 This is development work for 0.4. The native qualification and exact artifact record belongs in [verification](verification.md); compilation alone does not establish the complete editing and inspection behavior.
 
 ## Inline native control adapters

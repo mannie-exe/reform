@@ -7,6 +7,11 @@ import java.util.Optional;
 
 /** Typed annotations over actual captured input, never parsing a rendered description. */
 public final class ChoicePresentation {
+  private static final ChoiceDisplay.Caption ON =
+      new ChoiceDisplay.Caption("true", "reform.settings.on", "On");
+  private static final ChoiceDisplay.Caption OFF =
+      new ChoiceDisplay.Caption("false", "reform.settings.off", "Off");
+
   public static Optional<ChoiceDisplay.Caption> caption(ValueType<?> type, DraftNode node) {
     if (type.shape() instanceof ValueShape.Defaulted<?> shape
         && node instanceof DraftNode.Defaulted value)
@@ -21,9 +26,17 @@ public final class ChoicePresentation {
 
   public static Optional<ChoiceDisplay.Caption> caption(
       ValueShape.Scalar shape, DraftNode.Scalar value) {
-    if (shape.kind() != ValueShape.ScalarKind.CHOICE || value.unitInput().isPresent())
-      return Optional.empty();
-    return shape.choiceDisplay().flatMap(display -> display.caption(value.raw()));
+    if (value.unitInput().isPresent()) return Optional.empty();
+    return switch (shape.kind()) {
+      case BOOLEAN ->
+          switch (value.raw()) {
+            case "true" -> Optional.of(ON);
+            case "false" -> Optional.of(OFF);
+            default -> Optional.empty();
+          };
+      case CHOICE -> shape.choiceDisplay().flatMap(display -> display.caption(value.raw()));
+      default -> Optional.empty();
+    };
   }
 
   private ChoicePresentation() {}

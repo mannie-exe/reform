@@ -25,10 +25,11 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
     OFF
   }
 
-  record Preferences(Mode mode, int count) {}
+  record Preferences(Mode mode, int count, boolean enabled) {}
 
   private static final FieldPath MODE_PATH = FieldPath.ROOT.field("mode");
   private static final FieldPath COUNT_PATH = FieldPath.ROOT.field("count");
+  private static final FieldPath ENABLED_PATH = FieldPath.ROOT.field("enabled");
   private static final FieldKey<Mode> MODE =
       FieldKey.of(
           "mode",
@@ -42,15 +43,18 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
                       new ChoiceDisplay.Caption(
                           "OFF", "reform_platform_example.choice.off", "Off")))));
   private static final FieldKey<Integer> COUNT = FieldKey.of("count", ValueTypes.integer(0, 10));
+  private static final FieldKey<Boolean> ENABLED = FieldKey.of("enabled", ValueTypes.bool());
   private static final DocumentDefinition<Preferences> DEFINITION =
       new DocumentDefinition<>(
           DocumentId.parse("reform_platform_example:choice_preferences"),
           1,
-          RecordType.<Preferences>builder(v -> new Preferences(v.get(MODE), v.get(COUNT)))
+          RecordType.<Preferences>builder(
+                  v -> new Preferences(v.get(MODE), v.get(COUNT), v.get(ENABLED)))
               .field(MODE, Preferences::mode)
               .field(COUNT, Preferences::count)
+              .field(ENABLED, Preferences::enabled)
               .build(),
-          () -> new Preferences(Mode.AUTO, 1));
+          () -> new Preferences(Mode.AUTO, 1, true));
   private static ClientFileSettings<Preferences> settings;
 
   static void register(ClientRegistration registration) {
@@ -160,6 +164,36 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
                     .equals("On")
                 && editor.form().editingActions() == actions
                 && Arrays.equals(original, Files.readAllBytes(source)));
+        check(
+            "boolean control uses On over canonical true before native keyboard editing",
+            raw(ENABLED_PATH).equals("true")
+                && editor
+                    .form()
+                    .fieldControl(ENABLED_PATH)
+                    .orElseThrow()
+                    .getMessage()
+                    .getString()
+                    .equals("On")
+                && editor.form().focusField(ENABLED_PATH));
+        check(
+            "native key changes the boolean without a choice declaration",
+            NativeClientProbe.key(workflow.screen(), "key.keyboard.space", true));
+        NativeClientProbe.key(workflow.screen(), "key.keyboard.space", false);
+        stage = 46;
+      }
+      case 46 -> {
+        if (editor.busy() || !raw(ENABLED_PATH).equals("false")) return false;
+        check(
+            "boolean control uses Off over canonical false without a source write",
+            editor
+                    .form()
+                    .fieldControl(ENABLED_PATH)
+                    .orElseThrow()
+                    .getMessage()
+                    .getString()
+                    .equals("Off")
+                && Arrays.equals(original, Files.readAllBytes(source))
+                && editor.form().focusField(MODE_PATH));
         capture("choice-controls.png", 3);
       }
       case 3 -> {
@@ -184,7 +218,41 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
                 && rendered().contains("Auto (\"AUTO\")")
                 && rendered().contains("On (\"ON\")")
                 && workflow.editor(DEFINITION.id()) == editor);
-        capture("choice-review.png", 5);
+        capture("choice-review.png", 47);
+      }
+      case 47 -> {
+        enter(new ClientDestination.Document(DEFINITION.id()));
+        stage = 48;
+      }
+      case 48 -> {
+        if (!revealed() || editor.busy()) return false;
+        check(
+            "boolean field has native focus before inspection",
+            editor.form().focusField(ENABLED_PATH));
+        enter(new ClientDestination.Inspection(DEFINITION.id()));
+        stage = 49;
+      }
+      case 49 -> {
+        if (!revealed() || workflow.inspection().flatMap(ClientInspection::reviewedInput).isEmpty())
+          return false;
+        var input = workflow.inspection().orElseThrow();
+        var value =
+            input.reviewedInput().orElseThrow().entries().stream()
+                .filter(e -> e.path().equals(ENABLED_PATH))
+                .findFirst()
+                .orElseThrow();
+        check(
+            "actual boolean inspection agrees with native On Off labels and retains raw observations",
+            input.selectedField().orElseThrow().equals(ENABLED_PATH)
+                && value.baseline().equals("\"true\"")
+                && value.draft().equals("\"false\"")
+                && value.choiceValues().baseline().orElseThrow().fallback().equals("On")
+                && value.choiceValues().draft().orElseThrow().fallback().equals("Off")
+                && rendered().contains("On (\"true\")")
+                && rendered().contains("Off (\"false\")")
+                && workflow.editor(DEFINITION.id()) == editor
+                && Arrays.equals(original, Files.readAllBytes(source)));
+        capture("choice-boolean-review.png", 5);
       }
       case 5 -> {
         enter(new ClientDestination.Document(DEFINITION.id()));
@@ -321,7 +389,7 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
                     .equals("On")
                 && Arrays.equals(original, Files.readAllBytes(source)));
         imported = client.gameDirectory.toPath().toAbsolutePath().resolve("choice-import.json");
-        Files.writeString(imported, "{\"mode\":\"OFF\",\"count\":7}");
+        Files.writeString(imported, "{\"mode\":\"OFF\",\"count\":7,\"enabled\":true}");
         enter(new ClientDestination.Import(DEFINITION.id()));
         stage = 12;
       }
@@ -358,6 +426,19 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
                 && rendered().contains("Off (\"OFF\")")
                 && raw(MODE_PATH).equals("ON")
                 && Arrays.equals(original, Files.readAllBytes(source)));
+        var bool =
+            comparison.changes().stream()
+                .filter(c -> c.path().equals(ENABLED_PATH))
+                .findFirst()
+                .orElseThrow();
+        check(
+            "actual import keeps boolean JSON separate from its natural labels",
+            bool.beforeJson().equals("false")
+                && bool.afterJson().equals("true")
+                && bool.beforeChoiceCaption().orElseThrow().fallback().equals("Off")
+                && bool.afterChoiceCaption().orElseThrow().fallback().equals("On")
+                && rendered().contains("Off (false)")
+                && rendered().contains("On (true)"));
         capture("choice-import.png", 15);
       }
       case 15 -> {

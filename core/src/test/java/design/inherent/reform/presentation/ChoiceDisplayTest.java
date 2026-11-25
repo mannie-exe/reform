@@ -14,6 +14,40 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class ChoiceDisplayTest {
+  @Test
+  void booleansHaveTypedDefaultLabelsWithoutLabelingTextOrMalformedInput() {
+    var type = ValueTypes.bool();
+    for (var raw : List.of("true", "false")) {
+      var caption = ChoicePresentation.caption(type, new DraftNode.Scalar(raw)).orElseThrow();
+      assertEquals(raw, caption.value());
+      assertEquals(raw.equals("true") ? "On" : "Off", caption.fallback());
+      assertEquals(
+          raw.equals("true") ? "reform.settings.on" : "reform.settings.off",
+          caption.translationKey());
+      assertTrue(
+          ChoicePresentation.caption(ValueTypes.text(16), new DraftNode.Scalar(raw)).isEmpty());
+    }
+    for (var raw : List.of("", "TRUE", "False", " true ", "1", "\"true\""))
+      assertTrue(ChoicePresentation.caption(type, new DraftNode.Scalar(raw)).isEmpty());
+    assertTrue(
+        ChoicePresentation.caption(
+                type,
+                new DraftNode.Scalar(
+                    "true", new DraftNode.UnitInput("ticks", "1", NumericDisplay.State.EXACT)))
+            .isEmpty());
+    var optional = ValueTypes.optional(type, ValueShape.OptionalEncoding.NULL_OR_VALUE);
+    assertTrue(
+        ChoicePresentation.caption(
+                optional, new DraftNode.OptionalValue(false, new DraftNode.Scalar("true")))
+            .isEmpty());
+    assertEquals(
+        "Off",
+        ChoicePresentation.caption(
+                optional, new DraftNode.OptionalValue(true, new DraftNode.Scalar("false")))
+            .orElseThrow()
+            .fallback());
+  }
+
   private enum Mode {
     AUTO,
     ON,
