@@ -55,12 +55,12 @@ public final class UiScope implements AutoCloseable {
   }
 
   private abstract class Node<T> implements UiRead<T> {
-    final ViewStateKey<T> key;
+    final UiCaptureKey<T> key;
     final Set<Projection<?>> dependents = new LinkedHashSet<>();
     UiObservation<T> cached;
-    int bytes;
+    long bytes;
 
-    Node(ViewStateKey<T> key) {
+    Node(UiCaptureKey<T> key) {
       this.key = key;
     }
 
@@ -77,14 +77,16 @@ public final class UiScope implements AutoCloseable {
       return cached;
     }
 
-    boolean publish(ViewStateKey.Snapshot<T> snapshot) {
+    boolean publish(UiSnapshot<T> snapshot) {
       requireCurrent();
-      if (cached instanceof UiObservation.Available<T> prior && prior.data().sameData(snapshot))
-        return false;
-      int nextBytes = snapshot.encodedBytes();
+      if (cached instanceof UiObservation.Available<T> prior
+          && kernel.pure(Set.of(), () -> prior.data().sameData(snapshot))) return false;
+      long nextBytes = snapshot.retainedBytes();
+      if (nextBytes < 0)
+        throw refusal("ui.snapshot_invalid", "A cached observation has invalid payload accounting");
       if (nextBytes > kernel.limits.maximumStateBytes() - (kernel.stateBytes - bytes))
         throw budget("Cached presentation data exceeds its declared byte allowance");
-      kernel.stateBytes += (long) nextBytes - bytes;
+      kernel.stateBytes += nextBytes - bytes;
       bytes = nextBytes;
       cached = new UiObservation.Available<>(snapshot, ++kernel.revision);
       return true;
@@ -125,7 +127,7 @@ public final class UiScope implements AutoCloseable {
     final UiRead<T> source;
     long seen = -1;
 
-    Source(ViewStateKey<T> key, UiRead<T> source) {
+    Source(UiCaptureKey<T> key, UiRead<T> source) {
       super(key);
       this.source = source;
     }
@@ -139,7 +141,14 @@ public final class UiScope implements AutoCloseable {
         if (next instanceof UiObservation.Unavailable<T> missing) {
           unavailable(new PolicyRefusal(missing.report()), missing.cause().orElse(null));
         } else {
-          var captured = kernel.pure(Set.of(source), () -> key.capture(next.value()));
+          var captured =
+              kernel.pure(
+                  Set.of(source),
+                  () ->
+                      next instanceof UiObservation.Available<T> available
+                              && key.owns(available.data())
+                          ? available.data()
+                          : key.capture(next.value()));
           if (!publish(captured))
             cached = new UiObservation.Available<>(captured, ++kernel.revision);
         }
@@ -175,7 +184,7 @@ public final class UiScope implements AutoCloseable {
     boolean dirty = true;
     boolean evaluating;
 
-    Projection(ViewStateKey<T> key, List<Node<?>> inputs, Function<UiInputs, T> compute) {
+    Projection(UiCaptureKey<T> key, List<Node<?>> inputs, Function<UiInputs, T> compute) {
       super(key);
       this.inputs = inputs;
       this.compute = compute;
@@ -407,6 +416,15 @@ public final class UiScope implements AutoCloseable {
    * refreshes it outside paint. No change command, accepted draft, or source authority is created.
    */
   public <T> UiRead<T> observe(ViewStateKey<T> state, UiRead<T> source) {
+    return observeCaptured(state, source);
+  }
+
+  /** Nonportable cached owner/input observations use their actual owned-payload contract. */
+  public <T> UiRead<T> observe(UiReadKey<T> state, UiRead<T> source) {
+    return observeCaptured(state, source);
+  }
+
+  private <T> UiRead<T> observeCaptured(UiCaptureKey<T> state, UiRead<T> source) {
     requireWrite();
     Objects.requireNonNull(state);
     Objects.requireNonNull(source);
@@ -455,6 +473,18 @@ public final class UiScope implements AutoCloseable {
   /** Dependencies must be live reads from this root, declared once with a stable computation. */
   public <T> UiRead<T> derive(
       ViewStateKey<T> state,
+      List<? extends UiRead<?>> dependencies,
+      Function<UiInputs, T> compute) {
+    return deriveCaptured(state, dependencies, compute);
+  }
+
+  public <T> UiRead<T> derive(
+      UiReadKey<T> state, List<? extends UiRead<?>> dependencies, Function<UiInputs, T> compute) {
+    return deriveCaptured(state, dependencies, compute);
+  }
+
+  private <T> UiRead<T> deriveCaptured(
+      UiCaptureKey<T> state,
       List<? extends UiRead<?>> dependencies,
       Function<UiInputs, T> compute) {
     requireWrite();

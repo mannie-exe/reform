@@ -5,6 +5,9 @@ import static example.reform.platform.PlatformWidgets.*;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import design.inherent.reform.definition.DocumentId;
+import design.inherent.reform.definition.FieldPath;
+import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.edit.DraftTypes;
 import design.inherent.reform.minecraft.client.*;
 import design.inherent.reform.minecraft.client.ui.*;
 import design.inherent.reform.owner.OwnerContext;
@@ -23,6 +26,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.function.IntConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -56,6 +60,13 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private final HashMap<String, UiScope> rowScopes = new HashMap<>();
   private int rowFactories, rowCloses;
   private boolean keyedRowsVerified;
+  private boolean boundFieldsVerified;
+  private ClientEditor<PlatformWorkflowExample.Preferences> boundEditor;
+  private UiScope fieldScope;
+  private FieldBinding<PlatformWorkflowExample.Preferences, ?> distanceBinding, labelBinding;
+  private design.inherent.reform.operation.OperationHandle<?> fieldOperation;
+  private String originalDistance, originalLabel;
+  private final JsonArray fieldOperations = new JsonArray();
   private Button retired;
   private Path settingsPath;
   private byte[] settingsBytes;
@@ -387,6 +398,103 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         press(workflow.screen(), "Toggle detail");
         check(
             "conditional branch retires its actual scope", branchCreates == 1 && branchCloses == 1);
+        navigation =
+            workflow
+                .navigation()
+                .open(new ClientDestination.Document(PlatformWorkflowExample.DEFINITION.id()))
+                .completion()
+                .toCompletableFuture();
+        stage = 20;
+      }
+      case 20 -> {
+        if (!arrived()) return false;
+        boundEditor = workflow.editor(PlatformWorkflowExample.DEFINITION);
+        if (!boundEditor.canStage(FieldPath.ROOT.field("distance"))) return false;
+        fieldScope = frameworkScope.child();
+        distanceBinding =
+            ClientFieldBindings.field(
+                fieldScope,
+                boundEditor,
+                FieldPath.ROOT.field("distance"),
+                DraftTypes.declaredAt(
+                    PlatformWorkflowExample.DEFINITION.type(), FieldPath.ROOT.field("distance")));
+        labelBinding =
+            ClientFieldBindings.field(
+                fieldScope,
+                boundEditor,
+                FieldPath.ROOT.field("label"),
+                DraftTypes.declaredAt(
+                    PlatformWorkflowExample.DEFINITION.type(), FieldPath.ROOT.field("label")));
+        originalDistance =
+            ((DraftNode.Scalar) distanceBinding.state().snapshot().value().draft()).raw();
+        originalLabel = ((DraftNode.Scalar) labelBinding.state().snapshot().value().draft()).raw();
+        replace(workflow.screen(), fieldInput("distance"), "bad");
+        stage = 21;
+      }
+      case 21 -> {
+        fieldScope.refreshObservations();
+        var state = distanceBinding.state().snapshot().value();
+        if (boundEditor.busy()
+            || state.input().isEmpty()
+            || !state.input().orElseThrow().accepted()
+            || !((DraftNode.Scalar) state.draft()).raw().equals("bad")
+            || !boundEditor.canStage(FieldPath.ROOT.field("label"))) return false;
+        var input = fieldInput("distance");
+        input.setCursorPosition(2);
+        input.setHighlightPos(1);
+        fieldScope.refreshObservations();
+        state = distanceBinding.state().snapshot().value();
+        check(
+            "actual bound field keeps invalid actor input, native raw text, caret and selection",
+            state.value().isEmpty()
+                && !state.validation().valid()
+                && state.input().orElseThrow().raw().equals("bad")
+                && state.input().orElseThrow().caret() == 2
+                && state.input().orElseThrow().anchor() == 1
+                && !state.submission().available());
+        fieldOperation = fieldEdit(labelBinding, "Semantic sibling");
+        stage = 22;
+      }
+      case 22 -> {
+        if (!fieldOperation.completion().toCompletableFuture().isDone() || boundEditor.busy())
+          return false;
+        fieldScope.refreshObservations();
+        var state = labelBinding.state().snapshot().value();
+        if (!state.value().orElseThrow().equals("Semantic sibling")) return false;
+        check(
+            "actual field operation preserves the invalid sibling and retained editor",
+            workflow.editor(PlatformWorkflowExample.DEFINITION) == boundEditor
+                && ((DraftNode.Scalar) distanceBinding.state().snapshot().value().draft())
+                    .raw()
+                    .equals("bad")
+                && boundEditor.actions().operation(fieldOperation.snapshot().id()).isPresent());
+        replace(workflow.screen(), fieldInput("distance"), originalDistance);
+        stage = 23;
+      }
+      case 23 -> {
+        if (boundEditor.busy() || !boundEditor.canStage(FieldPath.ROOT.field("label")))
+          return false;
+        fieldScope.refreshObservations();
+        if (!((DraftNode.Scalar) distanceBinding.state().snapshot().value().draft())
+            .raw()
+            .equals(originalDistance)) return false;
+        fieldOperation = fieldEdit(labelBinding, originalLabel);
+        stage = 24;
+      }
+      case 24 -> {
+        if (!fieldOperation.completion().toCompletableFuture().isDone() || boundEditor.busy())
+          return false;
+        fieldScope.refreshObservations();
+        if (!((DraftNode.Scalar) labelBinding.state().snapshot().value().draft())
+            .raw()
+            .equals(originalLabel)) return false;
+        fieldScope.close();
+        check(
+            "binding close retires observations while the actual editor stays open",
+            boundEditor.isOpen()
+                && fieldScope.usage().stateBytes() == 0
+                && fieldScope.usage().scopes() == 0);
+        boundFieldsVerified = true;
         workflow.close();
         check(
             "workflow closes component tree and charged presentation data",
@@ -485,6 +593,25 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     return false;
   }
 
+  private EditBox fieldInput(String field) {
+    var path = FieldPath.ROOT.field(field);
+    check(
+        "bound field remains revealable through its real form",
+        boundEditor.form().focusField(path));
+    return (EditBox) boundEditor.form().fieldControl(path).orElseThrow();
+  }
+
+  private design.inherent.reform.operation.OperationHandle<?> fieldEdit(
+      FieldBinding<?, ?> binding, String text) {
+    var result = binding.edits().invoke(new FieldEdit.Raw<>(text));
+    check(
+        "semantic field edit returns its actual owner operation",
+        result instanceof UiActionResult.Pending);
+    var handle = ((UiActionResult.Pending) result).operation();
+    fieldOperations.add(handle.snapshot().id().toString());
+    return handle;
+  }
+
   private final class ExternalScreen extends NativeFormScreen {
     final OwnerContext host =
         new OwnerContext(
@@ -558,6 +685,8 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     report.addProperty("sourceUnchanged", complete);
     report.addProperty("retiredUiDataZero", complete);
     report.addProperty("keyedRowsVerified", complete && keyedRowsVerified);
+    report.addProperty("boundFieldsVerified", complete && boundFieldsVerified);
+    report.add("boundFieldOperations", fieldOperations.deepCopy());
     report.addProperty("keyedRowFactories", rowFactories);
     report.addProperty("keyedRowCloses", rowCloses);
     report.add("checks", checks.deepCopy());

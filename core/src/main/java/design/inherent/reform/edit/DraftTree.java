@@ -49,6 +49,68 @@ public final class DraftTree {
     }
   }
 
+  /** A pure field-codec observation; it does not validate the complete owner or grant editing. */
+  public record FieldInspection<V>(
+      java.util.Optional<V> value,
+      ValidationReport report,
+      InputState input,
+      int encodedBytes,
+      java.util.Optional<Throwable> failure) {}
+
+  public <V> FieldInspection<V> inspectField(
+      ValueType<V> type, FieldPath path, JsonLimits jsonLimits) {
+    var renderer = new Renderer(jsonLimits);
+    try {
+      var json = renderer.render(at(path), type, path, SourcePath.ROOT);
+      var report = new ValidationReport(renderer.issues, renderer.complete);
+      int bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+      if (!report.valid())
+        return new FieldInspection<>(
+            java.util.Optional.empty(),
+            report,
+            renderer.inputs.getOrDefault(path, InputState.INVALID),
+            bytes,
+            java.util.Optional.empty());
+      var parsed = JsonInput.read(json, jsonLimits).decode(type.codec());
+      if (parsed.error().isPresent())
+        return new FieldInspection<>(
+            java.util.Optional.empty(),
+            report.and(
+                new ValidationReport(
+                    List.of(
+                        Issue.error("value.decode", path, parsed.error().orElseThrow().message())),
+                    true)),
+            InputState.INVALID,
+            bytes,
+            java.util.Optional.empty());
+      return new FieldInspection<>(
+          java.util.Optional.of(type.freeze(parsed.result().orElseThrow())),
+          report,
+          renderer.inputs.getOrDefault(path, InputState.VALID),
+          bytes,
+          java.util.Optional.empty());
+    } catch (JsonInputException invalid) {
+      return new FieldInspection<>(
+          java.util.Optional.empty(),
+          new ValidationReport(
+              List.of(Issue.error(invalid.code(), path, invalid.getMessage())), true),
+          InputState.INVALID,
+          0,
+          java.util.Optional.of(invalid));
+    } catch (RuntimeException failed) {
+      return new FieldInspection<>(
+          java.util.Optional.empty(),
+          new ValidationReport(
+              List.of(
+                  Issue.error(
+                      "field.observation_unavailable", path, "This field could not be observed.")),
+              false),
+          InputState.UNAVAILABLE,
+          0,
+          java.util.Optional.of(failed));
+    }
+  }
+
   private final DraftNode root;
   private final DraftLimits limits;
   private final DraftBasis basis;

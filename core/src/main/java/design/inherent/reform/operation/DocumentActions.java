@@ -783,6 +783,17 @@ public final class DocumentActions<T> implements AutoCloseable {
     requireBatchRead();
   }
 
+  /** Cached actual edit admission only; no validation, source read, flush, or effect submission. */
+  public void requireEditing() {
+    access.require(OwnerContext.Right.WRITE);
+    requireBatchRead();
+    var current = actor.view();
+    if (current.pending().isPresent())
+      throw new PolicyRefusal("editor.pending", "Reconcile the previous operation before editing.");
+    if (current.review().isPresent())
+      throw new PolicyRefusal("editor.conflict", "Resolve the source conflict before editing.");
+  }
+
   public boolean mayInspect() {
     if (!isOpen()) return false;
     try {

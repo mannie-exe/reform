@@ -35,6 +35,111 @@ class UiScopeTest {
   }
 
   @Test
+  void nonportableReadsPreserveAcceptedInputBeyondBookmarkEnvelope() {
+    try (var owner = host()) {
+      var scope = UiScope.borrow(owner, UiLimits.STANDARD);
+      String accepted = "x".repeat(32768);
+      var type = ValueTypes.text(32768);
+      var key =
+          new UiReadKey<>(
+              DocumentId.parse("test:field_observation"),
+              type.snapshotPolicy(),
+              design.inherent.reform.value.SnapshotContext.Limits.CONFIGURATION,
+              65536,
+              value -> value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> new ViewStateKey<>(DocumentId.parse("test:bookmark"), type).capture(accepted));
+      var source =
+          new AtomicReference<UiObservation<String>>(
+              new UiObservation.Available<>(key.capture(accepted), 1));
+      UiRead<String> reader = source::get;
+      var observed = scope.observe(key, reader);
+      var derived =
+          scope.derive(
+              new UiReadKey<>(
+                  DocumentId.parse("test:field_derived"),
+                  type.snapshotPolicy(),
+                  design.inherent.reform.value.SnapshotContext.Limits.CONFIGURATION,
+                  65536,
+                  value -> value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length),
+              List.of(observed),
+              in -> in.value(observed));
+      assertEquals(accepted, derived.snapshot().value());
+      assertEquals(65536, scope.usage().stateBytes());
+      assertSame(observed, scope.observe(key, reader));
+      scope.close();
+      assertEquals(0, scope.usage().stateBytes());
+      code("ui.scope_closed", derived::snapshot);
+    }
+  }
+
+  @Test
+  void nonportableReadCopiesMutableDataAndSharesTheActualAggregateAllowance() {
+    try (var owner = host();
+        var scope = UiScope.borrow(owner, new UiLimits(16, 8, 16, 16, 16, 16, 32))) {
+      var key =
+          new UiReadKey<byte[]>(
+              DocumentId.parse("test:owned_bytes"),
+              (value, context) -> value.clone(),
+              design.inherent.reform.value.SnapshotContext.Limits.CONFIGURATION,
+              64,
+              value -> value.length);
+      byte[] bytes = new byte[24];
+      bytes[0] = 7;
+      var frozen = key.capture(bytes);
+      bytes[0] = 8;
+      assertEquals(7, frozen.value()[0]);
+      frozen.value()[0] = 9;
+      assertEquals(7, frozen.value()[0]);
+      var first = scope.child();
+      first.observe(key, () -> new UiObservation.Available<>(frozen, 1));
+      var second = scope.child();
+      var pending = second.observe(key, () -> new UiObservation.Available<>(frozen, 1));
+      assertInstanceOf(UiObservation.Unavailable.class, pending.snapshot());
+      assertEquals(24, scope.usage().stateBytes());
+      first.close();
+      scope.refreshObservations();
+      assertEquals(7, pending.snapshot().value()[0]);
+      assertEquals(24, scope.usage().stateBytes());
+      assertThrows(IllegalArgumentException.class, () -> key.capture(new byte[65]));
+    }
+  }
+
+  @Test
+  void nonportableCaptureAndEqualityPoliciesCannotWriteDuringProjection() {
+    try (var owner = host();
+        var scope = UiScope.borrow(owner, UiLimits.STANDARD)) {
+      var local = scope.local(text("guarded_capture"), "unchanged");
+      var key =
+          new UiReadKey<String>(
+              DocumentId.parse("test:impure_source"),
+              new design.inherent.reform.value.SnapshotPolicy<>() {
+                public String freeze(
+                    String value, design.inherent.reform.value.SnapshotContext context) {
+                  return value;
+                }
+
+                public boolean equivalent(String first, String second) {
+                  local.replace("illegal");
+                  return false;
+                }
+              },
+              design.inherent.reform.value.SnapshotContext.Limits.CONFIGURATION,
+              64,
+              String::length);
+      var source =
+          new AtomicReference<UiObservation<String>>(
+              new UiObservation.Available<>(key.capture("first"), 1));
+      var observed = scope.observe(key, source::get);
+      source.set(new UiObservation.Available<>(key.capture("second"), 2));
+      scope.refreshObservations();
+      assertInstanceOf(UiObservation.Unavailable.class, observed.snapshot());
+      assertEquals("unchanged", local.snapshot().value());
+    }
+  }
+
+  @Test
   void selectiveUseRequiresOnlyBorrowedLifetimeAndNeverClosesItsHost() {
     try (var owner = host()) {
       var scope = UiScope.borrow(owner, UiLimits.STANDARD);

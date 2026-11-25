@@ -505,7 +505,7 @@ class PlatformOutcomeTests(unittest.TestCase):
             return successful_boot(self.process, self.native, self.library, self.target,
                                    "0.20.1", required_scenarios=("semanticComponents",))
         complete = {"status": "PASS", "passed": True, "sourceUnchanged": True,
-                    "retiredUiDataZero": True, "keyedRowsVerified": True, "keyedRowFactories": 4, "keyedRowCloses": 4, "frameworkFactories": 1, "frameworkCloses": 1,
+                    "retiredUiDataZero": True, "keyedRowsVerified": True, "boundFieldsVerified": True, "boundFieldOperations": ["first", "second"], "keyedRowFactories": 4, "keyedRowCloses": 4, "frameworkFactories": 1, "frameworkCloses": 1,
                     "externalFactories": 1, "externalCloses": 1, "externalDraws": 8}
         self.native["semanticComponents"] = dict(complete)
         self.assertTrue(accepted())

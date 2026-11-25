@@ -33,6 +33,152 @@ class MountedUiTreeTest {
   }
 
   @Test
+  void unrelatedUpdatesDoNotReprojectTextOrReadiness() {
+    try (var owner = host()) {
+      var first = new AtomicReference<UiLocal<String>>();
+      var second = new AtomicReference<UiLocal<String>>();
+      var firstCalls = new AtomicInteger();
+      var secondCalls = new AtomicInteger();
+      var readiness = new AtomicInteger();
+      try (var tree =
+          MountedUiTree.open(
+              ClientViewContext.borrow(owner),
+              UiLimits.STANDARD,
+              (scope, props) -> {
+                first.set(scope.local(textKey("incremental_first"), "first"));
+                second.set(scope.local(textKey("incremental_second"), "second"));
+                var command =
+                    new design.inherent.reform.presentation.ui.UiCommand<Void>() {
+                      public design.inherent.reform.presentation.ui.UiAvailability availability() {
+                        readiness.incrementAndGet();
+                        return design.inherent.reform.presentation.ui.UiAvailability.READY;
+                      }
+
+                      public design.inherent.reform.presentation.ui.UiActionResult invoke(
+                          Void ignored) {
+                        return new design.inherent.reform.presentation.ui.UiActionResult.Applied();
+                      }
+
+                      public List<design.inherent.reform.presentation.ui.UiRead<?>> dependencies() {
+                        return List.of(second.get());
+                      }
+                    };
+                return Views.column(
+                    "root",
+                    List.of(
+                        Views.text(
+                            "first",
+                            UiText.of(Component.empty()),
+                            UiText.from(
+                                first.get(),
+                                value -> {
+                                  firstCalls.incrementAndGet();
+                                  return Component.literal(value);
+                                })),
+                        Views.text(
+                            "second",
+                            UiText.of(Component.empty()),
+                            UiText.from(
+                                second.get(),
+                                value -> {
+                                  secondCalls.incrementAndGet();
+                                  return Component.literal(value);
+                                })),
+                        Views.action(
+                            "action",
+                            UiText.of(Component.literal("Action")),
+                            UiText.of(Component.empty()),
+                            command)));
+              },
+              "fixed")) {
+        first.get().replace("changed");
+        tree.refresh(false);
+        assertEquals(2, firstCalls.get());
+        assertEquals(1, secondCalls.get(), "Unrelated text must remain cached");
+        assertEquals(1, readiness.get(), "Unrelated action readiness must remain cached");
+        second.get().replace("also changed");
+        tree.refresh(false);
+        assertEquals(2, firstCalls.get());
+        assertEquals(2, secondCalls.get());
+        assertEquals(2, readiness.get());
+      }
+    }
+  }
+
+  @Test
+  void earlierSuppressedCauseIsNotMisclassifiedAsANewCleanupFailure() {
+    try (var owner = host()) {
+      var failure = new IllegalStateException("actual row construction failure");
+      var earlier = new IllegalArgumentException("earlier supplementary cause");
+      failure.addSuppressed(earlier);
+      var type = ValueTypes.text(128);
+      try (var tree =
+          MountedUiTree.open(
+              ClientViewContext.borrow(owner),
+              UiLimits.STANDARD,
+              (scope, props) ->
+                  Views.forEach(
+                      "rows",
+                      scope.local(
+                          new ViewStateKey<>(
+                              DocumentId.parse("example:suppressed_row"), ValueTypes.list(type, 4)),
+                          List.of("row")),
+                      type,
+                      4,
+                      value -> value,
+                      (row, key, item, index) -> {
+                        throw failure;
+                      }),
+              "fixed")) {
+        assertEquals(
+            1,
+            tree.rowFailures().size(),
+            "An earlier supplementary cause must not defeat the keyed row fallback");
+        assertSame(failure, tree.rowFailures().getFirst().cause().orElseThrow());
+        assertSame(earlier, failure.getSuppressed()[0]);
+      }
+    }
+  }
+
+  @Test
+  void aNewRowCleanupFailureRemainsAFailedRetirement() {
+    try (var owner = host()) {
+      var failure = new IllegalStateException("construction");
+      var cleanup = new IllegalStateException("cleanup");
+      var failedScope = new AtomicReference<UiScope>();
+      var type = ValueTypes.text(128);
+      try (var tree =
+          MountedUiTree.open(
+              ClientViewContext.borrow(owner),
+              UiLimits.STANDARD,
+              (scope, props) ->
+                  Views.forEach(
+                      "rows",
+                      scope.local(
+                          new ViewStateKey<>(
+                              DocumentId.parse("example:cleanup_row"), ValueTypes.list(type, 4)),
+                          List.of("row")),
+                      type,
+                      4,
+                      value -> value,
+                      (row, key, item, index) -> {
+                        failedScope.set(row);
+                        row.onRetire(
+                            () -> {
+                              throw cleanup;
+                            });
+                        throw failure;
+                      }),
+              "fixed")) {
+        assertTrue(tree.rowFailures().isEmpty());
+        assertSame(failure, tree.failure().orElseThrow());
+        assertSame(cleanup, failure.getSuppressed()[0]);
+        assertSame(cleanup, failedScope.get().releaseFailure().orElseThrow());
+      }
+    }
+  }
+
+  @Test
   void keyedRowsRetainIdentityAcrossMoveButReadCurrentValuesAndIndices() {
     try (var owner = host()) {
       var items = new AtomicReference<UiLocal<List<String>>>();

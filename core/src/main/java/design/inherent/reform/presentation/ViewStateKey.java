@@ -12,7 +12,8 @@ import java.util.Objects;
 /**
  * A view-local data contract. Bookmarks retain bounded encoded data, never the supplied instance.
  */
-public final class ViewStateKey<S> {
+public final class ViewStateKey<S>
+    implements design.inherent.reform.presentation.ui.UiCaptureKey<S> {
   public static final JsonLimits STANDARD = new JsonLimits(16_384, 32, 4096, 8192, 256, 1024);
   private final DocumentId id;
   private final ValueType<S> type;
@@ -38,6 +39,11 @@ public final class ViewStateKey<S> {
 
   public DocumentId id() {
     return id;
+  }
+
+  @Override
+  public boolean owns(design.inherent.reform.presentation.ui.UiSnapshot<?> snapshot) {
+    return snapshot instanceof Snapshot<?> captured && captured.key() == this;
   }
 
   public JsonLimits limits() {
@@ -75,7 +81,8 @@ public final class ViewStateKey<S> {
     }
   }
 
-  public static final class Snapshot<S> {
+  public static final class Snapshot<S>
+      implements design.inherent.reform.presentation.ui.UiSnapshot<S> {
     private final ViewStateKey<S> key;
     private final String json;
 
@@ -95,6 +102,16 @@ public final class ViewStateKey<S> {
 
     public int encodedBytes() {
       return json.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    @Override
+    public long retainedBytes() {
+      return encodedBytes();
+    }
+
+    @Override
+    public boolean sameData(design.inherent.reform.presentation.ui.UiSnapshot<?> other) {
+      return other instanceof Snapshot<?> snapshot && sameData(snapshot);
     }
 
     /** Exact retained data identity; it does not compare captions or another key's schema. */

@@ -1055,6 +1055,23 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     return saving || loading || pendingEdits > 0;
   }
 
+  java.util.Optional<design.inherent.reform.presentation.ui.FieldFrontend.Input> boundFieldInput(
+      FieldPath path) {
+    ClientSettingsRuntime.requireClientThread();
+    if (closed) throw new PolicyRefusal("editor.closed", "This retained form is closed");
+    var control = controls.get(path);
+    if (control == null || !(control.widget() instanceof FormEditBox input))
+      return java.util.Optional.empty();
+    return java.util.Optional.of(
+        new design.inherent.reform.presentation.ui.FieldFrontend.Input(
+            input.getValue(),
+            previewInputEpoch,
+            input.getCursorPosition(),
+            input.selection(),
+            Objects.equals(versions.get(path), acceptedVersions.get(path)),
+            pendingWork()));
+  }
+
   boolean canStage(FieldPath path) {
     var current = actions.view();
     return !closed

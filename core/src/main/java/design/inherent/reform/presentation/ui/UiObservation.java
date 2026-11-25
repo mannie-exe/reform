@@ -1,7 +1,6 @@
 package design.inherent.reform.presentation.ui;
 
 import design.inherent.reform.owner.PolicyRefusal;
-import design.inherent.reform.presentation.ViewStateKey;
 import design.inherent.reform.validation.ValidationReport;
 import java.util.Objects;
 import java.util.Optional;
@@ -18,7 +17,7 @@ public sealed interface UiObservation<T> {
     throw new PolicyRefusal(((Unavailable<T>) this).report());
   }
 
-  record Available<T>(ViewStateKey.Snapshot<T> data, long revision) implements UiObservation<T> {
+  record Available<T>(UiSnapshot<T> data, long revision) implements UiObservation<T> {
     public Available {
       Objects.requireNonNull(data);
       if (revision < 1) throw new IllegalArgumentException("Observation revision must be positive");

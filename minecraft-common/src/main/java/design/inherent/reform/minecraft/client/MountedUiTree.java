@@ -103,7 +103,7 @@ final class MountedUiTree implements AutoCloseable {
         } catch (RuntimeException failed) {
           cleanup(admitted, failed);
           // A cleanup failure cannot be recast as a usable fallback or a successful retirement.
-          if (failed.getSuppressed().length != 0) throw failed;
+          if (admitted.releaseFailure().isPresent()) throw failed;
           var report =
               new PolicyRefusal(
                       "ui.row_failed",
@@ -258,12 +258,35 @@ final class MountedUiTree implements AutoCloseable {
     String selectedBranch;
     UiActionResult lastResult;
     ForMount<?> repeated;
+    final List<UiRead<?>> reads;
+    private Row cachedRow;
+    private long[] observed;
 
     Node(ViewSpec spec, UiScope parent) {
       this.spec = Objects.requireNonNull(spec);
       scope = parent.child();
       id = "ui:" + (sequence = Math.incrementExact(sequence));
       try {
+        var declared = new ArrayList<UiRead<?>>();
+        switch (spec) {
+          case ViewSpec.Text text -> {
+            add(declared, text.title().dependencies());
+            add(declared, text.body().dependencies());
+          }
+          case ViewSpec.Action action -> {
+            add(declared, action.label().dependencies());
+            add(declared, action.help().dependencies());
+            add(declared, action.command().dependencies());
+          }
+          case ViewSpec.Section section -> add(declared, section.title().dependencies());
+          default -> {}
+        }
+        reads = List.copyOf(declared);
+        scope.onRetire(
+            () -> {
+              cachedRow = null;
+              observed = null;
+            });
         switch (spec) {
           case ViewSpec.Column column -> construct(column.children());
           case ViewSpec.Section section -> construct(section.children());
@@ -397,21 +420,16 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     void inputs(List<UiRead<?>> into) {
-      switch (spec) {
-        case ViewSpec.Text text -> {
-          add(into, text.title().dependencies());
-          add(into, text.body().dependencies());
-        }
-        case ViewSpec.Action action -> {
-          add(into, action.label().dependencies());
-          add(into, action.help().dependencies());
-          add(into, action.command().dependencies());
-        }
-        case ViewSpec.Section section -> add(into, section.title().dependencies());
-        default -> {}
-      }
+      add(into, reads);
       for (var child : children) child.inputs(into);
       if (branch != null) branch.inputs(into);
+    }
+
+    void clearProjectedRows() {
+      cachedRow = null;
+      observed = null;
+      for (var child : children) child.clearProjectedRows();
+      if (branch != null) branch.clearProjectedRows();
     }
 
     void rows(List<Row> into) {
@@ -432,40 +450,51 @@ final class MountedUiTree implements AutoCloseable {
                 report(diagnosis),
                 UiAvailability.READY));
       }
-      switch (spec) {
-        case ViewSpec.Text text ->
-            into.add(
-                new Row(
-                    this,
-                    Kind.TEXT,
-                    text.title().resolve(),
-                    text.body().resolve(),
-                    UiAvailability.READY));
-        case ViewSpec.Action action ->
-            into.add(
-                new Row(
-                    this,
-                    Kind.ACTION,
-                    action.label().resolve(),
-                    action.help().resolve(),
-                    inherited.available()
-                        ? Objects.requireNonNull(action.command().availability())
-                        : inherited));
-        case ViewSpec.Section section ->
-            into.add(
-                new Row(
-                    this,
-                    Kind.OPEN,
-                    section.title().resolve(),
-                    Component.empty(),
-                    UiAvailability.READY));
-        default -> {}
+      var current = projectedRow();
+      if (current != null) {
+        if (current.kind() == Kind.ACTION && !inherited.available())
+          current = new Row(this, current.kind(), current.label(), current.body(), inherited);
+        into.add(current);
       }
       for (var child : children) child.rows(into, childrenAvailability);
       if (branch != null) branch.rows(into, childrenAvailability);
       if (spec instanceof ViewSpec.Section)
         into.add(
             new Row(this, Kind.CLOSE, Component.empty(), Component.empty(), UiAvailability.READY));
+    }
+
+    private Row projectedRow() {
+      var revisions = new long[reads.size()];
+      for (int i = 0; i < reads.size(); i++) revisions[i] = reads.get(i).snapshot().revision();
+      if (observed != null && java.util.Arrays.equals(observed, revisions)) return cachedRow;
+      var next =
+          switch (spec) {
+            case ViewSpec.Text text ->
+                new Row(
+                    this,
+                    Kind.TEXT,
+                    text.title().resolve(),
+                    text.body().resolve(),
+                    UiAvailability.READY);
+            case ViewSpec.Action action ->
+                new Row(
+                    this,
+                    Kind.ACTION,
+                    action.label().resolve(),
+                    action.help().resolve(),
+                    Objects.requireNonNull(action.command().availability()));
+            case ViewSpec.Section section ->
+                new Row(
+                    this,
+                    Kind.OPEN,
+                    section.title().resolve(),
+                    Component.empty(),
+                    UiAvailability.READY);
+            default -> null;
+          };
+      cachedRow = next;
+      observed = revisions;
+      return next;
     }
   }
 
@@ -542,6 +571,7 @@ final class MountedUiTree implements AutoCloseable {
         // Permission/context loss is not a stale-content offer. Remove previously disclosed values
         // and controls without recreating the actual owner or source.
         rows = List.of();
+        tree.clearProjectedRows();
         revision = root.revision();
         return true;
       }

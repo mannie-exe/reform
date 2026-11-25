@@ -76,6 +76,311 @@ class DocumentActionsTest {
   }
 
   @Test
+  void semanticFieldsUseActualOwnerEditsAndPreserveInvalidSiblingDraftsWithoutSaving()
+      throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.ensureLoaded(EntryPoint.GUI));
+      var before = Files.readAllBytes(h.path);
+      int writes = h.writes.get();
+      var scope =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.UiScope.borrow(
+                      h.context, design.inherent.reform.presentation.ui.UiLimits.STANDARD));
+      var count =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.FieldBinding.bind(
+                      scope, h.actions, FieldPath.ROOT.field("count"), COUNT.type()));
+      var label =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.FieldBinding.bind(
+                      scope, h.actions, FieldPath.ROOT.field("label"), LABEL.type()));
+      assertSame(h.actions.definition(), count.identity().definition());
+      assertEquals(h.actions.context(), count.identity().context());
+      var edit =
+          h.nativeCall(
+              () ->
+                  count
+                      .edits()
+                      .invoke(new design.inherent.reform.presentation.ui.FieldEdit.Raw<>("bad")));
+      var first =
+          assertInstanceOf(
+              design.inherent.reform.presentation.ui.UiActionResult.Pending.class, edit);
+      await(DocumentActions.result(first.operation()));
+      var sibling =
+          h.nativeCall(
+              () ->
+                  label
+                      .edits()
+                      .invoke(
+                          new design.inherent.reform.presentation.ui.FieldEdit.Typed<>(
+                              "unsaved sibling")));
+      await(
+          DocumentActions.result(
+              assertInstanceOf(
+                      design.inherent.reform.presentation.ui.UiActionResult.Pending.class, sibling)
+                  .operation()));
+      h.nativeCall(
+          () -> {
+            scope.refreshObservations();
+            return null;
+          });
+      var bad = h.nativeCall(() -> count.state().snapshot().value());
+      var good = h.nativeCall(() -> label.state().snapshot().value());
+      assertEquals("bad", ((DraftNode.Scalar) bad.draft()).raw());
+      assertTrue(bad.value().isEmpty());
+      assertFalse(bad.validation().valid());
+      assertEquals("unsaved sibling", good.value().orElseThrow());
+      assertEquals(
+          h.actions.view().snapshot().orElseThrow().version(),
+          good.target().version().orElseThrow());
+      var repair =
+          h.nativeCall(
+              () ->
+                  count
+                      .edits()
+                      .invoke(new design.inherent.reform.presentation.ui.FieldEdit.Typed<>(2)));
+      await(
+          DocumentActions.result(
+              assertInstanceOf(
+                      design.inherent.reform.presentation.ui.UiActionResult.Pending.class, repair)
+                  .operation()));
+      h.nativeCall(
+          () -> {
+            scope.refreshObservations();
+            count.close();
+            return null;
+          });
+      assertTrue(h.actions.isOpen());
+      assertEquals(
+          "unsaved sibling",
+          h.nativeCall(() -> label.state().snapshot().value().value().orElseThrow()));
+      assertArrayEquals(before, Files.readAllBytes(h.path));
+      assertEquals(writes, h.writes.get());
+      h.nativeCall(
+          () -> {
+            scope.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void semanticFrontendCannotGrantWriteOrEraseRejectedInputAndReadLossClearsFieldData()
+      throws Exception {
+    try (var h = new Harness()) {
+      h.run(() -> h.actions.ensureLoaded(EntryPoint.GUI));
+      var before = Files.readAllBytes(h.path);
+      var input =
+          new java.util.concurrent.atomic.AtomicReference<>(
+              new design.inherent.reform.presentation.ui.FieldFrontend.Input(
+                  "rejected native text", 1, 3, 2, false, false));
+      var allowFrontend = new AtomicBoolean();
+      var frontend =
+          new design.inherent.reform.presentation.ui.FieldFrontend() {
+            public java.util.Optional<Input> input() {
+              return java.util.Optional.of(input.get());
+            }
+
+            public design.inherent.reform.presentation.ui.UiAvailability editing() {
+              return allowFrontend.get()
+                  ? design.inherent.reform.presentation.ui.UiAvailability.READY
+                  : design.inherent.reform.presentation.ui.UiAvailability.blocked(
+                      "fixture.input_unaccepted", "Repair the input first.");
+            }
+
+            public design.inherent.reform.presentation.ui.UiAvailability submission() {
+              return editing();
+            }
+          };
+      var scope =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.UiScope.borrow(
+                      h.context, design.inherent.reform.presentation.ui.UiLimits.STANDARD));
+      var binding =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.FieldBinding.bind(
+                      scope, h.actions, FieldPath.ROOT.field("label"), LABEL.type(), frontend));
+      var state = h.nativeCall(() -> binding.state().snapshot().value());
+      assertEquals("original", state.value().orElseThrow());
+      assertEquals("rejected native text", state.input().orElseThrow().raw());
+      assertFalse(state.input().orElseThrow().accepted());
+      assertInstanceOf(
+          design.inherent.reform.presentation.ui.UiActionResult.Refused.class,
+          h.nativeCall(
+              () ->
+                  binding
+                      .edits()
+                      .invoke(
+                          new design.inherent.reform.presentation.ui.FieldEdit.Typed<>(
+                              "must not enter"))));
+      allowFrontend.set(true);
+      h.write.set(false);
+      assertInstanceOf(
+          design.inherent.reform.presentation.ui.UiActionResult.Refused.class,
+          h.nativeCall(
+              () ->
+                  binding
+                      .edits()
+                      .invoke(
+                          new design.inherent.reform.presentation.ui.FieldEdit.Typed<>(
+                              "still not allowed"))));
+      h.read.set(false);
+      h.nativeCall(
+          () -> {
+            scope.refreshObservations();
+            return null;
+          });
+      assertInstanceOf(
+          design.inherent.reform.presentation.ui.UiObservation.Unavailable.class,
+          h.nativeCall(() -> binding.state().snapshot()));
+      assertEquals(0, h.nativeCall(() -> scope.usage().stateBytes()));
+      h.read.set(true);
+      h.nativeCall(
+          () -> {
+            scope.refreshObservations();
+            return null;
+          });
+      assertEquals(
+          "original", h.nativeCall(() -> binding.state().snapshot().value().value().orElseThrow()));
+      assertArrayEquals(before, Files.readAllBytes(h.path));
+      h.nativeCall(
+          () -> {
+            scope.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void semanticFieldKeepsLongAdmittedRawInputWhenTheSourceBudgetRefusesItsCandidate()
+      throws Exception {
+    var longLabel = FieldKey.of("label", ValueTypes.text(32768));
+    var record =
+        RecordType.<Profile>builder(v -> new Profile(v.get(COUNT), v.get(SCALE), v.get(longLabel)))
+            .field(COUNT, Profile::count)
+            .field(SCALE, Profile::scale)
+            .field(longLabel, Profile::label)
+            .build();
+    try (var h = new Harness(record)) {
+      h.run(() -> h.actions.ensureLoaded(EntryPoint.GUI));
+      var before = Files.readAllBytes(h.path);
+      String raw = "x".repeat(32768);
+      h.edit("label", raw, EntryPoint.GUI);
+      var scope =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.UiScope.borrow(
+                      h.context, design.inherent.reform.presentation.ui.UiLimits.STANDARD));
+      var binding =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.FieldBinding.bind(
+                      scope, h.actions, FieldPath.ROOT.field("label"), longLabel.type()));
+      var observed = h.nativeCall(() -> binding.state().snapshot().value());
+      assertEquals(raw, ((DraftNode.Scalar) observed.draft()).raw());
+      assertFalse(
+          observed.validation().valid(),
+          "The explicit backend JSON allowance remains authoritative");
+      assertTrue(h.nativeCall(() -> scope.usage().stateBytes()) >= 65536);
+      assertArrayEquals(before, Files.readAllBytes(h.path));
+      h.nativeCall(
+          () -> {
+            scope.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void semanticFieldsCacheCodecProjectionAndCannotDispatchInsideAPureComputation()
+      throws Exception {
+    var base = ValueTypes.text(128);
+    var decodeCalls = new AtomicInteger();
+    var counted =
+        ValueType.of(
+            base.codec()
+                .xmap(
+                    s -> {
+                      decodeCalls.incrementAndGet();
+                      return s;
+                    },
+                    java.util.function.Function.identity()),
+            base.shape(),
+            base.snapshotPolicy());
+    var field = FieldKey.of("label", counted);
+    var record =
+        RecordType.<Profile>builder(v -> new Profile(v.get(COUNT), v.get(SCALE), v.get(field)))
+            .field(COUNT, Profile::count)
+            .field(SCALE, Profile::scale)
+            .field(field, Profile::label)
+            .build();
+    try (var h = new Harness(record)) {
+      h.run(() -> h.actions.ensureLoaded(EntryPoint.GUI));
+      var scope =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.UiScope.borrow(
+                      h.context, design.inherent.reform.presentation.ui.UiLimits.STANDARD));
+      var binding =
+          h.nativeCall(
+              () ->
+                  design.inherent.reform.presentation.ui.FieldBinding.bind(
+                      scope, h.actions, FieldPath.ROOT.field("label"), counted));
+      int before = decodeCalls.get();
+      h.nativeCall(
+          () -> {
+            for (int i = 0; i < 10; i++) scope.refreshObservations();
+            return null;
+          });
+      assertEquals(before, decodeCalls.get());
+      int operations = h.nativeCall(() -> h.actions.operations().size());
+      var refusal =
+          h.nativeCall(
+              () -> {
+                var result =
+                    new java.util.concurrent.atomic.AtomicReference<
+                        design.inherent.reform.presentation.ui.UiActionResult>();
+                scope.derive(
+                    new design.inherent.reform.presentation.ViewStateKey<>(
+                        DocumentId.parse("fixture:pure_field"), ValueTypes.text(128)),
+                    java.util.List.of(binding.state()),
+                    in -> {
+                      result.set(
+                          binding
+                              .edits()
+                              .invoke(
+                                  new design.inherent.reform.presentation.ui.FieldEdit.Typed<>(
+                                      "illegal")));
+                      return in.value(binding.state()).value().orElseThrow();
+                    });
+                return result.get();
+              });
+      var blocked =
+          assertInstanceOf(
+              design.inherent.reform.presentation.ui.UiActionResult.Refused.class, refusal);
+      assertEquals("ui.write_in_pure_phase", blocked.report().issues().getFirst().code());
+      assertEquals(operations, h.nativeCall(() -> h.actions.operations().size()));
+      h.nativeCall(
+          () ->
+              assertThrows(
+                  PolicyRefusal.class,
+                  () ->
+                      design.inherent.reform.presentation.ui.FieldBinding.bind(
+                          scope, h.actions, FieldPath.ROOT.field("label"), base)));
+      h.nativeCall(
+          () -> {
+            scope.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
   void previewCaptureUsesReadAuthorityAndDoesNotSaveOrApply() throws Exception {
     try (var h = new Harness()) {
       h.run(() -> h.actions.load(EntryPoint.GUI));
