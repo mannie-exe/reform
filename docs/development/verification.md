@@ -1,5 +1,13 @@
 # Verification
 
+## 0.4 development: optional field slots
+
+Candidate `0.4.0-dev.87` at `48b3cd7` passes the four-target build, including 137 tooling checks. Its independent entry-slot fixture passes thirteen assertions per boot on every minimum target, with eight normal exits and removed fixtures. The same actual owner and native input combine an eyebrow, leading artwork, alternative text, background, and a native control adapter. Duplicate declarations and unusable offers refuse before factory entry. Real 320×240 resize and return retain the invalid count, valid dirty label, revision, caret, selection, and focused input, without recreating either graphic or writing the source.
+
+A controlled background drawing failure retains its exact cause and field-routed diagnostic. The failed content closes once, while the leading artwork and native editing remain available. Owner retirement closes the remaining content once; both boots observe two factories and two closes. Captures on both game families retain readable required content and a clipped deliberately oversized leading fill. These are cached canvas contributions, not owned texture/GPU allocations or evidence that arbitrary author code obeys resource budgets.
+
+Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.87 --client --isolated-scene entries --timeout 240`, selecting other targets explicitly. The scoped qualification does not imply consumer use of optional slots, every combination of custom artwork and themes, or the final combined acceptance gate. The original Maven inputs and named source archives remain frozen.
+
 ## 0.4 development: reference titles and preview narration
 
 Candidate `0.4.0-dev.86` at `1296d43` passes the four-target build and an isolated initial/reopen pair on every target. Each boot passes 117 registered-task and field-selector checks; all eight clients exit normally and remove their disposable fixtures. An explicit provider refusal preserves the dirty owner, source, and empty allocation ledgers. Both the focused native viewport and actual workspace summary narrate its actionable cause. A second explicit preparation succeeds and draws; camera, narrow return, subject invalidation, Home retirement, and fresh-owner cleanup retain their earlier semantics.

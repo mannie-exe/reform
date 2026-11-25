@@ -140,7 +140,7 @@ A leading offer is between 1 and 256 units in each dimension. The measured row r
 
 Each `ClientEntryGraphic.Factory` receives a borrowed `ClientViewContext`. Construct cached content without editing or changing screens, register partial-resource cleanup before allocation, and return content owned by that field's presentation. Rendering receives the actual font, bounds, and resolved theme. Do not discover, compile, decode, allocate entities, or prepare resources while drawing. Native graphics should reuse the existing preparation and retirement APIs; the slot is not another upload or resource-ownership system. Factories run lazily when the field is first mounted and survive ordinary reflow. Closing the form attempts every registered cleanup. Construction, drawing, or cleanup failures retain a field-routed cause while the settings stay editable.
 
-The implementation compiles and passes the four-target build on dev.87; native entry-slot qualification is pending. The declaration bounds constrain layout and metadata, not arbitrary author code or resource usage.
+The dev.87 four-target build and native entry-slot pairs pass; [verification](verification.md#04-development-optional-field-slots) records their exact scope. The declaration bounds constrain layout and metadata, not arbitrary author code or resource usage.
 
 ## Reference titles and preview feedback
 
