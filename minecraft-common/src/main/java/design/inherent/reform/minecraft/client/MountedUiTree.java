@@ -971,7 +971,6 @@ final class MountedUiTree implements AutoCloseable {
                                       ? "reform.ui.expanded"
                                       : "reform.ui.collapsed",
                                   row.node().expanded ? "Expanded" : "Collapsed"));
-                        join(narration, body);
                         return narration;
                       })
                   .build();

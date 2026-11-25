@@ -570,7 +570,6 @@ final class FormPanel extends ScrollFrame {
       for (var redirect : focusRedirects.entrySet())
         if (key.equals(redirect.getKey()) || key.startsWith(redirect.getKey() + "/")) {
           key = fieldFocus(redirect.getValue(), null);
-          jump(redirect.getValue());
           break;
         }
     }
