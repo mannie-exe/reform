@@ -273,6 +273,11 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                      and native["semanticComponents"].get("boundFieldsVerified") is True
                      and native["semanticComponents"].get("textInputVerified") is True
                      and native["semanticComponents"].get("fieldPartsVerified") is True
+                     and native["semanticComponents"].get("standaloneFieldPartsVerified") is True
+                     and type(native["semanticComponents"].get("standaloneFieldPartFactories")) is int
+                     and native["semanticComponents"]["standaloneFieldPartFactories"] == 1
+                     and type(native["semanticComponents"].get("standaloneFieldPartCloses")) is int
+                     and native["semanticComponents"]["standaloneFieldPartCloses"] == 1
                      and type(native["semanticComponents"].get("fieldPartFactories")) is int
                      and native["semanticComponents"]["fieldPartFactories"] == 1
                      and type(native["semanticComponents"].get("fieldPartCloses")) is int
@@ -490,7 +495,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
             if isolated_scene == "components":
-                roles = {"platform-components-framework.png", "platform-components-bound-fields.png", "platform-components-narrow.png", "platform-components-external.png"}
+                roles = {"platform-components-framework.png", "platform-components-bound-fields.png", "platform-components-narrow.png", "platform-components-external.png", "platform-components-standalone.png"}
                 for key in ("semanticComponents", "sceneFailure"):
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)

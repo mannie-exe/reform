@@ -60,7 +60,18 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private final HashMap<String, UiScope> rowScopes = new HashMap<>();
   private int rowFactories, rowCloses;
   private boolean keyedRowsVerified;
-  private boolean boundFieldsVerified, textInputVerified, fieldPartsVerified;
+  private boolean boundFieldsVerified,
+      textInputVerified,
+      fieldPartsVerified,
+      standalonePartsVerified;
+  private SettingsScreen<?> standalone;
+  private design.inherent.reform.operation.DocumentActions<?> standaloneActions;
+  private ClientFieldParts<?> standaloneParts;
+  private UiScope standaloneScope;
+  private ClientTextInput standaloneInput;
+  private design.inherent.reform.operation.OperationHandle<?> standaloneOperation;
+  private String standaloneOriginal;
+  private int standaloneFactories, standaloneCloses;
   private int fieldFactories, fieldCloses, secondFieldFactories, secondFieldCloses;
   private UiScope secondNativeFieldScope;
   private ClientFieldParts<?> secondNativeFieldParts;
@@ -849,6 +860,126 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
             java.util.Arrays.equals(settingsBytes, Files.readAllBytes(settingsPath))
                 && settingsAttributes.lastModifiedTime().equals(after.lastModifiedTime())
                 && Objects.equals(settingsAttributes.fileKey(), after.fileKey()));
+        var options =
+            new ClientFormOptions<PlatformWorkflowExample.Preferences>(
+                    FormPresentation.EMPTY, java.util.Map.of())
+                .withComponent(
+                    FieldPath.ROOT.field("distance"),
+                    (fieldRoot, parts) -> {
+                      standaloneFactories++;
+                      fieldRoot.onRetire(() -> standaloneCloses++);
+                      standaloneScope = fieldRoot;
+                      standaloneParts = parts;
+                      return parts.standard("standalone");
+                    });
+        var opened =
+            PlatformWorkflowExample.settings()
+                .screen(parent, text("Standalone field parts"), options);
+        check(
+            "selective field host is an actual standalone settings screen",
+            opened instanceof SettingsScreen<?>);
+        standalone = (SettingsScreen<?>) opened;
+        NativeScreens.open(client, standalone);
+        stage = 11;
+      }
+      case 11 -> {
+        if (standaloneParts == null
+            || standalone.editingActions().view().availability()
+                != design.inherent.reform.owner.EditorActor.Availability.READY) return false;
+        standaloneScope.refreshObservations();
+        var field = standaloneParts.state().snapshot().value();
+        if (field.input().isEmpty()
+            || !field.input().orElseThrow().accepted()
+            || field.input().orElseThrow().pending()) return false;
+        check(
+            "standalone field parts borrow the actual standalone owner",
+            standaloneParts
+                    .binding()
+                    .identity()
+                    .context()
+                    .equals(standalone.editingActions().context())
+                && standaloneFactories == 1);
+        standaloneInput = standaloneParts.input().orElseThrow();
+        var input = standaloneInput.state().snapshot().value();
+        standaloneOriginal = input.raw();
+        var result =
+            standaloneInput
+                .replacements()
+                .invoke(
+                    new ClientTextInput.Replacement(
+                        input.stamp(), 0, input.raw().length(), "", 0, 0));
+        check(
+            "standalone input uses the same actual edit pipeline",
+            result instanceof UiActionResult.Pending);
+        standaloneOperation = ((UiActionResult.Pending) result).operation();
+        stage = 12;
+      }
+      case 12 -> {
+        if (!standaloneOperation.completion().toCompletableFuture().isDone()) return false;
+        standaloneScope.refreshObservations();
+        var field = standaloneParts.state().snapshot().value();
+        if (field.input().isEmpty()
+            || !field.input().orElseThrow().accepted()
+            || field.input().orElseThrow().pending()) return false;
+        check(
+            "standalone field retains invalid input and persistent feedback",
+            !field.validation().valid()
+                && field.input().orElseThrow().raw().isEmpty()
+                && standalone
+                    .editingActions()
+                    .operation(standaloneOperation.snapshot().id())
+                    .isPresent());
+        driver.capture("components-standalone.png", () -> stage = 13);
+        stage = -1;
+      }
+      case 13 -> {
+        standaloneScope.refreshObservations();
+        var input = standaloneInput.state().snapshot().value();
+        var result =
+            standaloneInput
+                .replacements()
+                .invoke(
+                    new ClientTextInput.Replacement(
+                        input.stamp(),
+                        0,
+                        input.raw().length(),
+                        standaloneOriginal,
+                        standaloneOriginal.length(),
+                        standaloneOriginal.length()));
+        check(
+            "standalone repair returns the actual owner operation",
+            result instanceof UiActionResult.Pending);
+        standaloneOperation = ((UiActionResult.Pending) result).operation();
+        stage = 14;
+      }
+      case 14 -> {
+        if (!standaloneOperation.completion().toCompletableFuture().isDone()) return false;
+        standaloneScope.refreshObservations();
+        var field = standaloneParts.state().snapshot().value();
+        if (field.input().isEmpty()
+            || !field.input().orElseThrow().accepted()
+            || field.input().orElseThrow().pending()) return false;
+        check(
+            "standalone repair restores the original draft without saving",
+            field.validation().valid()
+                && field.input().orElseThrow().raw().equals(standaloneOriginal)
+                && !standalone.editingActions().view().dirty());
+        standaloneActions = standalone.editingActions();
+        press(standalone, "Done");
+        check(
+            "native standalone Done closes only its actual host and parts",
+            NativeScreens.current(client) == parent
+                && !standaloneScope.isOpen()
+                && standaloneFactories == 1
+                && standaloneCloses == 1
+                && !standaloneActions.isOpen());
+        var after = Files.readAttributes(settingsPath, BasicFileAttributes.class);
+        check(
+            "standalone parts preserve the original source file",
+            java.util.Arrays.equals(settingsBytes, Files.readAllBytes(settingsPath))
+                && settingsAttributes.lastModifiedTime().equals(after.lastModifiedTime())
+                && Objects.equals(settingsAttributes.fileKey(), after.fileKey()));
+        standalonePartsVerified = true;
         complete = true;
         return true;
       }
@@ -971,6 +1102,9 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     report.addProperty("boundFieldsVerified", complete && boundFieldsVerified);
     report.addProperty("textInputVerified", complete && textInputVerified);
     report.addProperty("fieldPartsVerified", complete && fieldPartsVerified);
+    report.addProperty("standaloneFieldPartsVerified", complete && standalonePartsVerified);
+    report.addProperty("standaloneFieldPartFactories", standaloneFactories);
+    report.addProperty("standaloneFieldPartCloses", standaloneCloses);
     report.addProperty("fieldPartFactories", fieldFactories);
     report.addProperty("fieldPartCloses", fieldCloses);
     report.addProperty("secondFieldPartFactories", secondFieldFactories);
