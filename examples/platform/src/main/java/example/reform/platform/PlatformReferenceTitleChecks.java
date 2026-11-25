@@ -51,6 +51,7 @@ final class PlatformReferenceTitleChecks {
   private int stage;
   private boolean complete;
   private final JsonArray observedHelp = new JsonArray();
+  private final JsonObject unknownStatus = new JsonObject();
 
   PlatformReferenceTitleChecks(Consumer<String> progress, BiConsumer<String, Runnable> capture) {
     this.progress = progress;
@@ -63,6 +64,7 @@ final class PlatformReferenceTitleChecks {
     result.add("checks", checks);
     result.add("observedHelp", observedHelp);
     result.add("chooserLayouts", chooserLayouts);
+    result.add("unknownStatus", unknownStatus.deepCopy());
     return result;
   }
 
@@ -563,6 +565,12 @@ final class PlatformReferenceTitleChecks {
         var narration = popup.getNarrationMessage().getString();
         if (!narration.toLowerCase(java.util.Locale.ROOT).contains("unknown reference"))
           return false;
+        unknownStatus.addProperty("rawId", raw("block"));
+        unknownStatus.addProperty("narration", narration);
+        unknownStatus.addProperty(
+            "visibleStatus", measuredText(popup).contains("Unknown reference"));
+        unknownStatus.addProperty("useSelectionActive", button(popup, "Use selection").active);
+        unknownStatus.addProperty("sourceUnchanged", Arrays.equals(missingSource, savedBytes()));
         check(
             "unknown reference status uses sentence case in visible and narrated fallback labels",
             narration.contains("Unknown reference")
