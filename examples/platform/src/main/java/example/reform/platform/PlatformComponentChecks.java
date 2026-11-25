@@ -63,6 +63,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private boolean boundFieldsVerified;
   private ClientEditor<PlatformWorkflowExample.Preferences> boundEditor;
   private UiScope fieldScope;
+  private UiScope.Usage fieldBaseline;
   private FieldBinding<PlatformWorkflowExample.Preferences, ?> distanceBinding, labelBinding;
   private design.inherent.reform.operation.OperationHandle<?> fieldOperation;
   private String originalDistance, originalLabel;
@@ -410,6 +411,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         if (!arrived()) return false;
         boundEditor = workflow.editor(PlatformWorkflowExample.DEFINITION);
         if (!boundEditor.canStage(FieldPath.ROOT.field("distance"))) return false;
+        fieldBaseline = frameworkScope.usage();
         fieldScope = frameworkScope.child();
         distanceBinding =
             ClientFieldBindings.field(
@@ -468,6 +470,10 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
                     .raw()
                     .equals("bad")
                 && boundEditor.actions().operation(fieldOperation.snapshot().id()).isPresent());
+        driver.capture("components-bound-fields.png", () -> stage = 25);
+        stage = -1;
+      }
+      case 25 -> {
         replace(workflow.screen(), fieldInput("distance"), originalDistance);
         stage = 23;
       }
@@ -492,8 +498,15 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         check(
             "binding close retires observations while the actual editor stays open",
             boundEditor.isOpen()
-                && fieldScope.usage().stateBytes() == 0
-                && fieldScope.usage().scopes() == 0);
+                && !fieldScope.isOpen()
+                && frameworkScope.usage().equals(fieldBaseline));
+        boolean retiredReadRefused = false;
+        try {
+          distanceBinding.state().snapshot();
+        } catch (design.inherent.reform.owner.PolicyRefusal closed) {
+          retiredReadRefused = closed.report().issues().getFirst().code().equals("ui.scope_closed");
+        }
+        check("retired field binding cannot expose its old cached data", retiredReadRefused);
         boundFieldsVerified = true;
         workflow.close();
         check(

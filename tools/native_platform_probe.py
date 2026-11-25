@@ -477,7 +477,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
             if isolated_scene == "components":
-                roles = {"platform-components-framework.png", "platform-components-narrow.png", "platform-components-external.png"}
+                roles = {"platform-components-framework.png", "platform-components-bound-fields.png", "platform-components-narrow.png", "platform-components-external.png"}
                 for key in ("semanticComponents", "sceneFailure"):
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
