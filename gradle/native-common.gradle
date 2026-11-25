@@ -8,6 +8,7 @@ def versionDirectory = "minecraft-${target.minecraftVersion.replace('.', '_')}"
 
 base { archivesName = 'reform' }
 sourceSets.main.java.srcDir rootProject.file('minecraft-common/src/main/java')
+sourceSets.test.java.srcDir rootProject.file('minecraft-common/src/test/java')
 sourceSets.main.resources.srcDir rootProject.file('minecraft-common/src/main/resources')
 sourceSets.main.java.srcDir rootProject.file("${versionDirectory}/src/main/java")
 sourceSets.main.resources.srcDir rootProject.file("${versionDirectory}/src/main/resources")

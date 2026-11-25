@@ -165,6 +165,7 @@ public final class ReviewProfile {
     OptionalEditing.verify();
     TaggedEditing.verify();
     CompositionEditing.verify();
+    ScopedPresentation.verify();
     UnitsEditing.verify();
     NumericDomains.verify();
     RangeEditing.verify();

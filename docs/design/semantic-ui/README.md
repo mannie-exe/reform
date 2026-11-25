@@ -12,6 +12,12 @@ The objective is a native configuration and task toolkit whose authored structur
 
 Both designs use the same meaning of identity, state, actions, layout, focus, availability, operations, and retirement. Design A does not contain placeholder implementations of Design B. Design B names its additional inputs, policies, failure cases, limits, and qualification; it does not replace the foundations later.
 
+## Framework and library adoption
+
+Support two first-class adoption styles over these same services. Framework consumers let re:form orchestrate the admitted UI/editor/task lifecycle, navigation, retention, and cleanup while actual domain owners retain values, permissions, persistence, and effects. Lootr-styled and the selected Compat integration use this framework path. Selective library consumers borrow only needed components/services and supply their actual host/mount/thread/lifetime boundary, without dummy documents, a mandatory workspace, or unrelated capabilities.
+
+Capabilities are optional to adopt, not optional to implement when included in the selected delivery scope. Every selected capability retains its accessibility, authority, currentness, resource, and cleanup contracts. Framework adoption does not activate every optional feature. A service may require its genuine dependencies, but must not depend on the whole workflow merely to obtain a lifetime. The [state/lifetime foundation](../../development/scoped-state.md) is implemented first; external native component mounting and complete selective-use journeys still require their own implementation and qualification.
+
 ## Reading and contract ownership
 
 | Document                                          | Owns                                                                                                                                                 |
