@@ -59,6 +59,9 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
   private final HashMap<String, UiLocal<Integer>> rowState = new HashMap<>();
   private final HashMap<String, UiScope> rowScopes = new HashMap<>();
   private int rowFactories, rowCloses;
+  private UiLocal<Boolean> disclosureExpanded;
+  private UiLocal<Integer> disclosureCount;
+  private int disclosureFactories, disclosureCloses, disclosureChecks;
   private boolean keyedRowsVerified;
   private boolean boundFieldsVerified,
       textInputVerified,
@@ -144,6 +147,10 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
 
   private ViewSpec counter(UiScope scope, UiRead<Integer> count, IntConsumer edit) {
     var expanded = scope.local(OPEN, true);
+    disclosureExpanded =
+        scope.local(
+            new ViewStateKey<>(DocumentId.parse("fixture:disclosure_expanded"), ValueTypes.bool()),
+            false);
     var itemType = ValueTypes.text(128);
     var items =
         scope.local(
@@ -178,6 +185,23 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
                     value -> {
                       projections++;
                       return text("Count " + value);
+                    })),
+            Views.disclosure(
+                "advanced",
+                UiBindings.local(disclosureExpanded),
+                DisclosureParts.retained(
+                    UiText.of(text("Advanced")),
+                    UiText.of(text("Optional controls.")),
+                    UiText.of(text("Local selection retained.")),
+                    branch -> {
+                      disclosureFactories++;
+                      branch.onRetire(() -> disclosureCloses++);
+                      disclosureCount = branch.local(COUNT, 0);
+                      return Views.action(
+                          "disclosed-action",
+                          UiText.of(text("Edit detail")),
+                          UiText.from(disclosureCount, value -> text("Detail count " + value)),
+                          increment(disclosureCount, disclosureCount::replace));
                     })),
             Views.action(
                 "increment",
@@ -256,6 +280,79 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
         "native Space activates exactly one semantic action: " + label,
         NativeClientProbe.key(screen, "key.keyboard.space", true));
     NativeClientProbe.key(screen, "key.keyboard.space", false);
+  }
+
+  private String focusedNarration(
+      net.minecraft.client.gui.components.events.ContainerEventHandler parent, Button control) {
+    if (parent.children().contains(control)
+        && parent instanceof net.minecraft.client.gui.narration.NarratableEntry narrated)
+      return NativeClientProbe.narration(narrated::updateNarration);
+    for (var child : parent.children())
+      if (child instanceof net.minecraft.client.gui.components.events.ContainerEventHandler nested
+          && widgets(nested).contains(control)) return focusedNarration(nested, control);
+    throw new AssertionError("Focused native narration parent is missing");
+  }
+
+  private void verifyDisclosure(Screen screen) {
+    int baseline = disclosureFactories;
+    check(
+        "collapsed disclosure does not construct content",
+        widgets(screen).stream()
+            .noneMatch(
+                widget ->
+                    widget instanceof Button
+                        && widget.getMessage().getString().equals("Edit detail")));
+    var trigger = button(screen, "Show Advanced");
+    check("collapsed trigger has native narration focus", focus(screen, trigger));
+    var collapsed = focusedNarration(screen, trigger);
+    check(
+        "collapsed native narration includes state and retained summary",
+        collapsed.contains("Collapsed")
+            && collapsed.contains("Local selection retained.")
+            && collapsed.indexOf("Local selection retained.")
+                == collapsed.lastIndexOf("Local selection retained."));
+    check("disclosure trigger has native focus", focus(screen, trigger));
+    check(
+        "native Enter expands disclosure",
+        NativeClientProbe.key(screen, "key.keyboard.enter", true));
+    NativeClientProbe.key(screen, "key.keyboard.enter", false);
+    check("expansion lazily admits one content scope", disclosureFactories == baseline + 1);
+    press(screen, "Edit detail");
+    var retired = button(screen, "Edit detail");
+    check(
+        "disclosed native action changes local state once",
+        disclosureCount.snapshot().value() == 1);
+    check(
+        "disclosed descendant is actually focused immediately before external collapse",
+        focus(screen, retired) && retired.isFocused());
+    disclosureExpanded.replace(false);
+    NativeClientProbe.pressRetired(
+        retired); // Refresh before dispatch, then refuse the old callback.
+    check(
+        "external collapse removes children and preserves their state",
+        widgets(screen).stream()
+                .noneMatch(
+                    widget ->
+                        widget instanceof Button
+                            && widget.getMessage().getString().equals("Edit detail"))
+            && disclosureCount.snapshot().value() == 1);
+    check(
+        "collapse returns native focus to the live trigger",
+        button(screen, "Show Advanced").isFocused());
+    NativeClientProbe.pressRetired(retired);
+    check(
+        "retired hidden callback cannot change retained content",
+        disclosureCount.snapshot().value() == 1);
+    check(
+        "native Space reopens the focused trigger",
+        NativeClientProbe.key(screen, "key.keyboard.space", true));
+    NativeClientProbe.key(screen, "key.keyboard.space", false);
+    check(
+        "reopening keeps content state and factory identity",
+        disclosureFactories == baseline + 1 && disclosureCount.snapshot().value() == 1);
+    var expanded = NativeClientProbe.narration(button(screen, "Hide Advanced")::updateNarration);
+    check("expanded native trigger narration reports state", expanded.contains("Expanded"));
+    disclosureChecks++;
   }
 
   private boolean arrived() {
@@ -377,6 +474,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
       case 2 -> {
         if (!arrived()) return false;
         check("framework mounts exactly one component factory", frameworkCreates == 1);
+        verifyDisclosure(workflow.screen());
         retired = button(workflow.screen(), "Increment");
         press(workflow.screen(), "Increment");
         check(
@@ -783,6 +881,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
       case 7 -> {
         if (external.mount == null) return false;
         check("caller-owned screen mounts one component without a workflow", externalCreates == 1);
+        verifyDisclosure(external);
         press(external, "Increment");
         check(
             "caller-owned semantic action changes only its local state",
@@ -803,7 +902,8 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
             "physical narrow window retains host mount and state",
             external.mount == external.originalMount
                 && externalCreates == 1
-                && externalState.snapshot().value() == 1);
+                && externalState.snapshot().value() == 1
+                && disclosureCount.snapshot().value() == 1);
         driver.capture(
             "components-narrow.png",
             () -> {
@@ -850,6 +950,7 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
             "mount closes only owned resources and keeps borrowed host open",
             external.host.isOpen()
                 && externalCloses == 1
+                && disclosureCloses == 2
                 && scope.usage().scopes() == 0
                 && scope.usage().stateBytes() == 0);
         external.host.close();
@@ -1101,6 +1202,11 @@ final class PlatformComponentChecks implements PlatformFormProbe.Scene {
     report.addProperty("keyedRowsVerified", complete && keyedRowsVerified);
     report.addProperty("boundFieldsVerified", complete && boundFieldsVerified);
     report.addProperty("textInputVerified", complete && textInputVerified);
+    report.addProperty(
+        "disclosureVerified",
+        complete && disclosureChecks == 2 && disclosureFactories == 2 && disclosureCloses == 2);
+    report.addProperty("disclosureFactories", disclosureFactories);
+    report.addProperty("disclosureCloses", disclosureCloses);
     report.addProperty("fieldPartsVerified", complete && fieldPartsVerified);
     report.addProperty("standaloneFieldPartsVerified", complete && standalonePartsVerified);
     report.addProperty("standaloneFieldPartFactories", standaloneFactories);

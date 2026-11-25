@@ -272,6 +272,11 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                      and native["semanticComponents"].get("keyedRowsVerified") is True
                      and native["semanticComponents"].get("boundFieldsVerified") is True
                      and native["semanticComponents"].get("textInputVerified") is True
+                     and native["semanticComponents"].get("disclosureVerified") is True
+                     and type(native["semanticComponents"].get("disclosureFactories")) is int
+                     and native["semanticComponents"]["disclosureFactories"] == 2
+                     and type(native["semanticComponents"].get("disclosureCloses")) is int
+                     and native["semanticComponents"]["disclosureCloses"] == 2
                      and native["semanticComponents"].get("fieldPartsVerified") is True
                      and native["semanticComponents"].get("standaloneFieldPartsVerified") is True
                      and type(native["semanticComponents"].get("standaloneFieldPartFactories")) is int
