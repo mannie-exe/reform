@@ -3,7 +3,7 @@
   "minVersion": "0.8",
   "package": "example.reform.platform.mixin",
   "compatibilityLevel": "JAVA_${javaVersion}",
-  "client": ["NativeFrameMixin", "NavigationTickMixin", "GraphicDrawMixin", "DecodedImageScopeMixin", "DecodedImageCloseMixin", "NativeItemShutdownMixin", "GraphicRequestMixin", "BlockPrepareMixin",
+  "client": ["NativeFrameMixin", "NavigationTickMixin", "GraphicDrawMixin", "DecodedImageScopeMixin", "DecodedImageCloseMixin", "NativeItemShutdownMixin", "GraphicRequestMixin", "BlockPrepareMixin", "OwnedFileWriteMixin",
     "ChestPrepareMixin", "EntityPrepareMixin", "EntityConstructMixin"${nativeItemMixins}],
   "injectors": {"defaultRequire": 1}
 }

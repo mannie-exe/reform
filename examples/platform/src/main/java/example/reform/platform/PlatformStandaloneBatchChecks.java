@@ -33,6 +33,7 @@ final class PlatformStandaloneBatchChecks {
   private boolean readable = true, returned;
   private byte[] firstSource, secondSource;
   private int stage;
+  private PlatformBatchFailureChecks failures;
 
   PlatformStandaloneBatchChecks(BiConsumer<String, Boolean> check) {
     this.check = check;
@@ -177,10 +178,11 @@ final class PlatformStandaloneBatchChecks {
             Arrays.equals(firstSource, source("workflow_preferences"))
                 && Arrays.equals(secondSource, source("workspace_twin")));
         stage = 6;
-        return true;
+        return false;
       }
       default -> {
-        return true;
+        if (failures == null) failures = new PlatformBatchFailureChecks(check);
+        return failures.tick();
       }
     }
     return false;

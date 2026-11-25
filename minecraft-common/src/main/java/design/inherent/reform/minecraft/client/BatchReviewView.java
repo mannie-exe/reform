@@ -616,7 +616,7 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
   private OperationScreen.Outcome outcome(DocumentBatch.Result result) {
     var rows = new ArrayList<OperationScreen.Detail>();
     rows.add(
-        new OperationScreen.Detail(
+        OperationScreen.Detail.technical(
             text("identity", "Review"), Component.literal(result.review().toString())));
     rows.add(
         new OperationScreen.Detail(
@@ -647,7 +647,7 @@ final class BatchReviewView extends MetadataView implements ClientBatchInspectio
           .ifPresent(
               value ->
                   rows.add(
-                      new OperationScreen.Detail(
+                      OperationScreen.Detail.technical(
                           label.apply(actual.document()),
                           Component.literal(value.id() + " · " + value.state()))));
     }

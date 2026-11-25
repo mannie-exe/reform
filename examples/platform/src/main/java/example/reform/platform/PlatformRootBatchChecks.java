@@ -335,6 +335,9 @@ final class PlatformRootBatchChecks {
         if (actual.isEmpty() || !actual.orElseThrow().snapshot().terminal()) return false;
         submission = actual.orElseThrow();
         var result = submission.snapshot().result().orElseThrow();
+        if (widgets(workflow.screen()).stream()
+            .noneMatch(w -> w.getMessage().getString().equals("Show technical details")))
+          return false;
         check.accept(
             "batch result retains separate original COMMIT receipt and CHECK no-write outcome",
             result.completed()
@@ -347,6 +350,25 @@ final class PlatformRootBatchChecks {
                 && result.outcomes().get(1).operation().isEmpty()
                 && Arrays.equals(twinOriginal, source("workspace_twin"))
                 && !Arrays.equals(original, source("workflow_preferences")));
+        var ownerOperation = result.outcomes().getFirst().operation().orElseThrow().id().toString();
+        String ordinary = String.join("\n", measuredText(workflow.screen()));
+        check.accept(
+            "ordinary Batch result keeps separate owner effects without raw review/operation IDs",
+            ordinary.contains("Saved")
+                && ordinary.contains("no write requested")
+                && !ordinary.contains(result.review().toString())
+                && !ordinary.contains(ownerOperation));
+        press("Show technical details");
+        String technical = String.join("\n", measuredText(workflow.screen()));
+        check.accept(
+            "Batch technical disclosure preserves exact review and owner-operation identities",
+            technical.contains(result.review().toString()) && technical.contains(ownerOperation));
+        press("Hide technical details");
+        check.accept(
+            "hiding Batch identities retains the same result without another submission",
+            inspection.submission().orElseThrow() == submission
+                && !String.join("\n", measuredText(workflow.screen()))
+                    .contains(result.review().toString()));
         var target = new ClientDestination.BatchResult(SCOPE, submission.snapshot().id());
         check.accept(
             "result is in original root with exact registered batch operation identity",
