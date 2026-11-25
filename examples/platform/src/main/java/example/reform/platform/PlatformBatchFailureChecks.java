@@ -41,6 +41,7 @@ final class PlatformBatchFailureChecks {
   private final BiConsumer<String, Runnable> capture;
   private final AtomicBoolean armed = new AtomicBoolean(), writable = new AtomicBoolean(true);
   private final AtomicInteger firstWrites = new AtomicInteger(), secondWrites = new AtomicInteger();
+  private final List<CompletableFuture<?>> initialization = new ArrayList<>();
   private OwnerContext context;
   private DocumentActions<Setting> first, second;
   private DocumentBatch batch;
@@ -130,8 +131,9 @@ final class PlatformBatchFailureChecks {
             definition, file, JsonStore.Format.NEW_ENVELOPE, JSON, DraftLimits.CONFIGURATION);
     var source = new FileOwner<>(context, store, 16);
     var access = context.access(() -> true, () -> leading || writable.get());
-    return ClientEditors.open(
-        context, access, source.open(access), definition, JSON, actions -> actions);
+    var session = source.open(access);
+    initialization.add(session.initialize().toCompletableFuture());
+    return ClientEditors.open(context, access, session, definition, JSON, actions -> actions);
   }
 
   private String ownerSummary(String label) {
@@ -150,6 +152,7 @@ final class PlatformBatchFailureChecks {
         writable.set(true);
         firstWrites.set(0);
         secondWrites.set(0);
+        initialization.clear();
         var root =
             client
                 .gameDirectory
@@ -186,10 +189,7 @@ final class PlatformBatchFailureChecks {
                 }));
         first = owner(root, "first", true);
         second = owner(root, "second", false);
-        pending =
-            CompletableFuture.allOf(
-                DocumentActions.result(first.ensureLoaded(EntryPoint.GUI)).toCompletableFuture(),
-                DocumentActions.result(second.ensureLoaded(EntryPoint.GUI)).toCompletableFuture());
+        pending = CompletableFuture.allOf(initialization.toArray(CompletableFuture[]::new));
         stage = 1;
       }
       case 1 -> {
@@ -197,8 +197,8 @@ final class PlatformBatchFailureChecks {
         pending.join();
         pending =
             CompletableFuture.allOf(
-                DocumentActions.result(first.save(EntryPoint.GUI)).toCompletableFuture(),
-                DocumentActions.result(second.save(EntryPoint.GUI)).toCompletableFuture());
+                DocumentActions.result(first.ensureLoaded(EntryPoint.GUI)).toCompletableFuture(),
+                DocumentActions.result(second.ensureLoaded(EntryPoint.GUI)).toCompletableFuture());
         stage = 10;
       }
       case 10 -> {
