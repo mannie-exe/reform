@@ -473,6 +473,24 @@ final class PlatformOperationPresentationChecks {
         check.accept(
             "cancelled operation remains an actual cancellation rather than a save receipt",
             state.state() == OperationSnapshot.State.CANCELLED && starts == 2);
+        var issue = state.report().issues().getFirst();
+        String ordinary = String.join("\n", measuredText(operation()));
+        check.accept(
+            "ordinary cancellation feedback keeps the useful cause without raw field metadata",
+            ordinary.contains(issue.fallback()) && !ordinary.contains("FieldPath["));
+        press(operation(), button(operation(), "Show technical details"));
+        String technical = String.join("\n", measuredText(operation()));
+        check.accept(
+            "technical disclosure preserves the exact diagnostic code and field path",
+            technical.contains(issue.code())
+                && technical.contains(issue.path().toString())
+                && technical.contains(issue.fallback()));
+        press(operation(), button(operation(), "Hide technical details"));
+        check.accept(
+            "hiding diagnostic metadata preserves the same terminal handle and visible cause",
+            observed().orElseThrow().id().equals(state.id())
+                && String.join("\n", measuredText(operation())).contains(issue.fallback())
+                && !String.join("\n", measuredText(operation())).contains("FieldPath["));
         capture.accept("operation-close-terminal.png", () -> stage = 123);
         stage = 19;
       }

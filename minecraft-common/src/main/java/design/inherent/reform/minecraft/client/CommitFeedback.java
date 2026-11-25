@@ -44,7 +44,7 @@ final class CommitFeedback {
                   .ifPresent(
                       value ->
                           rows.add(
-                              new OperationScreen.Detail(
+                              OperationScreen.Detail.technical(
                                   text("saved_revision", "Saved revision"),
                                   Component.literal(value))));
               if (receipt.baselineOutcomeUnknown())
@@ -89,15 +89,21 @@ final class CommitFeedback {
 
   private static void report(
       List<OperationScreen.Detail> rows, Component label, ValidationReport report) {
-    rows.add(
-        new OperationScreen.Detail(
-            label,
-            Component.literal("complete=" + report.complete() + ", valid=" + report.valid())));
-    for (var issue : report.issues())
+    if (!report.complete())
       rows.add(
           new OperationScreen.Detail(
-              label.copy().append(" · ").append(issue.path().toString()),
-              Component.literal(issue.fallback())));
+              label, text("diagnostics_incomplete", "The reported diagnostics are incomplete.")));
+    rows.add(
+        OperationScreen.Detail.technical(
+            label,
+            Component.literal("complete=" + report.complete() + ", valid=" + report.valid())));
+    for (var issue : report.issues()) {
+      rows.add(new OperationScreen.Detail(label, Component.literal(issue.fallback())));
+      rows.add(
+          OperationScreen.Detail.technical(
+              text("diagnostic_details", "Diagnostic details"),
+              Component.literal(issue.severity() + " · " + issue.code() + "\n" + issue.path())));
+    }
   }
 
   static Component summary(CommitReceipt<?> receipt) {

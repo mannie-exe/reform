@@ -432,10 +432,12 @@ final class OperationView<O> extends MetadataView implements ClientOperationInsp
         i < Math.min(report.issues().size(), (diagnosticPage + 1) * PAGE_SIZE);
         i++) {
       var issue = report.issues().get(i);
-      detail.row(
-          "detail:report:" + key + ":" + i,
-          title.copy().append(" · ").append(issue.path().toString()),
-          Component.literal(issue.fallback()));
+      detail.row("detail:report:" + key + ":" + i, title, Component.literal(issue.fallback()));
+      if (technical)
+        detail.row(
+            "detail:report-technical:" + key + ":" + i,
+            text("diagnostic_details", "Diagnostic details"),
+            Component.literal(issue.severity() + " · " + issue.code() + "\n" + issue.path()));
     }
   }
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+- Add a stable composable header, lazy Home, typed destinations, ancestry, history, and retained navigation bookmarks. Navigation follows the authored form order without changing codec field order.
+- Arrange choosers, inspection, and operation results beside their primary content when measured space permits, with a focused layout for compact offers. Preserve native input, selection, focus, disclosure, and scroll state through reflow.
+- Expose scoped semantic themes, component variants, native control adapters, and optional field eyebrows, leading artwork, and backgrounds over the existing editor.
+- Add shared searchable reference tasks with independent guarded field choices and explicit full-draft previews. Keep inspection separate from selection, saving, and resource application.
+- Prepare bounded still images, sprites, copied items, block states, chest references, curated entities, and consumer meshes outside ordinary rendering. Retire native resources after their actual submitted uses, with explicit cancellation, source stamps, and failure accounting.
+- Offer optional view-only recipe links through admitted native or installed viewers, preserving the originating workflow and game inventory.
+- Retain complete owner scope across information, single and batch review, defaults, conflicts, imports, document actions, and dirty-close decisions. Keep confirmed saves, application failures, unknown results, and application-only retry distinct.
+- Display declared choice captions while preserving canonical values and repairable unknown input. Keep useful diagnostics visible and exact paths, codes, and revisions under technical details.
+- Preserve meaningful reported operation progress and current refusal causes in native narration without repeated context or location paths.
+- Seal development coordinates from first publication and retain actual runtime archive identities separately from original Maven inputs. Expand native fixtures and maintenance guidance for the new presentation and resource lifetimes.
+
 ## 0.3.0
 
 - Compose measured inline fields, explicit related columns, boxes, and eyebrows through reusable declarations. Stack complete relationships when space is constrained.
