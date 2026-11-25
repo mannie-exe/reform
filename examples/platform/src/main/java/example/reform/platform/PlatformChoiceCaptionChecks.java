@@ -236,6 +236,18 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
         if (!revealed() || workflow.inspection().flatMap(ClientInspection::reviewedInput).isEmpty())
           return false;
         var input = workflow.inspection().orElseThrow();
+        if (!input.selectedField().filter(ENABLED_PATH::equals).isPresent()) {
+          var selector =
+              widgets(workflow.screen()).stream()
+                  .filter(
+                      w ->
+                          w.getMessage().getString().equals("Enabled")
+                              || w.getMessage().getString().startsWith("Field: "))
+                  .findFirst()
+                  .orElseThrow();
+          click(workflow.screen(), selector);
+          return false;
+        }
         var value =
             input.reviewedInput().orElseThrow().entries().stream()
                 .filter(e -> e.path().equals(ENABLED_PATH))
