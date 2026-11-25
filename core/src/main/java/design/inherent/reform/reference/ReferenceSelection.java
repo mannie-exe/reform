@@ -71,6 +71,28 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
    */
   public static <T, V> OperationHandle<EditorActor.View<T>> chooseFromBrowser(
       EntryPoint entry, DocumentActions<T> document, FieldPath path, ReferenceBrowser<V> browser) {
+    return chooseFromBrowser(entry, document, path, browser, Optional.empty(), () -> {});
+  }
+
+  /** A delayed explicit acceptance retains its complete revision and actual input preflight. */
+  public static <T, V> OperationHandle<EditorActor.View<T>> chooseFromBrowser(
+      EntryPoint entry,
+      DocumentActions<T> document,
+      FieldPath path,
+      ReferenceBrowser<V> browser,
+      design.inherent.reform.edit.DraftRevision expected,
+      Runnable requireInputCurrent) {
+    return chooseFromBrowser(
+        entry, document, path, browser, Optional.of(expected), requireInputCurrent);
+  }
+
+  private static <T, V> OperationHandle<EditorActor.View<T>> chooseFromBrowser(
+      EntryPoint entry,
+      DocumentActions<T> document,
+      FieldPath path,
+      ReferenceBrowser<V> browser,
+      Optional<design.inherent.reform.edit.DraftRevision> expected,
+      Runnable requireInputCurrent) {
     Objects.requireNonNull(entry);
     Objects.requireNonNull(document);
     Objects.requireNonNull(path);
@@ -87,6 +109,21 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
     if (browser.selectedKey().filter(selected::equals).isEmpty())
       throw new PolicyRefusal(
           "reference.selection_stale", "The inspected choice changed; inspect it again");
+    Objects.requireNonNull(requireInputCurrent).run();
+    if (!browser.current() || browser.selectedKey().filter(selected::equals).isEmpty())
+      throw new PolicyRefusal(
+          "reference.selection_stale", "The inspected choice changed; inspect it again");
+    if (expected
+        .filter(
+            revision ->
+                document.view().snapshot().filter(revision::matches).isEmpty()
+                    || !target.session().equals(revision.session())
+                    || target.generation() != revision.generation()
+                    || target.version().isEmpty()
+                    || target.version().orElseThrow() != revision.version())
+        .isPresent())
+      throw new PolicyRefusal(
+          "reference.selection_stale", "The draft changed; choose this value again.");
     return stage(entry, document, target, selected);
   }
 
