@@ -12,7 +12,7 @@ Source builds check four selected game/loader products and stage twelve files un
 
 Maven modules use `design.inherent:reform-<loader>-<game>:<version>`. The published 0.1.0 module `design.inherent:reform` and its three original download paths remain immutable. Target-specific source and resolution changes do not rewrite that release.
 
-The separate development core JAR is for headless development. Minecraft supplies its runtime serialization libraries. The Gradle wrapper is checksum-pinned and retains [Gradle's license](../LICENSE-GRADLE.txt). Archive timestamps and entry order are reproducible.
+The separate development core JAR is for headless development. Minecraft supplies its runtime serialization libraries. The Gradle wrapper is checksum-pinned and retains [Gradle's license](../LICENSE-GRADLE.txt). Archives normalize timestamps and entry order and omit empty directories. Producer main compilation processes the complete source set when it runs: javac can otherwise change anonymous-constructor debug parameter names depending on whether a superclass comes from source or a previous binary. Unchanged compilation tasks can still remain up to date; debug information is retained.
 
 ## Consumer resolution
 
