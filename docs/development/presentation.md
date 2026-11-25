@@ -132,6 +132,12 @@ The generated row keeps **Show fields** alongside the auxiliary entry, allowing 
 
 Pure comparison checks cover extracted geometry/navigation, bounded active form structure and catalog identity/admission. Compilation covers pinned API linkage. The opt-in native example fixture separately exercises recursive/reference/catalog controls, actual JSON save/reopen and selected native language/font reload. [Verification](verification.md) records exact artifacts, observations and limitations. Physical IME, host clipboard, spoken narration, native rendering on other operating systems and maximum document/heap cost retain explicit qualification limits. Shared composition, consumer migrations, dedicated/integrated owners and the installed pack have separate exact-artifact receipts in that record. Service measurements do not establish native frame timing or long-session retention.
 
+## Reference titles and preview feedback
+
+Reference selectors retain the inspected choice's cached human title as their measured detail heading. That title comes from the admitted source page and survives query edits and reflow; it is cleared when the source is refreshed or becomes stale. A manually entered ID outside the cached page keeps the ordinary selected-value heading. Displaying a title does not resolve an ID or grant selection authority. List narration states the title once, with a distinct exact ID available in the tooltip.
+
+Registered reference tasks and their focused preview widgets narrate the same bounded current failure report shown beside the preview. The active workspace includes that task's narration; a hidden task does not contribute feedback to another page. Explicit recovery replaces the old refusal with the new preparation state. Preview facts, preparation, and resource retirement retain their existing owners.
+
 ## Known-choice value captions
 
 `ValueTypes.choiceDisplay(original, display)` adds a `ChoiceDisplay` to an actual declared choice type. It delegates the original codec, decode diagnostics, snapshot policy, and equivalence. Declare captions against canonical values, for example `new ChoiceDisplay.Caption("AUTO", "example.mode.auto", "Auto")`. Apply the metadata before wrapping an enum in an optional or field-default policy. Unlisted values retain their original presentation; a caption cannot invent an admissible value or change schema/default/serialization behavior.

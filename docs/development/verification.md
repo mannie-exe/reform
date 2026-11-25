@@ -1,5 +1,15 @@
 # Verification
 
+## 0.4 development: reference titles and preview narration
+
+Candidate `0.4.0-dev.86` at `1296d43` passes the four-target build and an isolated initial/reopen pair on every target. Each boot passes 117 registered-task and field-selector checks; all eight clients exit normally and remove their disposable fixtures. An explicit provider refusal preserves the dirty owner, source, and empty allocation ledgers. Both the focused native viewport and actual workspace summary narrate its actionable cause. A second explicit preparation succeeds and draws; camera, narrow return, subject invalidation, Home retirement, and fresh-owner cleanup retain their earlier semantics.
+
+The field-selector path separately inspects a real admitted registry choice. Its title remains in the measured detail heading through adjacent/focused/adjacent reflow, while the exact ID, query, caret, selection, source operations, and owner stay retained. Native choice narration contains that title once. A real source replacement refuses the retired callback, and explicit refresh/selection, invalid manual repair, and conditional save/restoration still use the same owner. The title is cached display metadata, not proof of reference validity; an ID absent from the cached page keeps the ordinary selected-value heading. The native registry case does not qualify every long or translated title.
+
+The causal consumer negative used Styled 28 with dev.80: its specific tint refusal was visibly drawn but absent from both actual screen and widget narration. Explicit Default recovery drew and retired normally. Current-source inspection found the same narration omissions before the dev.86 correction. That retained consumer evidence is distinct from the independent dev.86 green case and from actual consumer adoption. The build includes 137 tooling tests; 44 focused runner checks pass after adding the isolated scene. No provider, persistence, resource-retirement, or selection-authority change was needed. Registered-task and chooser frames on both game families were inspected.
+
+Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.86 --client --isolated-scene references --timeout 240`, selecting other targets explicitly. This proves the exercised native narration strings and source-bound flows, not spoken audio, arbitrary catalogue titles, or the final combined 0.4 gate.
+
 ## 0.4 development: known-choice captions
 
 Candidate `0.4.0-dev.85` at `d782785` preserves canonical choice values while displaying owner-declared, localizable captions. The four-target `check build` passes, including 137 tooling tests and ten new caption/capture controls on each core runtime. The typed metadata follows the actual value into normal and batch review, field information, conflict, and import comparisons; it does not parse a rendered value or alter codecs, defaults, field order, or save authority. Captured displays retain the exact raw value alongside its caption.
