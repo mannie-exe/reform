@@ -63,7 +63,7 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
   private AutoCloseable simulated;
   private int simulatedOpens;
   private NavigationAttempt replacement, recipeAttempt;
-  private boolean installed;
+  private boolean installed, complete;
   private int stage, mode;
   private static final List<RecipeLinkRequest> REQUESTS =
       List.of(
@@ -123,6 +123,7 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
   }
 
   public boolean tick() throws Exception {
+    if (complete) return true;
     var route = PlatformWorkflowExample.DEFINITION.id();
     switch (stage) {
       case 0 -> {
@@ -291,6 +292,7 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
         check.accept(
             "viewer world departure preserves source bytes",
             Arrays.equals(source, Files.readAllBytes(path())));
+        complete = true;
         return true;
       }
       case 20 -> {
@@ -365,6 +367,7 @@ final class PlatformRecipeLinkChecks implements PlatformFormProbe.Scene {
             workflow.editor(route) == editor && Arrays.equals(source, Files.readAllBytes(path())));
         close();
         NativeScreens.open(client, parent);
+        complete = true;
         return true;
       }
       default -> {}
