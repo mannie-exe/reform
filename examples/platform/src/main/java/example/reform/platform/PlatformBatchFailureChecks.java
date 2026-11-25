@@ -195,6 +195,15 @@ final class PlatformBatchFailureChecks {
       case 1 -> {
         if (!pending.isDone()) return false;
         pending.join();
+        pending =
+            CompletableFuture.allOf(
+                DocumentActions.result(first.save(EntryPoint.GUI)).toCompletableFuture(),
+                DocumentActions.result(second.save(EntryPoint.GUI)).toCompletableFuture());
+        stage = 10;
+      }
+      case 10 -> {
+        if (!pending.isDone()) return false;
+        pending.join();
         secondSource = Files.readAllBytes(secondPath);
         check.accept(
             "Batch edge owns two actually initialized JSON sources: " + mode,
