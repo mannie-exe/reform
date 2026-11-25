@@ -1,5 +1,15 @@
 # Verification
 
+## 0.4 development: known-choice captions
+
+Candidate `0.4.0-dev.85` at `d782785` preserves canonical choice values while displaying owner-declared, localizable captions. The four-target `check build` passes, including 137 tooling tests and ten new caption/capture controls on each core runtime. The typed metadata follows the actual value into normal and batch review, field information, conflict, and import comparisons; it does not parse a rendered value or alter codecs, defaults, field order, or save authority. Captured displays retain the exact raw value alongside its caption.
+
+The isolated caption scene passes twelve checks per boot on all four minimum targets, with eight normal exits and removed fixtures. It exercises actual native cycling from Auto to On while the draft retains `ON` and its dirty sibling. Normal inspection and contextual information show the same typed caption and raw value. An unknown choice opens the ordinary editable input, and explicit native repair restores the declared choice. A real file drop previews `OFF` without staging or writing. An intentional external source edit then produces a manual conflict with independently captured Auto, Off, and On values; fixture cleanup restores the original bytes without saving the draft. Both game families' captured comparisons were inspected.
+
+The first NeoForge 1.21.1 attempt passed its initial editing and inspection controls but timed out before import preview. The fixture supplied a relative path while the native launcher used `--gameDir .`; the public local-file source correctly requires an absolute path. The corrected fixture supplies that path and waits for the actual file-selection control to become active. This was a fixture correction, with unchanged library binaries and the negative report retained.
+
+Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.85 --client --isolated-scene captions --timeout 240`, selecting the other targets explicitly. Native batch captions, translated or unusually long captions, physical spoken output, and the final combined-consumer gate retain separate qualification.
+
 ## 0.4 development: custom-control bounds and authority
 
 Candidate `0.4.0-dev.84` at `af87675` passes the four-target build and all four isolated native initial/reopen pairs, with 35 custom-control checks per boot and eight normal exits. The actual dev.83 negative placed a native child outside its measured root while the binding remained editable. Dev.84 checks admitted child bounds after positioning and before restricted edit dispatch, restores the standard control on failure, and retains the field-routed cause. Unusable intrinsic offers and borrowing a retired widget also refuse without changing the owner source.

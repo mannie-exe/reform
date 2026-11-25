@@ -258,13 +258,16 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
                     .getString()
                     .equals("On")
                 && Arrays.equals(original, Files.readAllBytes(source)));
-        imported = client.gameDirectory.toPath().resolve("choice-import.json");
+        imported = client.gameDirectory.toPath().toAbsolutePath().resolve("choice-import.json");
         Files.writeString(imported, "{\"mode\":\"OFF\",\"count\":7}");
         enter(new ClientDestination.Import(DEFINITION.id()));
         stage = 12;
       }
       case 12 -> {
-        if (!revealed()) return false;
+        if (!revealed() || !button(workflow.screen(), "Choose file…").active) return false;
+        check(
+            "import fixture supplies an actual admitted absolute local file",
+            imported.isAbsolute() && Files.isRegularFile(imported));
         workflow.screen().onFilesDrop(List.of(imported));
         stage = 13;
       }
@@ -378,6 +381,22 @@ final class PlatformChoiceCaptionChecks implements PlatformFormProbe.Scene {
     value.add("checks", checks.deepCopy());
     value.addProperty("intentionalExternalSourceEdit", externalObserved);
     value.addProperty("nativeStage", stage);
+    if (imported != null) {
+      value.addProperty("importPath", imported.toString());
+      value.addProperty("importAbsolute", imported.isAbsolute());
+    }
+    if (workflow != null && workflow.isOpen()) {
+      value.addProperty("renderedText", rendered());
+      var nativeControls = new JsonArray();
+      for (var widget : widgets(workflow.screen())) {
+        var control = new JsonObject();
+        control.addProperty("type", widget.getClass().getName());
+        control.addProperty("message", widget.getMessage().getString());
+        control.addProperty("active", widget.active);
+        nativeControls.add(control);
+      }
+      value.add("nativeControls", nativeControls);
+    }
     return value;
   }
 
