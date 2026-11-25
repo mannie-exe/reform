@@ -1,5 +1,15 @@
 # Verification
 
+## 0.4 development: custom-control bounds and authority
+
+Candidate `0.4.0-dev.84` at `af87675` passes the four-target build and all four isolated native initial/reopen pairs, with 35 custom-control checks per boot and eight normal exits. The actual dev.83 negative placed a native child outside its measured root while the binding remained editable. Dev.84 checks admitted child bounds after positioning and before restricted edit dispatch, restores the standard control on failure, and retains the field-routed cause. Unusable intrinsic offers and borrowing a retired widget also refuse without changing the owner source.
+
+An independent deferred-missing file owner separately qualifies READ-only capture of the complete unsaved candidate without WRITE permission. Revoking READ before actual native character input refuses the edit while retaining its raw text, valid dirty sibling, and earlier accepted actor revision. Complete preview then refuses unaccepted input, and the earlier READ capture is stale despite no accepted actor edit. Real 320×240 reflow retains that rejected text and cursor; explicit authorization and repair settle the original pipeline without saving or creating the fixture file. Native pointer and nested key consumption remain checked. Rejected-input and standard-fallback images on both game families were inspected.
+
+Two retained observer negatives distinguish authority from receipt creation: draft editing requires READ rather than WRITE, and admission can refuse before recording an operation handle. The final fixture checks actual permission feedback, unchanged accepted state, retained native text, and preview refusal. These corrections change no product behavior. `check build` passes in 63 seconds, including 137 tooling tests; the twelve original Maven inputs and four named source archives remain unchanged.
+
+Reproduce with `python3 tools/native_platform_probe.py --target neoforge-1_21_1 --java-home "$JAVA_HOME" --library-version 0.4.0-dev.84 --client --isolated-scene controls --timeout 240`, selecting the other targets explicitly. This remains a standalone-form qualification. Composed-workspace custom controls, their theme/font reload behavior, arbitrary widget safety, and the complete 0.4 combined-consumer gate remain separate.
+
 ## 0.4 development: inline native control bindings
 
 Candidate `0.4.0-dev.83` at `5703a2a` passes the four-target build and an isolated native initial/reopen pair on each minimum target. Each boot records 19 custom-control checks; all eight clients exit normally and remove their disposable fixtures. The replacement text box and nested wrapper retain the actual actor, complete invalid-and-valid sibling draft, native selection, and focused child through a real 320×240 window resize and return. Explicit repair does not save. Disabled and retired bindings refuse, failed construction restores the standard input with its cause, and a disposal failure leaves its sibling cleanup complete and editing authority revoked. Wide and narrow frames on both game families were inspected.

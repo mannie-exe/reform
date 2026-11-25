@@ -48,7 +48,7 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
       readOnlyCapture;
   private design.inherent.reform.edit.DraftRevision rejectedRevision;
   private java.nio.file.Path authorityFile;
-  private boolean writable = true;
+  private boolean readable = true, writable = true;
   private int rejectedCursor;
   private boolean readOnlyCaptured, rejectedRetained, reuseRetired;
   private SelectionBox retiredWidget;
@@ -206,7 +206,7 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
                 throw new IllegalStateException("Wrong fixture owner thread");
             },
             design.inherent.reform.owner.OwnerContext.Limits.STANDARD);
-    var access = authorityContext.access(() -> true, () -> writable);
+    var access = authorityContext.access(() -> readable, () -> writable);
     var store =
         new design.inherent.reform.storage.JsonStore<>(
             definition,
@@ -523,21 +523,20 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
             editor.screen(), replacement.getX() + 6, replacement.getY() + 8);
         replacement.setCursorPosition(replacement.getValue().length());
         replacement.setHighlightPos(replacement.getValue().length());
+        readable = false;
         check(
-            "replacement consumes an actual native character",
+            "replacement consumes an actual native character after READ revocation",
             NativeClientProbe.character(editor.screen(), '!'));
         stage = 16;
       }
       case 16 -> {
         if (editor.busy()
-            || editor.actions().operations().stream()
-                .noneMatch(
-                    snapshot ->
-                        snapshot.state()
-                                == design.inherent.reform.operation.OperationSnapshot.State.REFUSED
-                            && snapshot.report().issues().stream()
-                                .anyMatch(issue -> issue.code().equals("owner.permission"))))
-          return false;
+            || !editor
+                .screen()
+                .getNarrationMessage()
+                .getString()
+                .contains("Current permission is required")) return false;
+        readable = true;
         check(
             "owner-refused native text retains its valid dirty sibling and older accepted value",
             raw(DISTANCE).equals("77")
@@ -685,6 +684,19 @@ final class PlatformControlAdapterChecks implements PlatformFormProbe.Scene {
           "actualActorVersion", editor.view().snapshot().map(value -> value.version()).orElse(-1L));
       result.addProperty("busy", editor.busy());
       result.addProperty("canSubmit", editor.canSubmit());
+      result.addProperty("readable", readable);
+      result.addProperty("writable", writable);
+      result.addProperty("labelRaw", raw(LABEL));
+      result.addProperty("nativeLabel", replacement.getValue());
+      result.add(
+          "operationReports",
+          new com.google.gson.Gson()
+              .toJsonTree(
+                  editor.actions().operations().stream()
+                      .map(
+                          value ->
+                              value.report().issues().stream().map(issue -> issue.code()).toList())
+                      .toList()));
       result.add(
           "controlCodes",
           new com.google.gson.Gson()
