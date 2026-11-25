@@ -306,6 +306,7 @@ final class MountedUiTree implements AutoCloseable {
             add(declared, List.of(parts.data(), parts.active().value(), parts.accepted()));
             add(declared, parts.active().changes().dependencies());
             add(declared, parts.accept().dependencies());
+            parts.paging().ifPresent(command -> add(declared, command.dependencies()));
           }
           case ViewSpec.QueryInput query -> {
             var parts = query.parts();
@@ -414,6 +415,18 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     private void updateManaged() {
+      if (spec instanceof ViewSpec.ChoiceList list && listWidget != null)
+        listWidget
+            .takeBoundary()
+            .ifPresent(
+                boundary ->
+                    list.parts()
+                        .paging()
+                        .ifPresent(
+                            command -> {
+                              if (root.project(command.dependencies(), command::availability)
+                                  .available()) execute(this, command, boundary);
+                            }));
       if (spec instanceof ViewSpec.Managed managed) {
         lifecycleActive = true;
         managed.lifecycle().update();
@@ -1089,26 +1102,36 @@ final class MountedUiTree implements AutoCloseable {
               parts.visibleRows(),
               parts.overscan(),
               theme,
-              key ->
-                  dispatch(
-                      token,
-                      node,
-                      hostGuard,
-                      changed,
-                      () -> execute(node, parts.active().changes(), Optional.of(key))),
-              key ->
-                  dispatch(
-                      token,
-                      node,
-                      hostGuard,
-                      changed,
-                      () -> {
-                        if (node.listData != data
-                            || data.items().stream()
-                                .noneMatch(item -> item.key().equals(key) && item.enabled()))
-                          return;
+              key -> {
+                var expectedActive = widget.observedActive();
+                dispatch(
+                    token,
+                    node,
+                    hostGuard,
+                    changed,
+                    () -> execute(node, parts.active().changes(), Optional.of(key)),
+                    () ->
+                        retainedChoice(node, data, key) && node.listActive.equals(expectedActive));
+              },
+              (key, keyboard) -> {
+                var expectedActive = widget.observedActive();
+                dispatch(
+                    token,
+                    node,
+                    hostGuard,
+                    changed,
+                    () -> {
+                      if (!retainedChoice(node, data, key)) return;
+                      execute(node, parts.active().changes(), Optional.of(key));
+                      if (root.isOpen()
+                          && node.scope.isOpen()
+                          && node.lastResult instanceof UiActionResult.Applied)
                         execute(node, parts.accept(), key);
-                      }));
+                    },
+                    () ->
+                        retainedChoice(node, data, key)
+                            && (!keyboard || node.listActive.equals(expectedActive)));
+              });
           ControlSizing.offer(
               widget,
               theme
@@ -1206,22 +1229,55 @@ final class MountedUiTree implements AutoCloseable {
     }
   }
 
+  private boolean retainedChoice(
+      Node node, design.inherent.reform.minecraft.client.ui.ChoiceListData presented, String key) {
+    return node.scope.isOpen()
+        && node.listData != null
+        && node.listData.retains(presented, key)
+        && rows.stream().anyMatch(row -> row.node() == node && row.availability().available());
+  }
+
   private void dispatch(
       Object token,
       Node node,
       Function<Runnable, Runnable> guard,
       Runnable changed,
       Runnable action) {
+    dispatch(
+        token,
+        node,
+        guard,
+        changed,
+        action,
+        () ->
+            node.spec instanceof ViewSpec.QueryInput
+                && rows.stream()
+                    .anyMatch(row -> row.node() == node && row.availability().available()));
+  }
+
+  private void dispatch(
+      Object token,
+      Node node,
+      Function<Runnable, Runnable> guard,
+      Runnable changed,
+      Runnable action,
+      java.util.function.BooleanSupplier retained) {
     guard
         .apply(
             () -> {
-              if (!root.isOpen() || attachment != token || !node.scope.isOpen()) return;
+              if (!root.isOpen() || !node.scope.isOpen()) return;
+              // Inline field hosts rebuild on the next frame. Their same live list may receive
+              // several native events first. Only a still-attached, semantically retained choice
+              // may cross that projection refresh; other controls retain their attachment fence.
+              if (attachment != token
+                  && (!(node.spec instanceof ViewSpec.ChoiceList)
+                      || !attached
+                      || !retained.getAsBoolean())) return;
               if (refresh(false)) {
                 // A query event includes the native buffer just polled by prepareRefresh.
                 // Keep Enter on that same live input; source/list events still reject stale data.
-                if (!(node.spec instanceof ViewSpec.QueryInput)
-                    || rows.stream()
-                        .noneMatch(row -> row.node() == node && row.availability().available())) {
+                if (!retained.getAsBoolean()) {
+                  observeChoice(node);
                   if (root.isOpen()) changed.run();
                   return;
                 }
@@ -1229,10 +1285,20 @@ final class MountedUiTree implements AutoCloseable {
               action.run();
               if (root.isOpen()) {
                 refresh(true);
+                observeChoice(node);
                 changed.run();
               }
             })
         .run();
+  }
+
+  private void observeChoice(Node node) {
+    if (node.listWidget == null) return;
+    if (rows.stream().noneMatch(row -> row.node() == node && row.availability().available())) {
+      node.listWidget.clear();
+      return;
+    }
+    node.listWidget.observe(node.listData, node.listActive, node.listAccepted);
   }
 
   private <T> void execute(Node node, UiCommand<T> command, T input) {

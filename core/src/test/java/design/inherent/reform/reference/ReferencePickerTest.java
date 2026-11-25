@@ -93,6 +93,10 @@ class ReferencePickerTest {
     }
 
     Harness(UiLimits limits) throws Exception {
+      this(limits, ReferencePicker.Policy.STANDARD);
+    }
+
+    Harness(UiLimits limits, ReferencePicker.Policy policy) throws Exception {
       file = root.resolve(UUID.randomUUID() + ".json");
       long actualThread = call(() -> Thread.currentThread().threadId());
       context =
@@ -171,7 +175,7 @@ class ReferencePickerTest {
                       },
                       List.of(MODEL_ROLE, ART_ROLE),
                       Map.of("models", frontend),
-                      ReferencePicker.Policy.STANDARD,
+                      policy,
                       now::get));
     }
 
@@ -306,6 +310,204 @@ class ReferencePickerTest {
           throw new AssertionError(failed);
         }
       }
+    }
+  }
+
+  @Test
+  void initialQueryContinuesEmptyBoundedScanPagesWithoutDeclaringNoMatches() throws Exception {
+    try (var h = new Harness()) {
+      h.admit();
+      h.call(() -> h.picker.query().invoke(PickerState.Query.atEnd("Inherited")));
+      done(pending(h.call(() -> h.picker.flushSearch().invoke(null))));
+      var scanning = h.update();
+      assertEquals(PickerState.Phase.RUNNING, scanning.searching());
+      assertTrue(scanning.window().choices().isEmpty());
+      done(pending(h.call(() -> h.picker.flushSearch().invoke(null))));
+      var finished = h.update();
+      assertEquals(PickerState.Phase.READY, finished.searching());
+      assertEquals("fixture:empty", finished.window().choices().getFirst().key());
+      assertEquals(3, h.searches.get());
+      assertEquals("fixture:a", h.raw("models"));
+    }
+  }
+
+  @Test
+  void repeatedContinuationAfterServiceCompletionReusesTheActualRequest() throws Exception {
+    try (var h =
+        new Harness(UiLimits.STANDARD, new ReferencePicker.Policy(1, 128, 32768, 0, 2, 8))) {
+      h.admit();
+      var next = pending(h.call(() -> h.picker.nextPage().invoke(null)));
+      done(next);
+      var repeated = pending(h.call(() -> h.picker.nextPage().invoke(null)));
+      assertEquals(
+          next.snapshot().id(),
+          repeated.snapshot().id(),
+          "The completed current page has not been projected yet; reuse it rather than entering twice");
+      h.update();
+      assertEquals(2, h.searches.get());
+    }
+  }
+
+  @Test
+  void mountInterestsAndBorrowedFieldFrontendsKeepPureAndLifetimeGuards() throws Exception {
+    try (var h = new Harness()) {
+      h.call(
+          () -> {
+            var first = h.picker.mount();
+            assertThrows(
+                PolicyRefusal.class,
+                () ->
+                    h.scope.project(
+                        List.of(),
+                        () -> {
+                          first.close();
+                          return null;
+                        }));
+            assertThrows(
+                PolicyRefusal.class,
+                () ->
+                    h.scope.project(
+                        List.of(),
+                        () -> {
+                          first.update();
+                          return null;
+                        }));
+            assertThrows(
+                PolicyRefusal.class, () -> h.scope.project(List.of(), () -> h.picker.mount()));
+            first.close();
+            var field = FieldBinding.bind(h.scope, h.actions, MODEL_ROLE.field(), MODELS.type());
+            var restriction = field.frontend();
+            assertEquals(Optional.empty(), restriction.input());
+            var clone =
+                new DocumentDefinition<>(
+                    DEFINITION.id(), 1, DEFINITION.type(), DEFINITION::defaults);
+            assertThrows(
+                PolicyRefusal.class,
+                () ->
+                    ReferencePicker.open(
+                        h.scope,
+                        field,
+                        clone,
+                        SOURCE,
+                        () -> h.references,
+                        List.of(MODEL_ROLE),
+                        Map.of(),
+                        ReferencePicker.Policy.STANDARD,
+                        h.now::get));
+            var borrowed =
+                ReferencePicker.open(
+                    h.scope,
+                    field,
+                    DEFINITION,
+                    SOURCE,
+                    () -> h.references,
+                    List.of(MODEL_ROLE),
+                    Map.of("models", restriction),
+                    ReferencePicker.Policy.STANDARD,
+                    h.now::get);
+            field.close();
+            assertThrows(PolicyRefusal.class, restriction::input);
+            assertThrows(PolicyRefusal.class, restriction::editing);
+            assertTrue(h.actions.view().snapshot().isPresent());
+            borrowed.close();
+            return null;
+          });
+      assertEquals(0, h.factories.get());
+    }
+  }
+
+  @Test
+  void boundedPagesRecoverPreviousSourceIssuedCursorsAndKeepCurrentness() throws Exception {
+    try (var h =
+        new Harness(UiLimits.STANDARD, new ReferencePicker.Policy(1, 128, 32768, 0, 2, 8))) {
+      h.admit();
+      var first = h.option("fixture:a");
+      h.call(() -> h.picker.active().invoke(first));
+      done(pending(h.call(() -> h.picker.nextPage().invoke(null))));
+      var second = h.update();
+      assertEquals(
+          List.of("fixture:a", "fixture:b"),
+          second.window().choices().stream().map(ReferencePage.Choice::key).toList());
+      assertEquals(Optional.of("fixture:a"), second.active());
+      h.inspect("fixture:a");
+      assertEquals(Optional.of("fixture:a"), h.snapshot().inspection().orElseThrow().title());
+      done(pending(h.call(() -> h.picker.nextPage().invoke(null))));
+      var third = h.update();
+      assertEquals(1, third.window().firstPage());
+      assertEquals(2, third.window().pageCount());
+      assertEquals("reference.option_stale", code(h.call(() -> h.picker.active().invoke(first))));
+      assertTrue(h.call(() -> h.picker.previousPage().availability().available()));
+      done(pending(h.call(() -> h.picker.previousPage().invoke(null))));
+      var back = h.update();
+      assertEquals(0, back.window().firstPage());
+      assertEquals(3, back.window().retainedCursors());
+      assertInstanceOf(UiActionResult.Applied.class, h.call(() -> h.picker.active().invoke(first)));
+      assertEquals(4, h.searches.get());
+      h.call(() -> h.picker.query().invoke(PickerState.Query.atEnd("Beta")));
+      h.update();
+      assertTrue(h.snapshot().window().choices().isEmpty());
+      assertEquals("reference.option_stale", code(h.call(() -> h.picker.active().invoke(first))));
+      assertEquals("fixture:a", h.raw("models"));
+    }
+  }
+
+  @Test
+  void cursorBudgetRefusesRatherThanDroppingHistoryOrEditingTheDraft() throws Exception {
+    try (var h =
+        new Harness(UiLimits.STANDARD, new ReferencePicker.Policy(1, 128, 32768, 0, 2, 2))) {
+      h.admit();
+      done(pending(h.call(() -> h.picker.nextPage().invoke(null))));
+      var refused = h.update();
+      assertEquals(PickerState.Phase.REFUSED, refused.searching());
+      assertEquals("reference.page_history_limit", refused.report().issues().getFirst().code());
+      assertEquals(
+          List.of("fixture:a"),
+          refused.window().choices().stream().map(ReferencePage.Choice::key).toList());
+      assertEquals(2, refused.window().retainedCursors());
+      assertEquals("fixture:a", h.raw("models"));
+      done(pending(h.call(() -> h.picker.refresh().invoke(null))));
+      h.update();
+      assertTrue(h.snapshot().report().valid());
+    }
+  }
+
+  @Test
+  void oneMountedInterestIsLazyAndClosingItDoesNotCloseBorrowedServices() throws Exception {
+    try (var h = new Harness()) {
+      var first = h.call(() -> h.picker.mount());
+      assertEquals(0, h.factories.get());
+      var refusal = assertThrows(ExecutionException.class, () -> h.call(() -> h.picker.mount()));
+      assertInstanceOf(PolicyRefusal.class, refusal.getCause());
+      h.call(
+          () -> {
+            first.update();
+            return null;
+          });
+      done(pending(h.call(() -> h.picker.flushSearch().invoke(null))));
+      h.update();
+      assertEquals(1, h.factories.get());
+      h.call(
+          () -> {
+            first.close();
+            return null;
+          });
+      assertEquals(PickerState.Source.SUSPENDED, h.snapshot().source());
+      assertTrue(h.call(() -> h.actions.view().snapshot().isPresent()));
+      var next = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            next.update();
+            return null;
+          });
+      done(pending(h.call(() -> h.picker.flushSearch().invoke(null))));
+      h.update();
+      assertEquals(2, h.factories.get());
+      h.call(
+          () -> {
+            next.close();
+            return null;
+          });
+      assertEquals("fixture:a", h.raw("models"));
     }
   }
 

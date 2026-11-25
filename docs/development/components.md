@@ -57,6 +57,34 @@ The controlled active key and the accepted key set are independent reads. Arrow,
 
 These are shared native primitives, not a completed reference picker. The core controller still exposes one bounded current page. Continuous retained paging, the shared inline/task picker assembly, canonical field control surface, source-stamped manual-ID completion, and preview orchestration remain selected work. Existing reference screens have not yet been replaced by this component assembly.
 
+### Source-backed picker assembly
+
+`ReferencePickerView.build(scope, picker, presentation, fixedRole)` assembles the same shared list, query, inspection, source details, and commands for an inline or task placement. Its `Presentation` supplies owner purpose, headings, search label, and exact authored role/action captions. A present fixed role accepts into that one field; an absent role pins inspection only and exposes separate explicit Use-for-role commands. The accepted markers come from actual role observations, not the active row or the pinned inspection. Resolved-empty profiles remain eligible; contribution facts are not gates.
+
+Construct the controller within the actual mount's kernel and borrow a ready existing editor. `openEditor` alone does not load an actor: the existing public `DocumentActions.ensureLoaded` operation is the loading boundary also used by associated framework navigation. A custom view without a document association must currently arrange that admission explicitly. The general associated-owner component is still part of the remaining framework integration; do not create another actor or writer to work around it.
+
+For a mounted native field, the overload taking `parts.binding()` and the exact `DocumentDefinition` borrows that same owner after checking definition identity. `parts.frontend()` supplies its lifetime-fenced actual input/ack and edit restrictions. A task can borrow equivalent restrictions from `ClientFieldBindings.field(...).frontend()` for each actual native field. An empty frontend map is only for use without those buffers.
+
+```java
+// Inside the actual field component, with owner-declared keys, source, roles, and labels:
+var expanded = scope.local(choicesOpenKey, false);
+return Views.column("field", List.of(
+    parts.standard("canonical"),
+    Views.disclosure("choices", UiBindings.local(expanded),
+        DisclosureParts.retained(choiceLabel, noHelp, noSummary, content -> {
+          var picker = ReferencePicker.open(content, parts.binding(), definition,
+              sourceId, cachedSource, roles, Map.of(role.id(), parts.frontend()),
+              ReferencePicker.Policy.STANDARD, System::nanoTime);
+          return ReferencePickerView.build(content, picker, labels, Optional.of(role));
+        }))));
+```
+
+This example deliberately leaves the original canonical field family attached. It does not implement the final collapsed manual-ID/control-surface policy. The lazy content creates no controller/source before expansion. The managed assembly owns its visible driver, not the borrowed source or document. Field aliasing, additional editors, fake enum shapes, or another native input are unnecessary.
+
+List paging demand comes from actual navigation/scroll gestures, outside painting. A refresh may preserve a key event when the same generation and exact item remain present; keyboard activation additionally requires the same controlled active key. Removed, changed, disabled, or different-generation items refuse. This permits Enter during harmless page/status updates without allowing stale option callbacks.
+
+The assembled native journey remains under qualification. Full inline/task bookmarks, control-surface/manual completion, layout/feedback relationships, and preview/camera policies are not established by the assembly API alone.
+
 ## Cached reads and actual commands
 
 ### Actual field bindings

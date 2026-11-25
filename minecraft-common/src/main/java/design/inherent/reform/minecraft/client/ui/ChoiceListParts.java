@@ -14,7 +14,25 @@ public record ChoiceListParts(
     UiRead<Set<String>> accepted,
     UiCommand<String> accept,
     int visibleRows,
-    int overscan) {
+    int overscan,
+    Optional<UiCommand<Boundary>> paging) {
+  public enum Boundary {
+    BEFORE,
+    AFTER
+  }
+
+  public ChoiceListParts(
+      UiText label,
+      UiText help,
+      UiRead<ChoiceListData> data,
+      UiBinding<Optional<String>> active,
+      UiRead<Set<String>> accepted,
+      UiCommand<String> accept,
+      int visibleRows,
+      int overscan) {
+    this(label, help, data, active, accepted, accept, visibleRows, overscan, Optional.empty());
+  }
+
   public ChoiceListParts {
     Objects.requireNonNull(label);
     Objects.requireNonNull(help);
@@ -22,6 +40,7 @@ public record ChoiceListParts(
     Objects.requireNonNull(active);
     Objects.requireNonNull(accepted);
     Objects.requireNonNull(accept);
+    Objects.requireNonNull(paging);
     if (visibleRows < 1 || visibleRows > 12 || overscan < 0 || overscan > 4)
       throw new IllegalArgumentException("A choice list needs finite visible rows and overscan");
   }

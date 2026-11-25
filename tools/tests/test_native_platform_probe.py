@@ -500,6 +500,19 @@ class PlatformOutcomeTests(unittest.TestCase):
                 self.assertTrue(accepted())
                 del self.native[name]
 
+    def test_picker_success_requires_current_owner_source_and_retirement_facts(self):
+        def accepted():
+            return successful_boot(self.process,self.native,self.library,self.target,"0.20.1",required_scenarios=("semanticPickers",))
+        complete={"status":"PASS","passed":True,"sourceUnchanged":True,"scopesRetired":True,"factories":2,"searches":5,"lookups":2}
+        self.native["semanticPickers"]=dict(complete)
+        self.assertTrue(accepted())
+        for field in complete:
+            for wrong in [None,False,"true",{},[]]:
+                with self.subTest(field=field,wrong=wrong):
+                    self.native["semanticPickers"][field]=wrong
+                    self.assertFalse(accepted())
+            self.native["semanticPickers"][field]=complete[field]
+
     def test_component_status_without_exact_mount_cleanup_and_source_facts_is_refused(self):
         def accepted():
             return successful_boot(self.process, self.native, self.library, self.target,

@@ -1,0 +1,716 @@
+package example.reform.platform;
+
+import static example.reform.platform.PlatformWidgets.*;
+
+import com.google.gson.*;
+import design.inherent.reform.definition.*;
+import design.inherent.reform.edit.DraftNode;
+import design.inherent.reform.minecraft.client.*;
+import design.inherent.reform.minecraft.client.ui.*;
+import design.inherent.reform.operation.*;
+import design.inherent.reform.presentation.*;
+import design.inherent.reform.presentation.ui.*;
+import design.inherent.reform.reference.*;
+import design.inherent.reform.value.*;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+/**
+ * Actual shared picker/controller, real owner/source and original field frontend; no private UI.
+ */
+final class PlatformPickerChecks implements PlatformFormProbe.Scene {
+  record Profile(String models, String artwork) {}
+
+  static final DocumentId SOURCE = DocumentId.parse("fixture:shared_profiles");
+  static final FieldKey<String> MODELS =
+      FieldKey.of("models", ValueTypes.reference(ValueTypes.text(128), SOURCE));
+  static final FieldKey<String> ARTWORK = FieldKey.of("artwork", MODELS.type());
+  static final DocumentDefinition<Profile> DEFINITION =
+      new DocumentDefinition<>(
+          DocumentId.parse("reform_platform_example:picker_profiles"),
+          1,
+          RecordType.<Profile>builder(
+                  values -> new Profile(values.get(MODELS), values.get(ARTWORK)))
+              .field(MODELS, Profile::models)
+              .field(ARTWORK, Profile::artwork)
+              .build(),
+          () -> new Profile(id(0), id(0)));
+  static final PickerRole<Profile> MODEL_ROLE =
+      new PickerRole<>("models", FieldPath.ROOT.field("models"));
+  static final PickerRole<Profile> ART_ROLE =
+      new PickerRole<>("artwork", FieldPath.ROOT.field("artwork"));
+  static final DocumentId TASK = DocumentId.parse("fixture:shared_picker_task");
+  static final ReferenceLimits LIMITS = new ReferenceLimits(64, 65536, 4, 128, 4);
+  static final ReferencePicker.Policy POLICY =
+      new ReferencePicker.Policy(4, 128, 32768, 200_000_000L, 3, 128);
+  static ClientFileSettings<Profile> settings;
+
+  static void register(ClientRegistration registration) {
+    settings = ClientFileSettings.clientJson(registration, DEFINITION);
+  }
+
+  static CompletionStage<JsonObject> run(ClientRegistration registration) {
+    return PlatformFormProbe.run(registration, "PICKERS", PlatformPickerChecks::new);
+  }
+
+  static String id(int index) {
+    return "fixture:profile_" + String.format(java.util.Locale.ROOT, "%03d", index);
+  }
+
+  static Component text(String value) {
+    return Component.literal(value);
+  }
+
+  private final Minecraft client = Minecraft.getInstance();
+  private final Screen parent = NativeScreens.current(client);
+  private final PlatformFormProbe.Driver driver;
+  private final JsonArray checks = new JsonArray();
+  private final AtomicLong clock = new AtomicLong();
+  private ClientEditingWorkflow workflow;
+  private ClientEditor<Profile> editor;
+  private ReferenceActions<String, List<String>> source;
+  private ReferencePicker<Profile, List<String>> task, inline;
+  private UiScope taskScope, inlineScope, fieldScope;
+  private UiLocal<Boolean> expanded;
+  private ClientFieldParts<?> originalParts;
+  private CompletableFuture<?> pending;
+  private CompletableFuture<NavigationAttempt.Result> navigation;
+  private Path file;
+  private byte[] bytes;
+  private BasicFileAttributes attrs;
+  private int stage, factories, pagingPass, baselineSearches;
+  private final AtomicInteger searches = new AtomicInteger(), lookups = new AtomicInteger();
+  private int[] width = {0}, height = {0};
+  private long frames;
+  private boolean complete;
+  private final JsonObject pointerFacts = new JsonObject();
+
+  private void pointerBounds(String phase) {
+    var widget = list();
+    var facts = new JsonObject();
+    facts.addProperty("x", widget.getX());
+    facts.addProperty("y", widget.getY());
+    facts.addProperty("width", widget.getWidth());
+    facts.addProperty("height", widget.getHeight());
+    facts.addProperty("screenWidth", workflow.screen().width);
+    facts.addProperty("screenHeight", workflow.screen().height);
+    facts.addProperty("focused", widget.isFocused());
+    pointerFacts.add(phase, facts);
+  }
+
+  private PlatformPickerChecks(PlatformFormProbe.Driver driver) {
+    this.driver = driver;
+  }
+
+  private void check(String label, boolean valid) {
+    if (!valid) throw new AssertionError(label);
+    checks.add(label);
+  }
+
+  private ReferenceActions<String, List<String>> source() {
+    factories++;
+    if (source == null) {
+      source =
+          settings.references(
+              SOURCE,
+              ValueTypes.text(128),
+              ValueTypes.list(ValueTypes.text(128), 8).snapshotPolicy(),
+              LIMITS);
+      source.bind(
+          "native-shared-picker",
+          stamp -> {
+            var entries = new ArrayList<ReferenceIndex.Entry<String, List<String>>>();
+            for (int i = 0; i < 25; i++)
+              entries.add(
+                  new ReferenceIndex.Entry<>(
+                      id(i),
+                      i == 0 ? List.of() : List.of("contribution"),
+                      "Profile " + String.format(java.util.Locale.ROOT, "%03d", i),
+                      "Profile " + String.format(java.util.Locale.ROOT, "%03d", i),
+                      Map.of(
+                          "Declared models",
+                          Integer.toString(i % 3),
+                          "Declared artwork",
+                          Integer.toString(i % 2))));
+            var index =
+                new ReferenceIndex<>(
+                    stamp,
+                    ValueTypes.text(128),
+                    ValueTypes.list(ValueTypes.text(128), 8).snapshotPolicy(),
+                    LIMITS,
+                    entries);
+            return new ReferenceResolver<String, List<String>>() {
+              public ReferenceStamp stamp() {
+                return stamp;
+              }
+
+              public ReferencePage<String> search(ReferenceQuery query) {
+                searches.incrementAndGet();
+                return index.search(query);
+              }
+
+              public ReferenceResolution<List<String>> resolve(String key) {
+                lookups.incrementAndGet();
+                return index.resolve(key);
+              }
+            };
+          });
+    }
+    return source;
+  }
+
+  private ReferencePickerView.Presentation<Profile> presentation() {
+    return new ReferencePickerView.Presentation<>(
+        UiText.of(text("Profile browser")),
+        UiText.of(text("Inspect profiles, or choose one for a draft field.")),
+        UiText.of(text("Available profiles")),
+        UiText.of(text("Search profiles")),
+        List.of(
+            new ReferencePickerView.RoleAction<>(MODEL_ROLE, UiText.of(text("Use for Models"))),
+            new ReferencePickerView.RoleAction<>(ART_ROLE, UiText.of(text("Use for Artwork")))),
+        4,
+        2);
+  }
+
+  private PickerState taskState() {
+    return task.state().snapshot().value();
+  }
+
+  private PickerState inlineState() {
+    return inline.state().snapshot().value();
+  }
+
+  private String raw(String field) {
+    return ((DraftNode.Scalar)
+            editor.view().snapshot().orElseThrow().draft().at(FieldPath.ROOT.field(field)))
+        .raw();
+  }
+
+  private AbstractWidget list() {
+    return widgets(workflow.screen()).stream()
+        .filter(widget -> widget.getMessage().getString().equals("Available profiles"))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private EditBox search() {
+    return (EditBox)
+        widgets(workflow.screen()).stream()
+            .filter(
+                widget ->
+                    widget instanceof EditBox
+                        && widget.getMessage().getString().equals("Search profiles"))
+            .findFirst()
+            .orElseThrow();
+  }
+
+  private void key(String key) {
+    check(
+        "native key reaches current picker: " + key,
+        NativeClientProbe.key(workflow.screen(), "key.keyboard." + key, true));
+    NativeClientProbe.key(workflow.screen(), "key.keyboard." + key, false);
+  }
+
+  private void press(String caption) {
+    var button = button(workflow.screen(), caption);
+    check("native action is active: " + caption, button.active && focus(workflow.screen(), button));
+    key("enter");
+  }
+
+  private void open(ClientDestination destination, int next) {
+    navigation = workflow.navigation().open(destination).completion().toCompletableFuture();
+    stage = next;
+  }
+
+  private boolean arrived() {
+    if (!navigation.isDone()) return false;
+    check(
+        "identified picker destination revealed",
+        navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED);
+    return true;
+  }
+
+  private void unchanged() throws Exception {
+    var after = Files.readAttributes(file, BasicFileAttributes.class);
+    check(
+        "shared picker preserves file bytes time and identity",
+        Arrays.equals(bytes, Files.readAllBytes(file))
+            && attrs.lastModifiedTime().equals(after.lastModifiedTime())
+            && Objects.equals(attrs.fileKey(), after.fileKey()));
+  }
+
+  @Override
+  public boolean tick() throws Exception {
+    switch (stage) {
+      case 0 -> {
+        file =
+            client
+                .gameDirectory
+                .toPath()
+                .resolve("config/reform_platform_example/picker_profiles.json");
+        if (settings.runtime().isEmpty() || !Files.isRegularFile(file)) return false;
+        bytes = Files.readAllBytes(file);
+        attrs = Files.readAttributes(file, BasicFileAttributes.class);
+        NativeClientProbe.size(client, width, height);
+        var options =
+            new ClientFormOptions<Profile>(FormPresentation.EMPTY, Map.of())
+                .withComponent(
+                    ART_ROLE.field(),
+                    (scope, parts) -> {
+                      originalParts = parts;
+                      fieldScope = scope;
+                      expanded =
+                          scope.local(
+                              new ViewStateKey<>(
+                                  DocumentId.parse("fixture:inline_picker_open"),
+                                  ValueTypes.bool()),
+                              false);
+                      return Views.column(
+                          "artwork",
+                          List.of(
+                              parts.standard("canonical"),
+                              Views.disclosure(
+                                  "inline",
+                                  UiBindings.local(expanded),
+                                  DisclosureParts.retained(
+                                      UiText.of(text("Artwork choices")),
+                                      UiText.of(Component.empty()),
+                                      UiText.of(Component.empty()),
+                                      branch -> {
+                                        inlineScope = branch;
+                                        inline =
+                                            ReferencePicker.open(
+                                                branch,
+                                                parts.binding(),
+                                                DEFINITION,
+                                                SOURCE,
+                                                this::source,
+                                                List.of(MODEL_ROLE, ART_ROLE),
+                                                Map.of("artwork", parts.frontend()),
+                                                POLICY,
+                                                clock::get);
+                                        return ReferencePickerView.build(
+                                            branch, inline, presentation(), Optional.of(ART_ROLE));
+                                      }))));
+                    });
+        var form = settings.form(text("Profile selection"), options);
+        var layout =
+            new ClientWorkflowLayout(
+                List.of(
+                    new ClientWorkflowLayout.Group(
+                        List.of(
+                            new ClientWorkflowLayout.Category(
+                                TASK, text("Profiles"), Component.empty())),
+                        List.of(),
+                        List.of()),
+                    new ClientWorkflowLayout.Group(
+                        List.of(
+                            new ClientWorkflowLayout.Category(
+                                DocumentId.parse("fixture:picker_settings"),
+                                text("Settings"),
+                                Component.empty())),
+                        List.of(
+                            new ClientWorkflowLayout.Placement(
+                                form.route(), form.route(), form.title(), Optional.empty())),
+                        List.of())),
+                List.of());
+        var body =
+            ClientCustomView.component(
+                new ViewKey<>(
+                    new DestinationId(TASK),
+                    new ViewStateKey<>(
+                        DocumentId.parse("fixture:picker_task_state"), ValueTypes.integer(0, 1))),
+                0,
+                UiLimits.STANDARD,
+                (scope, state) -> {
+                  taskScope = scope;
+                  var modelInput =
+                      ClientFieldBindings.field(
+                          scope, workflow.editor(DEFINITION), MODEL_ROLE.field(), MODELS.type());
+                  var artworkInput =
+                      ClientFieldBindings.field(
+                          scope, workflow.editor(DEFINITION), ART_ROLE.field(), ARTWORK.type());
+                  task =
+                      ReferencePicker.open(
+                          scope,
+                          workflow.editor(DEFINITION).actions(),
+                          SOURCE,
+                          this::source,
+                          List.of(MODEL_ROLE, ART_ROLE),
+                          Map.of(
+                              "models", modelInput.frontend(), "artwork", artworkInput.frontend()),
+                          POLICY,
+                          clock::get);
+                  return ReferencePickerView.build(scope, task, presentation(), Optional.empty());
+                });
+        var metadata =
+            ClientWorkspacePresentation.standard(
+                    new WorkspaceIdentity(
+                        DocumentId.parse("fixture:picker_workspace"),
+                        text("Shared profile picker")))
+                .withView(body);
+        check(
+            "picker declarations do not admit sources",
+            metadata.validate(List.of(form), layout).valid() && factories == 0);
+        workflow = ClientEditingWorkflow.open(parent, List.of(form), layout, metadata);
+        NativeScreens.open(client, workflow.screen());
+        frames = PlatformFrameObservations.sequence();
+        stage = 1;
+      }
+      case 1 -> {
+        if (PlatformFrameObservations.sequence() - frames < 8) return false;
+        check(
+            "unopened Home creates no picker source or document",
+            factories == 0
+                && task == null
+                && inline == null
+                && workflow.documents().stream()
+                    .noneMatch(ClientEditingWorkflow.DocumentState::opened));
+        pending = workflow.openEditor(DEFINITION.id()).toCompletableFuture();
+        stage = 2;
+      }
+      case 2 -> {
+        if (!pending.isDone()) return false;
+        pending.join();
+        editor = workflow.editor(DEFINITION);
+        pending =
+            editor
+                .actions()
+                .ensureLoaded(OperationDescriptor.EntryPoint.GUI)
+                .completion()
+                .toCompletableFuture();
+        stage = 21;
+      }
+      case 21 -> {
+        if (!pending.isDone()) return false;
+        pending.join();
+        check(
+            "explicit public owner load is ready",
+            editor.view().availability()
+                == design.inherent.reform.owner.EditorActor.Availability.READY);
+        check(
+            "opening actual owner leaves collapsed picker unadmitted",
+            factories == 0 && inline == null);
+        open(new ClientDestination.View(new DestinationId(TASK)), 3);
+      }
+      case 3 -> {
+        if (!arrived() || task == null || taskState().searching() != PickerState.Phase.READY)
+          return false;
+        check(
+            "task admits one actual bounded source search",
+            factories == 1 && searches.get() == 1 && taskState().window().choices().size() == 4);
+        check("native shared list gets focus", focus(workflow.screen(), list()));
+        pointerBounds("afterFocus");
+        frames = PlatformFrameObservations.sequence();
+        stage = 32;
+      }
+      case 32 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        driver.capture("pickers-pointer.png", () -> stage = 33);
+        stage = -1;
+      }
+      case 33 -> {
+        pointerBounds("beforePointer");
+        var nativeList = list();
+        check(
+            "native pointer reaches first shared choice",
+            NativeClientProbe.pointerDown(
+                workflow.screen(),
+                nativeList.getX() + nativeList.getWidth() / 2.0,
+                nativeList.getY() + nativeList.getHeight() / 8.0));
+        NativeClientProbe.pointerUp(
+            workflow.screen(),
+            nativeList.getX() + nativeList.getWidth() / 2.0,
+            nativeList.getY() + nativeList.getHeight() / 8.0);
+        stage = 31;
+      }
+      case 31 -> {
+        if (taskState().inspection().isEmpty()) return false;
+        check(
+            "resolved-empty profile remains inspectable and selectable",
+            taskState().inspection().orElseThrow().key().equals(id(0))
+                && taskState().inspection().orElseThrow().status()
+                    == ReferenceResolution.Status.RESOLVED
+                && button(workflow.screen(), "Use for Models").active
+                && !editor.dirty());
+        check("list focus remains after pointer inspection", focus(workflow.screen(), list()));
+        key("end");
+        key("enter");
+        stage = 4;
+      }
+      case 4 -> {
+        var state = taskState();
+        if (state.inspection().isEmpty()
+            || state.searching() != PickerState.Phase.READY
+            || state.window().choices().size() < 8) return false;
+        check(
+            "task Enter pins inspection without staging",
+            state.inspection().orElseThrow().key().equals(id(3))
+                && raw("models").equals(id(0))
+                && raw("artwork").equals(id(0))
+                && !editor.dirty());
+        pagingPass = 1;
+        stage = 5;
+      }
+      case 5 -> {
+        if (taskState().searching() != PickerState.Phase.READY) return false;
+        check("list remains focused during actual source paging", list().isFocused());
+        key("end");
+        pagingPass++;
+        stage = 6;
+      }
+      case 6 -> {
+        if (taskState().searching() != PickerState.Phase.READY) return false;
+        if (pagingPass < 3) {
+          stage = 5;
+          return false;
+        }
+        if (taskState().window().firstPage() == 0) return false;
+        check(
+            "scroll demand retains finite pages and pinned title",
+            taskState().window().pageCount() == 3
+                && taskState().window().choices().size() <= 12
+                && taskState()
+                    .inspection()
+                    .orElseThrow()
+                    .title()
+                    .orElseThrow()
+                    .equals("Profile 003"));
+        press("Use for Models");
+        stage = 7;
+      }
+      case 7 -> {
+        if (editor.busy() || !raw("models").equals(id(3))) return false;
+        check("explicit task action stages Models only", raw("artwork").equals(id(0)));
+        unchanged();
+        var input = search();
+        check("native query gets focus", focus(workflow.screen(), input));
+        input.setValue("Profile 0");
+        stage = 8;
+      }
+      case 8 -> {
+        if (!taskState().query().text().equals("Profile 0")) return false;
+        baselineSearches = searches.get();
+        var input = search();
+        input.setValue("Profile 02");
+        input.setCursorPosition(3);
+        input.setHighlightPos(1);
+        stage = 9;
+      }
+      case 9 -> {
+        if (!taskState().query().text().equals("Profile 02")) return false;
+        check(
+            "query edit retains caret and selection without source entry",
+            searches.get() == baselineSearches
+                && taskState().query().caret() == 3
+                && taskState().query().anchor() == 1);
+        clock.set(199_999_999L);
+        frames = PlatformFrameObservations.sequence();
+        stage = 10;
+      }
+      case 10 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        check("200ms source deadline has not entered early", searches.get() == baselineSearches);
+        clock.set(200_000_000L);
+        stage = 11;
+      }
+      case 11 -> {
+        if (taskState().searching() != PickerState.Phase.READY
+            || taskState().window().choices().isEmpty()) return false;
+        check(
+            "actual query completes bounded empty scan pages",
+            taskState().window().choices().getFirst().key().equals(id(20))
+                && raw("models").equals(id(3))
+                && raw("artwork").equals(id(0)));
+        driver.capture("pickers-task.png", () -> open(new ClientDestination.Home(), 12));
+        stage = -1;
+      }
+      case 12 -> {
+        if (!arrived()) return false;
+        int beforeFactories = factories,
+            beforeSearches = searches.get(),
+            beforeLookups = lookups.get();
+        taskScope.refreshObservations(); // The hidden host no longer drives this cached read.
+        check(
+            "hidden observation refresh performs no source work",
+            factories == beforeFactories
+                && searches.get() == beforeSearches
+                && lookups.get() == beforeLookups);
+        check(
+            "Home suspends controller and withdraws source facts",
+            taskState().source() == PickerState.Source.SUSPENDED
+                && taskState().window().choices().isEmpty());
+        baselineSearches = searches.get();
+        frames = PlatformFrameObservations.sequence();
+        stage = 13;
+      }
+      case 13 -> {
+        if (PlatformFrameObservations.sequence() - frames < 8) return false;
+        check(
+            "hidden picker does no automatic search",
+            searches.get() == baselineSearches && factories == 1);
+        open(new ClientDestination.Document(DEFINITION.id()), 14);
+      }
+      case 14 -> {
+        if (!arrived() || !editor.canStage(ART_ROLE.field())) return false;
+        check(
+            "field uses same owner and collapsed source remains lazy",
+            workflow.editor(DEFINITION) == editor && inline == null && factories == 1);
+        press("Show Artwork choices");
+        stage = 15;
+      }
+      case 15 -> {
+        if (inline == null || inlineState().searching() != PickerState.Phase.READY) return false;
+        check(
+            "inline source uses original field input guard",
+            originalParts.binding().identity().context().equals(editor.actions().context())
+                && inlineState().requested().get("artwork").input().isPresent()
+                && factories == 2);
+        check("inline list gets keyboard focus", focus(workflow.screen(), list()));
+        key("down");
+        key("down");
+        key("enter");
+        stage = 16;
+      }
+      case 16 -> {
+        if (editor.busy() || !raw("artwork").equals(id(1))) return false;
+        check("inline Enter stages only its fixed Artwork role", raw("models").equals(id(3)));
+        unchanged();
+        driver.capture(
+            "pickers-inline.png",
+            () -> {
+              NativeClientProbe.resize(client, 320, 240);
+              stage = 17;
+            });
+        stage = -1;
+      }
+      case 17 -> {
+        int[] w = {0}, h = {0};
+        NativeClientProbe.size(client, w, h);
+        if (w[0] != 320 || h[0] != 240) return false;
+        check(
+            "real compact window retains original owner and selection",
+            workflow.editor(DEFINITION) == editor
+                && raw("artwork").equals(id(1))
+                && expanded.snapshot().value());
+        driver.capture(
+            "pickers-narrow.png",
+            () -> {
+              NativeClientProbe.resize(client, width[0], height[0]);
+              stage = 18;
+            });
+        stage = -1;
+      }
+      case 18 -> {
+        int[] w = {0}, h = {0};
+        NativeClientProbe.size(client, w, h);
+        if (w[0] != width[0] || h[0] != height[0] || !editor.canSubmit()) return false;
+        pending =
+            editor
+                .actions()
+                .undo(OperationDescriptor.EntryPoint.GUI)
+                .completion()
+                .toCompletableFuture();
+        stage = 19;
+      }
+      case 19 -> {
+        if (!pending.isDone() || !editor.canSubmit()) return false;
+        pending.join();
+        pending =
+            editor
+                .actions()
+                .undo(OperationDescriptor.EntryPoint.GUI)
+                .completion()
+                .toCompletableFuture();
+        stage = 20;
+      }
+      case 20 -> {
+        if (!pending.isDone() || !editor.canSubmit()) return false;
+        pending.join();
+        check(
+            "original owner Undo restores both draft roles without saving",
+            raw("models").equals(id(0)) && raw("artwork").equals(id(0)) && !editor.dirty());
+        workflow.close();
+        check(
+            "all picker scopes retire with actual workflow",
+            !taskScope.isOpen()
+                && !inlineScope.isOpen()
+                && taskScope.usage().stateBytes() == 0
+                && fieldScope.usage().stateBytes() == 0);
+        unchanged();
+        NativeScreens.open(client, parent);
+        complete = true;
+        return true;
+      }
+      default -> {}
+    }
+    return false;
+  }
+
+  @Override
+  public String diagnostic() {
+    return "shared picker stage=" + stage;
+  }
+
+  @Override
+  public JsonObject report() {
+    var out = new JsonObject();
+    out.addProperty("status", complete ? "PASS" : "RUNNING");
+    out.addProperty("passed", complete);
+    out.addProperty("sourceUnchanged", complete);
+    out.addProperty("scopesRetired", complete);
+    out.addProperty("factories", factories);
+    out.addProperty("searches", searches.get());
+    out.addProperty("lookups", lookups.get());
+    out.addProperty("stage", stage);
+    out.add("pointerBounds", pointerFacts.deepCopy());
+    if (editor != null && editor.isOpen()) {
+      out.addProperty("actorAvailability", editor.view().availability().name());
+      out.addProperty("canSubmit", editor.canSubmit());
+      out.addProperty("busy", editor.busy());
+    }
+    if (task != null && task.scope().isOpen())
+      try {
+        var observed = taskState();
+        out.addProperty("taskSource", observed.source().name());
+        out.addProperty("taskSearch", observed.searching().name());
+        out.addProperty("active", observed.active().orElse(""));
+        out.addProperty("inspected", observed.inspectionRequest().orElse(""));
+        out.addProperty("windowItems", observed.window().choices().size());
+        out.addProperty("windowFirst", observed.window().firstPage());
+      } catch (design.inherent.reform.owner.PolicyRefusal refused) {
+        out.addProperty("observationRefusal", refused.report().issues().getFirst().code());
+      }
+    if (inline != null && inline.scope().isOpen()) {
+      var observed = inlineState();
+      out.addProperty("inlineActive", observed.active().orElse(""));
+      out.addProperty("inlineSource", observed.source().name());
+      out.addProperty("inlineSearch", observed.searching().name());
+      out.addProperty("inlineInspecting", observed.inspecting().name());
+      out.addProperty("inlineInspected", observed.inspectionRequest().orElse(""));
+      out.addProperty("inlineArtwork", raw("artwork"));
+      out.addProperty("inlineRequested", observed.requested().get("artwork").toString());
+      out.addProperty("inlineAccept", inline.activate(ART_ROLE).availability().toString());
+      out.addProperty("inlineReport", observed.report().toString());
+      out.addProperty("inlineScreenNarration", workflow.screen().getNarrationMessage().getString());
+    }
+    out.add("checks", checks.deepCopy());
+    return out;
+  }
+
+  @Override
+  public void close() {
+    if (workflow != null && workflow.isOpen()) workflow.close();
+    if (width[0] > 0) NativeClientProbe.resize(client, width[0], height[0]);
+    NativeScreens.open(client, parent);
+  }
+}

@@ -11,11 +11,140 @@ import org.junit.jupiter.api.Test;
 
 /** Native-classpath state/dispatch checks; actual native hosts are separately qualified. */
 class ChoiceListWidgetTest {
+  @Test
+  void nativePrimaryPointerSelectsRowsAndDragsScrollbar() {
+    var widget = new ChoiceListWidget(Component.literal("Choices"));
+    var accepted = new AtomicReference<String>();
+    widget.prepare(
+        data("native", 100),
+        Optional.empty(),
+        Set.of(),
+        4,
+        2,
+        ClientTheme.standard(),
+        ignored -> {},
+        accepted::set);
+    widget.setX(10);
+    widget.setY(10);
+    widget.setWidth(160);
+    assertFalse(widget.listClick(30, 20, InputConstants.MOUSE_BUTTON_RIGHT));
+    assertNull(accepted.get());
+    assertTrue(widget.listClick(30, 20, InputConstants.MOUSE_BUTTON_LEFT));
+    assertEquals("id:0", accepted.get());
+    assertTrue(widget.listClick(168, 12, InputConstants.MOUSE_BUTTON_LEFT));
+    assertFalse(widget.listDrag(168, 80, InputConstants.MOUSE_BUTTON_RIGHT));
+    assertTrue(widget.listDrag(168, 80, InputConstants.MOUSE_BUTTON_LEFT));
+    assertTrue(widget.firstVisibleIndex() > 0);
+    assertTrue(widget.listRelease());
+    assertFalse(widget.listDrag(168, 12, InputConstants.MOUSE_BUTTON_LEFT));
+  }
+
+  @Test
+  void consecutiveNativeEventsUseAuthoritativeReadbackWithoutAParentRebuild() {
+    var widget = new ChoiceListWidget(Component.literal("Choices"));
+    var data = data("current", 8);
+    var active = new AtomicReference<Optional<String>>(Optional.empty());
+    var accepted = new AtomicReference<String>();
+    widget.prepare(
+        data,
+        active.get(),
+        Set.of(),
+        4,
+        2,
+        ClientTheme.standard(),
+        key -> {
+          active.set(Optional.of(key));
+          widget.observe(data, active.get(), Set.of());
+        },
+        accepted::set);
+    widget.setFocused(true);
+    widget.listKey(InputConstants.KEY_DOWN);
+    widget.listKey(InputConstants.KEY_DOWN);
+    widget.listKey(InputConstants.KEY_RETURN);
+    assertEquals("id:2", accepted.get()); // id:1 is disabled in this fixture.
+    assertEquals(Optional.of("id:2"), widget.observedActive());
+    // A refused command's readback stays authoritative; no optimistic local selection.
+    widget.prepare(
+        data,
+        active.get(),
+        Set.of(),
+        4,
+        2,
+        ClientTheme.standard(),
+        key -> widget.observe(data, active.get(), Set.of()),
+        accepted::set);
+    widget.listKey(InputConstants.KEY_DOWN);
+    assertEquals(Optional.of("id:2"), widget.observedActive());
+    widget.detach();
+    widget.listKey(InputConstants.KEY_END);
+    widget.listKey(InputConstants.KEY_RETURN);
+    assertEquals("id:2", accepted.get());
+  }
+
   private static ChoiceListData data(String generation, int size) {
     var items = new ArrayList<ChoiceListData.Item>();
     for (int i = 0; i < size; i++)
       items.add(new ChoiceListData.Item("id:" + i, "Title " + i, "", i != 1));
     return new ChoiceListData(generation, items, OptionalLong.empty());
+  }
+
+  @Test
+  void retainedItemCheckAllowsPagingButRefusesChangedGenerationValueOrEligibility() {
+    var initial = data("same-source-query", 4);
+    assertTrue(data("same-source-query", 8).retains(initial, "id:3"));
+    assertFalse(data("different-query", 8).retains(initial, "id:3"));
+    assertFalse(data("same-source-query", 2).retains(initial, "id:3"));
+    var changed = new ArrayList<>(initial.items());
+    changed.set(3, new ChoiceListData.Item("id:3", "New meaning", "", true));
+    assertFalse(
+        new ChoiceListData("same-source-query", changed, OptionalLong.empty())
+            .retains(initial, "id:3"));
+    changed.set(3, new ChoiceListData.Item("id:3", "Title 3", "", false));
+    assertFalse(
+        new ChoiceListData("same-source-query", changed, OptionalLong.empty())
+            .retains(initial, "id:3"));
+    assertFalse(initial.retains(initial, "missing"));
+  }
+
+  @Test
+  void pagingDemandFollowsRealNavigationAndIsClearedOnGenerationChangeOrHide() {
+    var widget = new ChoiceListWidget(Component.literal("Choices"));
+    var base = data("page", 8);
+    var active = new AtomicReference<String>();
+    widget.prepare(
+        new ChoiceListData("page", base.items(), OptionalLong.empty(), true, true),
+        Optional.empty(),
+        Set.of(),
+        4,
+        2,
+        ClientTheme.standard(),
+        active::set,
+        ignored -> fail("Navigation must not accept"));
+    widget.setFocused(true);
+    assertTrue(widget.takeBoundary().isEmpty());
+    widget.listKey(InputConstants.KEY_END);
+    assertEquals("id:7", active.get());
+    assertEquals(
+        Optional.of(design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary.AFTER),
+        widget.takeBoundary());
+    assertTrue(widget.takeBoundary().isEmpty());
+    widget.listKey(InputConstants.KEY_HOME);
+    assertEquals(
+        Optional.of(design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary.BEFORE),
+        widget.takeBoundary());
+    widget.listKey(InputConstants.KEY_END);
+    widget.detach();
+    assertTrue(widget.takeBoundary().isEmpty());
+    widget.prepare(
+        data("new-query", 8),
+        Optional.empty(),
+        Set.of(),
+        4,
+        2,
+        ClientTheme.standard(),
+        active::set,
+        ignored -> {});
+    assertTrue(widget.takeBoundary().isEmpty());
   }
 
   @Test

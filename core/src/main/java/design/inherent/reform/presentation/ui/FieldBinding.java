@@ -108,6 +108,38 @@ public final class FieldBinding<T, V> implements AutoCloseable {
     return state;
   }
 
+  /** Borrow only the actual frontend restrictions, fenced by this binding's lifetime. */
+  public FieldFrontend frontend() {
+    scope.requireCurrent();
+    return new FieldFrontend() {
+      public Optional<Input> input() {
+        scope.requireCurrent();
+        return frontend.input();
+      }
+
+      public UiAvailability editing() {
+        scope.requireCurrent();
+        return frontend.editing();
+      }
+
+      public UiAvailability submission() {
+        scope.requireCurrent();
+        return frontend.submission();
+      }
+    };
+  }
+
+  <D> DocumentActions<D> document(DocumentDefinition<D> definition) {
+    scope.requireCurrent();
+    if (identity.definition() != definition)
+      throw new PolicyRefusal(
+          "field.definition_mismatch", "Use the field's exact document definition.");
+    @SuppressWarnings(
+        "unchecked") // Exact immutable definition identity binds the retained actor type.
+    var result = (DocumentActions<D>) actions;
+    return result;
+  }
+
   private static <V> FieldState<V> copy(FieldState<V> s, Optional<V> value) {
     return new FieldState<>(
         s.revision(),

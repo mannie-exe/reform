@@ -3,7 +3,24 @@ package design.inherent.reform.minecraft.client.ui;
 import java.util.*;
 
 /** One bounded admitted window. A missing total does not mean the window is the whole source. */
-public record ChoiceListData(String generation, List<Item> items, OptionalLong total) {
+public record ChoiceListData(
+    String generation, List<Item> items, OptionalLong total, boolean before, boolean after) {
+  public ChoiceListData(String generation, List<Item> items, OptionalLong total) {
+    this(generation, items, total, false, false);
+  }
+
+  /** Semantic retention after a host refresh, not source authority or a target-edit receipt. */
+  public boolean retains(ChoiceListData presented, String key) {
+    Objects.requireNonNull(presented);
+    Objects.requireNonNull(key);
+    if (!generation.equals(presented.generation)) return false;
+    var before =
+        presented.items.stream()
+            .filter(item -> item.key().equals(key) && item.enabled())
+            .findFirst();
+    return before.isPresent() && items.stream().anyMatch(before.orElseThrow()::equals);
+  }
+
   public record Item(String key, String title, String detail, boolean enabled) {
     public Item {
       Objects.requireNonNull(key);

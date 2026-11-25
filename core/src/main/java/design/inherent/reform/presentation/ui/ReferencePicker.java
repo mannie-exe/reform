@@ -44,15 +44,29 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       int pageSize,
       int maximumQueryCharacters,
       int maximumInspectionCharacters,
-      long debounceNanos) {
-    public static final Policy STANDARD = new Policy(64, 128, 32768, 200_000_000L);
+      long debounceNanos,
+      int maximumWindowPages,
+      int maximumCursors) {
+    public static final Policy STANDARD = new Policy(64, 128, 32768, 200_000_000L, 4, 1024);
+
+    public Policy(
+        int pageSize,
+        int maximumQueryCharacters,
+        int maximumInspectionCharacters,
+        long debounceNanos) {
+      this(pageSize, maximumQueryCharacters, maximumInspectionCharacters, debounceNanos, 4, 1024);
+    }
 
     public Policy {
       if (pageSize < 1
           || maximumQueryCharacters < 1
           || maximumInspectionCharacters < 1
           || debounceNanos < 0
-          || debounceNanos > 60_000_000_000L)
+          || debounceNanos > 60_000_000_000L
+          || maximumWindowPages < 1
+          || maximumWindowPages > 64
+          || maximumCursors < 2
+          || maximumCursors > 16384)
         throw new IllegalArgumentException("Finite picker limits and debounce are required");
     }
   }
@@ -92,10 +106,17 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   private PendingChoice<T> pendingChoice;
   private PickerState.Source sourceState = PickerState.Source.UNADMITTED;
   private PickerState.Phase searching = PickerState.Phase.IDLE, inspecting = PickerState.Phase.IDLE;
-  private String active, inspected;
+  private String active, inspected, inspectedTitle;
   private ValidationReport report = ValidationReport.VALID;
   private long queryGeneration, deadline, observationRevision;
-  private boolean queryPending;
+  private boolean queryPending, seekingMatches;
+  private final java.util.NavigableMap<Integer, ReferencePage<String>> pages =
+      new java.util.TreeMap<>();
+  private final java.util.ArrayList<Optional<ReferenceQuery.Cursor>> cursors =
+      new java.util.ArrayList<>();
+  private int requestedPage;
+  private Interest interest;
+
   private WeakReference<UiSnapshot<PickerState>> cached;
 
   private ReferencePicker(
@@ -181,12 +202,86 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
         scope, document, source, sourceFactory, roles, frontends, policy, clock);
   }
 
+  /** Compose against the actual field owner without opening or exposing another editor. */
+  public static <T, V> ReferencePicker<T, V> open(
+      UiScope scope,
+      FieldBinding<?, ?> field,
+      design.inherent.reform.definition.DocumentDefinition<T> definition,
+      DocumentId source,
+      Supplier<ReferenceActions<String, V>> sourceFactory,
+      List<PickerRole<T>> roles,
+      Map<String, FieldFrontend> frontends,
+      Policy policy,
+      LongSupplier clock) {
+    return open(
+        scope, field.document(definition), source, sourceFactory, roles, frontends, policy, clock);
+  }
+
   public UiRead<PickerState> state() {
     return state;
   }
 
   public UiScope scope() {
     return scope;
+  }
+
+  public List<PickerRole<T>> roles() {
+    return List.copyOf(roles.values());
+  }
+
+  public Policy policy() {
+    return policy;
+  }
+
+  /** One visible driver, borrowed independently from the controller/source/document lifetimes. */
+  public final class Interest implements AutoCloseable {
+    private boolean open = true, admitted;
+
+    private Interest() {}
+
+    public void update() {
+      scope.update(
+          () -> {
+            if (!open || interest != this)
+              throw refusal("reference.mount_closed", "This picker attachment has ended.");
+            if (!admitted) {
+              admitted = true;
+              admit().invoke(null);
+            }
+            ReferencePicker.this.update();
+          });
+    }
+
+    @Override
+    public void close() {
+      if (!open) return;
+      if (!scope.isOpen()) {
+        open = false;
+        return;
+      }
+      scope.update(
+          () -> {
+            open = false;
+            if (interest == this) {
+              interest = null;
+              suspend();
+            }
+          });
+    }
+  }
+
+  /** Acquiring the attachment itself performs no source admission or work. */
+  public Interest mount() {
+    var result = new AtomicReference<Interest>();
+    scope.update(
+        () -> {
+          if (interest != null)
+            throw refusal(
+                "reference.already_mounted", "This picker already has a visible attachment.");
+          interest = new Interest();
+          result.set(interest);
+        });
+    return result.get();
   }
 
   /**
@@ -224,6 +319,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
           if (changed) {
             queryGeneration = Math.incrementExact(queryGeneration);
             cancelSearch();
+            resetWindow();
             queryCursor = Optional.empty();
             if (pendingChoice != null || lookupDemand != null && lookupDemand.choice() != null)
               cancelLookup();
@@ -257,24 +353,41 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
 
   public UiCommand<Void> nextPage() {
     return command(
-        () -> nextAvailability(),
+        () -> pageAvailability(true),
         ignored -> {
-          requireSource();
-          var page =
-              browser
-                  .page()
-                  .orElseThrow(() -> refusal("reference.no_page", "Search before continuing."));
-          var cursor =
-              page.next()
-                  .orElseThrow(
-                      () ->
-                          refusal(
-                              "reference.no_next_page",
-                              "There are no more choices in this query."));
-          if (!cursor.filter().equals(queryText.snapshot().value()))
-            throw refusal("reference.cursor", "The search changed; restart it.");
-          return pending(startSearch(Optional.of(cursor)));
+          require(pageAvailability(true));
+          return requestPage(pages.lastKey() + 1);
         });
+  }
+
+  public UiCommand<Void> previousPage() {
+    return command(
+        () -> pageAvailability(false),
+        ignored -> {
+          require(pageAvailability(false));
+          return requestPage(pages.firstKey() - 1);
+        });
+  }
+
+  /** Uses only a cursor actually returned for this exact source/query. */
+  private UiActionResult requestPage(int index) {
+    requireSource();
+    if (index < 0 || index >= cursors.size())
+      throw refusal("reference.cursor", "These results changed; restart the search.");
+    var cursor = cursors.get(index);
+    if (cursor.isPresent() && !cursor.orElseThrow().filter().equals(queryValue.text()))
+      throw refusal("reference.cursor", "The search changed; restart it.");
+    if (search != null
+        && requestedPage == index
+        && (!search.operation().snapshot().terminal()
+            || search.operation().snapshot().state() == OperationSnapshot.State.COMPLETED))
+      return pending(search.operation());
+    if (search != null && !search.operation().snapshot().terminal()) cancelSearch();
+    requestedPage = index;
+    seekingMatches = false;
+    queryCursor = cursor;
+    deadline = clock.getAsLong();
+    return pending(startSearch(cursor));
   }
 
   /** Keyboard focus/hover can move the active row without pinning inspection or editing. */
@@ -334,25 +447,22 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   private UiAvailability listAvailability() {
     var ready = sourceAvailability();
     if (!ready.available()) return ready;
-    return state
-            .snapshot()
-            .value()
-            .page()
-            .filter(
-                p -> p.availability() == ReferencePage.Availability.READY && !p.choices().isEmpty())
-            .isPresent()
+    return !state.snapshot().value().window().choices().isEmpty()
         ? UiAvailability.READY
         : UiAvailability.blocked(
             "reference.no_choices", "Wait for available choices or change the search.");
   }
 
-  private UiAvailability nextAvailability() {
+  private UiAvailability pageAvailability(boolean forward) {
     var ready = sourceAvailability();
     if (!ready.available()) return ready;
-    return state.snapshot().value().page().filter(p -> p.next().isPresent()).isPresent()
-        ? UiAvailability.READY
-        : UiAvailability.blocked(
-            "reference.no_next_page", "There are no more choices in this query.");
+    var window = state.snapshot().value().window();
+    if (window.pageCount() == 0)
+      return UiAvailability.blocked("reference.no_page", "Search before continuing.");
+    if (forward ? window.after() : window.before()) return UiAvailability.READY;
+    return UiAvailability.blocked(
+        forward ? "reference.no_next_page" : "reference.no_previous_page",
+        forward ? "There are no more choices in this search." : "These are the first results.");
   }
 
   private UiAvailability roleAvailability(PickerRole<T> role) {
@@ -507,12 +617,31 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       return;
     }
     if (browser != selected || search != requested) return;
+    if (accepted
+        && terminal.result().orElseThrow().availability() == ReferencePage.Availability.READY) {
+      try {
+        acceptPage(requestedPage, terminal.result().orElseThrow());
+      } catch (PolicyRefusal refused) {
+        searching = PickerState.Phase.REFUSED;
+        report = refused.report();
+        return;
+      }
+    }
     searching =
         accepted
             ? terminal.result().orElseThrow().availability() == ReferencePage.Availability.READY
                 ? PickerState.Phase.READY
                 : PickerState.Phase.REFUSED
             : phase(terminal.state());
+    if (accepted && seekingMatches && searching == PickerState.Phase.READY) {
+      var page = terminal.result().orElseThrow();
+      if (page.choices().isEmpty() && page.next().isPresent()) {
+        queryCursor = page.next();
+        requestedPage = Math.incrementExact(requestedPage);
+        queryPending = true;
+        deadline = clock.getAsLong();
+      } else seekingMatches = false;
+    }
   }
 
   private void pollLookup() {
@@ -590,7 +719,6 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       return retiringSearch;
     }
     retiringSearch = null;
-    active = null;
     queryPending = false;
     search =
         browser.search(
@@ -609,6 +737,13 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       throw refusal("reference.edit_pending", "Wait for the previous selection to finish.");
     cancelLookup();
     inspected = raw;
+    inspectedTitle =
+        pages.values().stream()
+            .flatMap(page -> page.choices().stream())
+            .filter(choiceValue -> choiceValue.key().equals(raw))
+            .map(ReferencePage.Choice::label)
+            .findFirst()
+            .orElse(null);
     if (retiringLookup != null && !retiringLookup.snapshot().terminal()) {
       lookupDemand = new LookupDemand<>(raw, choice);
       inspecting = PickerState.Phase.DRAINING;
@@ -626,13 +761,9 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     requireSource();
     if (!browser.stamp().equals(option.stamp())
         || option.queryGeneration() != queryGeneration
-        || browser
-            .page()
-            .filter(
-                p ->
-                    p.availability() == ReferencePage.Availability.READY
-                        && p.choices().stream().anyMatch(c -> c.key().equals(option.key())))
-            .isEmpty())
+        || pages.values().stream()
+            .flatMap(page -> page.choices().stream())
+            .noneMatch(choice -> choice.key().equals(option.key())))
       throw refusal("reference.option_stale", "The choices changed; select from the current list.");
   }
 
@@ -747,11 +878,18 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
               browser == null ? Optional.empty() : Optional.of(browser.stamp()),
               searching,
               browser == null ? Optional.empty() : browser.page(),
+              window(),
               Optional.ofNullable(active),
               inspecting,
               Optional.ofNullable(inspected),
               resolution.map(
-                  r -> new PickerState.Inspection(inspected, r.status(), r.preview(), r.reason())),
+                  r ->
+                      new PickerState.Inspection(
+                          inspected,
+                          r.status(),
+                          r.preview(),
+                          r.reason(),
+                          Optional.ofNullable(inspectedTitle))),
               requested,
               sourceWork(search == null ? null : search.operation(), retiringSearch),
               sourceWork(lookup == null ? null : lookup.operation(), retiringLookup),
@@ -768,6 +906,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
               Optional.empty(),
               PickerState.Phase.REFUSED,
               Optional.empty(),
+              PickerState.Window.EMPTY,
               Optional.empty(),
               PickerState.Phase.REFUSED,
               Optional.ofNullable(inspected),
@@ -870,6 +1009,64 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     report = cause.report();
   }
 
+  private void resetWindow() {
+    pages.clear();
+    cursors.clear();
+    cursors.add(Optional.empty());
+    requestedPage = 0;
+    seekingMatches = true;
+  }
+
+  private void acceptPage(int index, ReferencePage<String> page) {
+    if (!page.stamp().equals(browser.stamp()) || index < 0 || index >= cursors.size())
+      throw refusal("reference.cursor", "These results changed; restart the search.");
+    var next = new java.util.TreeMap<>(pages);
+    next.put(index, page);
+    while (next.size() > policy.maximumWindowPages()) {
+      if (index - next.firstKey() > next.lastKey() - index) next.pollFirstEntry();
+      else next.pollLastEntry();
+    }
+    var keys = new java.util.HashSet<String>();
+    for (var admitted : next.values())
+      for (var choice : admitted.choices())
+        if (!keys.add(choice.key()))
+          throw refusal(
+              "reference.page_overlap",
+              "The source returned overlapping choices. Refresh or narrow the search.");
+    if (page.next().isPresent()) {
+      var cursor = page.next().orElseThrow();
+      if (!cursor.snapshot().equals(page.stamp().snapshot())
+          || !cursor.filter().equals(queryValue.text())
+          || cursors.subList(0, Math.min(index + 1, cursors.size())).contains(Optional.of(cursor)))
+        throw refusal(
+            "reference.cursor",
+            "The choices changed while loading another page. Refresh the search.");
+      if (index + 1 < cursors.size() && !cursors.get(index + 1).equals(Optional.of(cursor)))
+        throw refusal(
+            "reference.cursor",
+            "The choices changed while loading another page. Refresh the search.");
+      if (index + 1 == cursors.size()) {
+        if (cursors.size() >= policy.maximumCursors())
+          throw refusal(
+              "reference.page_history_limit",
+              "Too many result pages are retained. Narrow or restart this search.");
+        cursors.add(Optional.of(cursor));
+      }
+    }
+    pages.clear();
+    pages.putAll(next);
+    report = ValidationReport.VALID;
+  }
+
+  private PickerState.Window window() {
+    if (browser == null || pages.isEmpty()) return PickerState.Window.EMPTY;
+    var choices = new java.util.ArrayList<ReferencePage.Choice<String>>();
+    for (var page : pages.values()) choices.addAll(page.choices());
+    int first = pages.firstKey(), last = pages.lastKey();
+    return new PickerState.Window(
+        choices, first, pages.size(), cursors.size(), first > 0, last + 1 < cursors.size());
+  }
+
   private void cancelSearch() {
     if (browser != null) browser.clearSearch();
     if (search != null && !search.operation().snapshot().terminal())
@@ -895,7 +1092,9 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     cancelLookup();
     var previous = browser;
     browser = null;
+    resetWindow();
     active = null;
+    inspectedTitle = null;
     queryPending = false;
     searching = PickerState.Phase.IDLE;
     inspecting = PickerState.Phase.IDLE;
@@ -903,6 +1102,10 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   }
 
   private void retire() {
+    if (interest != null) {
+      interest.open = false;
+      interest = null;
+    }
     releaseBrowser();
     source = null;
     edit = null;
@@ -960,10 +1163,19 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
                 + 2L * (choice.key().length() + choice.label().length())
                 + textWeight(choice.preview());
     }
+    size += (64L + 2L * state.query().text().length()) * state.window().retainedCursors() + 64L;
+    for (var choice : state.window().choices())
+      size +=
+          64L
+              + 2L * (choice.key().length() + choice.label().length())
+              + textWeight(choice.preview());
     if (state.inspection().isPresent()) {
       var value = state.inspection().orElseThrow();
       size +=
-          64L + 2L * (value.key().length() + value.reason().length()) + textWeight(value.facts());
+          64L
+              + 2L * (value.key().length() + value.reason().length())
+              + textWeight(value.facts())
+              + value.title().map(title -> 2L * title.length()).orElse(0L);
     }
     if (state.acceptance().isPresent()) {
       var expected = state.acceptance().orElseThrow();

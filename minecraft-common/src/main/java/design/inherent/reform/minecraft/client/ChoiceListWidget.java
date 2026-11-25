@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import design.inherent.reform.minecraft.client.ui.ChoiceListData;
 import design.inherent.reform.presentation.ThemeValues.Role;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -19,8 +20,23 @@ final class ChoiceListWidget extends NativeChoiceWidget {
   private ClientTheme theme = ClientTheme.standard();
   private int first, rowHeight = 20, shown = 4, overscan = 2;
   private boolean dragging;
+  private design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary boundary;
+
+  Optional<design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary> takeBoundary() {
+    var next = boundary;
+    boundary = null;
+    return Optional.ofNullable(next);
+  }
+
+  private void boundary(int direction) {
+    if (direction < 0 && first <= overscan && data.before())
+      boundary = design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary.BEFORE;
+    if (direction > 0 && first + shown + overscan >= data.items().size() && data.after())
+      boundary = design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary.AFTER;
+  }
+
   private Consumer<String> navigation = ignored -> {};
-  private Consumer<String> acceptance = ignored -> {};
+  private BiConsumer<String, Boolean> acceptance = (key, keyboard) -> {};
 
   ChoiceListWidget(Component label) {
     super(label);
@@ -35,15 +51,26 @@ final class ChoiceListWidget extends NativeChoiceWidget {
       ClientTheme theme,
       Consumer<String> navigate,
       Consumer<String> accept) {
-    String anchor = first < data.items().size() ? data.items().get(first).key() : null;
-    if (!next.generation().equals(data.generation())) first = 0;
-    else if (anchor != null) {
-      int index = indexOf(next, anchor);
-      if (index >= 0) first = index;
-    }
-    data = next;
-    selected = activeKey;
-    accepted = Set.copyOf(acceptedKeys);
+    prepare(
+        next,
+        activeKey,
+        acceptedKeys,
+        rows,
+        extra,
+        theme,
+        navigate,
+        (key, keyboard) -> accept.accept(key));
+  }
+
+  void prepare(
+      ChoiceListData next,
+      Optional<String> activeKey,
+      Set<String> acceptedKeys,
+      int rows,
+      int extra,
+      ClientTheme theme,
+      Consumer<String> navigate,
+      BiConsumer<String, Boolean> accept) {
     shown = rows;
     overscan = extra;
     this.theme = theme;
@@ -51,8 +78,28 @@ final class ChoiceListWidget extends NativeChoiceWidget {
     navigation = navigate;
     acceptance = accept;
     setHeight(shown * rowHeight);
+    observe(next, activeKey, acceptedKeys);
+  }
+
+  /** Authoritative readback after a command, even when the parent rebuild waits for a frame. */
+  void observe(ChoiceListData next, Optional<String> activeKey, Set<String> acceptedKeys) {
+    String anchor = first < data.items().size() ? data.items().get(first).key() : null;
+    if (!next.generation().equals(data.generation())) {
+      first = 0;
+      boundary = null;
+    } else if (anchor != null) {
+      int index = indexOf(next, anchor);
+      if (index >= 0) first = index;
+    }
+    data = next;
+    selected = activeKey;
+    accepted = Set.copyOf(acceptedKeys);
     clamp();
     prepareCells();
+  }
+
+  Optional<String> observedActive() {
+    return selected;
   }
 
   private static int indexOf(ChoiceListData data, String key) {
@@ -83,8 +130,9 @@ final class ChoiceListWidget extends NativeChoiceWidget {
 
   void detach() {
     navigation = ignored -> {};
-    acceptance = ignored -> {};
+    acceptance = (key, keyboard) -> {};
     dragging = false;
+    boundary = null;
   }
 
   void clear() {
@@ -144,7 +192,7 @@ final class ChoiceListWidget extends NativeChoiceWidget {
   protected boolean listKey(int key) {
     if (!active || !isFocused()) return false;
     if (key == InputConstants.KEY_RETURN || key == InputConstants.KEY_SPACE) {
-      selected.ifPresent(this::accept);
+      selected.ifPresent(keyValue -> accept(keyValue, true));
       return true;
     }
     int direction =
@@ -173,6 +221,7 @@ final class ChoiceListWidget extends NativeChoiceWidget {
       if (data.items().get(next).enabled()) {
         reveal(next);
         navigation.accept(data.items().get(next).key());
+        boundary(direction);
         return true;
       }
       next += direction;
@@ -187,14 +236,14 @@ final class ChoiceListWidget extends NativeChoiceWidget {
     prepareCells();
   }
 
-  private void accept(String key) {
+  private void accept(String key, boolean keyboard) {
     int i = indexOf(data, key);
-    if (i >= 0 && data.items().get(i).enabled()) acceptance.accept(key);
+    if (i >= 0 && data.items().get(i).enabled()) acceptance.accept(key, keyboard);
   }
 
   @Override
   protected boolean listClick(double x, double y, int button) {
-    if (!active || button != 0 || !isMouseOver(x, y)) return false;
+    if (!active || button != InputConstants.MOUSE_BUTTON_LEFT || !isMouseOver(x, y)) return false;
     setFocused(true);
     if (x >= getRight() - 7 && data.items().size() > shown) {
       dragging = true;
@@ -204,7 +253,7 @@ final class ChoiceListWidget extends NativeChoiceWidget {
     int index = first + (int) (y - getY()) / rowHeight;
     if (index < data.items().size() && data.items().get(index).enabled()) {
       String key = data.items().get(index).key();
-      accept(key);
+      accept(key, false);
     }
     return true;
   }
@@ -214,11 +263,12 @@ final class ChoiceListWidget extends NativeChoiceWidget {
         (int) Math.round((y - getY()) / Math.max(1, getHeight()) * (data.items().size() - shown));
     clamp();
     prepareCells();
+    boundary(y >= getY() + getHeight() / 2.0 ? 1 : -1);
   }
 
   @Override
   protected boolean listDrag(double x, double y, int button) {
-    if (!dragging || button != 0 || !active) return false;
+    if (!dragging || button != InputConstants.MOUSE_BUTTON_LEFT || !active) return false;
     scrollTo(y);
     return true;
   }
@@ -238,7 +288,8 @@ final class ChoiceListWidget extends NativeChoiceWidget {
     first += vertical > 0 ? -1 : 1;
     clamp();
     prepareCells();
-    return old != first;
+    boundary(vertical > 0 ? -1 : 1);
+    return old != first || boundary != null;
   }
 
   @Override

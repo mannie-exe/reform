@@ -6,6 +6,7 @@ import design.inherent.reform.reference.ReferencePage;
 import design.inherent.reform.reference.ReferenceResolution;
 import design.inherent.reform.reference.ReferenceStamp;
 import design.inherent.reform.validation.ValidationReport;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -19,6 +20,7 @@ public record PickerState(
     Optional<ReferenceStamp> stamp,
     Phase searching,
     Optional<ReferencePage<String>> page,
+    Window window,
     Optional<String> active,
     Phase inspecting,
     Optional<String> inspectionRequest,
@@ -29,6 +31,23 @@ public record PickerState(
     Optional<Work> editWork,
     Optional<Acceptance> acceptance,
     ValidationReport report) {
+  /** Bounded admitted pages and cursor bookkeeping, not a known source total. */
+  public record Window(
+      List<ReferencePage.Choice<String>> choices,
+      int firstPage,
+      int pageCount,
+      int retainedCursors,
+      boolean before,
+      boolean after) {
+    public static final Window EMPTY = new Window(List.of(), 0, 0, 0, false, false);
+
+    public Window {
+      choices = List.copyOf(choices);
+      if (firstPage < 0 || pageCount < 0 || retainedCursors < 0)
+        throw new IllegalArgumentException("Invalid picker window");
+    }
+  }
+
   public enum Source {
     UNADMITTED,
     READY,
@@ -73,8 +92,18 @@ public record PickerState(
   }
 
   public record Inspection(
-      String key, ReferenceResolution.Status status, Map<String, String> facts, String reason) {
+      String key,
+      ReferenceResolution.Status status,
+      Map<String, String> facts,
+      String reason,
+      Optional<String> title) {
+    public Inspection(
+        String key, ReferenceResolution.Status status, Map<String, String> facts, String reason) {
+      this(key, status, facts, reason, Optional.empty());
+    }
+
     public Inspection {
+      Objects.requireNonNull(title);
       Objects.requireNonNull(key);
       Objects.requireNonNull(status);
       facts = Map.copyOf(facts);
@@ -136,6 +165,7 @@ public record PickerState(
     Objects.requireNonNull(stamp);
     Objects.requireNonNull(searching);
     Objects.requireNonNull(page);
+    Objects.requireNonNull(window);
     Objects.requireNonNull(active);
     Objects.requireNonNull(inspecting);
     Objects.requireNonNull(inspectionRequest);

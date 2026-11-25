@@ -60,6 +60,12 @@ public final class ClientFieldParts<V> {
     return binding.state();
   }
 
+  /** The original field's native input/ack and edit guards, not another input or writer. */
+  public design.inherent.reform.presentation.ui.FieldFrontend frontend() {
+    owner.requireCurrent();
+    return binding.frontend();
+  }
+
   /** The same native text command path, if this field has a text input rather than a cycle. */
   public Optional<ClientTextInput> input() {
     owner.requireCurrent();
