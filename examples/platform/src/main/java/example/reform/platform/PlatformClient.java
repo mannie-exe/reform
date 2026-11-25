@@ -151,6 +151,7 @@ public final class PlatformClient {
           || recipeLinksScenario
           || nativeRecipeScenario
           || "operations".equals(isolatedScene)
+          || "batches".equals(isolatedScene)
           || "controls".equals(isolatedScene)
           || "captions".equals(isolatedScene)
           || "entries".equals(isolatedScene)) PlatformWorkflowExample.register(registration);
@@ -328,6 +329,11 @@ public final class PlatformClient {
         case 7 -> {
           if (!pending.isDone()) return;
           report.add("nativeKeys", (JsonObject) pending.join());
+          if ("batches".equals(isolatedScene)) {
+            pending = PlatformBatchFailureChecks.run(clientRegistration).toCompletableFuture();
+            stage = 36;
+            return;
+          }
           if ("entries".equals(isolatedScene)) {
             pending = PlatformEntryPresentationChecks.run(clientRegistration).toCompletableFuture();
             stage = 35;
@@ -560,6 +566,11 @@ public final class PlatformClient {
         case 35 -> {
           if (!pending.isDone()) return;
           report.add("entrySlots", (JsonObject) pending.join());
+          beginShutdown();
+        }
+        case 36 -> {
+          if (!pending.isDone()) return;
+          report.add("batchFailures", (JsonObject) pending.join());
           beginShutdown();
         }
         case 34 -> {

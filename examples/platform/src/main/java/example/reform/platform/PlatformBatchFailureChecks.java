@@ -38,6 +38,7 @@ final class PlatformBatchFailureChecks {
   private final Screen parent = NativeScreens.current(client);
   private final UUID run = UUID.randomUUID();
   private final BiConsumer<String, Boolean> check;
+  private final BiConsumer<String, Runnable> capture;
   private final AtomicBoolean armed = new AtomicBoolean(), writable = new AtomicBoolean(true);
   private final AtomicInteger firstWrites = new AtomicInteger(), secondWrites = new AtomicInteger();
   private OwnerContext context;
@@ -52,7 +53,67 @@ final class PlatformBatchFailureChecks {
   private int mode, stage;
 
   PlatformBatchFailureChecks(BiConsumer<String, Boolean> check) {
+    this(check, null);
+  }
+
+  private PlatformBatchFailureChecks(
+      BiConsumer<String, Boolean> check, BiConsumer<String, Runnable> capture) {
     this.check = check;
+    this.capture = capture;
+  }
+
+  static java.util.concurrent.CompletionStage<com.google.gson.JsonObject> run(
+      ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration,
+        "BATCH-FAILURES",
+        driver ->
+            new PlatformFormProbe.Scene() {
+              final com.google.gson.JsonArray checks = new com.google.gson.JsonArray();
+              final PlatformBatchFailureChecks probe =
+                  new PlatformBatchFailureChecks(
+                      (label, valid) -> {
+                        if (!valid) throw new AssertionError(label);
+                        checks.add(label);
+                      },
+                      driver::capture);
+              boolean complete;
+
+              public boolean tick() throws Exception {
+                return complete = probe.tick();
+              }
+
+              public String diagnostic() {
+                return "batch mode=" + probe.mode + ",stage=" + probe.stage;
+              }
+
+              public com.google.gson.JsonObject report() {
+                var value = new com.google.gson.JsonObject();
+                value.addProperty("status", complete ? "PASS" : "RUNNING");
+                value.add("checks", checks.deepCopy());
+                return value;
+              }
+
+              public void close() {
+                if (probe.context != null) probe.context.close();
+              }
+            });
+  }
+
+  private void leaveResult() {
+    var current = NativeScreens.current(client);
+    var back =
+        widgets(current).stream()
+            .filter(Button.class::isInstance)
+            .map(Button.class::cast)
+            .filter(
+                w ->
+                    w.getMessage().getString().equals("Back")
+                        || w.getMessage().getString().startsWith("Back to "))
+            .findFirst()
+            .orElseThrow();
+    click(current, back);
+    stage = 5;
   }
 
   private DocumentActions<Setting> owner(Path root, String name, boolean leading) {
@@ -93,6 +154,8 @@ final class PlatformBatchFailureChecks {
             client
                 .gameDirectory
                 .toPath()
+                .toAbsolutePath()
+                .normalize()
                 .resolve("config/reform_platform_example/batch_edges_" + run + "_" + mode);
         Files.createDirectories(root);
         firstPath = root.resolve("first.json");
@@ -222,18 +285,9 @@ final class PlatformBatchFailureChecks {
                   && !summary.startsWith("Saved")
                   && result.outcomes().get(1).operation().isEmpty());
         }
-        var back =
-            widgets(current).stream()
-                .filter(Button.class::isInstance)
-                .map(Button.class::cast)
-                .filter(
-                    w ->
-                        w.getMessage().getString().equals("Back")
-                            || w.getMessage().getString().startsWith("Back to "))
-                .findFirst()
-                .orElseThrow();
-        click(current, back);
-        stage = 5;
+        stage = 9;
+        if (capture == null) leaveResult();
+        else capture.accept("batch-edge-" + mode + ".png", this::leaveResult);
       }
       case 5 -> {
         if (NativeScreens.current(client) != screen) return false;
@@ -257,6 +311,7 @@ final class PlatformBatchFailureChecks {
         mode++;
         stage = 0;
       }
+      case 9 -> {}
       default -> throw new AssertionError("Unknown Batch edge stage " + stage);
     }
     return false;
