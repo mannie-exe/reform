@@ -5,14 +5,14 @@ This independent native fixture resolves one combined re:form JAR through its st
 Run it from the repository root with the JDK 25 build host:
 
 ```sh
-python3 tools/native_platform_probe.py --target fabric-1_21_1 --library-version 0.2.0-dev.24 --java-home /path/to/jdk25
+python3 tools/native_platform_probe.py --target fabric-1_21_1 --library-version <frozen-version> --java-home /path/to/jdk25
 ```
 
 Select another explicit matrix target for its native run. `--tested-loader` selects the additional pin only where that target declares one. The helper checks the staged POM and installable product, creates a token-owned loopback-only fixture, performs first delivery and saved reopen in separate JVMs, retains reports and failure causes, then removes its world and runtime files. It refuses an existing fixture directory. No personal client, server or world is used.
 
 Run root verification and native launches sequentially. Root `check` compiles this same independent consumer; rebuilding its classes during a source-container launch can invalidate that running fixture. Distinct target output directories do not isolate two builds of the same target.
 
-The default root SNAPSHOT build checks compilation too. For targets that remap game names, its independent consumer uses a task-owned project cache keyed by the actual library SHA-256. This prevents an older named dependency under the same mutable version from satisfying compilation. Shared Gradle caches and frozen candidates are unchanged. Native qualification requires a frozen version built with `-Pmod_version=<version>` and selected with `--library-version <version>`; mutable SNAPSHOT publication is not retained native evidence.
+Root verification checks compilation against its selected artifact too. Use the matching development handoff for these sources, or a release tag with that release's examples. Native qualification requires a frozen version built with `-Pmod_version=<version>` and selected with `--library-version <version>`. Coordinates are immutable from their first local publication, including a failed check build; choose a new coordinate before changing product bytes. Older SNAPSHOT compilation safeguards use a task-owned cache keyed by the actual library SHA-256 on remapped targets. That defensive cache does not authorize overwriting a frozen input, and SNAPSHOT publication is not retained native qualification.
 
 The current controls exercise actual server registration, source identity, bounded workers, native registry/tag capture and identifier lookup, file initialization/preparation/persistence/publication, unchanged reopen and native shutdown cleanup. The report records the actual Java runtime and loaded library location. Compilation and a normal process exit do not establish a passing native outcome.
 
