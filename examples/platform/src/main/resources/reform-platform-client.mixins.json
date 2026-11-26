@@ -4,6 +4,6 @@
   "package": "example.reform.platform.mixin",
   "compatibilityLevel": "JAVA_${javaVersion}",
   "client": ["NativeFrameMixin", "NavigationTickMixin", "GraphicDrawMixin", "DecodedImageScopeMixin", "DecodedImageCloseMixin", "NativeItemShutdownMixin", "GraphicRequestMixin", "BlockPrepareMixin", "OwnedFileWriteMixin",
-    "ChestPrepareMixin", "EntityPrepareMixin", "EntityConstructMixin"${nativeItemMixins}],
+    "ChestPrepareMixin", "EntityPrepareMixin", "EntityConstructMixin"${nativeItemMixins}${nativeUnloadMixins}],
   "injectors": {"defaultRequire": 1}
 }

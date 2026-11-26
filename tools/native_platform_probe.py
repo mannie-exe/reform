@@ -695,6 +695,8 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
         for reopen in (False, True):
             output = fixture / "platform-report.json"
             output.unlink(missing_ok=True)
+            unload_observation = fixture / "platform-native-unload.json"
+            unload_observation.unlink(missing_ok=True)
             if authoring_client and not reopen:
                 source = fixture / "config/reform_platform_example/numeric.json"
                 source.parent.mkdir(parents=True, exist_ok=True)
@@ -707,6 +709,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             log = reports / ("reopen.log" if reopen else "first.log")
             result = execute(command, example, log, timeout,
                              chooser_report=output if chooser_client else None)
+            if unload_observation.is_file():
+                report.setdefault("rawUnloadObservations", []).append(
+                    retain_native_report(unload_observation, reports, reopen, "native-unload"))
             raw_report = retain_native_report(output, reports, reopen)
             if raw_report is not None:
                 report.setdefault("rawNativeReports", []).append(raw_report)

@@ -403,6 +403,7 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
                 check(
                     "queued native disconnect retains the original world and connection",
                     nativeDisconnectOriginRetained);
+                PlatformNativeUnloadObservation.arm();
                 NativeWorldProbe.leave();
                 nativeDisconnectCompleted = true;
                 completion.complete(null);
