@@ -123,7 +123,7 @@ The unpublished dev.119 source adds `picker.suggestions(policy)` as a separate r
 
 The port prefers the source's explicitly supported key-prefix query. Text-only sources use a bounded empty-query listing and exact key-prefix filtering. Page/choice limits produce honest incomplete suggestions, without truncating the field's raw input or claiming that an unmatched ID is invalid. `complete` describes exhaustion of that suggestion query/listing, never reference validity. No inspection lookup or domain compilation runs for partial text. A source change, observed permission loss, or payload refusal withdraws old choices; restored permission cannot revive an old option without a new explicit demand.
 
-`requireField(binding)` checks the exact original actor and declared role before an input can use this port. `move` changes only the local active suggestion. `activeOption()` reads it authoritatively for consecutive native events; `requireChoice(option)` rechecks the exact source stamp, prefix generation, and current key. Neither method writes an input. Native acceptance must still capture and use the original `ClientTextInput.replacements()` command, with its own raw/selection/draft/epoch guards. Native popup, focus, blur, Escape, and input-acceptance wiring remain implementation work; these APIs and core tests do not establish that journey.
+`requireField(binding)` checks the exact original actor and declared role before an input can use this port. `move` changes only the local active suggestion. `activeOption()` reads it authoritatively for consecutive native events; `requireChoice(option)` rechecks the exact source stamp, prefix generation, and current key. Neither method writes an input. Native acceptance must still capture and use the original `ClientTextInput.replacements()` command, with its own raw/selection/draft/epoch guards. The port alone does not establish native popup, focus, dismissal, or input acceptance; those are the separate host offer below.
 
 ### Native completion offer under qualification
 
@@ -131,7 +131,7 @@ The unpublished dev.120 field surface accepts an optional `CompletionParts(picke
 
 The native host prepares a bounded popup outside the scrolling body's clip, using the original input's measured position. `ClientTextInput.State.focused()` reports actual focus; the popup uses a local active descendant while the original EditBox retains native focus. Choosing a suggestion invokes that input's stamped replacement command. Source keys remain exact UTF-16 values, distinct from bounded native row identities. Popup snapshots, input captures, and row metadata share the admitted presentation budget. Rendering does not query or resolve the source.
 
-This is initial implementation, not complete native qualification. Key and pointer routing, focus, dismissal, resize, narration, source withdrawal, and restoration require actual packaged-host evidence. The complete picker, preview, and consumer handoff remains separate.
+This offer remains under qualification. Dev.120 has an actual NeoForge 1.21.1 keyboard/input pair; dev.121 adds actual Escape/reopen, blur, pointer acceptance, and root narration on that target. Completion-popup resize, source-withdrawal events, standalone-host interaction, and other native targets remain separate checks. The complete picker, preview, and consumer handoff is still open.
 
 ## Composed form fields
 
