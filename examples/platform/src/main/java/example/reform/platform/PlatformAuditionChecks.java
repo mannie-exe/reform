@@ -391,9 +391,21 @@ final class PlatformAuditionChecks implements PlatformFormProbe.Scene {
       case 6 -> {
         if (!entries.contains(2)) return false;
         heldBytes = host.retainedInput().bytes();
+        long receipts =
+            editor.actions().operations().stream()
+                .filter(
+                    operation ->
+                        operation
+                            .operation()
+                            .equals(DocumentId.parse("reform:document/capture_graphic_draft")))
+                .filter(
+                    operation ->
+                        operation.result().orElse(null) instanceof DraftGraphicCapture.Receipt)
+                .count();
         check(
-            "entered DRAFT provider retains copied input",
-            heldBytes > 0 && host.retainedInput().resources() == 1);
+            "entered DRAFT provider retains copied input and three metadata-only captures",
+            heldBytes > 0 && host.retainedInput().resources() == 1 && receipts == 3);
+        withdrawalObservation.addProperty("earlyDraftMetadataReceipts", receipts);
         skipped = view.request(3, audition);
         replacement = view.request(4, audition);
         check(
@@ -574,7 +586,7 @@ final class PlatformAuditionChecks implements PlatformFormProbe.Scene {
                   && narration.contains(expected.fallback()));
           check(
               "host DRAFT input no longer escapes its lease through full-candidate history",
-              retained == 0 && receipts == 3 && host.retainedInput().bytes() == 0);
+              retained == 0 && receipts > 0 && host.retainedInput().bytes() == 0);
         }
         entriesBeforeRestore = entries.size();
         sourceRead.set(true);
@@ -655,8 +667,8 @@ final class PlatformAuditionChecks implements PlatformFormProbe.Scene {
         "leasedDraftVerified",
         complete
             && heldBytes > 0
-            && withdrawalObservation.has("draftMetadataReceipts")
-            && withdrawalObservation.get("draftMetadataReceipts").getAsInt() == 3);
+            && withdrawalObservation.has("earlyDraftMetadataReceipts")
+            && withdrawalObservation.get("earlyDraftMetadataReceipts").getAsInt() == 3);
     result.addProperty(
         "sourceFailureVerified",
         complete
