@@ -15,10 +15,34 @@ public record ChoiceListParts(
     UiCommand<String> accept,
     int visibleRows,
     int overscan,
-    Optional<UiCommand<Boundary>> paging) {
+    Optional<UiCommand<Boundary>> paging,
+    Optional<UiBinding<Optional<String>>> viewport) {
   public enum Boundary {
     BEFORE,
     AFTER
+  }
+
+  public ChoiceListParts(
+      UiText label,
+      UiText help,
+      UiRead<ChoiceListData> data,
+      UiBinding<Optional<String>> active,
+      UiRead<Set<String>> accepted,
+      UiCommand<String> accept,
+      int visibleRows,
+      int overscan,
+      Optional<UiCommand<Boundary>> paging) {
+    this(
+        label,
+        help,
+        data,
+        active,
+        accepted,
+        accept,
+        visibleRows,
+        overscan,
+        paging,
+        Optional.empty());
   }
 
   public ChoiceListParts(
@@ -33,6 +57,21 @@ public record ChoiceListParts(
     this(label, help, data, active, accepted, accept, visibleRows, overscan, Optional.empty());
   }
 
+  /** An optional owned top-row key; this never changes active or accepted values. */
+  public ChoiceListParts withViewport(UiBinding<Optional<String>> position) {
+    return new ChoiceListParts(
+        label,
+        help,
+        data,
+        active,
+        accepted,
+        accept,
+        visibleRows,
+        overscan,
+        paging,
+        Optional.of(position));
+  }
+
   public ChoiceListParts {
     Objects.requireNonNull(label);
     Objects.requireNonNull(help);
@@ -41,6 +80,7 @@ public record ChoiceListParts(
     Objects.requireNonNull(accepted);
     Objects.requireNonNull(accept);
     Objects.requireNonNull(paging);
+    Objects.requireNonNull(viewport);
     if (visibleRows < 1 || visibleRows > 12 || overscan < 0 || overscan > 4)
       throw new IllegalArgumentException("A choice list needs finite visible rows and overscan");
   }

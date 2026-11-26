@@ -81,6 +81,48 @@ class ChoiceListWidgetTest {
     assertEquals("id:2", accepted.get());
   }
 
+  @Test
+  void ownedViewportRestoresAcrossReattachmentWithoutSelectingOrDispatchingFromPlacement() {
+    var widget = new ChoiceListWidget(Component.literal("Choices"));
+    var changes = new ArrayList<Optional<String>>();
+    var accepted = new ArrayList<String>();
+    widget.prepare(
+        data("initial", 20),
+        Optional.of("id:10"),
+        Set.of("id:2"),
+        4,
+        2,
+        ClientTheme.standard(),
+        ignored -> {},
+        (String key) -> accepted.add(key));
+    widget.setPosition(10, 10);
+    widget.setWidth(160);
+    widget.viewport(Optional.of("id:8"), () -> changes.add(widget.observedAnchor()));
+    assertEquals(8, widget.firstVisibleIndex());
+    assertEquals(Optional.of("id:10"), widget.observedActive());
+    assertTrue(changes.isEmpty());
+    assertTrue(accepted.isEmpty());
+    assertTrue(widget.mouseScrolled(30, 30, 0, -1));
+    assertEquals(List.of(Optional.of("id:9")), changes);
+    assertEquals(Optional.of("id:10"), widget.observedActive());
+    widget.clear();
+    assertTrue(widget.observedAnchor().isEmpty());
+    widget.prepare(
+        data("new-attachment-generation", 20),
+        Optional.of("id:10"),
+        Set.of("id:2"),
+        4,
+        2,
+        ClientTheme.standard(),
+        ignored -> {},
+        (String key) -> accepted.add(key));
+    widget.viewport(changes.getLast(), () -> fail("Placement cannot publish an anchor command"));
+    assertEquals(9, widget.firstVisibleIndex());
+    assertEquals(Optional.of("id:10"), widget.observedActive());
+    assertTrue(accepted.isEmpty());
+    widget.clear();
+  }
+
   private static ChoiceListData data(String generation, int size) {
     var items = new ArrayList<ChoiceListData.Item>();
     for (int i = 0; i < size; i++)

@@ -91,6 +91,33 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   private final UiLocal<Integer> caret, anchor;
   private final UiReadKey<PickerState> stateKey;
   private final UiRead<PickerState> state;
+
+  // Source-issued cursors stay local to this actual controller. This is not a portable bookmark
+  // or restored selection authority, and contains no copied resolved value or result page.
+  private record ReturnPosition(
+      ReferenceStamp stamp,
+      List<Optional<ReferenceQuery.Cursor>> cursors,
+      int firstPage,
+      int lastPage,
+      Optional<String> active,
+      Optional<String> inspected,
+      Optional<String> title,
+      Optional<String> anchor) {
+    ReturnPosition {
+      cursors = List.copyOf(cursors);
+    }
+  }
+
+  private final UiReadKey<Optional<String>> anchorKey;
+  private final UiRead<Optional<String>> anchorState;
+  private UiSnapshot<Optional<String>> anchorSnapshot;
+  private long anchorRevision = 1;
+  private String listAnchor;
+  private final UiReadKey<Optional<ReturnPosition>> returnKey;
+  private final UiRead<Optional<ReturnPosition>> returnState;
+  private UiSnapshot<Optional<ReturnPosition>> returnSnapshot;
+  private long returnRevision = 1;
+  private ValidationReport returnReport = ValidationReport.VALID;
   private ReferenceActions<String, V> source;
   private ReferenceBrowser<V> browser;
   private ReferenceBrowser.Search search;
@@ -114,7 +141,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       new java.util.TreeMap<>();
   private final java.util.ArrayList<Optional<ReferenceQuery.Cursor>> cursors =
       new java.util.ArrayList<>();
-  private int requestedPage;
+  private int requestedPage, returningThrough = -1;
   private Interest interest;
   private ReferenceSuggestions<V> suggestions;
 
@@ -171,6 +198,26 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
                   DocumentId.parse("reform:picker_anchor"),
                   ValueTypes.integer(0, policy.maximumQueryCharacters())),
               0);
+      anchorKey =
+          new UiReadKey<>(
+              DocumentId.parse("reform:picker_list_anchor"),
+              SnapshotPolicy.immutable(),
+              SnapshotContext.Limits.CONFIGURATION,
+              parent.limits().maximumStateBytes(),
+              value -> 32L + value.map(key -> 2L * key.length()).orElse(0L));
+      anchorSnapshot = anchorKey.capture(Optional.empty());
+      anchorState = scope.observe(anchorKey, this::observeAnchor);
+      returnKey =
+          new UiReadKey<>(
+              DocumentId.parse("reform:picker_return_position"),
+              SnapshotPolicy.immutable(),
+              SnapshotContext.Limits.CONFIGURATION,
+              parent.limits().maximumStateBytes(),
+              ReferencePicker::returnWeight);
+      returnSnapshot = returnKey.capture(Optional.empty());
+      returnState =
+          scope.observe(
+              returnKey, () -> new UiObservation.Available<>(returnSnapshot, returnRevision));
       stateKey =
           new UiReadKey<>(
               DocumentId.parse("reform:reference_picker"),
@@ -283,7 +330,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
               throw refusal("reference.mount_closed", "This picker attachment has ended.");
             if (!admitted) {
               admitted = true;
-              admit().invoke(null);
+              admission(true).invoke(null);
             }
             ReferencePicker.this.update();
           });
@@ -325,10 +372,14 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
    * Explicit view admission. The borrowed source factory is never called by construction or paint.
    */
   public UiCommand<Void> admit() {
+    return admission(false);
+  }
+
+  private UiCommand<Void> admission(boolean returning) {
     return command(
         ignored -> {
           try {
-            return pending(admitSource());
+            return pending(admitSource(returning));
           } catch (PolicyRefusal denied) {
             throw denied;
           } catch (RuntimeException failed) {
@@ -354,6 +405,8 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
           anchor.replace(input.anchor());
           queryValue = input;
           if (changed) {
+            clearReturn();
+            returnReport = ValidationReport.VALID;
             queryGeneration = Math.incrementExact(queryGeneration);
             cancelSearch();
             resetWindow();
@@ -427,6 +480,37 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     return pending(startSearch(cursor));
   }
 
+  /** The first visible row is independent from active navigation and pinned inspection. */
+  public UiRead<Optional<String>> listAnchor() {
+    return anchorState;
+  }
+
+  /** Source-stamped presentation positioning; never selection, inspection, or a draft edit. */
+  public UiCommand<Optional<PickerState.Option>> anchorList() {
+    return command(
+        () -> listAvailability(),
+        next -> {
+          if (next.isPresent()) requireOption(next.orElseThrow());
+          scope.requireCurrent();
+          listAnchor = next.map(PickerState.Option::key).orElse(null);
+          return new UiActionResult.Applied();
+        });
+  }
+
+  private UiObservation<Optional<String>> observeAnchor() {
+    scope.requireCurrent();
+    document.requireInspection();
+    if (browser != null) browser.requireCurrent();
+    scope.requireCurrent();
+    var next =
+        anchorKey.capture(browser == null ? Optional.empty() : Optional.ofNullable(listAnchor));
+    if (!anchorSnapshot.sameData(next)) {
+      anchorSnapshot = next;
+      anchorRevision++;
+    }
+    return new UiObservation.Available<>(anchorSnapshot, anchorRevision);
+  }
+
   /** Keyboard focus/hover can move the active row without pinning inspection or editing. */
   public UiCommand<PickerState.Option> active() {
     return command(
@@ -434,6 +518,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
         option -> {
           requireOption(option);
           active = option.key();
+          returnReport = ValidationReport.VALID;
           return new UiActionResult.Applied();
         });
   }
@@ -590,6 +675,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   private void suspendBrowse() {
     scope.update(
         () -> {
+          rememberReturn();
           releaseBrowser();
           sourceState = PickerState.Source.SUSPENDED;
           report = ValidationReport.VALID;
@@ -678,6 +764,14 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
                 ? PickerState.Phase.READY
                 : PickerState.Phase.REFUSED
             : phase(terminal.state());
+    if (accepted && searching == PickerState.Phase.READY && returningThrough >= 0) {
+      if (requestedPage < returningThrough) {
+        requestedPage++;
+        queryCursor = cursors.get(requestedPage);
+        queryPending = true;
+        deadline = clock.getAsLong();
+      } else returningThrough = -1;
+    }
     if (accepted && seekingMatches && searching == PickerState.Phase.READY) {
       var page = terminal.result().orElseThrow();
       if (page.choices().isEmpty() && page.next().isPresent()) {
@@ -724,21 +818,53 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     }
   }
 
-  private OperationHandle<?> admitSource() {
+  private OperationHandle<?> admitSource(boolean returning) {
     document.requireInspection();
+    scope.requireCurrent();
+    var retained = returning ? returnState.snapshot().value() : Optional.<ReturnPosition>empty();
+    clearReturn();
+    if (!returning) returnReport = ValidationReport.VALID;
     releaseBrowser();
     try {
       var candidate = Objects.requireNonNull(sourceFactory.get());
       if (!candidate.source().equals(sourceId))
         throw new IllegalArgumentException("The picker factory returned another source");
+      scope.requireCurrent();
       source = candidate;
-      browser = new ReferenceBrowser<>(source);
+      var admitted = new ReferenceBrowser<>(source);
+      if (!scope.isOpen()) {
+        admitted.close();
+        scope.requireCurrent();
+      }
+      browser = admitted;
       sourceState = PickerState.Source.READY;
       report = ValidationReport.VALID;
       queryGeneration = Math.incrementExact(queryGeneration);
       queryPending = true;
       deadline = clock.getAsLong();
-      return startSearch(Optional.empty());
+      Optional<ReferenceQuery.Cursor> resumeCursor = Optional.empty();
+      if (retained.isPresent()) {
+        var position = retained.orElseThrow();
+        if (position.stamp().equals(browser.stamp())) {
+          cursors.clear();
+          cursors.addAll(position.cursors());
+          requestedPage = position.firstPage();
+          returningThrough = position.lastPage();
+          seekingMatches = false;
+          resumeCursor = cursors.get(requestedPage);
+          active = position.active().orElse(null);
+          listAnchor = position.anchor().orElse(null);
+          inspectedTitle = position.title().orElse(null);
+          position.inspected().ifPresent(raw -> beginLookup(raw, null));
+        } else {
+          returnReport =
+              refusal(
+                      "reference.return_source_changed",
+                      "Choices changed while this view was hidden. Inspect a current choice.")
+                  .report();
+        }
+      }
+      return startSearch(resumeCursor);
     } catch (PolicyRefusal failed) {
       withdraw(failed);
       throw failed;
@@ -781,6 +907,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     if (edit != null && !edit.snapshot().terminal())
       throw refusal("reference.edit_pending", "Wait for the previous selection to finish.");
     cancelLookup();
+    String previousTitle = Objects.equals(inspected, raw) ? inspectedTitle : null;
     inspected = raw;
     inspectedTitle =
         pages.values().stream()
@@ -788,7 +915,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
             .filter(choiceValue -> choiceValue.key().equals(raw))
             .map(ReferencePage.Choice::label)
             .findFirst()
-            .orElse(null);
+            .orElse(previousTitle);
     if (retiringLookup != null && !retiringLookup.snapshot().terminal()) {
       lookupDemand = new LookupDemand<>(raw, choice);
       inspecting = PickerState.Phase.DRAINING;
@@ -798,6 +925,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     lookup = browser.resolve(EntryPoint.GUI, raw);
     pendingChoice = choice;
     inspecting = PickerState.Phase.RUNNING;
+    returnReport = ValidationReport.VALID;
     report = ValidationReport.VALID;
     return lookup.operation();
   }
@@ -940,7 +1068,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
               sourceWork(lookup == null ? null : lookup.operation(), retiringLookup),
               work(edit),
               acceptance(),
-              report);
+              report.and(returnReport));
       return observed(facts);
     } catch (PolicyRefusal denied) {
       return observed(
@@ -1048,6 +1176,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   }
 
   private void withdraw(PolicyRefusal cause) {
+    clearReturn();
     boolean stale = source != null && browser != null && !browser.current();
     releaseBrowser();
     sourceState = stale ? PickerState.Source.STALE : PickerState.Source.UNAVAILABLE;
@@ -1059,6 +1188,8 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     cursors.clear();
     cursors.add(Optional.empty());
     requestedPage = 0;
+    returningThrough = -1;
+    listAnchor = null;
     seekingMatches = true;
   }
 
@@ -1100,6 +1231,24 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     }
     pages.clear();
     pages.putAll(next);
+    if (listAnchor != null
+        && pages.values().stream()
+            .flatMap(value -> value.choices().stream())
+            .noneMatch(choice -> choice.key().equals(listAnchor)))
+      listAnchor =
+          pages.values().stream()
+              .flatMap(value -> value.choices().stream())
+              .map(ReferencePage.Choice::key)
+              .findFirst()
+              .orElse(null);
+    if (inspected != null)
+      inspectedTitle =
+          pages.values().stream()
+              .flatMap(value -> value.choices().stream())
+              .filter(choice -> choice.key().equals(inspected))
+              .map(ReferencePage.Choice::label)
+              .findFirst()
+              .orElse(inspectedTitle);
     report = ValidationReport.VALID;
   }
 
@@ -1158,6 +1307,69 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     retiringLookup = null;
     cached = null;
     suggestions = null;
+    returnSnapshot = null;
+    anchorSnapshot = null;
+  }
+
+  private void rememberReturn() {
+    if (browser == null) return;
+    try {
+      requireSource();
+      scope.requireCurrent();
+      int firstPage = pages.isEmpty() ? 0 : pages.firstKey();
+      int lastPage = pages.isEmpty() ? firstPage : pages.lastKey();
+      var value =
+          new ReturnPosition(
+              browser.stamp(),
+              cursors,
+              firstPage,
+              lastPage,
+              Optional.ofNullable(active),
+              Optional.ofNullable(inspected),
+              Optional.ofNullable(inspectedTitle),
+              Optional.ofNullable(listAnchor));
+      returnSnapshot = returnKey.capture(Optional.of(value));
+      returnRevision++;
+      scope.refreshObservation(returnState);
+      if (returnState.snapshot()
+          instanceof UiObservation.Unavailable<Optional<ReturnPosition>> missing) {
+        returnReport = missing.report();
+        clearReturn();
+      }
+    } catch (PolicyRefusal denied) {
+      clearReturn();
+      returnReport = denied.report();
+    } catch (IllegalArgumentException refused) {
+      clearReturn();
+      returnReport =
+          refusal(
+                  "ui.budget_exceeded",
+                  "This list position could not be retained within the UI allowance. The draft is unchanged.")
+              .report();
+    }
+  }
+
+  private void clearReturn() {
+    if (!scope.isOpen()) {
+      returnSnapshot = null;
+      return;
+    }
+    returnSnapshot = returnKey.capture(Optional.empty());
+    returnRevision++;
+    scope.refreshObservation(returnState);
+  }
+
+  private static long returnWeight(Optional<ReturnPosition> value) {
+    if (value.isEmpty()) return 32;
+    var position = value.orElseThrow();
+    long size = 192L + 2L * position.stamp().revision().length();
+    for (var cursor : position.cursors())
+      size += 64L + cursor.map(next -> 2L * next.filter().length()).orElse(0L);
+    return size
+        + position.active().map(key -> 2L * key.length()).orElse(0L)
+        + position.inspected().map(key -> 2L * key.length()).orElse(0L)
+        + position.title().map(title -> 2L * title.length()).orElse(0L)
+        + position.anchor().map(key -> 2L * key.length()).orElse(0L);
   }
 
   private static PolicyRefusal refusal(String code, String text) {

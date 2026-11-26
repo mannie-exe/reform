@@ -20,6 +20,7 @@ final class ChoiceListWidget extends NativeChoiceWidget {
   private ClientTheme theme = ClientTheme.standard();
   private int first, rowHeight = 20, shown = 4, overscan = 2;
   private boolean dragging;
+  private Runnable viewportChanged = () -> {};
   private design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary boundary;
 
   Optional<design.inherent.reform.minecraft.client.ui.ChoiceListParts.Boundary> takeBoundary() {
@@ -98,6 +99,24 @@ final class ChoiceListWidget extends NativeChoiceWidget {
     prepareCells();
   }
 
+  /** Applies owned presentation state without invoking a command during placement or paint. */
+  void viewport(Optional<String> anchor, Runnable changed) {
+    viewportChanged = Objects.requireNonNull(changed);
+    anchor.ifPresent(
+        key -> {
+          int index = indexOf(data, key);
+          if (index >= 0) first = index;
+        });
+    clamp();
+    prepareCells();
+  }
+
+  Optional<String> observedAnchor() {
+    return first < data.items().size()
+        ? Optional.of(data.items().get(first).key())
+        : Optional.empty();
+  }
+
   Optional<String> observedActive() {
     return selected;
   }
@@ -133,6 +152,7 @@ final class ChoiceListWidget extends NativeChoiceWidget {
     acceptance = (key, keyboard) -> {};
     dragging = false;
     boundary = null;
+    viewportChanged = () -> {};
   }
 
   void clear() {
@@ -259,11 +279,13 @@ final class ChoiceListWidget extends NativeChoiceWidget {
   }
 
   private void scrollTo(double y) {
+    int previous = first;
     first =
         (int) Math.round((y - getY()) / Math.max(1, getHeight()) * (data.items().size() - shown));
     clamp();
     prepareCells();
     boundary(y >= getY() + getHeight() / 2.0 ? 1 : -1);
+    if (first != previous) viewportChanged.run();
   }
 
   @Override
@@ -289,6 +311,7 @@ final class ChoiceListWidget extends NativeChoiceWidget {
     clamp();
     prepareCells();
     boundary(vertical > 0 ? -1 : 1);
+    if (old != first) viewportChanged.run();
     return old != first || boundary != null;
   }
 

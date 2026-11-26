@@ -144,7 +144,14 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private Path file;
   private byte[] bytes;
   private BasicFileAttributes attrs;
-  private int stage, factories, pagingPass, baselineSearches;
+  private int stage, factories, pagingPass, baselineSearches, sourceReturns;
+  private boolean pickerReturnVerified;
+  private PickerState returnBefore;
+  private AbstractWidget returnList;
+  private EditBox returnQuery;
+  private Optional<String> returnAnchor;
+  private design.inherent.reform.edit.DraftRevision returnDraft;
+  private final JsonObject returnFacts = new JsonObject();
   private final AtomicInteger searches = new AtomicInteger(), lookups = new AtomicInteger();
   private int[] width = {0}, height = {0};
   private long frames;
@@ -572,7 +579,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 .withView(body);
         check(
             "picker declarations do not admit sources",
-            metadata.validate(List.of(form), layout).valid() && factories == 0);
+            metadata.validate(List.of(form), layout).valid() && factories == 0 + sourceReturns);
         workflow = ClientEditingWorkflow.open(parent, List.of(form), layout, metadata);
         NativeScreens.open(client, workflow.screen());
         frames = PlatformFrameObservations.sequence();
@@ -582,7 +589,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         if (PlatformFrameObservations.sequence() - frames < 8) return false;
         check(
             "unopened Home creates no picker source or document",
-            factories == 0
+            factories == 0 + sourceReturns
                 && task == null
                 && inline == null
                 && workflow.documents().stream()
@@ -601,7 +608,9 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && inline == null);
         check(
             "task admits one actual bounded source search",
-            factories == 1 && searches.get() == 1 && taskState().window().choices().size() == 4);
+            factories == 1 + sourceReturns
+                && searches.get() == 1
+                && taskState().window().choices().size() == 4);
         check("native shared list gets focus", focus(workflow.screen(), list()));
         pointerBounds("afterFocus");
         frames = PlatformFrameObservations.sequence();
@@ -725,6 +734,37 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             taskState().window().choices().getFirst().key().equals(id(20))
                 && raw("models").equals(id(3))
                 && raw("artwork").equals(id(0)));
+        check(
+            "filtered list gets native focus before return capture",
+            focus(workflow.screen(), list()));
+        key("end");
+        stage = 111;
+      }
+      case 111 -> {
+        var state = taskState();
+        if (state.searching() != PickerState.Phase.READY || state.window().choices().size() != 5)
+          return false;
+        key("end");
+        frames = PlatformFrameObservations.sequence();
+        stage = 112;
+      }
+      case 112 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        returnBefore = taskState();
+        returnList = list();
+        returnQuery = search();
+        returnAnchor = task.listAnchor().snapshot().value();
+        returnDraft =
+            design.inherent.reform.edit.DraftRevision.of(editor.view().snapshot().orElseThrow());
+        check(
+            "return capture separates actual scroll anchor active and pinned inspection",
+            returnAnchor.equals(Optional.of(id(21)))
+                && returnBefore.active().equals(Optional.of(id(24)))
+                && returnBefore.inspection().orElseThrow().key().equals(id(3))
+                && returnBefore.query().equals(new PickerState.Query("Profile 02", 3, 1))
+                && returnList.isFocused()
+                && returnQuery.getCursorPosition() == 3
+                && returnQuery.getHighlighted().equals("ro"));
         driver.capture("pickers-task.png", () -> open(new ClientDestination.Home(), 12));
         stage = -1;
       }
@@ -751,8 +791,59 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         if (PlatformFrameObservations.sequence() - frames < 8) return false;
         check(
             "hidden picker does no automatic search",
-            searches.get() == baselineSearches && factories == 1);
-        open(new ClientDestination.Document(ROUTE), 14);
+            searches.get() == baselineSearches && factories == 1 + sourceReturns);
+        open(new ClientDestination.View(new DestinationId(TASK)), 630);
+      }
+      case 630 -> {
+        if (!arrived()
+            || taskState().searching() != PickerState.Phase.READY
+            || taskState().inspecting() != PickerState.Phase.READY) return false;
+        var returned = taskState();
+        check(
+            "same-source return restores bounded window and distinct picker context",
+            returned.query().equals(returnBefore.query())
+                && returned.stamp().equals(returnBefore.stamp())
+                && returned.window().equals(returnBefore.window())
+                && returned.active().equals(returnBefore.active())
+                && returned
+                    .inspection()
+                    .orElseThrow()
+                    .equals(returnBefore.inspection().orElseThrow())
+                && task.listAnchor().snapshot().value().equals(returnAnchor)
+                && returned.queryGeneration() != returnBefore.queryGeneration()
+                && returnDraft.equals(
+                    design.inherent.reform.edit.DraftRevision.of(
+                        editor.view().snapshot().orElseThrow()))
+                && workflow.editor(ROUTE) == editor);
+        sourceReturns++;
+        frames = PlatformFrameObservations.sequence();
+        stage = 631;
+      }
+      case 631 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        check(
+            "native return retains exact list query controls focus caret and selection",
+            list() == returnList
+                && search() == returnQuery
+                && list().isFocused()
+                && returnQuery.getValue().equals("Profile 02")
+                && returnQuery.getCursorPosition() == 3
+                && returnQuery.getHighlighted().equals("ro")
+                && factories == 1 + sourceReturns
+                && raw("models").equals(id(3))
+                && raw("artwork").equals(id(0)));
+        returnFacts.addProperty("anchor", returnAnchor.orElseThrow());
+        returnFacts.addProperty("active", taskState().active().orElseThrow());
+        returnFacts.addProperty("inspected", taskState().inspection().orElseThrow().key());
+        returnFacts.addProperty("query", taskState().query().toString());
+        returnFacts.addProperty("window", taskState().window().toString());
+        returnFacts.addProperty("sameControls", list() == returnList && search() == returnQuery);
+        returnFacts.addProperty("listFocused", list().isFocused());
+        unchanged();
+        pickerReturnVerified = true;
+        driver.capture(
+            "pickers-task-returned.png", () -> open(new ClientDestination.Document(ROUTE), 14));
+        stage = -1;
       }
       case 14 -> {
         if (!arrived() || !editor.canStage(ART_ROLE.field())) return false;
@@ -761,7 +852,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             workflow.editor(ROUTE) == editor
                 && inline != null
                 && inlineState().source() == PickerState.Source.UNADMITTED
-                && factories == 1);
+                && factories == 1 + sourceReturns);
         originalInput = originalParts.input().orElseThrow();
         check(
             "collapsed surface does not reveal the original native input",
@@ -796,7 +887,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             "inline source uses original field input guard",
             originalParts.binding().identity().context().equals(editor.actions().context())
                 && inlineState().requested().get("artwork").input().isPresent()
-                && factories == 2);
+                && factories == 2 + sourceReturns);
         check(
             "unchanged disclosure accepts one gesture across unrelated presentation revision",
             unrelatedPresentation.snapshot().value() && expanded.snapshot().value());
@@ -1220,7 +1311,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && raw("models").equals(id(0))
                 && raw("artwork").equals(id(0))
                 && taskState().query().text().isEmpty()
-                && factories == 3);
+                && factories == 3 + sourceReturns);
         workflow.close();
         check(
             "all picker scopes retire with actual workflow",
@@ -1260,7 +1351,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                     .context()
                     .equals(standalone.editingActions().context())
                 && standaloneFactories == 1
-                && factories == 3
+                && factories == 3 + sourceReturns
                 && focus(standalone, standaloneWidget));
         standaloneWidget.setValue("fixture:profile_00");
         stage = 261;
@@ -1320,7 +1411,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                                 && issue.path().equals(ART_ROLE.field()))
                 && standalone.getNarrationMessage().getString().contains("permission"));
         sourceAuthorityFacts.addProperty("readyRefusal", standalone.controlReport().toString());
-        sourceAuthorityFacts.addProperty("readyNarration", standalone.getNarrationMessage().getString());
+        sourceAuthorityFacts.addProperty(
+            "readyNarration", standalone.getNarrationMessage().getString());
         sourceReadable.set(true);
         clock.addAndGet(1_000_000_000L);
         frames = PlatformFrameObservations.sequence();
@@ -1349,7 +1441,9 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       case 272 -> {
         var offer = standaloneSuggestions.state().snapshot().value();
         if (offer.phase() != PickerState.Phase.READY || offer.choices().size() != 4) return false;
-        check("explicit source recovery reuses one actual source service", factories == 4);
+        check(
+            "explicit source recovery reuses one actual source service",
+            factories == 4 + sourceReturns);
         searchGate = new SearchGate();
         standaloneWidget.setValue("fixture:profile_02");
         stage = 273;
@@ -1393,7 +1487,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         sourceAuthorityFacts.addProperty("withdrawnPhase", offer.phase().name());
         sourceAuthorityFacts.addProperty("withdrawnChoices", offer.choices().size());
         sourceAuthorityFacts.addProperty("withdrawnStampPresent", offer.stamp().isPresent());
-        sourceAuthorityFacts.addProperty("withdrawnOutstandingCalls", sourceContext.outstandingCalls());
+        sourceAuthorityFacts.addProperty(
+            "withdrawnOutstandingCalls", sourceContext.outstandingCalls());
         sourceReadable.set(true);
         standaloneWidget.setValue("fixture:profile_00");
         stage = 276;
@@ -1417,7 +1512,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && searchGate.exited.getCount() == 1);
         sourceAuthorityFacts.addProperty("replacementPhase", offer.phase().name());
         sourceAuthorityFacts.addProperty("replacementWork", offer.work().orElseThrow().toString());
-        sourceAuthorityFacts.addProperty("replacementSourceEntriesWhileHeld", searches.get() - withdrawnSearches);
+        sourceAuthorityFacts.addProperty(
+            "replacementSourceEntriesWhileHeld", searches.get() - withdrawnSearches);
         searchGate.release.countDown();
         stage = 278;
       }
@@ -1430,7 +1526,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && offer.choices().stream()
                     .allMatch(choice -> choice.key().startsWith("fixture:profile_00"))
                 && searches.get() == withdrawnSearches + 1
-                && factories == 4);
+                && factories == 4 + sourceReturns);
         sourceAuthorityFacts.addProperty("freshPrefix", offer.prefix());
         sourceAuthorityFacts.addProperty("freshSourceEntries", searches.get() - withdrawnSearches);
         sourceAuthorityFacts.addProperty("freshChoices", offer.choices().toString());
@@ -1446,7 +1542,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             "standalone completion stages only its original field without persistence",
             standaloneRaw("models").equals(id(0))
                 && standaloneWidget.isFocused()
-                && factories == 4);
+                && factories == 4 + sourceReturns);
         unchanged();
         undoRemaining = 4;
         pending =
@@ -1508,6 +1604,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("passed", complete);
     out.addProperty("sourceUnchanged", complete);
     out.addProperty("scopesRetired", complete);
+    out.addProperty("pickerReturnVerified", pickerReturnVerified);
+    out.add("pickerReturn", returnFacts.deepCopy());
     out.addProperty("completionVerified", completionVerified);
     out.addProperty("completionDismissed", completionDismissed);
     out.addProperty("completionBlur", completionBlur);

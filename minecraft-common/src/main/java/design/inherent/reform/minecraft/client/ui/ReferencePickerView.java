@@ -142,6 +142,21 @@ public final class ReferencePickerView {
             return activeChanges;
           }
         };
+    var anchorChanges =
+        map(
+            picker.anchorList(),
+            (Optional<String> key) -> key.map(value -> option(state, value)),
+            inputs);
+    UiBinding<Optional<String>> viewport =
+        new UiBinding<>() {
+          public UiRead<Optional<String>> value() {
+            return picker.listAnchor();
+          }
+
+          public UiCommand<Optional<String>> changes() {
+            return anchorChanges;
+          }
+        };
     UiCommand<String> accept;
     if (fixedRole.isPresent())
       accept = map(picker.activate(fixedRole.orElseThrow()), key -> option(state, key), inputs);
@@ -185,15 +200,16 @@ public final class ReferencePickerView {
         Views.choiceList(
             "choices",
             new ChoiceListParts(
-                presentation.listLabel(),
-                UiText.of(Component.empty()),
-                data,
-                selection,
-                accepted,
-                accept,
-                presentation.visibleRows(),
-                presentation.overscan(),
-                Optional.of(paging))));
+                    presentation.listLabel(),
+                    UiText.of(Component.empty()),
+                    data,
+                    selection,
+                    accepted,
+                    accept,
+                    presentation.visibleRows(),
+                    presentation.overscan(),
+                    Optional.of(paging))
+                .withViewport(viewport)));
     children.add(
         Views.queryInput(
             "search",

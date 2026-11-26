@@ -276,6 +276,7 @@ final class MountedUiTree implements AutoCloseable {
     private final java.util.Set<String> collapsedIds = new HashSet<>();
     private UiCommand<Void> disclosureCommand;
     private ChoiceListWidget listWidget;
+    private Optional<String> listAnchor = Optional.empty();
     private NativeQueryInput queryWidget;
     private ClientIdCompletion completion;
     private design.inherent.reform.minecraft.client.ui.ChoiceListData listData;
@@ -310,6 +311,13 @@ final class MountedUiTree implements AutoCloseable {
             add(declared, parts.active().changes().dependencies());
             add(declared, parts.accept().dependencies());
             parts.paging().ifPresent(command -> add(declared, command.dependencies()));
+            parts
+                .viewport()
+                .ifPresent(
+                    binding -> {
+                      add(declared, List.of(binding.value()));
+                      add(declared, binding.changes().dependencies());
+                    });
           }
           case ViewSpec.QueryInput query -> {
             var parts = query.parts();
@@ -467,7 +475,11 @@ final class MountedUiTree implements AutoCloseable {
         lifecycleActive = false;
         managed.lifecycle().suspend();
       }
-      if (listWidget != null) listWidget.detach();
+      if (listWidget != null) {
+        if (spec instanceof ViewSpec.ChoiceList list && list.parts().viewport().isPresent())
+          listWidget.clear();
+        else listWidget.detach();
+      }
       if (queryWidget != null) {
         queryWidget.changed = () -> {};
         queryWidget.submit = () -> {};
@@ -753,6 +765,11 @@ final class MountedUiTree implements AutoCloseable {
               listData = parts.data().snapshot().value();
               listActive = parts.active().value().snapshot().value();
               listAccepted = java.util.Set.copyOf(parts.accepted().snapshot().value());
+              listAnchor =
+                  parts
+                      .viewport()
+                      .map(binding -> binding.value().snapshot().value())
+                      .orElse(Optional.empty());
               yield new Row(
                   this,
                   Kind.CHOICE_LIST,
@@ -1209,7 +1226,15 @@ final class MountedUiTree implements AutoCloseable {
                     node,
                     hostGuard,
                     changed,
-                    () -> execute(node, parts.active().changes(), Optional.of(key)),
+                    () -> {
+                      execute(node, parts.active().changes(), Optional.of(key));
+                      if (node.lastResult instanceof UiActionResult.Applied)
+                        parts
+                            .viewport()
+                            .ifPresent(
+                                binding ->
+                                    execute(node, binding.changes(), widget.observedAnchor()));
+                    },
                     () ->
                         retainedChoice(node, data, key) && node.listActive.equals(expectedActive));
               },
@@ -1232,6 +1257,25 @@ final class MountedUiTree implements AutoCloseable {
                         retainedChoice(node, data, key)
                             && (!keyboard || node.listActive.equals(expectedActive)));
               });
+          widget.viewport(
+              node.listAnchor,
+              () ->
+                  parts
+                      .viewport()
+                      .ifPresent(
+                          binding -> {
+                            var anchor = widget.observedAnchor();
+                            dispatch(
+                                token,
+                                node,
+                                hostGuard,
+                                changed,
+                                () -> execute(node, binding.changes(), anchor),
+                                () ->
+                                    anchor
+                                        .map(key -> retainedChoice(node, data, key))
+                                        .orElse(false));
+                          }));
           ControlSizing.offer(
               widget,
               theme

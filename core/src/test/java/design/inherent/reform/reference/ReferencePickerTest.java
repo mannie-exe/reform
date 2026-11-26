@@ -965,6 +965,207 @@ class ReferencePickerTest {
   }
 
   @Test
+  void mountedReturnRestoresSourcePageActiveAndPinnedInspectionWithoutStaging() throws Exception {
+    var policy = new ReferencePicker.Policy(1, 128, 32768, 0, 2, 8);
+    try (var h = new Harness(UiLimits.STANDARD, policy)) {
+      h.call(
+          () ->
+              h.references.bind(
+                  "shared-query",
+                  stamp ->
+                      ReferenceIndexTest.index(
+                          stamp,
+                          List.of(
+                              ReferenceIndexTest.entry("fixture:a", "shared"),
+                              ReferenceIndexTest.entry("fixture:b", "shared")))));
+      var first = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            first.update();
+            return null;
+          });
+
+      h.call(() -> h.picker.query().invoke(new PickerState.Query("shared", 3, 1)));
+      awaitState(h, value -> value.searching() == PickerState.Phase.READY);
+      done(pending(h.call(() -> h.picker.nextPage().invoke(null))));
+      h.update();
+      var oldOption = h.option("fixture:b");
+      assertInstanceOf(
+          UiActionResult.Applied.class, h.call(() -> h.picker.active().invoke(oldOption)));
+      var top = h.option("fixture:a");
+      assertInstanceOf(
+          UiActionResult.Applied.class,
+          h.call(() -> h.picker.anchorList().invoke(Optional.of(top))));
+      h.inspect("fixture:b");
+      var before = h.snapshot();
+      assertEquals("fixture:b", before.inspection().orElseThrow().key());
+      h.call(
+          () -> {
+            first.close();
+            return null;
+          });
+      var hidden = h.snapshot();
+      assertEquals(PickerState.Source.SUSPENDED, hidden.source());
+      assertTrue(hidden.window().choices().isEmpty());
+      assertTrue(hidden.inspection().isEmpty());
+      var next = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            next.update();
+            return null;
+          });
+      var returned =
+          awaitState(
+              h,
+              value ->
+                  value.searching() == PickerState.Phase.READY
+                      && value.inspecting() != PickerState.Phase.RUNNING);
+      assertEquals(before.query(), returned.query());
+      assertEquals(before.stamp(), returned.stamp());
+      assertEquals(before.window(), returned.window());
+      assertEquals(
+          Optional.of("fixture:a"), h.call(() -> h.picker.listAnchor().snapshot().value()));
+      assertEquals(Optional.of("fixture:b"), returned.active());
+      assertEquals("fixture:b", returned.inspection().orElseThrow().key());
+      assertTrue(
+          returned.window().choices().stream()
+              .anyMatch(choice -> choice.key().equals("fixture:b")));
+      assertNotEquals(oldOption.queryGeneration(), returned.queryGeneration());
+      assertInstanceOf(
+          UiActionResult.Refused.class, h.call(() -> h.picker.active().invoke(oldOption)));
+      assertEquals("fixture:a", h.raw("models"));
+      assertEquals("fixture:a", h.raw("artwork"));
+      h.unchanged();
+      h.call(
+          () -> {
+            next.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void mountedReturnDoesNotReuseAnotherSourceSnapshotOrStageItsPinnedInspection() throws Exception {
+    try (var h =
+        new Harness(UiLimits.STANDARD, new ReferencePicker.Policy(1, 128, 32768, 0, 2, 8))) {
+      h.edit("models", "fixture:b");
+      var first = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            first.update();
+            return null;
+          });
+      awaitState(h, value -> value.searching() == PickerState.Phase.READY);
+      done(pending(h.call(() -> h.picker.nextPage().invoke(null))));
+      h.update();
+      var old = h.option("fixture:b");
+      h.call(() -> h.picker.active().invoke(old));
+      h.inspect("fixture:b");
+      h.call(
+          () -> {
+            first.close();
+            return null;
+          });
+      var queries = new CopyOnWriteArrayList<ReferenceQuery>();
+      var replacementLookups = new AtomicInteger();
+      h.call(
+          () ->
+              h.references.bind(
+                  "same-label",
+                  stamp -> {
+                    var index =
+                        ReferenceIndexTest.index(
+                            stamp, List.of(ReferenceIndexTest.entry("fixture:a", "Alpha")));
+                    return new ReferenceResolver<String, List<String>>() {
+                      public ReferenceStamp stamp() {
+                        return stamp;
+                      }
+
+                      public ReferencePage<String> search(ReferenceQuery query) {
+                        queries.add(query);
+                        return index.search(query);
+                      }
+
+                      public ReferenceResolution<List<String>> resolve(String key) {
+                        replacementLookups.incrementAndGet();
+                        return index.resolve(key);
+                      }
+                    };
+                  })); // A new actual snapshot, omitting the staged B value.
+      var next = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            next.update();
+            return null;
+          });
+      var returned = awaitState(h, value -> value.searching() == PickerState.Phase.READY);
+      assertNotEquals(old.stamp(), returned.stamp().orElseThrow());
+      assertEquals(1, queries.size());
+      assertTrue(queries.getFirst().cursor().isEmpty());
+      assertTrue(returned.active().isEmpty());
+      assertTrue(returned.inspection().isEmpty());
+      assertEquals(0, replacementLookups.get());
+      assertTrue(
+          returned.report().issues().stream()
+              .anyMatch(issue -> issue.code().equals("reference.return_source_changed")));
+      assertEquals("fixture:b", h.raw("models"));
+      assertEquals(Optional.of("fixture:b"), returned.requested().get("models").raw());
+      assertTrue(h.call(() -> h.actions.view().dirty()));
+      assertEquals("fixture:a", h.raw("artwork"));
+      h.unchanged();
+      h.call(
+          () -> {
+            next.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
+  void changingAHiddenQueryInvalidatesOnlyItsOldReturnPosition() throws Exception {
+    try (var h =
+        new Harness(UiLimits.STANDARD, new ReferencePicker.Policy(1, 128, 32768, 0, 2, 8))) {
+      var first = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            first.update();
+            return null;
+          });
+      awaitState(h, value -> value.searching() == PickerState.Phase.READY);
+      done(pending(h.call(() -> h.picker.nextPage().invoke(null))));
+      h.update();
+      h.call(
+          () -> {
+            first.close();
+            return null;
+          });
+      int searches = h.searches.get();
+      h.call(() -> h.picker.query().invoke(new PickerState.Query("Alpha", 3, 1)));
+      h.update();
+      assertEquals(searches, h.searches.get());
+      var next = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            next.update();
+            return null;
+          });
+      var returned = awaitState(h, value -> value.searching() == PickerState.Phase.READY);
+      assertEquals(new PickerState.Query("Alpha", 3, 1), returned.query());
+      assertEquals(
+          List.of("fixture:a"),
+          returned.window().choices().stream().map(ReferencePage.Choice::key).toList());
+      assertTrue(h.call(() -> h.picker.listAnchor().snapshot().value()).isEmpty());
+      assertTrue(returned.active().isEmpty());
+      h.unchanged();
+      h.call(
+          () -> {
+            next.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
   void enterAfterWorkerCompletionBeforeProjectionDoesNotSubmitTheSameSearchAgain()
       throws Exception {
     try (var h = new Harness()) {
