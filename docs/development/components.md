@@ -131,7 +131,7 @@ The unpublished dev.120 field surface accepts an optional `CompletionParts(picke
 
 The native host prepares a bounded popup outside the scrolling body's clip, using the original input's measured position. `ClientTextInput.State.focused()` reports actual focus; the popup uses a local active descendant while the original EditBox retains native focus. Choosing a suggestion invokes that input's stamped replacement command. Source keys remain exact UTF-16 values, distinct from bounded native row identities. Popup snapshots, input captures, and row metadata share the admitted presentation budget. Rendering does not query or resolve the source.
 
-This offer remains under qualification. Dev.120 has an actual NeoForge 1.21.1 keyboard/input pair; dev.121 adds actual Escape/reopen, blur, pointer acceptance, and root narration on that target. Completion-popup resize, source-withdrawal events, standalone-host interaction, and other native targets remain separate checks. The complete picker, preview, and consumer handoff is still open.
+This offer remains under qualification. Dev.120 has an actual NeoForge 1.21.1 keyboard/input pair; dev.121 adds actual Escape/reopen, blur, pointer acceptance, and root narration on NeoForge 1.21.1 and Fabric 26.3. Completion-popup resize, source-withdrawal events, standalone-host interaction, and the other two native targets remain separate checks. The complete picker, preview, and consumer handoff is still open.
 
 ## Composed form fields
 
