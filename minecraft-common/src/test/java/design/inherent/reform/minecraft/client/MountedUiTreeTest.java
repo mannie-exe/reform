@@ -33,6 +33,49 @@ class MountedUiTreeTest {
   }
 
   @Test
+  void unchangedDisclosureOfferSurvivesUnrelatedRevisionButChangedMeaningDoesNot() {
+    try (var owner = host()) {
+      var expanded = new AtomicReference<UiLocal<Boolean>>();
+      var unrelated = new AtomicReference<UiLocal<String>>();
+      try (var tree =
+          MountedUiTree.open(
+              ClientViewContext.borrow(owner),
+              UiLimits.STANDARD,
+              (scope, props) -> {
+                unrelated.set(scope.local(textKey("unrelated_offer"), "before"));
+                expanded.set(
+                    scope.local(
+                        new ViewStateKey<>(
+                            DocumentId.parse("example:offer_expanded"), ValueTypes.bool()),
+                        false));
+                return Views.disclosure(
+                    "detail",
+                    design.inherent.reform.presentation.ui.UiBindings.local(expanded.get()),
+                    design.inherent.reform.minecraft.client.ui.DisclosureParts.retained(
+                        UiText.of(Component.literal("Details")),
+                        UiText.of(Component.empty()),
+                        UiText.of(Component.empty()),
+                        branch ->
+                            Views.text(
+                                "content", Component.literal("Content"), Component.empty())));
+              },
+              "fixed")) {
+        var offered = tree.snapshot().getFirst();
+        long revision = tree.scope().revision();
+        unrelated.get().replace("after");
+        assertTrue(tree.scope().revision() > revision);
+        assertTrue(tree.refresh(false));
+        assertSame(offered, tree.snapshot().getFirst());
+        expanded.get().replace(true);
+        tree.refresh(false);
+        assertNotSame(offered, tree.snapshot().getFirst());
+        assertFalse(tree.snapshot().stream().anyMatch(row -> row == offered));
+        assertEquals("Hide Details", tree.snapshot().getFirst().label().getString());
+      }
+    }
+  }
+
+  @Test
   void disclosureIsLazyAndExplicitlyRetainsOrDisposesItsContent() {
     for (var retention :
         design.inherent.reform.minecraft.client.ui.DisclosureParts.Retention.values()) {

@@ -29,7 +29,7 @@ A failed row factory releases partial state and offers a feedback row without an
 
 `Views.repeat(key, count, from, maximumSlots, row)` is for fixed positional decoration or skeleton slots. Counts must be nonnegative and within the explicit finite allowance; the declared index range must not overflow. Surviving slots retain their scopes, removed slots retire, and an unavailable/invalid count withdraws the slot offer with feedback. Use keyed `forEach`, not positional repetition, for editable persistent rows.
 
-Native action dispatch refreshes admitted cached observations before invocation. A callback from a replaced attachment or a removed/blocked row cannot become current merely because it still holds a button reference. This freshness check does not replace actual owner authority checks.
+Native action dispatch refreshes admitted cached observations before invocation. An unrelated kernel revision may preserve the exact cached action/disclosure offer when all of its declared inputs remain unchanged and it is still in the active tree. Changed, removed, or blocked offers refuse; a replaced attachment cannot become current merely because it still holds a button reference. Current command readiness is checked again before invocation. This freshness check does not replace actual owner authority checks.
 
 ### Framework body
 

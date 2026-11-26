@@ -84,6 +84,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private UiScope taskScope, inlineScope, fieldScope;
   private UiLocal<Boolean> expanded;
   private UiLocal<Boolean> manualExpanded;
+  private UiLocal<Boolean> unrelatedPresentation;
   private ClientTextInput originalInput;
   private ClientTextInput.Stamp hiddenStamp;
   private EditBox manualWidget;
@@ -285,6 +286,12 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                       scope.onRetire(() -> fieldRetirements++);
                       originalParts = parts;
                       fieldScope = scope;
+                      unrelatedPresentation =
+                          scope.local(
+                              new ViewStateKey<>(
+                                  DocumentId.parse("fixture:unrelated_presentation"),
+                                  ValueTypes.bool()),
+                              false);
                       expanded =
                           scope.local(
                               new ViewStateKey<>(
@@ -590,6 +597,9 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       case 141 -> {
         // Let the host observe the newly admitted input subscription before using its controls.
         if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        // Change a separate presentation value after paint, before the real native gesture.
+        // The disclosure's label, binding, availability and target remain unchanged.
+        unrelatedPresentation.replace(true);
         press("Show Artwork choices");
         stage = 15;
       }
@@ -612,6 +622,9 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             originalParts.binding().identity().context().equals(editor.actions().context())
                 && inlineState().requested().get("artwork").input().isPresent()
                 && factories == 2);
+        check(
+            "unchanged disclosure accepts one gesture across unrelated presentation revision",
+            unrelatedPresentation.snapshot().value() && expanded.snapshot().value());
         check("inline list gets keyboard focus", focus(workflow.screen(), list()));
         key("down");
         key("down");
@@ -683,11 +696,16 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             "manual ID edits only its real draft and never resolves on typing",
             raw("models").equals(id(3)) && lookups.get() == 3);
         UiBindings.local(manualExpanded).changes().invoke(false);
+        // This still-painted Hide offer is now obsolete. It must not toggle the new closed state.
+        press("Hide Artwork ID");
         frames = PlatformFrameObservations.sequence();
         stage = 26;
       }
       case 26 -> {
         if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        check(
+            "obsolete disclosure offer cannot reopen a changed control",
+            !manualExpanded.snapshot().value());
         var hiddenResult =
             originalInput
                 .replacements()
@@ -807,6 +825,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("fieldRetirements", fieldRetirements);
     out.addProperty("fieldScopeOpen", fieldScope != null && fieldScope.isOpen());
     if (fieldScope != null && fieldScope.isOpen()) {
+      if (unrelatedPresentation != null)
+        out.addProperty("unrelatedPresentation", unrelatedPresentation.snapshot().value());
       if (expanded != null) out.addProperty("inlineExpanded", expanded.snapshot().value());
       if (manualExpanded != null)
         out.addProperty("manualExpanded", manualExpanded.snapshot().value());

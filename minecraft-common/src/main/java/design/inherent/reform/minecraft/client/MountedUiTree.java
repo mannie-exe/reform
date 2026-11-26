@@ -1246,7 +1246,11 @@ final class MountedUiTree implements AutoCloseable {
                           () -> {
                             if (!root.isOpen() || attachment != token || !row.node().scope.isOpen())
                               return;
-                            if (refresh(false)) {
+                            // Unrelated kernel updates do not change this control's meaning.
+                            // A cached row survives only while its declared inputs are unchanged
+                            // and it remains in the active tree. Changed/withdrawn offers refuse.
+                            if (refresh(false)
+                                && rows.stream().noneMatch(current -> current == row)) {
                               if (root.isOpen()) changed.run();
                               return;
                             }
