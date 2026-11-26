@@ -447,18 +447,21 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       ReferencePicker<PlatformAuditionChecks.Profile, List<String>> selection,
       PickerRole<PlatformAuditionChecks.Profile> role,
       String caption) {
-    return ReferencePickerView.build(
-        scope,
-        selection,
-        new ReferencePickerView.Presentation<>(
-            label(caption),
-            label("Choose a value for this draft."),
-            label(caption),
-            label("Search profiles"),
-            List.of(new ReferencePickerView.RoleAction<>(role, label("Use selection"))),
-            4,
-            2),
-        Optional.of(role));
+    return Views.column(
+        role.id(),
+        List.of(
+            ReferencePickerView.build(
+                scope,
+                selection,
+                new ReferencePickerView.Presentation<>(
+                    label(caption),
+                    label("Choose a value for this draft."),
+                    label(caption),
+                    label("Search profiles"),
+                    List.of(new ReferencePickerView.RoleAction<>(role, label("Use selection"))),
+                    4,
+                    2),
+                Optional.of(role))));
   }
 
   private void bindSource() {
@@ -1149,9 +1152,19 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         + " draws="
         + draws
         + " phase="
-        + (preview == null
-            ? "none"
-            : workflow.isOpen() && editor.isOpen() ? preview.state().snapshot() : "closed");
+        + (preview == null ? "none" : observationDiagnostic());
+  }
+
+  private String observationDiagnostic() {
+    if (!workflow.isOpen() || !editor.isOpen()) return "closed";
+    try {
+      var observed = preview.state().snapshot();
+      return observed instanceof UiObservation.Available<?>
+          ? observed.value().toString()
+          : observed.toString();
+    } catch (RuntimeException ended) {
+      return "observation unavailable: " + ended;
+    }
   }
 
   public void close() {
