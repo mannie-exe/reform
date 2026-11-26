@@ -7,6 +7,7 @@ import design.inherent.reform.minecraft.client.ui.CompletionParts;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.ThemeValues.Role;
 import design.inherent.reform.presentation.ui.*;
+import design.inherent.reform.validation.ValidationReport;
 import design.inherent.reform.value.SnapshotContext;
 import design.inherent.reform.value.SnapshotPolicy;
 import java.util.*;
@@ -21,7 +22,8 @@ final class ClientIdCompletion implements AutoCloseable {
       Optional<String> active,
       String label,
       String status,
-      String narration) {
+      String narration,
+      ValidationReport report) {
     Prepared {
       options = Map.copyOf(options);
     }
@@ -34,7 +36,8 @@ final class ClientIdCompletion implements AutoCloseable {
           Optional.empty(),
           "",
           "",
-          "");
+          "",
+          ValidationReport.VALID);
     }
 
     long weight() {
@@ -55,9 +58,26 @@ final class ClientIdCompletion implements AutoCloseable {
                     * (option.key().length()
                         + option.stamp().revision().length()
                         + option.stamp().source().toString().length());
+      for (var issue : report.issues()) {
+        bytes +=
+            128L
+                + 2L
+                    * (issue.code().length()
+                        + issue.fallback().length()
+                        + issue.path().toString().length());
+        for (var related : issue.related()) bytes += 32L + 2L * related.toString().length();
+        for (var arg : issue.arguments().entrySet())
+          bytes += 32L + 2L * (arg.getKey().length() + arg.getValue().length());
+      }
       return bytes;
     }
   }
+
+  private static final ValidationReport BUDGET_FAILURE =
+      new PolicyRefusal(
+              "ui.budget_exceeded",
+              "Suggestions exceed this view's allowance. Keep editing manually, or press Down to retry.")
+          .report();
 
   private final UiScope scope;
   private final ClientTextInput input;
@@ -74,7 +94,7 @@ final class ClientIdCompletion implements AutoCloseable {
   private ClientTheme theme;
   private long revision = 1;
   private int rootWidth, rootHeight;
-  private boolean attached, wanted, closed;
+  private boolean attached, wanted, closed, blockedUntilGesture, budgetFailed;
   private ClientTextInput.Stamp dismissed;
 
   ClientIdCompletion(UiScope parent, ClientTextInput input, CompletionParts parts) {
@@ -126,7 +146,8 @@ final class ClientIdCompletion implements AutoCloseable {
         dismiss(false);
         return;
       }
-      if (dismissed != null && sameBuffer(current.stamp(), dismissed)) return;
+      if (blockedUntilGesture || dismissed != null && sameBuffer(current.stamp(), dismissed))
+        return;
       var prior = prepared.input().orElse(null);
       if (!wanted || prior == null || !sameText(prior.stamp(), current.stamp())) {
         wanted = true;
@@ -139,7 +160,8 @@ final class ClientIdCompletion implements AutoCloseable {
                 Optional.empty(),
                 label.getString(),
                 "",
-                ""));
+                "",
+                ValidationReport.VALID));
         source.request(current.raw());
       }
       source.update();
@@ -198,7 +220,8 @@ final class ClientIdCompletion implements AutoCloseable {
               active,
               title,
               status,
-              narration));
+              narration,
+              atInput(state.report())));
       if (!wanted) return;
       measure();
       if (placement == null) {
@@ -221,9 +244,9 @@ final class ClientIdCompletion implements AutoCloseable {
       list.setFocused(true); // local active descendant; native focus remains the original input
       widget.completionNarration(Component.literal(prepared.narration()));
     } catch (PolicyRefusal failure) {
-      fail(failure.getMessage());
+      fail(failure.report());
     } catch (IllegalArgumentException failure) {
-      fail("Suggestions exceed this view's allowance. Keep editing the ID manually.");
+      fail(BUDGET_FAILURE);
     }
   }
 
@@ -289,7 +312,8 @@ final class ClientIdCompletion implements AutoCloseable {
 
   Component narration() {
     return !closed && attached && widget != null && widget.isFocused() && view.isCurrent()
-        ? Component.literal(prepared.narration())
+        ? Component.literal(
+            budgetFailed ? BUDGET_FAILURE.issues().getFirst().fallback() : prepared.narration())
         : Component.empty();
   }
 
@@ -332,6 +356,8 @@ final class ClientIdCompletion implements AutoCloseable {
       // An explicit arrow gesture can reopen a dismissed offer without editing its input.
       // The real field/read/source guards still run in update and on acceptance.
       dismissed = null;
+      blockedUntilGesture = false;
+      budgetFailed = false;
       update();
     }
     if (!wanted || widget == null || !widget.isFocused()) return false;
@@ -371,36 +397,40 @@ final class ClientIdCompletion implements AutoCloseable {
     return true;
   }
 
-  private boolean currentInput() {
+  private void requireCurrentInput() {
     scope.refreshObservation(input.state());
     var current = input.state().snapshot();
-    return current instanceof UiObservation.Available<ClientTextInput.State> available
-        && prepared.input().isPresent()
-        && available.data().value().editable()
-        && prepared.input().orElseThrow().stamp().equals(available.data().value().stamp());
+    if (current instanceof UiObservation.Unavailable<ClientTextInput.State> missing)
+      throw new PolicyRefusal(missing.report());
+    if (!current.value().editable())
+      throw new PolicyRefusal("field.input_unavailable", "This field input is unavailable.");
+    if (prepared.input().isEmpty()
+        || !prepared.input().orElseThrow().stamp().equals(current.value().stamp()))
+      throw new PolicyRefusal(
+          "field.input_stale", "The input changed. Refresh the suggestion before choosing it.");
   }
 
   private void highlight(String id) {
     try {
       var option = prepared.options().get(id);
-      if (option == null || !currentInput()) {
-        dismiss(true);
-        return;
-      }
+      if (option == null)
+        throw new PolicyRefusal(
+            "reference.completion_stale", "The suggestions changed. Choose a current ID.");
+      requireCurrentInput();
       source.highlight(option);
       update();
     } catch (PolicyRefusal failure) {
-      fail(failure.getMessage());
+      fail(failure.report());
     }
   }
 
   private void accept(String id) {
     try {
       var option = prepared.options().get(id);
-      if (option == null || !currentInput()) {
-        dismiss(true);
-        return;
-      }
+      if (option == null)
+        throw new PolicyRefusal(
+            "reference.completion_stale", "The suggestions changed. Choose a current ID.");
+      requireCurrentInput();
       String replacement = source.requireChoice(option);
       var before = prepared.input().orElseThrow();
       var result =
@@ -415,7 +445,7 @@ final class ClientIdCompletion implements AutoCloseable {
                       replacement.length(),
                       replacement.length()));
       if (result instanceof UiActionResult.Refused refused) {
-        fail(refused.report().issues().getFirst().fallback());
+        fail(refused.report());
         return;
       }
       if (scope.isOpen()) {
@@ -430,28 +460,73 @@ final class ClientIdCompletion implements AutoCloseable {
                   Optional.empty(),
                   "",
                   "",
-                  ""));
+                  "",
+                  ValidationReport.VALID));
         }
         dismiss(true);
       }
     } catch (PolicyRefusal failure) {
-      fail(failure.getMessage());
+      fail(failure.report());
     }
   }
 
-  private void fail(String reason) {
-    dismiss(true);
-    if (scope.isOpen())
-      publish(
-          new Prepared(
-              prepared.input(),
-              new ChoiceListData("", List.of(), OptionalLong.empty()),
-              Map.of(),
-              Optional.empty(),
-              "",
-              reason,
-              reason));
-    if (widget != null) widget.completionNarration(Component.literal(reason));
+  private ValidationReport atInput(ValidationReport report) {
+    if (report.valid()) return ValidationReport.VALID;
+    return new ValidationReport(
+        report.issues().stream().map(issue -> issue.under(input.path())).toList(),
+        report.complete());
+  }
+
+  ValidationReport report() {
+    return closed
+        ? ValidationReport.VALID
+        : budgetFailed ? atInput(BUDGET_FAILURE) : prepared.report();
+  }
+
+  Component feedback() {
+    var report = report();
+    return report.valid()
+        ? Component.empty()
+        : Component.literal(report.issues().getFirst().fallback());
+  }
+
+  private void fail(ValidationReport reason) {
+    // Observe the newer buffer only to retain refusal feedback. It is never adopted for the old
+    // choice's edit command, nor does an actor acknowledgement silently retry that choice.
+    Optional<ClientTextInput.State> current = Optional.empty();
+    if (scope.isOpen()) {
+      scope.refreshObservation(input.state());
+      if (input.state().snapshot() instanceof UiObservation.Available<ClientTextInput.State> now)
+        current = Optional.of(now.data().value());
+    }
+    dismiss(false);
+    var scoped = atInput(reason);
+    String message = scoped.issues().getFirst().fallback();
+    try {
+      if (scope.isOpen())
+        publish(
+            new Prepared(
+                current,
+                new ChoiceListData("", List.of(), OptionalLong.empty()),
+                Map.of(),
+                Optional.empty(),
+                label.getString(),
+                message,
+                label.getString() + ". " + message,
+                scoped));
+      dismissed = current.map(ClientTextInput.State::stamp).orElse(null);
+      blockedUntilGesture = current.isEmpty();
+    } catch (PolicyRefusal | IllegalArgumentException budget) {
+      // A refused offer cannot retain the oversized candidate/report outside its admitted frame.
+      prepared = Prepared.empty();
+      dismissed = null;
+      budgetFailed = true;
+      blockedUntilGesture = true;
+      revision = Math.incrementExact(revision);
+      if (scope.isOpen()) scope.refreshObservation(admitted);
+      message = BUDGET_FAILURE.issues().getFirst().fallback();
+    }
+    if (widget != null) widget.completionNarration(Component.literal(message));
   }
 
   private void dismiss(boolean explicit) {
@@ -459,6 +534,8 @@ final class ClientIdCompletion implements AutoCloseable {
       dismissed = prepared.input().orElseThrow().stamp();
     else if (!explicit) dismissed = null;
     boolean hadDemand = wanted;
+    budgetFailed = false;
+    blockedUntilGesture = false;
     wanted = false;
     placement = null;
     list.clear();
@@ -473,7 +550,8 @@ final class ClientIdCompletion implements AutoCloseable {
               Optional.empty(),
               "",
               "",
-              ""));
+              "",
+              ValidationReport.VALID));
   }
 
   void suspend() {

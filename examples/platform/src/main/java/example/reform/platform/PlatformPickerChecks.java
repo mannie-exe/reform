@@ -83,6 +83,15 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private ReferencePicker<Profile, List<String>> task, inline;
   private ReferenceSuggestions<List<String>> suggestions;
   private boolean completionVerified, completionDismissed, completionPointer, completionBlur;
+  private boolean completionStale, completionStaleFeedback, completionReflow, standaloneCompletion;
+  private SettingsScreen<?> standalone;
+  private UiScope standaloneScope;
+  private ClientFieldParts<?> standaloneParts;
+  private ClientTextInput standaloneInput;
+  private ReferenceSuggestions<List<String>> standaloneSuggestions;
+  private EditBox standaloneWidget;
+  private int standaloneFactories, standaloneCloses;
+  private design.inherent.reform.edit.DraftRevision reflowRevision;
   private UiScope taskScope, inlineScope, fieldScope;
   private UiLocal<Boolean> expanded;
   private UiLocal<Boolean> manualExpanded;
@@ -241,6 +250,109 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     var button = button(workflow.screen(), caption);
     check("native action is active: " + caption, button.active && focus(workflow.screen(), button));
     key("enter");
+  }
+
+  private void completionPointer(int index) {
+    // Black-box native pointer coordinates from the actual anchor and offered root geometry.
+    int row = Math.max(20, ClientTheme.standard().values().value(ThemeValues.Role.CONTROL_HEIGHT));
+    int heading = client.font.lineHeight + 2;
+    int fixed = heading * 2 + 4;
+    int below =
+        Math.max(0, workflow.screen().height - 4 - manualWidget.getY() - manualWidget.getHeight());
+    int above = Math.max(0, manualWidget.getY() - 4);
+    boolean down = below >= fixed + row * 4 || below >= above;
+    int rows = Math.min(4, Math.max(0, (down ? below : above) - fixed) / row);
+    check("pointer witness has its actual offered row", rows > index);
+    int y =
+        (down
+                ? manualWidget.getY() + manualWidget.getHeight()
+                : manualWidget.getY() - fixed - row * rows)
+            + 2
+            + heading
+            + index * row
+            + row / 2;
+    double x = Math.clamp(manualWidget.getX(), 4, workflow.screen().width - 184) + 20;
+    check(
+        "native pointer is consumed by the completion offer",
+        NativeClientProbe.pointerDown(workflow.screen(), x, y));
+    NativeClientProbe.pointerUp(workflow.screen(), x, y);
+  }
+
+  private String standaloneRaw(String field) {
+    return ((DraftNode.Scalar)
+            standalone
+                .editingActions()
+                .view()
+                .snapshot()
+                .orElseThrow()
+                .draft()
+                .at(FieldPath.ROOT.field(field)))
+        .raw();
+  }
+
+  private boolean standaloneSettled() {
+    standaloneScope.refreshObservations();
+    var field = standaloneParts.state().snapshot().value();
+    return field.input().isPresent()
+        && field.input().orElseThrow().accepted()
+        && !field.input().orElseThrow().pending()
+        && field.validation().valid()
+        && standalone.editingActions().view().pending().isEmpty();
+  }
+
+  private void standaloneKey(String key) {
+    check(
+        "native standalone completion key: " + key,
+        NativeClientProbe.key(standalone, "key.keyboard." + key, true));
+    NativeClientProbe.key(standalone, "key.keyboard." + key, false);
+  }
+
+  private Screen standaloneScreen() {
+    var options =
+        new ClientFormOptions<Profile>(FormPresentation.EMPTY, Map.of())
+            .withComponent(
+                ART_ROLE.field(),
+                (scope, parts) -> {
+                  standaloneFactories++;
+                  scope.onRetire(() -> standaloneCloses++);
+                  standaloneScope = scope;
+                  standaloneParts = parts;
+                  var picker =
+                      ReferencePicker.open(
+                          scope,
+                          parts.binding(),
+                          DEFINITION,
+                          SOURCE,
+                          this::source,
+                          List.of(MODEL_ROLE, ART_ROLE),
+                          Map.of("artwork", parts.frontend()),
+                          POLICY,
+                          clock::get);
+                  standaloneSuggestions = picker.suggestions(ReferenceSuggestions.Policy.STANDARD);
+                  var manual =
+                      scope.local(
+                          new ViewStateKey<>(
+                              DocumentId.parse("fixture:standalone_id"), ValueTypes.bool()),
+                          true);
+                  return Views.column(
+                      "standalone-artwork",
+                      List.of(
+                          parts.label("label"),
+                          parts.controlSurface(
+                              "control",
+                              Views.text(
+                                  "purpose",
+                                  Component.empty(),
+                                  text("Type an artwork profile ID, or choose a suggestion.")),
+                              UiBindings.local(manual),
+                              UiText.of(text("Artwork ID")),
+                              new CompletionParts(
+                                  standaloneSuggestions,
+                                  UiText.of(text("Suggested artwork IDs")),
+                                  4)),
+                          parts.feedback("feedback")));
+                });
+    return settings.screen(parent, text("Standalone completion"), options);
   }
 
   private void open(ClientDestination destination, int next) {
@@ -809,33 +921,137 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       }
       case 249 -> {
         if (PlatformFrameObservations.sequence() - frames < 4) return false;
-        // Root-space offer measured from the actual input; acceptance must still prove that
-        // the native popup, rather than an underlying form control, receives this pointer.
-        int row =
-            Math.max(20, ClientTheme.standard().values().value(ThemeValues.Role.CONTROL_HEIGHT));
-        int heading = client.font.lineHeight + 2;
-        int fixed = heading * 2 + 4;
-        int below =
-            Math.max(
-                0, workflow.screen().height - 4 - manualWidget.getY() - manualWidget.getHeight());
-        int above = Math.max(0, manualWidget.getY() - 4);
-        boolean down = below >= fixed + row * 4 || below >= above;
-        int rows = Math.min(4, Math.max(0, (down ? below : above) - fixed) / row);
-        check("pointer witness has at least two actual offered rows", rows >= 2);
-        int y =
-            (down
-                    ? manualWidget.getY() + manualWidget.getHeight()
-                    : manualWidget.getY() - fixed - row * rows)
-                + 2
-                + heading
-                + row
-                + row / 2;
-        double x = Math.clamp(manualWidget.getX(), 4, workflow.screen().width - 184) + 20;
+        manualWidget.setValue(id(19));
+        // A pointer aimed at the still-painted old prefix offer must not replace this newer text.
+        completionPointer(1);
         check(
-            "native pointer is consumed by the explicit completion option",
-            NativeClientProbe.pointerDown(workflow.screen(), x, y));
-        NativeClientProbe.pointerUp(workflow.screen(), x, y);
-        stage = 250;
+            "stale completion pointer preserves newer native text",
+            manualWidget.getValue().equals(id(19)));
+        frames = PlatformFrameObservations.sequence();
+        stage = 2490;
+      }
+      case 2490 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        driver.capture(
+            "pickers-completion-stale.png",
+            () -> {
+              var report = editor.form().controlReport();
+              var issue =
+                  report.issues().stream()
+                      .filter(
+                          value ->
+                              value.code().equals("field.input_stale")
+                                  && value.path().equals(ART_ROLE.field()))
+                      .findFirst();
+              check(
+                  "stale completion failure is available as actual typed field feedback",
+                  issue.isPresent());
+              check(
+                  "stale completion cause remains available in actual root narration",
+                  workflow
+                      .screen()
+                      .getNarrationMessage()
+                      .getString()
+                      .contains(issue.orElseThrow().fallback()));
+              completionStaleFeedback = true;
+              stage = 251;
+            });
+        stage = -1;
+      }
+      case 251 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals(id(19))) return false;
+        check("stale completion pointer cannot stage its old choice", raw("models").equals(id(3)));
+        completionStale = true;
+        manualWidget.setValue("fixture:profile_00");
+        manualWidget.setCursorPosition(3);
+        manualWidget.setHighlightPos(1);
+        stage = 252;
+      }
+      case 252 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals("fixture:profile_00")) return false;
+        key("down");
+        clock.addAndGet(200_000_000L);
+        stage = 253;
+      }
+      case 253 -> {
+        if (suggestions.state().snapshot().value().phase() != PickerState.Phase.READY) return false;
+        key("down");
+        key("down");
+        check(
+            "reflow begins with the exact active suggestion and input selection",
+            suggestions.activeOption().orElseThrow().key().equals(id(1))
+                && manualWidget.getCursorPosition() == 3
+                && originalInput.state().snapshot().value().anchor() == 1);
+        reflowRevision =
+            design.inherent.reform.edit.DraftRevision.of(editor.view().snapshot().orElseThrow());
+        NativeClientProbe.resize(client, 320, 240);
+        stage = 254;
+      }
+      case 254 -> {
+        int[] w = {0}, h = {0};
+        NativeClientProbe.size(client, w, h);
+        if (w[0] != 320 || h[0] != 240) return false;
+        frames = PlatformFrameObservations.sequence();
+        stage = 255;
+      }
+      case 255 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        var input = originalInput.state().snapshot().value();
+        check(
+            "real compact completion return keeps original input focus raw caret and selection",
+            input.raw().equals("fixture:profile_00")
+                && input.caret() == 3
+                && input.anchor() == 1
+                && input.focused()
+                && widgets(workflow.screen()).contains(manualWidget)
+                && reflowRevision.equals(
+                    design.inherent.reform.edit.DraftRevision.of(
+                        editor.view().snapshot().orElseThrow())));
+        driver.capture(
+            "pickers-completion-narrow.png",
+            () -> {
+              NativeClientProbe.resize(client, width[0], height[0]);
+              stage = 256;
+            });
+        stage = -1;
+      }
+      case 256 -> {
+        int[] w = {0}, h = {0};
+        NativeClientProbe.size(client, w, h);
+        if (w[0] != width[0] || h[0] != height[0]) return false;
+        var input = originalInput.state().snapshot().value();
+        check(
+            "completion wide return retains actual control owner draft and selection",
+            input.focused()
+                && input.raw().equals("fixture:profile_00")
+                && input.caret() == 3
+                && input.anchor() == 1
+                && workflow.editor(ROUTE) == editor
+                && reflowRevision.equals(
+                    design.inherent.reform.edit.DraftRevision.of(
+                        editor.view().snapshot().orElseThrow())));
+        completionReflow = true;
+        // Reopening is explicit if the compact root could not offer a popup at its input anchor.
+        if (suggestions.state().snapshot().value().phase() != PickerState.Phase.READY) {
+          key("down");
+          clock.addAndGet(200_000_000L);
+        }
+        stage = 257;
+      }
+      case 257 -> {
+        if (suggestions.state().snapshot().value().phase() != PickerState.Phase.READY) return false;
+        frames = PlatformFrameObservations.sequence();
+        stage = 258;
+      }
+      case 258 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        driver.capture(
+            "pickers-completion-returned.png",
+            () -> {
+              completionPointer(1);
+              stage = 250;
+            });
+        stage = -1;
       }
       case 250 -> {
         if (!editor.canSubmit() || !raw("artwork").equals(id(1))) return false;
@@ -904,7 +1120,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       case 28 -> {
         if (!editor.canSubmit() || !raw("artwork").equals(id(1))) return false;
         unchanged();
-        undoRemaining = 8;
+        undoRemaining = 10;
         pending =
             editor
                 .actions()
@@ -962,6 +1178,117 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && fieldScope.usage().stateBytes() == 0);
         unchanged();
         NativeScreens.open(client, parent);
+        var opened = standaloneScreen();
+        check(
+            "completion can use an actual standalone settings host",
+            opened instanceof SettingsScreen<?>);
+        standalone = (SettingsScreen<?>) opened;
+        NativeScreens.open(client, standalone);
+        stage = 260;
+      }
+      case 260 -> {
+        if (standaloneParts == null
+            || standalone.editingActions().view().availability()
+                != design.inherent.reform.owner.EditorActor.Availability.READY) return false;
+        standaloneInput = standaloneParts.input().orElseThrow();
+        if (!(standaloneInput.state().snapshot() instanceof UiObservation.Available<?>))
+          return false;
+        standaloneWidget =
+            widgets(standalone).stream()
+                .filter(EditBox.class::isInstance)
+                .map(EditBox.class::cast)
+                .filter(widget -> widget.getMessage().getString().equals("Artwork"))
+                .findFirst()
+                .orElseThrow();
+        check(
+            "standalone completion borrows its actual actor and original input",
+            standaloneParts
+                    .binding()
+                    .identity()
+                    .context()
+                    .equals(standalone.editingActions().context())
+                && standaloneFactories == 1
+                && factories == 3
+                && focus(standalone, standaloneWidget));
+        standaloneWidget.setValue("fixture:profile_00");
+        stage = 261;
+      }
+      case 261 -> {
+        if (!standaloneSettled() || !standaloneRaw("artwork").equals("fixture:profile_00"))
+          return false;
+        clock.addAndGet(200_000_000L);
+        stage = 262;
+      }
+      case 262 -> {
+        var offer = standaloneSuggestions.state().snapshot().value();
+        if (offer.phase() != PickerState.Phase.READY || offer.choices().size() != 4) return false;
+        standaloneKey("down");
+        standaloneKey("down");
+        check(
+            "standalone arrows retain the original text focus",
+            standaloneWidget.isFocused()
+                && standaloneSuggestions.activeOption().orElseThrow().key().equals(id(1)));
+        frames = PlatformFrameObservations.sequence();
+        stage = 263;
+      }
+      case 263 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        driver.capture(
+            "pickers-completion-standalone.png",
+            () -> {
+              standaloneKey("enter");
+              stage = 264;
+            });
+        stage = -1;
+      }
+      case 264 -> {
+        if (!standaloneSettled() || !standaloneRaw("artwork").equals(id(1))) return false;
+        check(
+            "standalone completion stages only its original field without persistence",
+            standaloneRaw("models").equals(id(0))
+                && standaloneWidget.isFocused()
+                && factories == 4);
+        unchanged();
+        undoRemaining = 2;
+        pending =
+            standalone
+                .editingActions()
+                .undo(OperationDescriptor.EntryPoint.GUI)
+                .completion()
+                .toCompletableFuture();
+        stage = 265;
+      }
+      case 265 -> {
+        if (!pending.isDone() || !standaloneSettled()) return false;
+        pending.join();
+        if (--undoRemaining > 0) {
+          pending =
+              standalone
+                  .editingActions()
+                  .undo(OperationDescriptor.EntryPoint.GUI)
+                  .completion()
+                  .toCompletableFuture();
+          return false;
+        }
+        check(
+            "standalone original Undo restores the saved draft",
+            standaloneRaw("artwork").equals(id(0))
+                && standaloneRaw("models").equals(id(0))
+                && !standalone.editingActions().view().dirty());
+        var actions = standalone.editingActions();
+        var done = button(standalone, "Done");
+        check("standalone native Done gets focus", focus(standalone, done));
+        standaloneKey("enter");
+        check(
+            "standalone native close retires its scopes and only its actual actor",
+            !actions.isOpen()
+                && !standaloneScope.isOpen()
+                && standaloneScope.usage().stateBytes() == 0
+                && standaloneCloses == 1
+                && standaloneFactories == 1
+                && NativeScreens.current(client) == parent);
+        unchanged();
+        standaloneCompletion = true;
         complete = true;
         return true;
       }
@@ -986,6 +1313,12 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("completionDismissed", completionDismissed);
     out.addProperty("completionBlur", completionBlur);
     out.addProperty("completionPointer", completionPointer);
+    out.addProperty("completionStale", completionStale);
+    out.addProperty("completionStaleFeedback", completionStaleFeedback);
+    out.addProperty("completionReflow", completionReflow);
+    out.addProperty("standaloneCompletion", standaloneCompletion);
+    out.addProperty("standaloneFactories", standaloneFactories);
+    out.addProperty("standaloneCloses", standaloneCloses);
     out.addProperty("factories", factories);
     out.addProperty("searches", searches.get());
     out.addProperty("lookups", lookups.get());
@@ -1009,6 +1342,11 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     }
     out.add("pointerBounds", pointerFacts.deepCopy());
     if (editor != null && editor.isOpen()) {
+      out.addProperty(
+          "staleCompletionCodes",
+          editor.form().controlReport().issues().stream()
+              .map(issue -> issue.code() + "@" + issue.path())
+              .collect(java.util.stream.Collectors.joining(",")));
       out.addProperty("actorAvailability", editor.view().availability().name());
       out.addProperty("canSubmit", editor.canSubmit());
       out.addProperty("busy", editor.busy());

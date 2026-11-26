@@ -562,7 +562,14 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   public ValidationReport controlReport() {
-    return new ValidationReport(controlIssues, true);
+    var issues = new ArrayList<>(controlIssues);
+    boolean complete = true;
+    for (var completion : List.copyOf(completions)) {
+      var report = completion.report();
+      issues.addAll(report.issues());
+      complete &= report.complete();
+    }
+    return new ValidationReport(issues, complete);
   }
 
   public Optional<Throwable> controlFailure() {

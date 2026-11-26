@@ -503,7 +503,7 @@ class PlatformOutcomeTests(unittest.TestCase):
     def test_picker_success_requires_current_owner_source_and_retirement_facts(self):
         def accepted():
             return successful_boot(self.process,self.native,self.library,self.target,"0.20.1",required_scenarios=("semanticPickers",))
-        complete={"status":"PASS","passed":True,"sourceUnchanged":True,"scopesRetired":True,"completionVerified":True,"completionDismissed":True,"completionBlur":True,"completionPointer":True,"factories":3,"searches":5,"lookups":2}
+        complete={"status":"PASS","passed":True,"sourceUnchanged":True,"scopesRetired":True,"completionVerified":True,"completionDismissed":True,"completionBlur":True,"completionPointer":True,"completionStale":True,"completionStaleFeedback":True,"completionReflow":True,"standaloneCompletion":True,"standaloneFactories":1,"standaloneCloses":1,"factories":4,"searches":5,"lookups":2}
         self.native["semanticPickers"]=dict(complete)
         self.assertTrue(accepted())
         for field in complete:

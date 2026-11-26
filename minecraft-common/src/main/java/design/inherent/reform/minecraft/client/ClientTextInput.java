@@ -173,6 +173,10 @@ public final class ClientTextInput implements AutoCloseable {
     return state;
   }
 
+  FieldPath path() {
+    return path;
+  }
+
   SettingsView<?> view() {
     scope.requireCurrent();
     return view;

@@ -267,11 +267,12 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                     for name in required_scenarios)
             and ("semanticPickers" not in required_scenarios or (
                 native["semanticPickers"].get("passed") is True
-                and all(native["semanticPickers"].get(field) is True for field in ("completionVerified", "completionDismissed", "completionBlur", "completionPointer"))
+                and all(native["semanticPickers"].get(field) is True for field in ("completionVerified", "completionDismissed", "completionBlur", "completionPointer", "completionStale", "completionStaleFeedback", "completionReflow", "standaloneCompletion"))
                 and native["semanticPickers"].get("sourceUnchanged") is True
                 and native["semanticPickers"].get("scopesRetired") is True
                 and type(native["semanticPickers"].get("factories")) is int
-                and native["semanticPickers"]["factories"] == 3
+                and native["semanticPickers"]["factories"] == 4
+                and all(type(native["semanticPickers"].get(field)) is int and native["semanticPickers"][field] == 1 for field in ("standaloneFactories", "standaloneCloses"))
                 and type(native["semanticPickers"].get("searches")) is int
                 and native["semanticPickers"]["searches"] > 2
                 and type(native["semanticPickers"].get("lookups")) is int
@@ -518,7 +519,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
             if isolated_scene == "pickers":
-                roles={"platform-pickers-completion.png","platform-pickers-surface-diagnostic.png","platform-pickers-pointer.png","platform-pickers-task.png","platform-pickers-inline.png","platform-pickers-narrow.png"}
+                roles={"platform-pickers-completion-stale.png","platform-pickers-completion-narrow.png","platform-pickers-completion-returned.png","platform-pickers-completion-standalone.png","platform-pickers-completion.png","platform-pickers-surface-diagnostic.png","platform-pickers-pointer.png","platform-pickers-task.png","platform-pickers-inline.png","platform-pickers-narrow.png"}
                 for key in ("semanticPickers","sceneFailure"):
                     if isinstance(native.get(key),dict):
                         native[key]["captures"]=retain_captures(fixture,reports,native[key].get("captures",[]),roles,reopen)

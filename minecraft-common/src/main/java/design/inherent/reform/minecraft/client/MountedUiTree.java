@@ -1158,6 +1158,9 @@ final class MountedUiTree implements AutoCloseable {
                 new ClientIdCompletion(
                     node.scope, spec.surface().field().input().orElseThrow(), spec.parts());
           node.completion.attach(row.label(), theme);
+          var feedback = node.completion.feedback();
+          if (!feedback.getString().isBlank())
+            panel.anchorRow(node.id + ":completion-feedback", Component.empty(), feedback);
         }
         case TEXT -> {
           if (!(row.node().spec instanceof ViewSpec.FieldPart)
