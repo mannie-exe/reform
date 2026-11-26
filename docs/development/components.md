@@ -135,6 +135,10 @@ The initial dev.120/121 native checks retain their scoped evidence. Dev.122 qual
 
 Dev.123 additionally qualifies source READ withdrawal and entered-source drain on all four targets using a separately owned READ-only source context. Restoring READ alone does not reopen the offer. Entered work retains only its actual lifecycle facts; cancellation is not claimed when current authority refuses it. Native UI-budget withdrawal, full bookmark restoration, and applicable IME/rejected-input coverage remain open. Its normal-theme/English captures do not establish final A3 layout, custom-font coverage, or the complete picker/preview/consumer handoff.
 
+### Owned list position
+
+`ChoiceListParts.withViewport(binding)` optionally declares a stable row anchor independently from active navigation and accepted values. Existing constructors retain their default local behavior. The native adapter restores that anchor within its current offer, and reports native wheel/drag or keyboard positioning through the declared command outside placement/paint. Placement can clamp within the available rows without selecting a value. The shared picker assembly binds the source-stamped controller anchor, and waits for a return window to finish reading before applying it. Suspending that assembly clears native row/callback payloads while the same controller retains only bounded return metadata. These APIs are build/model-qualified; actual return/focus qualification is recorded separately in [verification](verification.md).
+
 ## Composed form fields
 
 `ClientFormOptions.withComponent(path, component)` declares a scalar/reference field composition in the actual generated form. `SettingsScreen.withComponents` supplies the same boundary for a standalone form. The component runs once per admitted field/session lifetime and receives its scope and `ClientFieldParts`. `parts.binding()` is the actual owner/path/type binding; `parts.input()` lazily borrows the same text-input command path when the field uses text rather than a cycle. There is no second native input, actor, draft, or save action.
