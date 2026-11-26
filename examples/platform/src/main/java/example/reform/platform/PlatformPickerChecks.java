@@ -97,10 +97,18 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     final CountDownLatch exited = new CountDownLatch(1);
     final AtomicBoolean claimed = new AtomicBoolean();
     volatile String thread, prefix;
+    final ReferenceQuery.Match match;
+
+    SearchGate() {
+      this(ReferenceQuery.Match.KEY_PREFIX);
+    }
+
+    SearchGate(ReferenceQuery.Match match) {
+      this.match = match;
+    }
 
     void await(ReferenceQuery query) {
-      if (query.match() != ReferenceQuery.Match.KEY_PREFIX || !claimed.compareAndSet(false, true))
-        return;
+      if (query.match() != match || !claimed.compareAndSet(false, true)) return;
       thread = Thread.currentThread().getName();
       prefix = query.filter();
       entered.countDown();
@@ -145,7 +153,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private byte[] bytes;
   private BasicFileAttributes attrs;
   private int stage, factories, pagingPass, baselineSearches, sourceReturns;
-  private boolean pickerReturnVerified;
+  private boolean pickerReturnVerified, pickerFocusOverrideVerified;
   private PickerState returnBefore;
   private NavigationBookmark returnBookmark;
   private AbstractWidget returnList;
@@ -859,7 +867,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         nativeContext.addProperty("artwork", raw("artwork"));
         nativeContext.addProperty("bookmarkFocus", returnBookmark.focus().orElse(""));
         var focused = workflow.screen().getFocused();
-        nativeContext.addProperty("rootFocus", focused == null ? "none" : focused.getClass().getName());
+        nativeContext.addProperty(
+            "rootFocus", focused == null ? "none" : focused.getClass().getName());
         returnFacts.add("nativeContext", nativeContext);
         check(
             "native return retains exact list query controls focus caret and selection",
@@ -881,9 +890,54 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         returnFacts.addProperty("listFocused", list().isFocused());
         unchanged();
         pickerReturnVerified = true;
-        driver.capture(
-            "pickers-task-returned.png", () -> open(new ClientDestination.Document(ROUTE), 14));
+        returnBookmark = workflow.navigation().bookmark();
+        driver.capture("pickers-task-returned.png", () -> open(new ClientDestination.Home(), 632));
         stage = -1;
+      }
+      case 632 -> {
+        if (!arrived()) return false;
+        searchGate = new SearchGate(ReferenceQuery.Match.TEXT);
+        navigation =
+            workflow.navigation().restore(returnBookmark).completion().toCompletableFuture();
+        stage = 633;
+      }
+      case 633 -> {
+        if (!arrived() || searchGate.entered.getCount() != 0) return false;
+        check(
+            "return focus request waits on an actually entered source search",
+            !list().active
+                && taskState().searching() == PickerState.Phase.RUNNING
+                && sourceContext.outstandingCalls() > 0);
+        check(
+            "newer native focus choice supersedes pending return focus",
+            focus(workflow.screen(), search()) && search().isFocused());
+        searchGate.release.countDown();
+        stage = 634;
+      }
+      case 634 -> {
+        if (taskState().searching() != PickerState.Phase.READY
+            || taskState().inspecting() != PickerState.Phase.READY) return false;
+        sourceReturns++;
+        frames = PlatformFrameObservations.sequence();
+        stage = 635;
+      }
+      case 635 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        check(
+            "ready return does not steal a newer user focus choice",
+            search().isFocused()
+                && !list().isFocused()
+                && task.listAnchor().snapshot().value().equals(returnAnchor)
+                && returnDraft.equals(
+                    design.inherent.reform.edit.DraftRevision.of(
+                        editor.view().snapshot().orElseThrow()))
+                && factories == 1 + sourceReturns
+                && searchGate.exited.getCount() == 0);
+        returnFacts.addProperty("newerFocusPreserved", search().isFocused() && !list().isFocused());
+        returnFacts.addProperty("focusGateWorker", searchGate.thread);
+        unchanged();
+        pickerFocusOverrideVerified = true;
+        open(new ClientDestination.Document(ROUTE), 14);
       }
       case 14 -> {
         if (!arrived() || !editor.canStage(ART_ROLE.field())) return false;
@@ -1645,6 +1699,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("sourceUnchanged", complete);
     out.addProperty("scopesRetired", complete);
     out.addProperty("pickerReturnVerified", pickerReturnVerified);
+    out.addProperty("pickerFocusOverrideVerified", pickerFocusOverrideVerified);
     out.add("pickerReturn", returnFacts.deepCopy());
     out.addProperty("completionVerified", completionVerified);
     out.addProperty("completionDismissed", completionDismissed);

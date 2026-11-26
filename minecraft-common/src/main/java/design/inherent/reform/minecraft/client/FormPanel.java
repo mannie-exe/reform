@@ -276,6 +276,7 @@ final class FormPanel extends ScrollFrame {
 
   private final List<Outline> outlines = new ArrayList<>();
   private String rememberedFocus;
+  private boolean restorePending;
 
   void beginGroup(String id, Component label) {
     rows.add(row(id, label, Component.empty(), List.of(), true, id, false, 1, null));
@@ -552,7 +553,7 @@ final class FormPanel extends ScrollFrame {
     return positions.stream()
             .anyMatch(
                 p ->
-                    p.widget.active
+                    (p.widget.active || restorePending)
                         && p.widget.visible
                         && java.util.Objects.equals(p.key, rememberedFocus))
         ? rememberedFocus
@@ -576,12 +577,16 @@ final class FormPanel extends ScrollFrame {
     final String restoredKey = key;
     if (key != null)
       positions.stream()
-          .filter(p -> restoredKey.equals(p.key) && p.widget.active && p.widget.visible)
+          .filter(p -> restoredKey.equals(p.key) && p.widget.visible)
           .findFirst()
           .ifPresent(
               p -> {
-                setFocused(p.widget);
-                p.widget.setFocused(true);
+                rememberedFocus = restoredKey;
+                restorePending = !p.widget.active;
+                if (p.widget.active) {
+                  setFocused(p.widget);
+                  p.widget.setFocused(true);
+                }
               });
   }
 
@@ -1130,7 +1135,10 @@ final class FormPanel extends ScrollFrame {
   @Override
   public void setFocused(GuiEventListener listener) {
     super.setFocused(listener);
-    if (listener != null && getFocused() == listener) rememberedFocus = focusKey();
+    if (listener != null && getFocused() == listener) {
+      rememberedFocus = focusKey();
+      restorePending = false;
+    }
     if (listener instanceof AbstractWidget widget) {
       if (widget.getY() < top + border) scrollDistance -= top + border - widget.getY();
       else if (widget.getY() + widget.getHeight() > bottom - border)
@@ -1143,6 +1151,7 @@ final class FormPanel extends ScrollFrame {
   @Override
   public void setFocused(boolean focused) {
     if (!focused) {
+      restorePending = false;
       var current = focusKey();
       if (current != null) rememberedFocus = current;
       if (getFocused() != null) getFocused().setFocused(false);

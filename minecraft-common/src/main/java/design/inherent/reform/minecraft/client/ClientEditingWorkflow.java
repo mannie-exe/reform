@@ -3760,7 +3760,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       information.preserve(getFocused());
       if (panel != null) {
         retainedScroll = panel.bookmark();
-        retainedFocus = getFocused() == panel ? panel.focusKey() : null;
+        retainedFocus = getFocused() == panel ? panel.rememberedFocusKey() : null;
       }
       var focused = focusedView();
       DocumentId rememberedOwner = actionRoute;
