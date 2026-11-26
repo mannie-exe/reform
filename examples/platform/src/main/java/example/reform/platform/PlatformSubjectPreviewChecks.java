@@ -1245,10 +1245,20 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 && empty()
                 && !editor.dirty()
                 && sectionFactories == 1
-                && editor.form().fieldControl(MODELS_PATH).orElseThrow() == originalNativeInput
-                && widgets(workflow.screen()).contains(originalNativeInput);
+                && widgets(workflow.screen()).contains(currentInput)
+                && (currentInput == metadataInputBefore
+                    || !widgets(workflow.screen()).contains(metadataInputBefore))
+                && ((EditBox) currentInput)
+                    .getValue()
+                    .equals(metadataInputObservations.get("beforeRaw").getAsString())
+                && ((EditBox) currentInput).getCursorPosition()
+                    == metadataInputObservations.get("beforeCursor").getAsInt()
+                && ((EditBox) currentInput)
+                    .getHighlighted()
+                    .equals(metadataInputObservations.get("beforeSelection").getAsString())
+                && currentInput.isFocused();
         check(
-            "same-owner view roundtrip restores original native input without replaying preparation",
+            "same-owner view roundtrip restores logical native input without replaying preparation",
             sectionMetadataReturn);
         workflow.close();
         stage = 13;
