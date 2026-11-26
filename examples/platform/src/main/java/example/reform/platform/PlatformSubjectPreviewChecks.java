@@ -371,7 +371,10 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                     label("Try a profile without editing settings."),
                     label("Available profiles"),
                     label("Search profiles"),
-                    List.of(),
+                    List.of(
+                        new ReferencePickerView.RoleAction<>(MODELS_ROLE, label("Use for Models")),
+                        new ReferencePickerView.RoleAction<>(
+                            ARTWORK_ROLE, label("Use for Artwork"))),
                     4,
                     2),
                 Optional.empty()),
