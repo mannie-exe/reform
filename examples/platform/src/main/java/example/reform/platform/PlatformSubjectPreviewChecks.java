@@ -203,7 +203,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private boolean arrived() {
     if (!navigation.isDone()) return false;
     check(
-        "actual navigation reveals target",
+        "actual navigation reveals target: " + navigation.join(),
         navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED);
     return true;
   }
@@ -719,7 +719,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         check(
             "READ revocation withdraws cached audition title, native output and source facts",
             privateWithdrawn
-                && picker.state().snapshot() instanceof UiObservation.Unavailable<?>
+                && picker.state().snapshot().value().source() == PickerState.Source.UNAVAILABLE
+                && picker.state().snapshot().value().inspection().isEmpty()
+                && picker.state().snapshot().value().window().choices().isEmpty()
                 && entries.size() == 2);
         sourceRead.set(true);
         picker.refresh().invoke(null);
@@ -892,7 +894,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         + " phase="
         + (preview == null
             ? "none"
-            : workflow.isOpen() ? preview.state().snapshot().value() : "closed");
+            : workflow.isOpen() && editor.isOpen() ? preview.state().snapshot() : "closed");
   }
 
   public void close() {
