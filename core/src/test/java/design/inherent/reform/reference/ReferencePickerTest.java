@@ -67,7 +67,8 @@ class ReferencePickerTest {
         workers = Executors.newFixedThreadPool(2);
     final AtomicBoolean read = new AtomicBoolean(true),
         sourceRead = new AtomicBoolean(true),
-        write = new AtomicBoolean(true);
+        write = new AtomicBoolean(true),
+        prefixSupported = new AtomicBoolean(true);
     final AtomicLong now = new AtomicLong();
     final AtomicInteger factories = new AtomicInteger(),
         searches = new AtomicInteger(),
@@ -202,6 +203,11 @@ class ReferencePickerTest {
                                     "Inherited",
                                     Map.of("contributions", "0"))));
                     return new ReferenceResolver<String, List<String>>() {
+                      public boolean supports(ReferenceQuery.Match match) {
+                        return match == ReferenceQuery.Match.TEXT
+                            || prefixSupported.get() && index.supports(match);
+                      }
+
                       public ReferenceStamp stamp() {
                         return index.stamp();
                       }
@@ -311,6 +317,379 @@ class ReferencePickerTest {
         }
       }
     }
+  }
+
+  @Test
+  void suggestionPortEnumeratesActualKeysWithoutChangingBrowseOrWriting() throws Exception {
+    try (var h = new Harness()) {
+      h.prefixSupported.set(false);
+      var policy = new ReferenceSuggestions.Policy(4, 128, 8, 200_000_000L);
+      var port = h.call(() -> h.picker.suggestions(policy));
+      assertSame(port, h.call(() -> h.picker.suggestions(policy)));
+      h.call(
+          () -> {
+            try (var field =
+                FieldBinding.bind(h.scope, h.actions, MODEL_ROLE.field(), MODELS.type())) {
+              port.requireField(field);
+            }
+            try (var unrelated =
+                FieldBinding.bind(
+                    h.scope, h.actions, FieldPath.ROOT.field("count"), COUNT.type())) {
+              assertThrows(PolicyRefusal.class, () -> port.requireField(unrelated));
+            }
+            return null;
+          });
+      assertEquals(0, h.factories.get());
+      h.write.set(false);
+      h.call(() -> h.picker.query().invoke(PickerState.Query.atEnd("Alpha")));
+      h.call(
+          () -> {
+            port.request("fixture:e");
+            return null;
+          });
+      assertEquals(PickerState.Phase.DEBOUNCING, suggestionUpdate(h, port).phase());
+      h.now.set(199_000_000L);
+      suggestionUpdate(h, port);
+      assertEquals(0, h.factories.get());
+      assertEquals(0, h.searches.get());
+      h.now.set(200_000_000L);
+      var found = awaitSuggestions(h, port);
+      assertEquals(
+          List.of(new ReferenceSuggestions.Choice("fixture:empty", "Inherited")), found.choices());
+      assertTrue(found.complete());
+      assertEquals(2, found.pages());
+      assertEquals(1, h.factories.get());
+      assertEquals(0, h.lookups.get());
+      assertEquals("Alpha", h.snapshot().query().text());
+      var old =
+          new ReferenceSuggestions.Option(
+              found.stamp().orElseThrow(), found.generation(), "fixture:empty");
+      assertEquals("fixture:empty", h.call(() -> port.requireChoice(old)));
+      h.call(
+          () -> {
+            port.request("fixture:b");
+            return null;
+          });
+      assertThrows(ExecutionException.class, () -> h.call(() -> port.requireChoice(old)));
+      h.now.addAndGet(200_000_000L);
+      assertEquals("fixture:b", awaitSuggestions(h, port).choices().getFirst().key());
+      h.admit();
+      assertEquals("Alpha", h.snapshot().query().text());
+      assertEquals("fixture:b", suggestionUpdate(h, port).choices().getFirst().key());
+      assertEquals("fixture:a", h.raw("models"));
+      assertEquals("fixture:a", h.raw("artwork"));
+      h.call(
+          () -> {
+            h.picker.suspend();
+            return null;
+          });
+      assertTrue(suggestionUpdate(h, port).choices().isEmpty());
+      assertTrue(h.call(h.references::isOpen));
+      h.unchanged();
+    }
+  }
+
+  @Test
+  void suggestionScanLimitIsIncompleteRatherThanUnknownAndDoesNotChangeRawInput() throws Exception {
+    try (var h = new Harness()) {
+      h.prefixSupported.set(false);
+      var port = h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(1, 128, 1, 0)));
+      h.call(
+          () -> {
+            port.request("fixture:empty");
+            return null;
+          });
+      var limited = awaitSuggestions(h, port);
+      assertTrue(limited.choices().isEmpty());
+      assertFalse(limited.complete());
+      assertEquals(1, limited.pages());
+      assertEquals(1, h.searches.get());
+      h.call(
+          () -> {
+            port.request("fixture:");
+            return null;
+          });
+      var first = awaitSuggestions(h, port);
+      assertEquals(
+          List.of(new ReferenceSuggestions.Choice("fixture:a", "fixture:a")), first.choices());
+      assertFalse(first.complete());
+      h.call(
+          () -> {
+            port.move(1);
+            return null;
+          });
+      assertEquals(
+          Optional.of("fixture:a"),
+          h.call(() -> port.activeOption().map(ReferenceSuggestions.Option::key)));
+      h.call(
+          () -> {
+            port.suspend();
+            return null;
+          });
+      assertEquals(PickerState.Phase.IDLE, suggestionUpdate(h, port).phase());
+      assertEquals(0, h.lookups.get());
+      assertEquals("fixture:a", h.raw("models"));
+      h.unchanged();
+    }
+  }
+
+  @Test
+  void suggestionOldGenerationAndRevokedSourceCannotDiscloseOrAccept() throws Exception {
+    try (var h = new Harness()) {
+      var port = h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(4, 128, 8, 0)));
+      h.call(
+          () -> {
+            port.request("fixture:");
+            return null;
+          });
+      var old = awaitSuggestions(h, port);
+      var option =
+          new ReferenceSuggestions.Option(old.stamp().orElseThrow(), old.generation(), "fixture:a");
+      h.bind();
+      var withdrawn =
+          h.call(
+              () -> {
+                h.scope.refreshObservations();
+                return port.state().snapshot().value();
+              });
+      assertTrue(withdrawn.choices().isEmpty());
+      assertTrue(withdrawn.stamp().isEmpty());
+      assertThrows(ExecutionException.class, () -> h.call(() -> port.requireChoice(option)));
+      suggestionUpdate(h, port);
+      h.call(
+          () -> {
+            port.request("fixture:");
+            return null;
+          });
+      var fresh = awaitSuggestions(h, port);
+      assertNotEquals(old.stamp(), fresh.stamp());
+      var freshOption =
+          new ReferenceSuggestions.Option(
+              fresh.stamp().orElseThrow(), fresh.generation(), "fixture:a");
+      h.sourceRead.set(false);
+      var revoked =
+          h.call(
+              () -> {
+                h.scope.refreshObservations();
+                return port.state().snapshot().value();
+              });
+      assertTrue(revoked.choices().isEmpty());
+      assertEquals("", revoked.prefix());
+      assertTrue(revoked.stamp().isEmpty());
+      h.sourceRead.set(true);
+      assertThrows(ExecutionException.class, () -> h.call(() -> port.requireChoice(freshOption)));
+      h.call(
+          () -> {
+            h.scope.refreshObservations();
+            assertTrue(port.state().snapshot().value().choices().isEmpty());
+            return null;
+          });
+      suggestionUpdate(h, port);
+      h.call(
+          () -> {
+            port.request("fixture:");
+            return null;
+          });
+      assertFalse(awaitSuggestions(h, port).choices().isEmpty());
+      h.read.set(false);
+      assertThrows(ExecutionException.class, () -> h.call(() -> port.requireChoice(option)));
+      h.read.set(true);
+      h.call(
+          () -> {
+            h.scope.close();
+            return null;
+          });
+      assertTrue(h.call(h.references::isOpen));
+      assertTrue(h.call(h.actions::isOpen));
+      h.unchanged();
+    }
+  }
+
+  @Test
+  void suggestionReplacementWaitsForEnteredWorkAndOnlyLatestPrefixCanPublish() throws Exception {
+    try (var h = new Harness()) {
+      var entered = new CountDownLatch(1);
+      var release = new CountDownLatch(1);
+      h.beforeSearch.set(
+          query -> {
+            entered.countDown();
+            awaitGate(release);
+          });
+      try {
+        var port =
+            h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(4, 128, 8, 0)));
+        h.call(
+            () -> {
+              port.request("fixture:a");
+              return null;
+            });
+        suggestionUpdate(h, port);
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        h.call(
+            () -> {
+              port.request("fixture:b");
+              port.request("fixture:e");
+              return null;
+            });
+        assertEquals(PickerState.Phase.DRAINING, suggestionUpdate(h, port).phase());
+        assertEquals(1, h.searches.get());
+        h.beforeSearch.set(ignored -> {});
+        release.countDown();
+        var latest = awaitSuggestions(h, port);
+        assertEquals("fixture:e", latest.prefix());
+        assertEquals(
+            List.of(new ReferenceSuggestions.Choice("fixture:empty", "Inherited")),
+            latest.choices());
+        assertEquals(0, h.lookups.get());
+        assertEquals("fixture:a", h.raw("models"));
+        h.unchanged();
+      } finally {
+        release.countDown();
+      }
+    }
+  }
+
+  private static ReferenceSuggestions.State suggestionUpdate(
+      Harness h, ReferenceSuggestions<?> port) throws Exception {
+    return h.call(
+        () -> {
+          port.update();
+          h.scope.refreshObservations();
+          return port.state().snapshot().value();
+        });
+  }
+
+  @Test
+  void suggestionReentrantReadCannotReturnAnObsoleteChoice() throws Exception {
+    try (var h = new Harness()) {
+      var port = h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(4, 128, 8, 0)));
+      h.call(
+          () -> {
+            port.request("fixture:a");
+            return null;
+          });
+      var first = awaitSuggestions(h, port);
+      var option =
+          new ReferenceSuggestions.Option(
+              first.stamp().orElseThrow(), first.generation(), "fixture:a");
+      h.beforeSourceRead.set(() -> port.request("fixture:b"));
+      assertThrows(ExecutionException.class, () -> h.call(() -> port.requireChoice(option)));
+      assertEquals("fixture:b", awaitSuggestions(h, port).prefix());
+      assertEquals("fixture:a", h.raw("models"));
+      h.unchanged();
+    }
+  }
+
+  @Test
+  void suggestionReentrantSuspensionDuringAdmissionCannotEnterSearch() throws Exception {
+    try (var h = new Harness()) {
+      var port = h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(4, 128, 8, 0)));
+      h.call(
+          () -> {
+            port.request("fixture:a");
+            return null;
+          });
+      var stopped = new AtomicBoolean();
+      h.beforeSourceRead.set(
+          () -> {
+            port.suspend();
+            stopped.set(true);
+          });
+      var after = suggestionUpdate(h, port);
+      assertTrue(stopped.get());
+      assertEquals(PickerState.Phase.IDLE, after.phase());
+      assertTrue(after.choices().isEmpty());
+      assertTrue(after.work().isEmpty());
+      assertEquals(0, h.searches.get());
+      h.unchanged();
+    }
+  }
+
+  @Test
+  void suggestionAdmissionRefusalWithdrawsOldOptionsWithoutTouchingDraftOrRetrying()
+      throws Exception {
+    try (var h = new Harness()) {
+      var port = h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(4, 16, 8, 0)));
+      h.edit("count", "bad");
+      h.call(
+          () -> {
+            port.request("fixture:");
+            return null;
+          });
+      var old = awaitSuggestions(h, port);
+      var option =
+          new ReferenceSuggestions.Option(old.stamp().orElseThrow(), old.generation(), "fixture:a");
+      int calls = h.searches.get();
+      assertThrows(
+          ExecutionException.class,
+          () ->
+              h.call(
+                  () -> {
+                    port.request("x".repeat(17));
+                    return null;
+                  }));
+      var refused = suggestionUpdate(h, port);
+      assertEquals(PickerState.Phase.REFUSED, refused.phase());
+      assertTrue(refused.choices().isEmpty());
+      assertThrows(ExecutionException.class, () -> h.call(() -> port.requireChoice(option)));
+      suggestionUpdate(h, port);
+      suggestionUpdate(h, port);
+      assertEquals(calls, h.searches.get());
+      assertEquals("bad", h.raw("count"));
+      assertEquals("fixture:a", h.raw("models"));
+      h.unchanged();
+    }
+  }
+
+  @Test
+  void suggestionBudgetRefusalDrainsWithoutAutomaticRetryAndScopeCloseRefunds() throws Exception {
+    try (var h = new Harness(new UiLimits(128, 16, 128, 128, 512, 128, 4096))) {
+      h.call(
+          () ->
+              h.references.bind(
+                  "large",
+                  stamp ->
+                      ReferenceIndexTest.index(
+                          stamp,
+                          List.of(
+                              new ReferenceIndex.Entry<>(
+                                  "fixture:a", List.of(), "x".repeat(6000), "", Map.of())))));
+      var port = h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(4, 128, 8, 0)));
+      h.call(
+          () -> {
+            port.request("fixture:");
+            return null;
+          });
+      var refused = awaitSuggestions(h, port);
+      assertEquals(PickerState.Phase.REFUSED, refused.phase());
+      assertEquals("ui.budget_exceeded", refused.report().issues().getFirst().code());
+      assertTrue(refused.choices().isEmpty());
+      int calls = h.searches.get();
+      suggestionUpdate(h, port);
+      assertEquals(calls, h.searches.get());
+      h.call(
+          () -> {
+            h.scope.close();
+            assertEquals(0, h.scope.usage().stateBytes());
+            return null;
+          });
+      assertTrue(h.call(h.references::isOpen));
+      assertTrue(h.call(h.actions::isOpen));
+      h.unchanged();
+    }
+  }
+
+  private static ReferenceSuggestions.State awaitSuggestions(
+      Harness h, ReferenceSuggestions<?> port) throws Exception {
+    long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    ReferenceSuggestions.State value;
+    do {
+      value = suggestionUpdate(h, port);
+      if (value.phase() == PickerState.Phase.READY || value.phase() == PickerState.Phase.REFUSED)
+        return value;
+      Thread.sleep(1);
+    } while (System.nanoTime() < end);
+    throw new AssertionError("Suggestion work did not settle: " + value);
   }
 
   @Test

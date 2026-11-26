@@ -35,6 +35,51 @@ class UiScopeTest {
   }
 
   @Test
+  void targetedObservationRefreshPollsOnlyItsSourceAndRejectsForeignOrPureUse() {
+    try (var owner = host();
+        var scope = UiScope.borrow(owner, UiLimits.STANDARD);
+        var other = UiScope.borrow(owner, UiLimits.STANDARD)) {
+      var first = new AtomicInteger();
+      var second = new AtomicInteger();
+      var key = text("targeted");
+      UiRead<String> input =
+          () -> {
+            int revision = first.incrementAndGet();
+            return new UiObservation.Available<>(key.capture("value" + revision), revision);
+          };
+      var selected = scope.observe(key, input);
+      var otherKey = text("unselected");
+      var unselected =
+          scope.observe(
+              otherKey,
+              () -> {
+                int revision = second.incrementAndGet();
+                return new UiObservation.Available<>(otherKey.capture("other"), revision);
+              });
+      assertEquals(1, first.get());
+      assertEquals(1, second.get());
+      scope.refreshObservation(selected);
+      assertEquals("value2", selected.snapshot().value());
+      assertEquals(2, first.get());
+      assertEquals(1, second.get());
+      assertEquals("other", unselected.snapshot().value());
+      code("ui.binding_mismatch", () -> other.refreshObservation(selected));
+      var local = scope.local(text("local"), "local");
+      code("ui.binding_mismatch", () -> scope.refreshObservation(local));
+      assertThrows(
+          PolicyRefusal.class,
+          () ->
+              scope.project(
+                  List.of(selected),
+                  () -> {
+                    scope.refreshObservation(selected);
+                    return "unreachable";
+                  }));
+      assertEquals(2, first.get());
+    }
+  }
+
+  @Test
   void nonportableReadsPreserveAcceptedInputBeyondBookmarkEnvelope() {
     try (var owner = host()) {
       var scope = UiScope.borrow(owner, UiLimits.STANDARD);

@@ -18,6 +18,104 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class ReferenceIndexTest {
+  @Test
+  void prefixMatchingPreservesExactStringIdentityAndRefusesNonStringKeys() {
+    var rawKeys = List.of("e\u0301", "é", "a\\b", "a\"b", "a🙂", "a\ud83dx");
+    var entries =
+        rawKeys.stream()
+            .map(
+                key ->
+                    new ReferenceIndex.Entry<>(
+                        key, List.<String>of(), key, "label", Map.<String, String>of()))
+            .toList();
+    var index =
+        new ReferenceIndex<>(
+            stamp(),
+            ValueTypes.text(128),
+            ValueTypes.list(ValueTypes.text(128), 16).snapshotPolicy(),
+            new ReferenceLimits(16, 8192, 12, 128, 12),
+            entries);
+    assertEquals(
+        List.of("é"),
+        index
+            .search(new ReferenceQuery("é", 12, ReferenceQuery.Match.KEY_PREFIX))
+            .choices()
+            .stream()
+            .map(ReferencePage.Choice::key)
+            .toList());
+    assertEquals(
+        List.of("a\\b"),
+        index
+            .search(new ReferenceQuery("a\\", 12, ReferenceQuery.Match.KEY_PREFIX))
+            .choices()
+            .stream()
+            .map(ReferencePage.Choice::key)
+            .toList());
+    assertEquals(
+        List.of("a\ud83dx", "a🙂"),
+        index
+            .search(new ReferenceQuery("a\ud83d", 12, ReferenceQuery.Match.KEY_PREFIX))
+            .choices()
+            .stream()
+            .map(ReferencePage.Choice::key)
+            .toList());
+    var numeric =
+        new ReferenceIndex<>(
+            stamp(),
+            ValueTypes.integer(0, 10),
+            ValueTypes.list(ValueTypes.text(128), 16).snapshotPolicy(),
+            LIMITS,
+            List.of(
+                new ReferenceIndex.Entry<>(
+                    1, List.<String>of(), "One", "One", Map.<String, String>of())));
+    assertEquals(
+        ReferencePage.Availability.UNSUPPORTED,
+        numeric.search(new ReferenceQuery("1", 1, ReferenceQuery.Match.KEY_PREFIX)).availability());
+    assertTrue(numeric.search(new ReferenceQuery("One", 1)).exhausted());
+  }
+
+  @Test
+  void idPrefixUsesAnIndexedRangeRatherThanScanningEarlierTextRows() {
+    var entries = new java.util.ArrayList<ReferenceIndex.Entry<String, List<String>>>();
+    for (int i = 0; i < 2000; i++)
+      entries.add(
+          new ReferenceIndex.Entry<>(
+              "fixture:item_" + String.format(java.util.Locale.ROOT, "%04d", i),
+              List.of(),
+              "Label " + i,
+              "Label " + i,
+              Map.of()));
+    var index =
+        new ReferenceIndex<>(
+            stamp(),
+            KEYS,
+            ValueTypes.list(ValueTypes.text(128), 16).snapshotPolicy(),
+            new ReferenceLimits(4096, 262144, 4, 128, 2),
+            entries);
+    var first =
+        index.search(new ReferenceQuery("fixture:item_19", 2, ReferenceQuery.Match.KEY_PREFIX));
+    assertEquals(ReferencePage.Availability.READY, first.availability());
+    assertEquals(
+        List.of("fixture:item_1900", "fixture:item_1901"),
+        first.choices().stream().map(ReferencePage.Choice::key).toList());
+    assertEquals(2, first.examined());
+    assertEquals(2, first.next().orElseThrow().offset());
+    assertEquals(ReferenceQuery.Match.KEY_PREFIX, first.next().orElseThrow().match());
+    var second =
+        index.search(
+            new ReferenceQuery(
+                "fixture:item_19", 2, first.next(), ReferenceQuery.Match.KEY_PREFIX));
+    assertEquals("fixture:item_1902", second.choices().getFirst().key());
+    assertThrows(
+        PolicyRefusal.class,
+        () -> index.search(new ReferenceQuery("fixture:item_19", 2, first.next())));
+    assertTrue(index.search(new ReferenceQuery("fixture:item_19", 2)).choices().isEmpty());
+    var absent =
+        index.search(new ReferenceQuery("fixture:zzz", 2, ReferenceQuery.Match.KEY_PREFIX));
+    assertTrue(absent.exhausted());
+    assertEquals(0, absent.examined());
+  }
+
   static final ReferenceLimits LIMITS = new ReferenceLimits(16, 8192, 4, 32, 2);
   static final ValueType<String> KEYS =
       ValueType.of(

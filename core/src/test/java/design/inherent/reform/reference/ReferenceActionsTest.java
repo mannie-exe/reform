@@ -64,6 +64,118 @@ class ReferenceActionsTest {
     }
   }
 
+  @Test
+  void unsupportedKeyMatchingIsExplicitAndDoesNotInvokeAnOlderResolver() throws Exception {
+    try (var h = new Harness()) {
+      var calls = new AtomicInteger();
+      h.nativeCall(
+          () ->
+              h.actions.bind(
+                  "legacy",
+                  stamp ->
+                      new Resolver(
+                          stamp, key -> ReferenceResolution.resolved(stamp, List.of(), Map.of())) {
+                        public ReferencePage<String> search(ReferenceQuery query) {
+                          calls.incrementAndGet();
+                          return super.search(query);
+                        }
+                      }));
+      var unsupported =
+          await(
+              h.nativeCall(
+                      () ->
+                          h.actions.search(
+                              EntryPoint.GUI,
+                              new ReferenceQuery("fixture:", 1, ReferenceQuery.Match.KEY_PREFIX)))
+                  .completion());
+      assertEquals(OperationSnapshot.State.COMPLETED, unsupported.state());
+      assertEquals(
+          ReferencePage.Availability.UNSUPPORTED,
+          unsupported.result().orElseThrow().availability());
+      assertEquals(0, calls.get());
+      var text =
+          await(
+              h.nativeCall(() -> h.actions.search(EntryPoint.GUI, new ReferenceQuery("", 1)))
+                  .completion());
+      assertEquals(
+          ReferencePage.Availability.UNAVAILABLE_CONTEXT,
+          text.result().orElseThrow().availability());
+      assertEquals(1, calls.get());
+      assertEquals(0, h.writeChecks.get());
+    }
+  }
+
+  @Test
+  void prefixProviderCannotReturnAnotherKeyOrReuseTextCursors() throws Exception {
+    try (var h = new Harness()) {
+      for (boolean wrongKey : List.of(true, false)) {
+        var assigned =
+            h.nativeCall(
+                () ->
+                    h.actions.bind(
+                        "prefix",
+                        stamp ->
+                            new Resolver(
+                                stamp,
+                                key -> ReferenceResolution.resolved(stamp, List.of(), Map.of())) {
+                              public boolean supports(ReferenceQuery.Match match) {
+                                return true;
+                              }
+
+                              public ReferencePage<String> search(ReferenceQuery query) {
+                                return wrongKey
+                                    ? new ReferencePage<>(
+                                        stamp,
+                                        ReferencePage.Availability.READY,
+                                        List.of(
+                                            new ReferencePage.Choice<>("fixture:b", "B", Map.of())),
+                                        Optional.empty(),
+                                        1,
+                                        true,
+                                        "")
+                                    : new ReferencePage<>(
+                                        stamp,
+                                        ReferencePage.Availability.READY,
+                                        List.of(),
+                                        Optional.of(
+                                            new ReferenceQuery.Cursor(
+                                                stamp.snapshot(), query.filter(), 1)),
+                                        1,
+                                        false,
+                                        "");
+                              }
+                            }));
+        var bad =
+            await(
+                h.nativeCall(
+                        () ->
+                            h.actions.search(
+                                EntryPoint.GUI,
+                                new ReferenceQuery(
+                                    "fixture:a", 1, ReferenceQuery.Match.KEY_PREFIX)))
+                    .completion());
+        assertEquals(OperationSnapshot.State.FAILED, bad.state());
+        assertTrue(bad.result().isEmpty());
+        var cursor =
+            await(
+                h.nativeCall(
+                        () ->
+                            h.actions.search(
+                                EntryPoint.GUI,
+                                new ReferenceQuery(
+                                    "fixture:a",
+                                    1,
+                                    Optional.of(
+                                        new ReferenceQuery.Cursor(
+                                            assigned.snapshot(), "fixture:a", 0)),
+                                    ReferenceQuery.Match.KEY_PREFIX)))
+                    .completion());
+        assertEquals(OperationSnapshot.State.REFUSED, cursor.state());
+        assertEquals("reference.cursor", cursor.report().issues().getFirst().code());
+      }
+    }
+  }
+
   private static final class Harness implements AutoCloseable {
     final ExecutorService nativeExecutor = Executors.newSingleThreadExecutor(),
         workers = Executors.newFixedThreadPool(2);

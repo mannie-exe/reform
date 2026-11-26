@@ -7,4 +7,9 @@ public interface ReferenceResolver<K, V> {
   ReferenceResolution<V> resolve(K key);
 
   ReferencePage<K> search(ReferenceQuery query);
+
+  /** Existing resolvers keep text-search semantics; additional matching is explicitly supported. */
+  default boolean supports(ReferenceQuery.Match match) {
+    return match == ReferenceQuery.Match.TEXT;
+  }
 }

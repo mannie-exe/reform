@@ -54,7 +54,12 @@ public final class ReferenceBrowser<V> implements AutoCloseable {
     requireRequest(epoch, searchEpoch);
     requireCurrent();
     requireRequest(epoch, searchEpoch);
-    if (query.cursor().filter(cursor -> !cursor.snapshot().equals(stamp.snapshot())).isPresent())
+    if (query
+        .cursor()
+        .filter(
+            cursor ->
+                !cursor.snapshot().equals(stamp.snapshot()) || cursor.match() != query.match())
+        .isPresent())
       throw new PolicyRefusal("reference.cursor", "The continuation belongs to another source");
     var operation = source.search(entry, query);
     if (closed || epoch != searchEpoch) {

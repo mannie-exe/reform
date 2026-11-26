@@ -470,6 +470,21 @@ public final class UiScope implements AutoCloseable {
     }
   }
 
+  /** Poll one admitted cached source in this kernel, outside paint or pure projection. */
+  public void refreshObservation(UiRead<?> observed) {
+    requireWrite();
+    if (!(observed instanceof UiScope.Source<?> source)
+        || source.scope().kernel != kernel
+        || !source.scope().isOpen()) throw mismatch();
+    kernel.batch++;
+    try {
+      source.refresh();
+    } finally {
+      kernel.batch--;
+      if (isOpen()) kernel.flush();
+    }
+  }
+
   /** Dependencies must be live reads from this root, declared once with a stable computation. */
   public <T> UiRead<T> derive(
       ViewStateKey<T> state,

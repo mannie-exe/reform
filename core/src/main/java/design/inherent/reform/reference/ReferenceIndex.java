@@ -42,6 +42,8 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
   private final SnapshotContext.Limits snapshots;
   private final List<Row<K, V>> rows;
   private final Map<K, Row<K, V>> byKey;
+  private final boolean prefixKeys;
+  private final List<Row<K, V>> prefixRows;
 
   public ReferenceIndex(
       ReferenceStamp stamp,
@@ -120,6 +122,11 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
     copied.sort(Comparator.comparing(Row::sortKey));
     rows = List.copyOf(copied);
     byKey = Map.copyOf(table);
+    prefixKeys = rows.stream().allMatch(row -> row.key() instanceof String);
+    prefixRows =
+        prefixKeys
+            ? rows.stream().sorted(Comparator.comparing(row -> (String) row.key())).toList()
+            : List.of();
   }
 
   public static <K, V> ReferenceIndex<K, V> unavailable(
@@ -176,6 +183,12 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
   }
 
   @Override
+  public boolean supports(ReferenceQuery.Match match) {
+    return match == ReferenceQuery.Match.TEXT
+        || match == ReferenceQuery.Match.KEY_PREFIX && prefixKeys;
+  }
+
+  @Override
   public ReferencePage<K> search(ReferenceQuery query) {
     limits.query(query);
     int offset = query.cursor().map(ReferenceQuery.Cursor::offset).orElse(0);
@@ -184,13 +197,20 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
             .filter(
                 cursor ->
                     !cursor.snapshot().equals(stamp.snapshot())
-                        || !cursor.filter().equals(query.filter()))
+                        || !cursor.filter().equals(query.filter())
+                        || cursor.match() != query.match())
             .isPresent()
         || offset > rows.size())
       throw new PolicyRefusal(
           "reference.cursor", "Reference cursor does not address this snapshot/filter");
     if (availability != ReferencePage.Availability.READY)
       return ReferencePage.unavailable(stamp, availability, reason);
+    if (!supports(query.match()))
+      return ReferencePage.unavailable(
+          stamp,
+          ReferencePage.Availability.UNSUPPORTED,
+          "This source does not provide ID-prefix suggestions.");
+    if (query.match() == ReferenceQuery.Match.KEY_PREFIX) return prefix(query);
     String needle = SearchText.fold(query.filter());
     var choices = new ArrayList<ReferencePage.Choice<K>>();
     int position = offset, examined = 0;
@@ -200,7 +220,9 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
         && choices.size() < query.limit()) {
       var row = rows.get(position++);
       examined++;
-      if (row.search().contains(needle))
+      if (query.match() == ReferenceQuery.Match.TEXT
+          ? row.search().contains(needle)
+          : row.key() instanceof String key && key.startsWith(query.filter()))
         choices.add(
             new ReferencePage.Choice<>(
                 keys.freeze(row.key(), snapshots), row.label(), row.preview()));
@@ -212,10 +234,58 @@ public final class ReferenceIndex<K, V> implements ReferenceResolver<K, V> {
         choices,
         exhausted
             ? Optional.empty()
-            : Optional.of(new ReferenceQuery.Cursor(stamp.snapshot(), query.filter(), position)),
+            : Optional.of(
+                new ReferenceQuery.Cursor(
+                    stamp.snapshot(), query.filter(), position, query.match())),
         examined,
         exhausted,
         "");
+  }
+
+  // Prefix cursors count candidates within this exact prefix range, rather than text-scan rows.
+  // Navigation costs O(log(maximumEntries)); candidate reads still obey maximumScan and limit.
+  private ReferencePage<K> prefix(ReferenceQuery query) {
+    int lower = prefixBoundary(query.filter(), false);
+    int upper = prefixBoundary(query.filter(), true);
+    int offset = query.cursor().map(ReferenceQuery.Cursor::offset).orElse(0);
+    if (offset > upper - lower)
+      throw new PolicyRefusal("reference.cursor", "Reference cursor is outside this prefix range");
+    int position = lower + offset, examined = 0;
+    var choices = new ArrayList<ReferencePage.Choice<K>>();
+    var context = new SnapshotContext(snapshots);
+    while (position < upper && examined < limits.maximumScan() && choices.size() < query.limit()) {
+      var row = prefixRows.get(position++);
+      examined++;
+      choices.add(
+          new ReferencePage.Choice<>(keys.freeze(row.key(), context), row.label(), row.preview()));
+    }
+    boolean exhausted = position == upper;
+    return new ReferencePage<>(
+        stamp,
+        availability,
+        choices,
+        exhausted
+            ? Optional.empty()
+            : Optional.of(
+                new ReferenceQuery.Cursor(
+                    stamp.snapshot(),
+                    query.filter(),
+                    offset + examined,
+                    ReferenceQuery.Match.KEY_PREFIX)),
+        examined,
+        exhausted,
+        "");
+  }
+
+  private int prefixBoundary(String prefix, boolean after) {
+    int low = 0, high = prefixRows.size();
+    while (low < high) {
+      int middle = low + (high - low) / 2;
+      String key = (String) prefixRows.get(middle).key();
+      if (key.compareTo(prefix) < 0 || after && key.startsWith(prefix)) low = middle + 1;
+      else high = middle;
+    }
+    return low;
   }
 
   private static boolean sameKey(Object first, Object second) {

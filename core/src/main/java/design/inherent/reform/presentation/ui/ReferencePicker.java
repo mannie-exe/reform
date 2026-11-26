@@ -116,6 +116,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       new java.util.ArrayList<>();
   private int requestedPage;
   private Interest interest;
+  private ReferenceSuggestions<V> suggestions;
 
   private WeakReference<UiSnapshot<PickerState>> cached;
 
@@ -233,6 +234,42 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     return policy;
   }
 
+  /** Separate ID-prefix query port over the same admitted service, never the browse query. */
+  public ReferenceSuggestions<V> suggestions(ReferenceSuggestions.Policy policy) {
+    scope.requireCurrent();
+    Objects.requireNonNull(policy);
+    if (suggestions != null) {
+      if (!suggestions.policy().equals(policy))
+        throw new IllegalArgumentException("A suggestion port keeps its declared limits");
+      return suggestions;
+    }
+    suggestions =
+        new ReferenceSuggestions<>(
+            scope,
+            document::requireInspection,
+            field -> {
+              if (field.document(document.definition()) != document
+                  || roles.values().stream()
+                      .noneMatch(role -> role.field().equals(field.identity().path())))
+                throw refusal(
+                    "reference.completion_field",
+                    "Use suggestions from this field's actual owner and declared role.");
+            },
+            () -> {
+              document.requireInspection();
+              if (source == null || !source.isOpen()) {
+                var candidate = Objects.requireNonNull(sourceFactory.get());
+                if (!candidate.source().equals(sourceId))
+                  throw new IllegalArgumentException("The picker factory returned another source");
+                source = candidate;
+              }
+              return source;
+            },
+            policy,
+            clock);
+    return suggestions;
+  }
+
   /** One visible driver, borrowed independently from the controller/source/document lifetimes. */
   public final class Interest implements AutoCloseable {
     private boolean open = true, admitted;
@@ -264,7 +301,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
             open = false;
             if (interest == this) {
               interest = null;
-              suspend();
+              suspendBrowse();
             }
           });
     }
@@ -543,6 +580,14 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
 
   /** Withdraws this view's observations/work, never its borrowed source or document. */
   public void suspend() {
+    scope.update(
+        () -> {
+          suspendBrowse();
+          if (suggestions != null) suggestions.suspend();
+        });
+  }
+
+  private void suspendBrowse() {
     scope.update(
         () -> {
           releaseBrowser();
@@ -1112,6 +1157,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     retiringSearch = null;
     retiringLookup = null;
     cached = null;
+    suggestions = null;
   }
 
   private static PolicyRefusal refusal(String code, String text) {

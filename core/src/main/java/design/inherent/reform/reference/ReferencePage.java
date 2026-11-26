@@ -16,6 +16,7 @@ public record ReferencePage<K>(
     String reason) {
   public enum Availability {
     READY,
+    UNSUPPORTED,
     MISSING_DEPENDENCY,
     UNAVAILABLE_CONTEXT
   }

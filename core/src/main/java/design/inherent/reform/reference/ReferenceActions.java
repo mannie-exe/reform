@@ -105,7 +105,9 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
             var selected = current(query.cursor().map(ReferenceQuery.Cursor::snapshot));
             if (query
                 .cursor()
-                .filter(cursor -> !cursor.filter().equals(query.filter()))
+                .filter(
+                    cursor ->
+                        !cursor.filter().equals(query.filter()) || cursor.match() != query.match())
                 .isPresent())
               throw new PolicyRefusal(
                   "reference.cursor", "The filter changed; restart this reference query");
@@ -113,6 +115,13 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
                 .onWorker(
                     () -> {
                       execution.checkpoint();
+                      if (!selected.resolver().supports(query.match()))
+                        return ReferencePage.<K>unavailable(
+                            selected.stamp(),
+                            ReferencePage.Availability.UNSUPPORTED,
+                            query.match() == ReferenceQuery.Match.KEY_PREFIX
+                                ? "This source does not provide ID-prefix suggestions."
+                                : "This source does not provide text search.");
                       return seal(selected, query, selected.resolver().search(query));
                     })
                 .thenCompose(result -> deliver(selected, execution, result));
@@ -286,6 +295,7 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
             cursor ->
                 !cursor.snapshot().equals(selected.stamp().snapshot())
                     || !cursor.filter().equals(query.filter())
+                    || cursor.match() != query.match()
                     || cursor.offset() <= start
                     || cursor.offset() != end)
         .isPresent())
@@ -296,6 +306,9 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
     var choices = new ArrayList<ReferencePage.Choice<K>>();
     for (var choice : result.choices()) {
       K key = keys.freeze(choice.key(), context);
+      if (query.match() == ReferenceQuery.Match.KEY_PREFIX
+          && (!(key instanceof String text) || !text.startsWith(query.filter())))
+        throw new IllegalArgumentException("Resolver choice is outside its actual ID prefix");
       var encoded = keys.codec().encodeStart(JsonOps.INSTANCE, key);
       if (encoded.error().isPresent() || encoded.result().isEmpty())
         throw new IllegalArgumentException("Resolver choice cannot encode completely");
@@ -380,22 +393,27 @@ public final class ReferenceActions<K, V> implements AutoCloseable {
     var snapshot = FieldKey.of("snapshot", UUID_TYPE);
     var filter = FieldKey.of("filter", ValueTypes.text(limits.maximumQueryLength()));
     var offset = FieldKey.of("offset", ValueTypes.integer(0, limits.maximumEntries()));
+    var match = FieldKey.of("match", ValueTypes.enumeration(ReferenceQuery.Match.class));
     var cursorType =
         RecordType.<ReferenceQuery.Cursor>builder(
-                v -> new ReferenceQuery.Cursor(v.get(snapshot), v.get(filter), v.get(offset)))
+                v ->
+                    new ReferenceQuery.Cursor(
+                        v.get(snapshot), v.get(filter), v.get(offset), v.get(match)))
             .field(snapshot, ReferenceQuery.Cursor::snapshot)
             .field(filter, ReferenceQuery.Cursor::filter)
             .field(offset, ReferenceQuery.Cursor::offset)
+            .field(match, ReferenceQuery.Cursor::match)
             .build();
     var count = FieldKey.of("limit", ValueTypes.integer(1, limits.maximumPageSize()));
     var cursor =
         FieldKey.of(
             "cursor", ValueTypes.optional(cursorType, ValueShape.OptionalEncoding.SINGLETON_LIST));
     return RecordType.<ReferenceQuery>builder(
-            v -> new ReferenceQuery(v.get(filter), v.get(count), v.get(cursor)))
+            v -> new ReferenceQuery(v.get(filter), v.get(count), v.get(cursor), v.get(match)))
         .field(filter, ReferenceQuery::filter)
         .field(count, ReferenceQuery::limit)
         .field(cursor, ReferenceQuery::cursor)
+        .field(match, ReferenceQuery::match)
         .build();
   }
 }
