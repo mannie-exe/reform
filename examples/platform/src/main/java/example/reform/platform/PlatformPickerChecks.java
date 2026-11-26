@@ -147,6 +147,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private int stage, factories, pagingPass, baselineSearches, sourceReturns;
   private boolean pickerReturnVerified;
   private PickerState returnBefore;
+  private NavigationBookmark returnBookmark;
   private AbstractWidget returnList;
   private EditBox returnQuery;
   private Optional<String> returnAnchor;
@@ -756,6 +757,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         returnAnchor = task.listAnchor().snapshot().value();
         returnDraft =
             design.inherent.reform.edit.DraftRevision.of(editor.view().snapshot().orElseThrow());
+        returnBookmark = workflow.navigation().bookmark();
         check(
             "return capture separates actual scroll anchor active and pinned inspection",
             returnAnchor.equals(Optional.of(id(21)))
@@ -792,7 +794,9 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "hidden picker does no automatic search",
             searches.get() == baselineSearches && factories == 1 + sourceReturns);
-        open(new ClientDestination.View(new DestinationId(TASK)), 630);
+        navigation =
+            workflow.navigation().restore(returnBookmark).completion().toCompletableFuture();
+        stage = 630;
       }
       case 630 -> {
         if (!arrived()
