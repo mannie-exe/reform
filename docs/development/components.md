@@ -95,7 +95,7 @@ In dev.128, shared choice lists and query inputs use labelled blocks: label/help
 
 Blocked/refused feedback remains visible with its action caption, while focused narration uses only that control's help. An unrelated kernel update preserves the exact current command offer when its declared reads are unchanged. A changed declared input, removed node, or replaced native attachment still retires the old offer. Grouping cannot invoke or merge handlers. Expanded disclosures leave a semantic section gap before following content; the same rule applies to the actual manual-ID disclosure.
 
-The standard reference picker uses separate selection-action and browser-action rows inside its existing named section. Source details retains its view-local disclosure state across a workflow return. The typed draft/audition preview boundary and width-based adjacent composition are available below. Complete browser/preview height policy, grids, environment/modifiers, and section contribution remain selected work.
+The standard reference picker uses separate selection-action and browser-action rows inside its existing named section. Source details retains its view-local disclosure state across a workflow return. The typed draft/audition preview boundary, explicit grids, and canonical generated-section contribution are available below. Complete browser/preview height policy and environment/modifiers remain selected work.
 
 ### Nested rows and width frames
 
@@ -111,7 +111,7 @@ Dev.136 adds `Views.grid(key, grid, List.of(Views.cell(row, column, rowSpan, col
 
 Fixed tracks reserve their exact width. Content tracks consume admitted intrinsic minimum/preferred widths up to their bound; fractional tracks distribute remaining width by declared positive weights. Spanned intrinsic deficits contribute only to flexible tracks. If minima cannot fit or a fixed/bounded track cannot admit its content, the cells stack in authored order rather than changing a domain or clipping the required controls. Row heights come from the actual rewrapped child content, including row spans; this is a bounded track solver, not a general constraint system.
 
-The native host measures each existing cell once at its allotted width and translates its original widgets, group decoration, artwork, and focus anchors to the final row positions. It retains the same outer scroll owner. Row and track counts are checked before copying caller collections; intrinsic prefixes and group insets use widened arithmetic before a finite presentation offer is selected. Height-aware browser selection, frame height constraints, environments/modifiers, and canonical section contribution are still separate work.
+The native host measures each existing cell once at its allotted width and translates its original widgets, group decoration, artwork, and focus anchors to the final row positions. It retains the same outer scroll owner. Row and track counts are checked before copying caller collections; intrinsic prefixes and group insets use widened arithmetic before a finite presentation offer is selected. Height-aware browser selection, frame height constraints, and environments/modifiers are still separate work.
 
 ## Cached reads and actual commands
 
@@ -184,7 +184,24 @@ options.withComponent(FieldPath.ROOT.field("enabled"), (scope, parts) ->
 
 Field components share one form-owned `UiLimits.STANDARD` aggregate root, rather than multiplying the payload allowance for every field. Their local state survives native reflow and temporary hiding while the same owner/session/path remains. Hidden attachments cannot dispatch; removed paths, replaced sessions, and form closure retire their scopes. Cleanup closes the presentation root and leaves domain ownership to the existing editor lifecycle. A native replacement adapter or dedicated editor cannot also declare this component for the same field.
 
-This is the actual-form field-parts host. Arbitrary field mounting in caller-owned component trees, loading/error boundaries, picker/completion, and the remaining revised layout/preview contracts are still in progress. Native and model qualification is recorded separately in verification.
+This is the actual-form field-parts host. Arbitrary field mounting in caller-owned component trees, loading/error boundaries, and the remaining revised layout/preview contracts are still in progress. Native and model qualification is recorded separately in verification.
+
+### Canonical generated sections
+
+`ClientFormOptions.withSection(target, component)` composes the actual fields of a generated group or range under one retained component scope. `SettingsScreen.withSections` supplies the same declaration for a standalone form. The target is a `FormTarget.Section` from the form presentation, such as `group:profiles` for a declared `FormLayout.Group`, or `range:distance` for a declared range. A workflow navigation section ID is a different identity and cannot manufacture a group or field path.
+
+The component receives `ClientSectionParts<T>`. Its `fields()` preserves the generated section's declared order; `field(path, exactType)` returns that field's actual `ClientFieldParts`, requiring its exact declared type. Every field must contribute its own label, control, and feedback exactly once. A section admits one to sixty-four scalar/reference fields from one owner. Overlapping section declarations, dedicated editors, and competing field components or adapters refuse before attachment.
+
+```java
+options.withSection(new FormTarget.Section("group:profiles"), (scope, parts) ->
+    Views.column("profile-fields", List.of(
+        parts.field(MODELS_PATH, PROFILE_ID_TYPE).standard("models"),
+        parts.field(ARTWORK_PATH, PROFILE_ID_TYPE).standard("artwork"))));
+```
+
+This lets two field-owned picker surfaces and one complete-draft preview share their original form panel, scroll owner, aggregate UI budget, and editor. `parts.editor()` borrows the actual retained editor when the host has one; it never creates another wrapper. `parts.graphics(limits, maximumViews)` borrows that workflow's aggregate graphics service without preparing anything. A standalone form without that service refuses with `ui.preview_host_unavailable`; this API does not invent a standalone preview host.
+
+The section factory runs once per admitted owner/session. Native reflow updates the original controls while retaining the component tree, local cells, draft, and input buffers. When the generated body is no longer mounted, its managed contributions suspend before another body borrows preview admission. Returning retains local state but does not replay a preparation. Owner/session retirement closes the scope. Factory failures retain the original failure for inspection and use the ordinary generated controls; a successful compile alone does not qualify authority, fallback, input, or native lifecycle behavior. [Verification](verification.md) owns the version-attributed observations and omissions.
 
 ## Disclosure
 
@@ -216,7 +233,7 @@ The observed audition status rechecks the actual token before making its cached 
 
 `preview.activateAfterSelection(List.of(models, artwork))` declares which retained shared controllers may activate this complete-DRAFT preview. The binding creates no source, edit, or preparation. A fresh accepted result activates the existing 120ms lane only when its complete revision and source still match; the normal preview capture still guards native input and complete validation. A deliberate same-value choice remains an explicit gesture. Mount/return snapshots the existing selection baseline instead of replaying old success. `Automatic.DISABLED` keeps preparation explicit.
 
-These controllers are borrowed and should have the section’s retained lifetime, independently from the visible picker attachment. Collapsed lists can suspend their source interest without creating another editor, source binding, or preview. Multiple field pickers may borrow one source service and feed one section-owned complete-draft preview; they do not attach that same viewport widget twice. Closing an optional detached selector retires its acceptance observation rather than refusing an otherwise live draft preview. Owner/editor closure still follows the original guards. Controller replacement and final section contribution remain in progress.
+These controllers are borrowed and should have the section’s retained lifetime, independently from the visible picker attachment. Collapsed lists can suspend their source interest without creating another editor, source binding, or preview. Multiple field pickers may borrow one source service and feed one section-owned complete-draft preview; they do not attach that same viewport widget twice. Closing an optional detached selector retires its acceptance observation rather than refusing an otherwise live draft preview. Owner/editor closure still follows the original guards. Live controller replacement remains a separate qualification case; canonical generated-section contribution is described above.
 
 Cancel follows pending demand or real queued/preparing work and is inactive at READY or while an entered cancellation drains without new demand. Camera actions redraw the current view and survive subject changes. There is no redundant Show preview action. Hiding closes the actual host interest, clears demand, and retains local subjects and an explicitly edited camera. Later attachment opens a fresh interest without preparation. Explicit controller closure also retires its own presentation scope; it does not close the borrowed editor, provider, or host. Entered work and native uses retain the host's existing ledger and retirement contracts.
 
