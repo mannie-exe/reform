@@ -1010,7 +1010,7 @@ final class MountedUiTree implements AutoCloseable {
   private boolean attached;
   private List<Row> rows = List.of();
   private RuntimeException failure;
-  private ClientFieldParts<?> requiredField;
+  private java.util.Set<ClientFieldParts<?>> requiredFields = java.util.Set.of();
   private UiActionResult lastAction;
 
   private MountedUiTree(ClientViewContext context, UiLimits limits) {
@@ -1024,7 +1024,7 @@ final class MountedUiTree implements AutoCloseable {
           attachment = null;
           tree = null;
           rows = List.of();
-          requiredField = null;
+          requiredFields = java.util.Set.of();
         });
   }
 
@@ -1051,9 +1051,26 @@ final class MountedUiTree implements AutoCloseable {
       Function<UiScope, ClientFieldParts<?>> parts) {
     var mounted = new MountedUiTree(parent.child());
     try {
-      mounted.requiredField = Objects.requireNonNull(parts.apply(mounted.root));
-      mounted.tree =
-          mounted.new Node(component.build(mounted.root, mounted.requiredField), mounted.root);
+      var field = Objects.requireNonNull(parts.apply(mounted.root));
+      mounted.requiredFields = java.util.Set.of(field);
+      mounted.tree = mounted.new Node(component.build(mounted.root, field), mounted.root);
+      mounted.refreshCached(true);
+      return mounted;
+    } catch (RuntimeException | Error failed) {
+      cleanup(mounted.root, failed);
+      throw failed;
+    }
+  }
+
+  static <T> MountedUiTree section(
+      UiScope parent,
+      ClientSectionComponent<T> component,
+      Function<UiScope, ClientSectionParts<T>> parts) {
+    var mounted = new MountedUiTree(parent.child());
+    try {
+      var section = Objects.requireNonNull(parts.apply(mounted.root));
+      mounted.requiredFields = java.util.Set.copyOf(section.requiredFields());
+      mounted.tree = mounted.new Node(component.build(mounted.root, section), mounted.root);
       mounted.refreshCached(true);
       return mounted;
     } catch (RuntimeException | Error failed) {
@@ -1082,7 +1099,7 @@ final class MountedUiTree implements AutoCloseable {
         surfaces.put(field, surface.surface());
       } else if (row.node().spec instanceof ViewSpec.FieldCompletion input) {
         field = input.surface().field();
-        if (field != requiredField || !field.belongsTo(root))
+        if (!requiredFields.contains(field) || !field.belongsTo(root))
           throw new PolicyRefusal(
               "ui.foreign_field_part", "Suggestions need their original field surface.");
         if (completionSlots.put(input.surface(), true) != null)
@@ -1090,7 +1107,7 @@ final class MountedUiTree implements AutoCloseable {
         continue;
       } else if (row.node().spec instanceof ViewSpec.NativeFieldInput input) {
         field = input.surface().field();
-        if (field != requiredField || !field.belongsTo(root))
+        if (!requiredFields.contains(field) || !field.belongsTo(root))
           throw new PolicyRefusal(
               "ui.foreign_field_part", "Field parts must belong to this mounted field.");
         if (nativeSlots.put(input.surface(), true) != null)
@@ -1098,7 +1115,7 @@ final class MountedUiTree implements AutoCloseable {
               "ui.duplicate_field_part", "Use the original native input only once.");
         continue;
       } else continue;
-      if (field != requiredField || !field.belongsTo(root))
+      if (!requiredFields.contains(field) || !field.belongsTo(root))
         throw new PolicyRefusal(
             "ui.foreign_field_part", "Field parts must belong to this mounted field.");
       var roles =
@@ -1116,7 +1133,7 @@ final class MountedUiTree implements AutoCloseable {
         throw new PolicyRefusal(
             "ui.foreign_field_part",
             "Suggestions need their visible original input and field surface.");
-    if (requiredField != null && !families.containsKey(requiredField))
+    if (!families.keySet().containsAll(requiredFields))
       throw new PolicyRefusal(
           "ui.missing_field_part", "A field needs its label, control, and feedback parts.");
     for (var roles : families.values())
@@ -1245,10 +1262,25 @@ final class MountedUiTree implements AutoCloseable {
   }
 
   boolean nativeInputVisible() {
+    return nativeInputVisible(null);
+  }
+
+  boolean nativeInputVisible(design.inherent.reform.definition.FieldPath path) {
     root.requireCurrent();
     return attached
         && rows.stream()
-            .anyMatch(row -> row.kind() == Kind.FIELD && row.availability().available());
+            .anyMatch(
+                row -> {
+                  if (row.kind() != Kind.FIELD || !row.availability().available()) return false;
+                  ClientFieldParts<?> field =
+                      row.node().spec instanceof ViewSpec.FieldPart part
+                          ? part.field()
+                          : row.node().spec instanceof ViewSpec.NativeFieldInput input
+                              ? input.surface().field()
+                              : null;
+                  return field != null
+                      && (path == null || field.binding().identity().path().equals(path));
+                });
   }
 
   Optional<RuntimeException> failure() {
@@ -1321,6 +1353,9 @@ final class MountedUiTree implements AutoCloseable {
             panel.anchorRow(node.id + ":completion-feedback", Component.empty(), feedback);
         }
         case TEXT -> {
+          if (row.node().spec instanceof ViewSpec.FieldPart part
+              && part.role() == ClientFieldParts.Role.LABEL
+              && part.field().anchor() != null) panel.anchor(part.field().anchor());
           if (!(row.node().spec instanceof ViewSpec.FieldPart)
               || !row.label().getString().isBlank()
               || !row.body().getString().isBlank())

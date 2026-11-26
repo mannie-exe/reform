@@ -26,6 +26,7 @@ public final class ClientEditor<T> implements AutoCloseable {
     this.screen = Objects.requireNonNull(screen);
     actions = screen.editingActions();
     screen.borrow(this::abandon);
+    screen.content().bindRetainedEditor(this);
   }
 
   public static <T> ClientEditor<T> retain(SettingsScreen<T> screen) {

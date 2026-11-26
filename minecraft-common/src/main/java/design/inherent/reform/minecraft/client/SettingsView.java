@@ -273,12 +273,54 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private Map<FieldPath, ClientFieldComponent> fieldComponents = Map.of();
+  private Map<FormTarget.Section, ClientSectionComponent<T>> sectionComponents = Map.of();
+  private final Map<FormTarget.Section, ComposedSection> composedSections = new LinkedHashMap<>();
+  private final Map<FormTarget.Section, RuntimeException> sectionFailures = new LinkedHashMap<>();
+  private final java.util.Set<FormTarget.Section> visibleSections = new java.util.HashSet<>();
+  private Map<FieldPath, ComposedField> collectingSection;
+  private ClientEditor<T> retainedEditor;
+  private java.util.function.BiFunction<
+          design.inherent.reform.presentation.graphics.GraphicLimits, Integer, ClientGraphicHost>
+      graphics;
+
+  void bindRetainedEditor(ClientEditor<T> editor) {
+    if (retainedEditor != null)
+      throw new IllegalStateException("A form can have one retained editor");
+    retainedEditor = Objects.requireNonNull(editor);
+  }
+
+  void withGraphics(
+      java.util.function.BiFunction<
+              design.inherent.reform.presentation.graphics.GraphicLimits,
+              Integer,
+              ClientGraphicHost>
+          service) {
+    if (closed || graphics != null)
+      throw new IllegalStateException("Bind the existing graphics service once before use");
+    graphics = Objects.requireNonNull(service);
+  }
+
+  private void ensureComponentScope() {
+    if (componentScope != null) return;
+    componentLifetime =
+        new design.inherent.reform.owner.OwnerContext(
+            minecraft::execute,
+            ClientSettingsRuntime.workers(),
+            ClientSettingsRuntime::requireClientThread,
+            design.inherent.reform.owner.OwnerContext.Limits.STANDARD);
+    componentScope =
+        design.inherent.reform.presentation.ui.UiScope.borrow(
+            componentLifetime, design.inherent.reform.presentation.ui.UiLimits.STANDARD);
+  }
+
   private final Map<FieldPath, ComposedField> composedFields = new LinkedHashMap<>();
   private design.inherent.reform.owner.OwnerContext componentLifetime;
   private design.inherent.reform.presentation.ui.UiScope componentScope;
 
   private final class ComposedField {
     final FieldPath path;
+    final Component label;
+    final boolean sectionOwned;
     List<AbstractWidget> widgets;
     MountedUiTree tree;
 
@@ -289,23 +331,25 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         Component label,
         List<AbstractWidget> widgets,
         List<AbstractWidget> nativeWidgets) {
+      this(path, label, widgets, nativeWidgets, false);
+    }
+
+    ComposedField(
+        FieldPath path,
+        Component label,
+        List<AbstractWidget> widgets,
+        List<AbstractWidget> nativeWidgets,
+        boolean sectionOwned) {
       this.path = path;
+      this.label = label.copy();
+      this.sectionOwned = sectionOwned;
       this.widgets = List.copyOf(widgets);
       this.nativeWidgets = List.copyOf(nativeWidgets);
-      if (componentScope == null) {
-        componentLifetime =
-            new design.inherent.reform.owner.OwnerContext(
-                minecraft::execute,
-                ClientSettingsRuntime.workers(),
-                ClientSettingsRuntime::requireClientThread,
-                design.inherent.reform.owner.OwnerContext.Limits.STANDARD);
-        componentScope =
-            design.inherent.reform.presentation.ui.UiScope.borrow(
-                componentLifetime, design.inherent.reform.presentation.ui.UiLimits.STANDARD);
-      }
-      tree =
-          MountedUiTree.field(
-              componentScope, fieldComponents.get(path), scope -> parts(scope, label));
+      ensureComponentScope();
+      if (!sectionOwned)
+        tree =
+            MountedUiTree.field(
+                componentScope, fieldComponents.get(path), scope -> parts(scope, label));
     }
 
     private <V> ClientFieldParts<V> bindParts(
@@ -354,7 +398,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
               if (input == null) input = ClientTextInput.bind(scope, SettingsView.this, path);
               return Optional.of(input);
             }
-          });
+          },
+          key(path));
     }
 
     private ClientFieldParts<?> parts(
@@ -379,13 +424,63 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     void close() {
       widgets = List.of();
       nativeWidgets = List.of();
-      tree.close();
+      if (tree != null) tree.close();
     }
   }
 
   private Map<FieldPath, ClientControlAdapter> controlAdapters = Map.of();
   private final Map<FieldPath, AdaptedControl> adaptedControls = new LinkedHashMap<>();
   private final List<design.inherent.reform.validation.Issue> controlIssues = new ArrayList<>();
+
+  private final class ComposedSection {
+    final FormTarget.Section target;
+    final Map<FieldPath, ComposedField> fields;
+    final MountedUiTree tree;
+
+    ComposedSection(FormTarget.Section target, Map<FieldPath, ComposedField> fields) {
+      this.target = target;
+      this.fields = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(fields));
+      ensureComponentScope();
+      tree =
+          MountedUiTree.section(
+              componentScope,
+              sectionComponents.get(target),
+              scope -> {
+                var parts = new LinkedHashMap<FieldPath, ClientFieldParts<?>>();
+                this.fields.forEach(
+                    (path, field) -> parts.put(path, field.parts(scope, field.label)));
+                return new ClientSectionParts<>(
+                    scope, target, parts, Optional.ofNullable(retainedEditor), graphics);
+              });
+    }
+
+    void append() {
+      tree.refreshCached(false);
+      tree.append(
+          panel,
+          theme(),
+          effect ->
+              () -> {
+                if (!closed && isCurrent() && visibleSections.contains(target)) effect.run();
+              },
+          () -> customRebuild = true,
+          () -> setFocused(panel));
+    }
+  }
+
+  private MountedUiTree activeFieldTree(FieldPath path) {
+    for (var section : composedSections.values())
+      if (visibleSections.contains(section.target) && section.fields.containsKey(path))
+        return section.tree;
+    var field = composedFields.get(path);
+    return field == null ? null : field.tree;
+  }
+
+  private boolean nativeInputVisible(FieldPath path) {
+    var tree = activeFieldTree(path);
+    return tree == null || tree.nativeInputVisible(path);
+  }
+
   private Throwable controlFailure;
   private boolean customRebuild;
   private Map<FieldPath, ClientEntryPresentation> entryPresentations = Map.of();
@@ -916,7 +1011,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         throw new IllegalArgumentException(
             "Inline controls require an actual declared scalar path");
     }
-    if (declared.keySet().stream().anyMatch(fieldComponents::containsKey))
+    if ((declared.keySet().stream().anyMatch(fieldComponents::containsKey)
+        || declared.keySet().stream().anyMatch(this::sectionOwns)))
       throw new IllegalArgumentException(
           "Declare at most one native adapter or component per field");
     controlAdapters = declared;
@@ -926,7 +1022,9 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (activated || requested || closed)
       throw new IllegalStateException("Field components must be declared before activation");
     var declared = Map.copyOf(components);
-    if (declared.size() > 256 || declared.keySet().stream().anyMatch(controlAdapters::containsKey))
+    if (declared.size() > 256
+        || (declared.keySet().stream().anyMatch(controlAdapters::containsKey)
+            || declared.keySet().stream().anyMatch(this::sectionOwns)))
       throw new IllegalArgumentException(
           "Declare at most one native adapter or component per field");
     for (var path : declared.keySet()) {
@@ -941,6 +1039,33 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             "Field components require an actual declared scalar path");
     }
     fieldComponents = declared;
+  }
+
+  private boolean sectionOwns(FieldPath path) {
+    return sectionComponents.keySet().stream()
+        .anyMatch(target -> ClientSectionParts.paths(presentation, target).contains(path));
+  }
+
+  void withSections(Map<FormTarget.Section, ClientSectionComponent<T>> sections) {
+    if (activated || requested || closed)
+      throw new IllegalStateException("Declare section components before activation");
+    if (sections.size() > 64) throw new IllegalArgumentException("Too many section components");
+    var paths = new java.util.HashSet<FieldPath>();
+    for (var target : sections.keySet()) {
+      for (var path : ClientSectionParts.paths(presentation, target)) {
+        var type = design.inherent.reform.edit.DraftTypes.declaredAt(definition.type(), path);
+        var shape = type.shape();
+        if (shape instanceof ValueShape.Reference<?> ref) shape = ref.element().shape();
+        if (!(shape instanceof ValueShape.Scalar)
+            || fieldEditors.at(path, type).isPresent()
+            || controlAdapters.containsKey(path)
+            || fieldComponents.containsKey(path)
+            || !paths.add(path))
+          throw new IllegalArgumentException(
+              "A section needs distinct actual scalar/reference fields without another control component");
+      }
+    }
+    sectionComponents = Map.copyOf(sections);
   }
 
   void withEntries(Map<FieldPath, ClientEntryPresentation> entries) {
@@ -1287,7 +1412,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (closed
         || !isCurrent()
         || !visibleFields.contains(path)
-        || composedFields.containsKey(path) && !composedFields.get(path).tree.nativeInputVisible()
+        || !nativeInputVisible(path)
         || control == null
         || !(control.widget() instanceof FormEditBox input))
       throw new PolicyRefusal(
@@ -1830,6 +1955,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   private Content prepareContent(EditorActor.View<T> current) {
     visibleFields.clear();
+    visibleSections.clear();
     formLayout = List.of();
     FormModel model = null;
     Component modelError = null;
@@ -1906,7 +2032,14 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (composition.selections().isEmpty()) {
       visibleFields.clear();
       bodyVisible = false;
-      composedFields.values().forEach(field -> field.tree.hide());
+      visibleSections.clear();
+      composedFields
+          .values()
+          .forEach(
+              field -> {
+                if (field.tree != null) field.tree.hide();
+              });
+      composedSections.values().forEach(section -> section.tree.hide());
       adaptedControls.values().forEach(AdaptedControl::rememberSelection);
       adaptedControls.values().forEach(AdaptedControl::retire);
       adaptedControls.clear();
@@ -1985,12 +2118,15 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             .collect(java.util.stream.Collectors.toSet());
     for (var entry : List.copyOf(composedFields.entrySet())) {
       if (retained.contains(entry.getKey())) {
-        if (!visibleFields.contains(entry.getKey())) entry.getValue().tree.hide();
+        if (!visibleFields.contains(entry.getKey()) && entry.getValue().tree != null)
+          entry.getValue().tree.hide();
       } else {
         composedFields.remove(entry.getKey());
         entry.getValue().close();
       }
     }
+    for (var section : composedSections.values())
+      if (!visibleSections.contains(section.target)) section.tree.hide();
     controls.keySet().retainAll(retained);
     local.keySet().retainAll(retained);
     versions.keySet().retainAll(retained);
@@ -2252,7 +2388,8 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (editor.isEmpty()
         && shape instanceof ValueShape.Reference<?> reference
         && referenceTitles.containsKey(reference.source())) {
-      if (fieldComponents.containsKey(path)) scalarContents(field, label);
+      if (fieldComponents.containsKey(path) || collectingSection != null)
+        scalarContents(field, label);
       else titledReference(path, label, reference);
       if (!expandedEditors.contains(path)) return;
       panel.beginGroup(key(path) + ":manual_id", text("manual_reference_id", "Manual ID"));
@@ -2673,7 +2810,18 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       row.add(availability);
       nativeRow.add(availability);
     }
-    if (fieldComponents.containsKey(path)) {
+    if (collectingSection != null) {
+      var composed = composedFields.get(path);
+      if (composed == null) {
+        composed = new ComposedField(path, label, row, nativeRow, true);
+        composedFields.put(path, composed);
+      }
+      if (!composed.sectionOwned)
+        throw new IllegalArgumentException("A field has another component");
+      composed.widgets = List.copyOf(row);
+      composed.nativeWidgets = List.copyOf(nativeRow);
+      collectingSection.put(path, composed);
+    } else if (fieldComponents.containsKey(path)) {
       var composed = composedFields.get(path);
       if (composed == null) {
         composed = new ComposedField(path, label, row, nativeRow);
@@ -2681,7 +2829,6 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       }
       composed.widgets = List.copyOf(row);
       composed.nativeWidgets = List.copyOf(nativeRow);
-      panel.anchor(key(path));
       composed.append();
     } else
       panel.relatedField(
@@ -3263,7 +3410,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
                       Component.empty(),
                       Component.translatableWithFallback(
                           box.translationKey() + ".help", box.help()));
-                composed(box.children());
+                if (!appendSection(box)) composed(box.children());
                 panel.endGroup();
               });
         }
@@ -3271,6 +3418,67 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           for (var field : row.children()) composedField(field.node());
         }
       }
+  }
+
+  private void sectionNodes(
+      List<design.inherent.reform.presentation.FormComposition.Part> parts,
+      List<FormModel.Node> nodes) {
+    for (var part : parts)
+      switch (part) {
+        case design.inherent.reform.presentation.FormComposition.Field field ->
+            nodes.add(field.node());
+        case design.inherent.reform.presentation.FormComposition.Row row ->
+            row.children().forEach(field -> nodes.add(field.node()));
+        case design.inherent.reform.presentation.FormComposition.Box box ->
+            sectionNodes(box.children(), nodes);
+      }
+  }
+
+  private boolean appendSection(design.inherent.reform.presentation.FormComposition.Box box) {
+    var target = new FormTarget.Section(box.id());
+    if (!sectionComponents.containsKey(target)) return false;
+    var nodes = new ArrayList<FormModel.Node>();
+    sectionNodes(box.children(), nodes);
+    if (!nodes.stream()
+        .map(FormModel.Node::path)
+        .toList()
+        .equals(ClientSectionParts.paths(presentation, target)))
+      return false; // Incomplete/dynamic shape retains the ordinary generated form, never invented
+    // fields.
+    var captured = new LinkedHashMap<FieldPath, ComposedField>();
+    collectingSection = captured;
+    try {
+      for (var node : nodes) fields(node, label(node));
+    } finally {
+      collectingSection = null;
+    }
+    if (captured.size() != nodes.size())
+      throw new IllegalStateException("A section did not retain each canonical native field");
+    var section = composedSections.get(target);
+    if (section == null) {
+      try {
+        if (sectionFailures.containsKey(target)) throw sectionFailures.get(target);
+        section = new ComposedSection(target, captured);
+        composedSections.put(target, section);
+      } catch (RuntimeException failed) {
+        sectionFailures.putIfAbsent(target, failed);
+        for (var path : captured.keySet())
+          controlProblem(path, "presentation.section_factory_failed", failed);
+        for (var node : nodes) {
+          var field = captured.get(node.path());
+          panel.relatedField(
+              key(node.path()),
+              relationship(node.path()),
+              field.label,
+              fieldHelp(node.path()),
+              field.widgets.toArray(AbstractWidget[]::new));
+        }
+        return true;
+      }
+    }
+    visibleSections.add(target);
+    section.append();
+    return true;
   }
 
   private void composedField(FormModel.Node child) {
@@ -4193,13 +4401,12 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
             if (!summary.getString().isEmpty()) help = help.copy().append("\n").append(summary);
             summary = help;
           }
-          if (!fieldComponents.containsKey(path)) panel.summary(key(path), summary);
+          if (activeFieldTree(path) == null) panel.summary(key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
             if (input instanceof NativeTextInput themed) {
-              var composed = composedFields.get(path);
               // A surface retains the original buffer while its native slot is hidden. Its
               // actual parent supplies the theme on reveal; do not invent a visual attachment.
-              if (composed == null || composed.tree.nativeInputVisible())
+              if (nativeInputVisible(path))
                 themed.valueRole(
                     issue.isEmpty() ? ClientTheme.TextRole.VALUE : ClientTheme.TextRole.ERROR);
             } else
@@ -4271,12 +4478,17 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     }
     if (componentScope != null) {
       for (var entry : composedFields.entrySet())
-        if (visibleFields.contains(entry.getKey())) entry.getValue().tree.prepareRefresh();
+        if (visibleFields.contains(entry.getKey()) && entry.getValue().tree != null)
+          entry.getValue().tree.prepareRefresh();
+      for (var section : composedSections.values())
+        if (visibleSections.contains(section.target)) section.tree.prepareRefresh();
       componentScope.refreshObservations();
       boolean changed = false;
       for (var entry : composedFields.entrySet())
-        if (visibleFields.contains(entry.getKey()))
+        if (visibleFields.contains(entry.getKey()) && entry.getValue().tree != null)
           changed |= entry.getValue().tree.refreshCached(false);
+      for (var section : composedSections.values())
+        if (visibleSections.contains(section.target)) changed |= section.tree.refreshCached(false);
       if (changed && isCurrent()) rebuildWidgets();
     }
     revealRequestedFocus();
@@ -4472,6 +4684,9 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
   private void closeFieldComponents() {
     composedFields.clear();
+    composedSections.clear();
+    sectionFailures.clear();
+    visibleSections.clear();
     var lifetime = componentLifetime;
     componentLifetime = null;
     componentScope = null;
@@ -4481,6 +4696,9 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private void disposePresentation() {
     closeFieldComponents();
     fieldComponents = Map.of();
+    sectionComponents = Map.of();
+    graphics = null;
+    retainedEditor = null;
     entryGraphics.forEach(EntryGraphic::close);
     entryGraphics.clear();
     entryArtwork.clear();

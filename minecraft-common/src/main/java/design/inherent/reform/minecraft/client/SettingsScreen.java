@@ -244,6 +244,13 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
     return this;
   }
 
+  /** One component over a generated section's actual native field families. */
+  public SettingsScreen<T> withSections(
+      Map<FormTarget.Section, ClientSectionComponent<T>> sections) {
+    view.withSections(sections);
+    return this;
+  }
+
   /** Optional measured field artwork and eyebrow, declared before activation. */
   public SettingsScreen<T> withEntries(Map<FieldPath, ClientEntryPresentation> entries) {
     view.withEntries(entries);

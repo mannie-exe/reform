@@ -82,6 +82,7 @@ public final class ClientFieldParts<V> {
   private final UiScope owner;
   private final FieldBinding<?, V> binding;
   private final UiText label, description;
+  private final String anchor;
   private Supplier<List<AbstractWidget>> controls;
   private Supplier<Optional<ClientTextInput>> input;
   private Supplier<List<AbstractWidget>> nativeControls;
@@ -104,6 +105,19 @@ public final class ClientFieldParts<V> {
       Supplier<List<AbstractWidget>> controls,
       Supplier<List<AbstractWidget>> nativeControls,
       Supplier<Optional<ClientTextInput>> input) {
+    this(owner, binding, label, description, controls, nativeControls, input, null);
+  }
+
+  ClientFieldParts(
+      UiScope owner,
+      FieldBinding<?, V> binding,
+      UiText label,
+      UiText description,
+      Supplier<List<AbstractWidget>> controls,
+      Supplier<List<AbstractWidget>> nativeControls,
+      Supplier<Optional<ClientTextInput>> input,
+      String anchor) {
+    this.anchor = anchor;
     this.owner = Objects.requireNonNull(owner);
     this.binding = Objects.requireNonNull(binding);
     this.label = Objects.requireNonNull(label);
@@ -200,6 +214,10 @@ public final class ClientFieldParts<V> {
 
   boolean belongsTo(UiScope root) {
     return owner == root && owner.isOpen();
+  }
+
+  String anchor() {
+    return anchor;
   }
 
   UiText labelText() {

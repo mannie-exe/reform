@@ -95,7 +95,21 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         driver -> new PlatformSubjectPreviewChecks(driver, false, true, true, true));
   }
 
-  private final boolean basisMode, inlineMode, layoutMode, gridMode;
+  static CompletionStage<JsonObject> runSection(ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration,
+        "PREVIEW_SECTION",
+        driver -> new PlatformSubjectPreviewChecks(driver, false, true, true, false, true));
+  }
+
+  private final boolean basisMode, inlineMode, layoutMode, gridMode, sectionMode;
+  private ClientSectionParts<PlatformAuditionChecks.Profile> sectionParts;
+  private int sectionFactories;
+  private boolean canonicalOwner, invalidSiblingRetained, nativeInputRetained;
+  private EditBox originalNativeInput;
+  private String invalidRaw;
+  private static final FieldPath MODELS_PATH = FieldPath.ROOT.field("models"),
+      ARTWORK_PATH = FieldPath.ROOT.field("artwork");
   private design.inherent.reform.presentation.ui.UiLocal<Boolean> modelVisible;
   private AbstractWidget originalList, originalViewport;
   private final int[] originalWidth = {0}, originalHeight = {0};
@@ -165,6 +179,17 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       boolean inlineMode,
       boolean layoutMode,
       boolean gridMode) {
+    this(driver, basisMode, inlineMode, layoutMode, gridMode, false);
+  }
+
+  private PlatformSubjectPreviewChecks(
+      PlatformFormProbe.Driver driver,
+      boolean basisMode,
+      boolean inlineMode,
+      boolean layoutMode,
+      boolean gridMode,
+      boolean sectionMode) {
+    this.sectionMode = sectionMode;
     this.gridMode = gridMode;
     this.layoutMode = layoutMode;
     this.basisMode = basisMode;
@@ -304,7 +329,18 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                     label(""),
                     new UiLens<>(
                         Subject::open, (s, v) -> new Subject(s.container(), s.looted(), v)))));
-    host = workflow.graphics(PlatformAuditionChecks.LIMITS, 1);
+    host =
+        sectionParts == null
+            ? workflow.graphics(PlatformAuditionChecks.LIMITS, 1)
+            : sectionParts.graphics(PlatformAuditionChecks.LIMITS, 1);
+    if (sectionParts != null) {
+      canonicalOwner =
+          workflow.editor(PlatformAuditionChecks.DEFINITION.id()) == admitted
+              && sectionParts.fields().equals(List.of(MODELS_PATH, ARTWORK_PATH));
+      check(
+          "section borrows the one actual workflow editor and its canonical field order",
+          canonicalOwner);
+    }
     var context = UUID.randomUUID();
     var generation = UUID.randomUUID();
     var provider =
@@ -414,26 +450,8 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             ReferenceLimits.STANDARD);
     bindSource();
     if (inlineMode) {
-      picker =
-          ReferencePicker.open(
-              scope,
-              admitted.actions(),
-              PlatformAuditionChecks.SOURCE,
-              () -> source,
-              List.of(MODELS_ROLE),
-              Map.of(),
-              ReferencePicker.Policy.STANDARD,
-              System::nanoTime);
-      artworkPicker =
-          ReferencePicker.open(
-              scope,
-              admitted.actions(),
-              PlatformAuditionChecks.SOURCE,
-              () -> source,
-              List.of(ARTWORK_ROLE),
-              Map.of(),
-              ReferencePicker.Policy.STANDARD,
-              System::nanoTime);
+      picker = inlinePicker(scope, admitted, MODELS_ROLE);
+      artworkPicker = inlinePicker(scope, admitted, ARTWORK_ROLE);
       preview.activateAfterSelection(List.of(picker, artworkPicker));
       if (layoutMode) {
         modelVisible =
@@ -503,14 +521,19 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                     Views.column(
                         "selectors",
                         List.of(
-                            Views.show(
-                                "models",
-                                modelVisible,
-                                branch ->
-                                    selectionView(branch, picker, MODELS_ROLE, "Model profiles"),
-                                branch ->
-                                    Views.text(
-                                        "closed", text("Model choices closed"), Component.empty())),
+                            sectionMode
+                                ? selectionView(scope, picker, MODELS_ROLE, "Model profiles")
+                                : Views.show(
+                                    "models",
+                                    modelVisible,
+                                    branch ->
+                                        selectionView(
+                                            branch, picker, MODELS_ROLE, "Model profiles"),
+                                    branch ->
+                                        Views.text(
+                                            "closed",
+                                            text("Model choices closed"),
+                                            Component.empty())),
                             selectionView(
                                 scope, artworkPicker, ARTWORK_ROLE, "Artwork profiles")))),
                 Views.frame("preview", right, preview.content())));
@@ -562,6 +585,33 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       ReferencePicker<PlatformAuditionChecks.Profile, List<String>> selection,
       PickerRole<PlatformAuditionChecks.Profile> role,
       String caption) {
+    if (sectionParts != null) {
+      var field = sectionParts.field(role.field(), PlatformAuditionChecks.MODELS.type());
+      var expanded =
+          scope.local(
+              new ViewStateKey<>(
+                  DocumentId.parse("fixture:native_" + role.id()), ValueTypes.bool()),
+              false);
+      var content =
+          role == MODELS_ROLE
+              ? Views.show(
+                  "visible",
+                  modelVisible,
+                  branch -> contentForSelection(branch, selection, role, caption),
+                  branch -> Views.text("closed", text("Model choices closed"), Component.empty()))
+              : contentForSelection(scope, selection, role, caption);
+      return Views.column(
+          role.id(),
+          List.of(
+              field.label("label"),
+              field.description("description"),
+              field.controlSurface(
+                  "control",
+                  content,
+                  UiBindings.local(expanded),
+                  label("Edit " + (role == MODELS_ROLE ? "Models" : "Artwork") + " ID")),
+              field.feedback("feedback")));
+    }
     return Views.column(
         role.id(),
         List.of(
@@ -600,12 +650,16 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   }
 
   public boolean tick() throws Exception {
+    if (sectionMode && stage >= 80) return tickNativeSection();
     if (layoutMode && stage >= 70) return tickLayout();
     if (inlineMode && stage > 0) return tickSelections();
     if (basisMode && stage > 0) return tickBasis();
     switch (stage) {
       case 0 -> {
-        var form = PlatformAuditionChecks.settings.form(text("Preview settings"));
+        var form =
+            sectionMode
+                ? PlatformAuditionChecks.settings.form(text("Preview settings"), sectionOptions())
+                : PlatformAuditionChecks.settings.form(text("Preview settings"));
         var layout =
             new ClientWorkflowLayout(
                 List.of(
@@ -639,10 +693,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 (scope, owner, state) -> component(scope, owner));
         var metadata =
             ClientWorkspacePresentation.standard(
-                    new WorkspaceIdentity(
-                        DocumentId.parse("fixture:preview_workspace"),
-                        text("Typed preview controls")))
-                .withView(body);
+                new WorkspaceIdentity(
+                    DocumentId.parse("fixture:preview_workspace"), text("Typed preview controls")));
+        if (!sectionMode) metadata = metadata.withView(body);
         workflow = ClientEditingWorkflow.open(parent, List.of(form), layout, metadata);
         NativeScreens.open(client, workflow.screen());
         frames = PlatformFrameObservations.sequence();
@@ -651,7 +704,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       case 1 -> {
         if (PlatformFrameObservations.sequence() - frames < 8) return false;
         check("Home admits no subject controller or prepare", preview == null && entries.isEmpty());
-        navigate(new ClientDestination.View(new DestinationId(PAGE)), 2);
+        navigate(previewDestination(), 2);
       }
       case 2 -> {
         if (!arrived()
@@ -788,7 +841,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         check(
             "hidden preview retires native/output/input without new prepares",
             entries.size() == 16);
-        navigate(new ClientDestination.View(new DestinationId(PAGE)), 14);
+        navigate(previewDestination(), 14);
       }
       case 14 -> {
         if (!arrived()
@@ -976,10 +1029,129 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         check(
             "retiring an optional detached selector does not retire the valid draft preview",
             retiredSelection);
+        if (sectionMode) {
+          press("Edit Models ID");
+          frames = PlatformFrameObservations.sequence();
+          stage = 80;
+        } else {
+          workflow.close();
+          stage = 13;
+        }
+      }
+      default -> throw new IllegalStateException("Unexpected measured layout stage " + stage);
+    }
+    return false;
+  }
+
+  private boolean tickNativeSection() throws Exception {
+    switch (stage) {
+      case 80 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        var actual = editor.form().fieldControl(MODELS_PATH).orElseThrow();
+        if (!(actual instanceof EditBox input) || !widgets(workflow.screen()).contains(input))
+          return false;
+        originalNativeInput = input;
+        invalidRaw = "x".repeat(129);
+        check("actual canonical input accepts focus", focus(workflow.screen(), input));
+        replace(workflow.screen(), input, invalidRaw);
+        stage++;
+      }
+      case 81 -> {
+        if (editor.busy() || editor.view().validation().valid()) return false;
+        check(
+            "invalid canonical text stays in the actual field and blocks saving",
+            originalNativeInput.getValue().equals(invalidRaw) && !editor.canSubmit());
+        check(
+            "valid sibling remains stageable beside admitted invalid canonical text",
+            editor.canStage(ARTWORK_PATH));
+        choose(artworkPicker, "Artwork profiles", "fixture:alternate");
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 82 -> {
+        if (editor.busy() || PlatformFrameObservations.sequence() - frames < 12) return false;
+        var accepted = artworkPicker.state().snapshot().value().accepted();
+        if (accepted.isEmpty()
+            || !accepted.orElseThrow().after().matches(editor.view().snapshot().orElseThrow()))
+          return false;
+        invalidSiblingRetained =
+            originalNativeInput.getValue().equals(invalidRaw)
+                && !editor.view().validation().valid()
+                && entries.size() == 6;
+        check(
+            "real Artwork acceptance preserves invalid Models input and cannot compile a partial preview",
+            invalidSiblingRetained);
+        check(
+            "explicit preview refuses the complete invalid draft",
+            preview.prepare().invoke(null) instanceof UiActionResult.Refused
+                && entries.size() == 6);
+        check(
+            "canonical native input refocuses before window change",
+            focus(workflow.screen(), originalNativeInput));
+        originalNativeInput.setCursorPosition(3);
+        originalNativeInput.setHighlightPos(5);
+        NativeClientProbe.resize(client, 320, 240);
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 83 -> {
+        int[] width = {0}, height = {0};
+        NativeClientProbe.size(client, width, height);
+        if (width[0] != 320
+            || height[0] != 240
+            || PlatformFrameObservations.sequence() - frames < 8) return false;
+        check(
+            "compact window keeps the same canonical field buffer caret selection and focus",
+            editor.form().fieldControl(MODELS_PATH).orElseThrow() == originalNativeInput
+                && originalNativeInput.getValue().equals(invalidRaw)
+                && originalNativeInput.getCursorPosition() == 3
+                && originalNativeInput.getHighlighted().equals("xx")
+                && originalNativeInput.isFocused());
+        NativeClientProbe.resize(client, originalWidth[0], originalHeight[0]);
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 84 -> {
+        int[] width = {0}, height = {0};
+        NativeClientProbe.size(client, width, height);
+        if (width[0] != originalWidth[0]
+            || height[0] != originalHeight[0]
+            || PlatformFrameObservations.sequence() - frames < 8) return false;
+        nativeInputRetained =
+            editor.form().fieldControl(MODELS_PATH).orElseThrow() == originalNativeInput
+                && originalNativeInput.getValue().equals(invalidRaw)
+                && originalNativeInput.getCursorPosition() == 3
+                && originalNativeInput.getHighlighted().equals("xx")
+                && originalNativeInput.isFocused()
+                && sectionFactories == 1;
+        check("return retains one section factory and original native input", nativeInputRetained);
+        driver.capture(
+            "preview-section-input.png",
+            () -> {
+              replace(workflow.screen(), originalNativeInput, "fixture:base");
+              stage = 85;
+            });
+        stage = -1;
+      }
+      case 85 -> {
+        if (editor.busy() || !editor.canSubmit() || !editor.view().validation().valid())
+          return false;
+        choose(artworkPicker, "Artwork profiles", "fixture:base");
+        stage++;
+      }
+      case 86 -> {
+        if (!ready(7) || editor.dirty()) return false;
+        check(
+            "explicit canonical repair and final sibling choice restore all saved values",
+            entries
+                    .getLast()
+                    .candidate()
+                    .equals(new PlatformAuditionChecks.Profile("fixture:base", "fixture:base", 64))
+                && sectionFactories == 1);
         workflow.close();
         stage = 13;
       }
-      default -> throw new IllegalStateException("Unexpected measured layout stage " + stage);
+      default -> throw new IllegalStateException("Unexpected native section input stage " + stage);
     }
     return false;
   }
@@ -1025,7 +1197,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         check(
             "unopened Home has no selection controller or preparation",
             picker == null && entries.isEmpty());
-        navigate(new ClientDestination.View(new DestinationId(PAGE)), 2);
+        navigate(previewDestination(), 2);
       }
       case 2 -> {
         if (!arrived() || picker == null || !choicesReady(picker) || !choicesReady(artworkPicker))
@@ -1120,7 +1292,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       case 9 -> {
         if (!arrived() || !empty() || PlatformFrameObservations.sequence() - frames < 8)
           return false;
-        navigate(new ClientDestination.View(new DestinationId(PAGE)), 10);
+        navigate(previewDestination(), 10);
         frames = PlatformFrameObservations.sequence();
       }
       case 10 -> {
@@ -1164,7 +1336,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 && Objects.equals(attributes.fileKey(), after.fileKey()));
         check(
             "six exact complete-draft preparations retire without failure",
-            entries.size() == 6 && host.releaseFailure().isEmpty());
+            entries.size() == (sectionMode ? 7 : 6) && host.releaseFailure().isEmpty());
         complete = true;
         NativeScreens.open(client, parent);
         return true;
@@ -1186,7 +1358,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       case 1 -> {
         if (PlatformFrameObservations.sequence() - frames < 8) return false;
         check("Home has no audition source or provider", picker == null && entries.isEmpty());
-        navigate(new ClientDestination.View(new DestinationId(PAGE)), 2);
+        navigate(previewDestination(), 2);
       }
       case 2 -> {
         if (!arrived()
@@ -1310,7 +1482,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       case 14 -> {
         if (!arrived() || !empty() || PlatformFrameObservations.sequence() - frames < 8)
           return false;
-        navigate(new ClientDestination.View(new DestinationId(PAGE)), 15);
+        navigate(previewDestination(), 15);
         frames = PlatformFrameObservations.sequence();
       }
       case 15 -> {
@@ -1385,6 +1557,80 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     }
   }
 
+  private ReferencePicker<PlatformAuditionChecks.Profile, List<String>> inlinePicker(
+      UiScope scope,
+      ClientEditor<PlatformAuditionChecks.Profile> admitted,
+      PickerRole<PlatformAuditionChecks.Profile> role) {
+    if (sectionParts == null)
+      return ReferencePicker.open(
+          scope,
+          admitted.actions(),
+          PlatformAuditionChecks.SOURCE,
+          () -> source,
+          List.of(role),
+          Map.of(),
+          ReferencePicker.Policy.STANDARD,
+          System::nanoTime);
+    var field = sectionParts.field(role.field(), PlatformAuditionChecks.MODELS.type());
+    return ReferencePicker.open(
+        scope,
+        field.binding(),
+        PlatformAuditionChecks.DEFINITION,
+        PlatformAuditionChecks.SOURCE,
+        () -> source,
+        List.of(role),
+        Map.of(role.id(), field.frontend()),
+        ReferencePicker.Policy.STANDARD,
+        System::nanoTime);
+  }
+
+  private ClientFormOptions<PlatformAuditionChecks.Profile> sectionOptions() {
+    var presentation =
+        FormPresentation.EMPTY.withLayout(
+            new FormLayout(
+                List.of(),
+                List.of(
+                    new FormLayout.Group(
+                        "profiles",
+                        "fixture.profiles",
+                        "Profile selection",
+                        "",
+                        List.of(MODELS_PATH, ARTWORK_PATH)))));
+    return new ClientFormOptions<PlatformAuditionChecks.Profile>(presentation, Map.of())
+        .withSection(
+            new FormTarget.Section("group:profiles"),
+            (scope, parts) -> {
+              sectionFactories++;
+              sectionParts = parts;
+              return component(scope, parts.editor().orElseThrow());
+            });
+  }
+
+  private ClientDestination previewDestination() {
+    return sectionMode
+        ? new ClientDestination.Document(PlatformAuditionChecks.DEFINITION.id())
+        : new ClientDestination.View(new DestinationId(PAGE));
+  }
+
+  private ViewSpec contentForSelection(
+      UiScope scope,
+      ReferencePicker<PlatformAuditionChecks.Profile, List<String>> selection,
+      PickerRole<PlatformAuditionChecks.Profile> role,
+      String caption) {
+    return ReferencePickerView.build(
+        scope,
+        selection,
+        new ReferencePickerView.Presentation<>(
+            label(caption),
+            label("Choose a value for this draft."),
+            label(caption),
+            label("Search profiles"),
+            List.of(),
+            4,
+            2),
+        Optional.of(role));
+  }
+
   private boolean gridSpans() {
     for (String mode : List.of("wide", "returned")) {
       if (!layoutObservations.has(mode)) return false;
@@ -1418,6 +1664,11 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     }
     result.add("candidates", candidates);
     result.addProperty("subjects", combinations.size());
+    result.addProperty("sectionMode", sectionMode);
+    result.addProperty("sectionFactories", sectionFactories);
+    result.addProperty("canonicalOwner", canonicalOwner);
+    result.addProperty("invalidSiblingRetained", invalidSiblingRetained);
+    result.addProperty("nativeInputRetained", nativeInputRetained);
     result.addProperty("gridMode", gridMode);
     result.addProperty("gridSpans", !gridMode || gridSpans());
     result.addProperty("wideLayout", wideLayout);

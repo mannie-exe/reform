@@ -1326,6 +1326,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     try {
       requireOpen();
       opened.bindHost(overview);
+      opened.presentation().withGraphics(this::graphics);
       opened.onAbandoned(this::close);
       var required = guarded.get(entry.form.route());
       if (required != null)

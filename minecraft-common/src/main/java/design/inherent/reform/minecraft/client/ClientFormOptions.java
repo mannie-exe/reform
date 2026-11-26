@@ -27,7 +27,9 @@ public record ClientFormOptions<T>(
     Map<DocumentId, ReferenceTitles> referenceTitles,
     Map<FieldPath, ClientControlAdapter> controls,
     Map<FieldPath, ClientEntryPresentation> entries,
-    Map<FieldPath, ClientFieldComponent> components) {
+    Map<FieldPath, ClientFieldComponent> components,
+    Map<design.inherent.reform.presentation.FormTarget.Section, ClientSectionComponent<T>>
+        sections) {
   /** Presentation of the whole-document Defaults action; it changes no owner operation. */
   public record DefaultsPresentation(Component label, Component help) {
     public DefaultsPresentation {
@@ -57,6 +59,15 @@ public record ClientFormOptions<T>(
     controls = Map.copyOf(controls);
     entries = Map.copyOf(entries);
     components = Map.copyOf(components);
+    Objects.requireNonNull(sections);
+    if (sections.size() > 64) throw new IllegalArgumentException("Too many section contributions");
+    sections = Map.copyOf(sections);
+    var sectionFields = new java.util.HashSet<FieldPath>();
+    for (var target : sections.keySet())
+      for (var path : ClientSectionParts.paths(presentation, target))
+        if (!sectionFields.add(path) || components.containsKey(path) || controls.containsKey(path))
+          throw new IllegalArgumentException(
+              "A field may have only one component or native adapter");
     if (components.size() > 256 || components.keySet().stream().anyMatch(controls::containsKey))
       throw new IllegalArgumentException(
           "Declare at most one native adapter or component per field");
@@ -65,6 +76,31 @@ public record ClientFormOptions<T>(
     if (controls.size() > 256) throw new IllegalArgumentException("Too many custom field controls");
     if (referenceTitles.size() > 128)
       throw new IllegalArgumentException("Too many titled reference sources");
+  }
+
+  public ClientFormOptions(
+      FormPresentation presentation,
+      Map<DocumentId, ? extends ReferenceActions<String, ?>> references,
+      Function<DocumentDefinition<T>, FieldEditors<T>> editors,
+      Function<DocumentDefinition<T>, Optional<ImportCatalog<T>>> imports,
+      Function<DocumentDefinition<T>, Optional<FormInformation<T>>> information,
+      Optional<DefaultsPresentation> defaults,
+      Map<DocumentId, ReferenceTitles> referenceTitles,
+      Map<FieldPath, ClientControlAdapter> controls,
+      Map<FieldPath, ClientEntryPresentation> entries,
+      Map<FieldPath, ClientFieldComponent> components) {
+    this(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        controls,
+        entries,
+        components,
+        Map.of());
   }
 
   public ClientFormOptions(
@@ -191,6 +227,7 @@ public record ClientFormOptions<T>(
     form.withReferenceTitles(referenceTitles);
     form.withControls(controls);
     form.withComponents(components);
+    form.withSections(sections);
     form.withEntries(entries);
     return form;
   }
@@ -207,7 +244,8 @@ public record ClientFormOptions<T>(
         referenceTitles,
         controls,
         entries,
-        components);
+        components,
+        sections);
   }
 
   /** Label and visible help for document defaults, independent of per-field Default controls. */
@@ -222,7 +260,8 @@ public record ClientFormOptions<T>(
         referenceTitles,
         controls,
         entries,
-        components);
+        components,
+        sections);
   }
 
   /** Opt into titled selectors for this source; raw IDs remain explicitly editable. */
@@ -239,7 +278,8 @@ public record ClientFormOptions<T>(
         selected,
         controls,
         entries,
-        components);
+        components,
+        sections);
   }
 
   /** Replace or wrap one declared scalar control without replacing its owner or edit pipeline. */
@@ -257,7 +297,8 @@ public record ClientFormOptions<T>(
         referenceTitles,
         selected,
         entries,
-        components);
+        components,
+        sections);
   }
 
   /** Compose actual field parts through the shared kernel and the original native input. */
@@ -275,6 +316,29 @@ public record ClientFormOptions<T>(
         referenceTitles,
         controls,
         entries,
+        selected,
+        sections);
+  }
+
+  /** Compose all canonical fields in one actual generated group or range. */
+  public ClientFormOptions<T> withSection(
+      design.inherent.reform.presentation.FormTarget.Section target,
+      ClientSectionComponent<T> component) {
+    var selected = new java.util.LinkedHashMap<>(sections);
+    if (selected.putIfAbsent(Objects.requireNonNull(target), Objects.requireNonNull(component))
+        != null)
+      throw new IllegalArgumentException("A section component may be declared only once");
+    return new ClientFormOptions<>(
+        presentation,
+        references,
+        editors,
+        imports,
+        information,
+        defaults,
+        referenceTitles,
+        controls,
+        entries,
+        components,
         selected);
   }
 
@@ -295,6 +359,7 @@ public record ClientFormOptions<T>(
         referenceTitles,
         controls,
         selected,
-        components);
+        components,
+        sections);
   }
 }
