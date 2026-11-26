@@ -15,7 +15,7 @@ final class NativeJeiGui {
   }
 
   static boolean isOpen(IJeiRuntime runtime) {
-    // A remembered parent alone is insufficient: older JEI keeps it after the viewer closes.
+    // A remembered parent alone does not prove that this is the current native screen.
     return recipes(runtime) instanceof Screen screen
         && NativeScreens.current(Minecraft.getInstance()) == screen;
   }

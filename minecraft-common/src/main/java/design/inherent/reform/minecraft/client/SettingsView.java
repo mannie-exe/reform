@@ -477,6 +477,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private boolean nativeInputVisible(FieldPath path) {
+    if (!bodyVisible || !visibleFields.contains(path)) return false;
     var tree = activeFieldTree(path);
     return tree == null || tree.nativeInputVisible(path);
   }
