@@ -1200,6 +1200,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         navigate(previewDestination(), 2);
       }
       case 2 -> {
+        if (sectionMode && editor != null && editor.form().controlFailure().isPresent())
+          throw new AssertionError(
+              "Canonical section admission failed", editor.form().controlFailure().orElseThrow());
         if (!arrived() || picker == null || !choicesReady(picker) || !choicesReady(artworkPicker))
           return false;
         check(
@@ -1625,7 +1628,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             label("Choose a value for this draft."),
             label(caption),
             label("Search profiles"),
-            List.of(),
+            List.of(new ReferencePickerView.RoleAction<>(role, label("Use selection"))),
             4,
             2),
         Optional.of(role));
@@ -1664,6 +1667,19 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     }
     result.add("candidates", candidates);
     result.addProperty("subjects", combinations.size());
+    if (sectionMode && editor != null && editor.isOpen()) {
+      editor
+          .form()
+          .controlFailure()
+          .ifPresent(
+              cause -> {
+                var text = new java.io.StringWriter();
+                cause.printStackTrace(new java.io.PrintWriter(text));
+                result.addProperty(
+                    "sectionCause",
+                    text.toString().substring(0, Math.min(8192, text.toString().length())));
+              });
+    }
     result.addProperty("sectionMode", sectionMode);
     result.addProperty("sectionFactories", sectionFactories);
     result.addProperty("canonicalOwner", canonicalOwner);
