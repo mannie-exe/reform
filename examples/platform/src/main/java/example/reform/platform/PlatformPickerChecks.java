@@ -121,6 +121,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private boolean completionVerified, completionDismissed, completionPointer, completionBlur;
   private boolean completionStale, completionStaleFeedback, completionReflow, standaloneCompletion;
   private SettingsScreen<?> standalone;
+  private DocumentActions<?> standaloneActions;
   private UiScope standaloneScope;
   private ClientFieldParts<?> standaloneParts;
   private ClientTextInput standaloneInput;
@@ -1233,6 +1234,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             "completion can use an actual standalone settings host",
             opened instanceof SettingsScreen<?>);
         standalone = (SettingsScreen<?>) opened;
+        standaloneActions = standalone.editingActions();
         NativeScreens.open(client, standalone);
         stage = 260;
       }
@@ -1597,8 +1599,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   @Override
   public void close() {
     if (searchGate != null) searchGate.release.countDown();
-    if (standalone != null && standalone.editingActions().isOpen())
-      standalone.editingActions().close();
+    if (standaloneActions != null && standaloneActions.isOpen()) standaloneActions.close();
     if (workflow != null && workflow.isOpen()) workflow.close();
     if (sourceContext != null && sourceContext.isOpen()) sourceContext.close();
     if (width[0] > 0) NativeClientProbe.resize(client, width[0], height[0]);
