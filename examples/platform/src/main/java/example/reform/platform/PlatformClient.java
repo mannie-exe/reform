@@ -157,6 +157,7 @@ public final class PlatformClient {
           || "entries".equals(isolatedScene)
           || "components".equals(isolatedScene)) PlatformWorkflowExample.register(registration);
       if ("pickers".equals(isolatedScene)) PlatformPickerChecks.register(registration);
+      if ("auditions".equals(isolatedScene)) PlatformAuditionChecks.register(registration);
       if ("captions".equals(isolatedScene)) PlatformChoiceCaptionChecks.register(registration);
       if ("entries".equals(isolatedScene)) PlatformEntryPresentationChecks.register(registration);
       if ("references".equals(isolatedScene)) {
@@ -331,6 +332,11 @@ public final class PlatformClient {
         case 7 -> {
           if (!pending.isDone()) return;
           report.add("nativeKeys", (JsonObject) pending.join());
+          if ("auditions".equals(isolatedScene)) {
+            pending = PlatformAuditionChecks.run(clientRegistration).toCompletableFuture();
+            stage = 39;
+            return;
+          }
           if ("pickers".equals(isolatedScene)) {
             pending = PlatformPickerChecks.run(clientRegistration).toCompletableFuture();
             stage = 38;
@@ -583,6 +589,11 @@ public final class PlatformClient {
         case 36 -> {
           if (!pending.isDone()) return;
           report.add("batchFailures", (JsonObject) pending.join());
+          beginShutdown();
+        }
+        case 39 -> {
+          if (!pending.isDone()) return;
+          report.add("semanticAuditions", (JsonObject) pending.join());
           beginShutdown();
         }
         case 38 -> {

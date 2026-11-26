@@ -7,7 +7,7 @@ import java.util.UUID;
 
 /** Complete captured draft and a separately frozen typed subject; neither is an authority grant. */
 public record GraphicRequest<T, S>(
-    Stamp stamp, CapturedGraphicInput<T> input, S subject, GraphicLimits limits) {
+    Stamp stamp, DraftPreviewInput<T> input, S subject, GraphicLimits limits) {
   public record Stamp(
       DocumentId provider,
       UUID view,

@@ -146,7 +146,9 @@ public final class DocumentActions<T> implements AutoCloseable {
       AuditionCapture<T> capture) {}
 
   private final java.util.Map<UUID, AuditionWork<T>> auditions = new java.util.HashMap<>();
-  private final OperationDescriptor<UUID, AuditionCapture.Receipt> auditionCapture;
+  private OperationDescriptor<UUID, AuditionCapture.Receipt> auditionCapture;
+  private OperationScope auditionOperations;
+  private final OperationScope.Limits operationLimits;
   private final OwnerContext context;
   private final OwnerContext.Access access;
   private final EditorActor<T> actor;
@@ -202,9 +204,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (!context.id().equals(actor.context()) || maximumExportBytes < 1)
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
-    if (limits.maximumDefinitions() < 20)
-      throw new IllegalArgumentException("Actions require room for twenty operation definitions");
+    if (limits.maximumDefinitions() < 21)
+      throw new IllegalArgumentException(
+          "Actions require room for twenty-one operation definitions");
     this.context = context;
+    operationLimits = limits;
     this.access = access;
     this.actor = actor;
     this.definition = actor.definition();
@@ -471,13 +475,28 @@ public final class DocumentActions<T> implements AutoCloseable {
                             return captured;
                           }));
         });
+    scope.freeze();
+  }
+
+  /**
+   * Optional READ capture service; baseline document construction retains its original admission.
+   */
+  private OperationScope auditionScope() {
+    context.requireOwner();
+    if (auditionOperations != null) return auditionOperations;
+    var selected =
+        new OperationScope(
+            context,
+            access,
+            new OperationScope.Limits(
+                1, Math.min(8, operationLimits.maximumActive()), 8, operationLimits.input()));
     auditionCapture =
         descriptor(
             "capture_audition",
             ValueTypes.uuid(),
             OwnerContext.Right.READ,
             Set.of(OperationDescriptor.Effect.INSPECT));
-    scope.register(
+    selected.register(
         auditionCapture,
         (execution, ticket) -> {
           final AuditionWork<T> work;
@@ -540,7 +559,9 @@ public final class DocumentActions<T> implements AutoCloseable {
                             return work.capture().offer(overlay);
                           }));
         });
-    scope.freeze();
+    selected.freeze();
+    auditionOperations = selected;
+    return selected;
   }
 
   public DocumentActions(OwnerContext context, OwnerContext.Access access, EditorActor<T> actor) {
@@ -726,7 +747,10 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   public Optional<OperationHandle<?>> operation(UUID id) {
-    return scope.find(id);
+    var ordinary = scope.find(id);
+    return ordinary.isPresent() || auditionOperations == null
+        ? ordinary
+        : auditionOperations.find(id);
   }
 
   /** Coalesces first-use loading. A failed initial attempt needs an explicit reload to retry. */
@@ -751,12 +775,16 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   public List<OperationSnapshot<?>> operations() {
-    return scope.snapshots();
+    if (auditionOperations == null) return scope.snapshots();
+    var result = new java.util.ArrayList<OperationSnapshot<?>>(scope.snapshots());
+    result.addAll(auditionOperations.snapshots());
+    return List.copyOf(result);
   }
 
   /** Cached scope work; a terminal unknown receipt can still require actor reconciliation. */
   public boolean hasActiveOperations() {
-    return scope.hasActiveOperations();
+    return scope.hasActiveOperations()
+        || auditionOperations != null && auditionOperations.hasActiveOperations();
   }
 
   public OperationHandle<EditorActor.View<T>> load(OperationDescriptor.EntryPoint entry) {
@@ -932,7 +960,7 @@ public final class DocumentActions<T> implements AutoCloseable {
               });
       auditions.put(ticket, new AuditionWork<>(reference, expected, inputs, capture));
       try {
-        capture.bind(scope.submit(auditionCapture, entry, ticket, readiness(entry)));
+        capture.bind(auditionScope().submit(auditionCapture, entry, ticket, readiness(entry)));
       } catch (RuntimeException | Error failed) {
         capture.submissionFailed(failed);
         throw failed;
@@ -1103,7 +1131,11 @@ public final class DocumentActions<T> implements AutoCloseable {
         if (conflicts != null) conflicts.close();
       } finally {
         try {
-          scope.close();
+          try {
+            if (auditionOperations != null) auditionOperations.close();
+          } finally {
+            scope.close();
+          }
         } finally {
           try {
             actor.close();

@@ -515,6 +515,26 @@ class PlatformOutcomeTests(unittest.TestCase):
                 self.assertTrue(accepted())
                 del self.native[name]
 
+    def test_audition_success_requires_typed_basis_counts_and_actual_retirement(self):
+        def accepted():
+            return successful_boot(self.process, self.native, self.library, self.target,
+                                   "0.20.1", required_scenarios=("semanticAuditions",))
+        complete = {"status": "PASS", "passed": True, "prepares": 9, "legacyPrepares": 1,
+                    "inputBytes": 0, "inputObjects": 0, "nativeBytes": 0, "sceneBytes": 0,
+                    "peakInputBytes": 700, "fullBasisVerified": True, "cameraRetained": True,
+                    "sourceUnchanged": True, "closedNoPublication": True}
+        self.assertFalse(accepted())
+        self.native["semanticAuditions"] = dict(complete)
+        self.assertTrue(accepted())
+        for field, value in complete.items():
+            wrong = [None, "missing", False] if type(value) is not int else [None, str(value), True, -1]
+            for replacement in wrong:
+                with self.subTest(field=field, replacement=replacement):
+                    self.native["semanticAuditions"][field] = replacement
+                    self.assertFalse(accepted())
+            self.native["semanticAuditions"][field] = value
+        del self.native["semanticAuditions"]
+
     def test_picker_success_requires_current_owner_source_and_retirement_facts(self):
         def accepted():
             return successful_boot(self.process,self.native,self.library,self.target,"0.20.1",required_scenarios=("semanticPickers",))

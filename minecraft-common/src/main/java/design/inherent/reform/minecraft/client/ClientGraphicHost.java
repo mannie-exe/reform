@@ -8,6 +8,7 @@ import design.inherent.reform.operation.*;
 import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.owner.PolicyRefusal;
 import design.inherent.reform.presentation.graphics.*;
+import design.inherent.reform.reference.ReferenceAudition;
 import design.inherent.reform.reference.ReferenceStamp;
 import design.inherent.reform.validation.*;
 import java.util.*;
@@ -116,7 +117,7 @@ public final class ClientGraphicHost implements AutoCloseable {
 
   private final OwnerContext context;
   private final Predicate<ClientEditor<?>> owns;
-  private final GraphicLedger nativeLedger, outputLedger;
+  private final GraphicLedger nativeLedger, outputLedger, inputLedger;
   private final int maximumViews;
   private final Map<UUID, View<?, ?>> views = new LinkedHashMap<>();
   private final LinkedHashMap<UUID, Pending> pending = new LinkedHashMap<>();
@@ -146,6 +147,7 @@ public final class ClientGraphicHost implements AutoCloseable {
     this.owns = owns;
     this.maximumViews = maximumViews;
     nativeLedger = new GraphicLedger(limits);
+    inputLedger = GraphicLedger.inputs(limits);
     outputLedger =
         new GraphicLedger(
             new GraphicLimits(
@@ -167,6 +169,11 @@ public final class ClientGraphicHost implements AutoCloseable {
 
   public GraphicLedger.State nativeOwnership() {
     return nativeLedger.state();
+  }
+
+  /** Known copied base/alternate input retained by preparing or retiring consumers. */
+  public GraphicLedger.State retainedInput() {
+    return inputLedger.state();
   }
 
   /** Known retained scene payload, distinct from the native image/buffer payload ledger. */
@@ -202,14 +209,15 @@ public final class ClientGraphicHost implements AutoCloseable {
     private final ClientLoadedGraphicProvider<S> loadedProvider;
     private final ClientGraphicSource<S> source;
     private final DocumentId providerId;
-    private final GraphicLedger ledger;
+    private final GraphicLedger ledger, inputs;
     private final OwnerContext.Access access;
     private final OperationScope operations;
     private final OperationDescriptor<S, Result> descriptor;
     private Request<T, S> latest;
     private PreparedGraphic nativeGraphic;
     private Result displayed;
-    private GraphicCamera camera = GraphicCamera.STANDARD;
+    private GraphicCamera camera = GraphicCamera.STANDARD, defaultCamera = GraphicCamera.STANDARD;
+    private boolean cameraEdited;
     private boolean visible = true, ended;
     private State state = State.IDLE;
     private ValidationReport report = ValidationReport.VALID;
@@ -226,6 +234,7 @@ public final class ClientGraphicHost implements AutoCloseable {
       source = provider == null ? Objects.requireNonNull(loadedProvider) : provider;
       providerId = Objects.requireNonNull(source.id());
       ledger = nativeLedger.child(Objects.requireNonNull(source.limits()));
+      inputs = inputLedger.child(GraphicLedger.inputs(source.limits()).limits());
       var subjectType = Objects.requireNonNull(source.subjectType());
       access = context.access(this::readable, () -> false);
       operations =
@@ -301,17 +310,31 @@ public final class ClientGraphicHost implements AutoCloseable {
 
     public List<GraphicSceneData.Fact> facts() {
       ClientSettingsRuntime.requireClientThread();
-      if (!readable()) return List.of();
+      if (!readable() || latest != null && !latest.current()) return List.of();
       return displayed == null ? List.of() : displayed.facts();
     }
 
     public Optional<GraphicSourceStamp> displayedStamp() {
       ClientSettingsRuntime.requireClientThread();
-      if (!readable()) return Optional.empty();
+      if (!readable() || latest != null && !latest.current()) return Optional.empty();
       return displayed == null ? Optional.empty() : displayed.stamp();
     }
 
     public Attempt request(S subject) {
+      return requestInput(subject, null);
+    }
+
+    /** Explicitly audition one actual inspected reference against the complete retained draft. */
+    public Attempt request(S subject, ReferenceAudition<T> audition) {
+      requireOpen();
+      Objects.requireNonNull(audition);
+      if (provider == null || provider.inputs() != ClientGraphicProvider.Inputs.DRAFT_AND_AUDITION)
+        throw new PolicyRefusal(
+            "preview.audition_unsupported", "This provider supports draft previews only");
+      return requestInput(subject, audition);
+    }
+
+    private Attempt requestInput(S subject, ReferenceAudition<T> audition) {
       requireOpen();
       if (ended || !visible)
         throw new PolicyRefusal("preview.closed", "This preview is closed or hidden");
@@ -327,10 +350,11 @@ public final class ClientGraphicHost implements AutoCloseable {
                             new PolicyRefusal(
                                 "editor.unavailable", "No current draft is available")));
         input = editor.presentation().previewInputStamp(revision);
+        if (audition != null) audition.requireCurrent(editor.actions(), revision);
       }
       var frozen = descriptor.input().freeze(Objects.requireNonNull(subject));
       var resources = Objects.requireNonNull(source.resourceStamp());
-      var request = new Request<T, S>(this, input, resources, frozen);
+      var request = new Request<T, S>(this, input, resources, frozen, audition);
       var old = latest;
       var previous = pending.put(id, request);
       latest = request;
@@ -390,6 +414,7 @@ public final class ClientGraphicHost implements AutoCloseable {
 
     public void orbit(double yaw, double pitch) {
       ClientSettingsRuntime.requireClientThread();
+      cameraEdited = true;
       camera =
           new GraphicCamera(
               camera.yaw() + yaw,
@@ -403,6 +428,7 @@ public final class ClientGraphicHost implements AutoCloseable {
       ClientSettingsRuntime.requireClientThread();
       if (!Double.isFinite(factor) || factor <= 0)
         throw new IllegalArgumentException("Zoom factor must be finite and positive");
+      cameraEdited = true;
       camera =
           new GraphicCamera(
               camera.yaw(),
@@ -414,10 +440,8 @@ public final class ClientGraphicHost implements AutoCloseable {
 
     public void resetCamera() {
       ClientSettingsRuntime.requireClientThread();
-      camera =
-          displayed == null
-              ? GraphicCamera.STANDARD
-              : displayed.camera().orElse(GraphicCamera.STANDARD);
+      cameraEdited = true;
+      camera = defaultCamera;
     }
 
     /** Shared read-only focusable viewport. Preparation and camera controls remain explicit. */
@@ -544,6 +568,7 @@ public final class ClientGraphicHost implements AutoCloseable {
       var waiting = pending.remove(id);
       if (waiting != null) waiting.superseded();
       try {
+        if (latest != null && active == latest) latest.cancel();
         operations.close();
       } finally {
         try {
@@ -564,17 +589,25 @@ public final class ClientGraphicHost implements AutoCloseable {
     private final ReferenceStamp resources;
     private final S subject;
     private final Map<DocumentId, ReferenceStamp> observedReferences;
-    private DraftPreviewInput<T> captured;
+    private final ReferenceAudition<T> audition;
     private ClientPreviewCapture<T> capturing;
+    private AuditionCapture<T> auditionCapturing;
+    private AuditionCapture.Use<T> capturedUse;
     private PreparedGraphic enteredGraphic;
     private boolean finished, invalidated;
     private Throwable failure;
 
-    Request(View<T, S> view, PreviewInputStamp initial, ReferenceStamp resources, S subject) {
+    Request(
+        View<T, S> view,
+        PreviewInputStamp initial,
+        ReferenceStamp resources,
+        S subject,
+        ReferenceAudition<T> audition) {
       this.view = view;
       this.initial = initial;
       this.resources = resources;
       this.subject = subject;
+      this.audition = audition;
       observedReferences =
           view.editor == null ? Map.of() : view.editor.presentation().previewReferenceStamps();
     }
@@ -593,13 +626,12 @@ public final class ClientGraphicHost implements AutoCloseable {
           || view.latest != this
           || !view.readable()) return false;
       try {
+        if (audition != null) audition.requireCurrent(view.editor.actions(), initial.draft());
         return resources.equals(view.source.resourceStamp())
             && (view.editor == null
-                || (captured == null
-                    ? (initial.equals(view.editor.presentation().previewInputStamp(initial.draft()))
-                        && observedReferences.equals(
-                            view.editor.presentation().previewReferenceStamps()))
-                    : view.editor.isPreviewCurrent(captured)));
+                || initial.equals(view.editor.presentation().previewInputStamp(initial.draft()))
+                    && observedReferences.equals(
+                        view.editor.presentation().previewReferenceStamps()));
       } catch (RuntimeException unavailable) {
         failure = unavailable;
         return false;
@@ -631,6 +663,7 @@ public final class ClientGraphicHost implements AutoCloseable {
           view.operations.close();
         }
       }
+      if (auditionCapturing != null) auditionCapturing.close();
       if (capturing != null) {
         try {
           capturing.requestCancellation();
@@ -676,12 +709,34 @@ public final class ClientGraphicHost implements AutoCloseable {
           throw failed;
         }
       }
-      capturing = view.editor.capturePreview(OperationDescriptor.EntryPoint.GUI, initial.draft());
-      return capturing
-          .completion()
+      final CompletionStage<? extends CapturedGraphicInput<T>> input;
+      if (audition == null) {
+        capturing = view.editor.capturePreview(OperationDescriptor.EntryPoint.GUI, initial.draft());
+        input = capturing.completion();
+      } else {
+        auditionCapturing =
+            view.editor.captureAudition(
+                OperationDescriptor.EntryPoint.GUI, initial.draft(), audition, view.inputs);
+        input =
+            auditionCapturing
+                .completion()
+                .thenCompose(
+                    capture ->
+                        context.onOwner(
+                            () -> {
+                              requireCurrent();
+                              execution.checkpoint();
+                              capturedUse = capture.borrow();
+                              capture
+                                  .close(); // Its actual entered Use keeps the copy charged through
+                              // provider drain.
+                              return new AuditionPreviewInput<>(
+                                  initial, capturedUse.value(), observedReferences);
+                            }));
+      }
+      return input
           .thenCompose(
-              input -> {
-                captured = input;
+              captured -> {
                 requireCurrent();
                 execution.checkpoint();
                 var stamp =
@@ -690,15 +745,26 @@ public final class ClientGraphicHost implements AutoCloseable {
                         view.id,
                         id,
                         initial.draft().context(),
-                        input.stamp(),
-                        resources);
-                var request = new GraphicRequest<T, S>(stamp, input, frozen, view.ledger.limits());
+                        captured.stamp(),
+                        resources,
+                        captured.basis());
+                var request =
+                    new CapturedGraphicRequest<T, S>(stamp, captured, frozen, view.ledger.limits());
                 var work =
                     new ClientGraphicWork(context, execution, view.ledger, this::requireCurrent);
                 return prepareResult(
-                    stamp, Objects.requireNonNull(view.provider.prepare(request, work)), execution);
+                    stamp,
+                    Objects.requireNonNull(view.provider.prepareCaptured(request, work)),
+                    execution);
               })
-          .whenComplete((ignored, failed) -> failure = failed);
+          .whenComplete(
+              (ignored, failed) -> {
+                var use = capturedUse;
+                capturedUse = null;
+                if (use != null) use.close();
+                if (auditionCapturing != null) auditionCapturing.close();
+                failure = failed;
+              });
     }
 
     private CompletionStage<Result> prepareResult(
@@ -831,7 +897,8 @@ public final class ClientGraphicHost implements AutoCloseable {
       if (current && result.state() == State.READY) {
         view.displayed = result;
         view.nativeGraphic = nativeResult;
-        view.camera = result.camera().orElse(GraphicCamera.STANDARD);
+        view.defaultCamera = result.camera().orElse(GraphicCamera.STANDARD);
+        if (!view.cameraEdited) view.camera = view.defaultCamera;
         view.state = State.READY;
       } else {
         if (nativeResult != null) view.closeOne(nativeResult);
@@ -841,8 +908,8 @@ public final class ClientGraphicHost implements AutoCloseable {
           view.failure = result.cause().orElse(failure);
         }
       }
-      captured = null;
       capturing = null;
+      auditionCapturing = null;
       completion.complete(result);
       if (active == this) active = null;
       if (!closed) startNext();

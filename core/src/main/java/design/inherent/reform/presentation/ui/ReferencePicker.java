@@ -995,6 +995,19 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       throw refusal("reference.selection_stale", "The inspected choice changed; choose it again.");
   }
 
+  /** Borrow the current inspected choice for read-only preview; never accept/edit a role. */
+  public design.inherent.reform.reference.ReferenceAudition<T> audition(PickerRole<T> role) {
+    var result = new AtomicReference<design.inherent.reform.reference.ReferenceAudition<T>>();
+    scope.update(
+        () -> {
+          requireRole(Objects.requireNonNull(role));
+          requireSource();
+          result.set(
+              ReferenceSelection.auditionFromBrowser(role.id(), document, role.field(), browser));
+        });
+    return result.get();
+  }
+
   private void requireRole(PickerRole<T> role) {
     if (!role.equals(roles.get(role.id())))
       throw refusal("reference.role", "Use one of this picker's declared fields.");

@@ -137,6 +137,21 @@ public final class ClientEditor<T> implements AutoCloseable {
     return capture;
   }
 
+  /**
+   * Start the actual READ audition operation only after native input admission. Its completion is
+   * the backend receipt, not native delivery; callers must recheck the captured input epoch and
+   * references on the client thread before borrowing/publishing it. The workflow host does this.
+   */
+  public design.inherent.reform.operation.AuditionCapture<T> captureAudition(
+      EntryPoint entry,
+      DraftRevision expected,
+      design.inherent.reform.reference.ReferenceAudition<T> reference,
+      design.inherent.reform.presentation.graphics.GraphicLedger inputs) {
+    ClientSettingsRuntime.requireClientThread();
+    presentation().previewInputStamp(Objects.requireNonNull(expected));
+    return actions.captureAudition(entry, expected, reference, inputs);
+  }
+
   /** Cached client-thread freshness and actual READ checks, without IO, capture, or validation. */
   public boolean isPreviewCurrent(DraftPreviewInput<?> input) {
     ClientSettingsRuntime.requireClientThread();

@@ -101,6 +101,14 @@ class ReferenceAuditionTest {
       assertArrayEquals(saved, Files.readAllBytes(h.file));
       assertEquals(overlay.copiedBytes(), ledger.state().bytes());
       assertEquals(1, ledger.state().resources());
+      assertTrue(
+          h.nativeCall(
+              () -> h.actions.operation(lease.sourceOperation().snapshot().id()).isPresent()));
+      assertTrue(
+          h.nativeCall(
+              () ->
+                  h.actions.operations().stream()
+                      .anyMatch(op -> op.id().equals(lease.sourceOperation().snapshot().id()))));
       var receipt = await(DocumentActions.result(lease.sourceOperation()));
       assertEquals(initial, receipt.base());
       assertEquals(overlay.basis(), receipt.basis());
@@ -131,7 +139,7 @@ class ReferenceAuditionTest {
               input.basis());
       assertEquals(
           GraphicSourceStamp.Kind.AUDITION,
-          new GraphicRequest<>(stamp, input, "barrel", LIMITS).stamp().kind());
+          new CapturedGraphicRequest<>(stamp, input, "barrel", LIMITS).stamp().kind());
       var draftStamp =
           new GraphicRequest.Stamp(
               stamp.provider(),
@@ -142,8 +150,17 @@ class ReferenceAuditionTest {
               resources);
       assertThrows(
           IllegalArgumentException.class,
-          () -> new GraphicRequest<>(draftStamp, input, "barrel", LIMITS));
+          () -> new CapturedGraphicRequest<>(draftStamp, input, "barrel", LIMITS));
       assertEquals(GraphicSourceStamp.Kind.DRAFT, draftStamp.kind());
+      var legacy = new GraphicRequest<>(draftStamp, input.base(), "barrel", LIMITS);
+      DraftPreviewInput<Profile> oldInputAccessor = legacy.input();
+      assertSame(input.base(), oldInputAccessor);
+      assertSame(oldInputAccessor, CapturedGraphicRequest.from(legacy).asDraft().input());
+      code(
+          assertThrows(
+              PolicyRefusal.class,
+              () -> new CapturedGraphicRequest<>(stamp, input, "barrel", LIMITS).asDraft()),
+          "preview.audition_unsupported");
       use.close();
       close(h, lease);
       assertEquals(0, ledger.state().bytes());
@@ -343,7 +360,8 @@ class ReferenceAuditionTest {
       assertTrue(entered.await(5, TimeUnit.SECONDS));
       long charged = ledger.state().bytes();
       assertTrue(charged > 0);
-      close(h, lease);
+      assertTrue(h.nativeCall(h.actions::hasActiveOperations));
+      h.workers.submit(lease::close).get(5, TimeUnit.SECONDS);
       assertFalse(lease.completion().toCompletableFuture().isDone());
       assertFalse(lease.sourceOperation().snapshot().terminal());
       assertEquals(charged, ledger.state().bytes());

@@ -1673,4 +1673,49 @@ class ReferencePickerTest {
       h.unchanged();
     }
   }
+
+  @Test
+  void auditionBorrowsDeclaredInspectionWithoutAnEditAndRetiresWithTheController()
+      throws Exception {
+    try (var h = new Harness()) {
+      done(pending(h.call(() -> h.picker.admit().invoke(null))));
+      h.update();
+      h.inspect("fixture:b");
+      var initial = DraftRevision.of(h.actions.view().snapshot().orElseThrow());
+      int lookups = h.lookups.get();
+      var token = h.call(() -> h.picker.audition(MODEL_ROLE));
+      assertEquals(lookups, h.lookups.get());
+      var limits =
+          new design.inherent.reform.presentation.graphics.GraphicLimits(
+              32768, 32768, 4096, 8, 32768);
+      var ledger = design.inherent.reform.presentation.graphics.GraphicLedger.inputs(limits);
+      var capture =
+          h.call(
+              () ->
+                  h.actions.captureAudition(
+                      OperationDescriptor.EntryPoint.GUI, initial, token, ledger));
+      capture.completion().toCompletableFuture().get(5, TimeUnit.SECONDS);
+      try (var use = h.call(capture::borrow)) {
+        assertEquals("fixture:b", use.value().candidate().value().models());
+        assertEquals("fixture:a", use.value().candidate().value().artwork());
+      }
+      assertEquals(initial, DraftRevision.of(h.actions.view().snapshot().orElseThrow()));
+      assertArrayEquals(h.original, Files.readAllBytes(h.file));
+      h.call(
+          () -> {
+            capture.close();
+            h.picker.suspend();
+            return null;
+          });
+      assertThrows(
+          ExecutionException.class,
+          () ->
+              h.call(
+                  () -> {
+                    token.requireCurrent(h.actions, initial);
+                    return null;
+                  }));
+      assertEquals(0, ledger.state().bytes());
+    }
+  }
 }

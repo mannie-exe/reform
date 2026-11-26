@@ -146,11 +146,11 @@ public final class AuditionCapture<T> implements AutoCloseable {
   }
 
   /**
-   * Prevent new borrows and request cancellation; actual entered consumers retire their own uses.
+   * Thread-safe cleanup: prevent new borrows and request cancellation through the actual owner.
+   * Entered consumers retire their own uses; closed contexts never dispatch another owner call.
    */
   @Override
   public void close() {
-    if (context.isOpen()) context.checkOwnerThread();
     OperationHandle<Receipt> active;
     synchronized (this) {
       if (closed) return;

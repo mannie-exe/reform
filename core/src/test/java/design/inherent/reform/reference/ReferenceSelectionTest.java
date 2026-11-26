@@ -155,7 +155,19 @@ class ReferenceSelectionTest {
                       json,
                       DraftLimits.CONFIGURATION,
                       32));
-      actions = nativeCall(() -> new DocumentActions<>(context, access, actor));
+      actions =
+          nativeCall(
+              () ->
+                  new DocumentActions<>(
+                      context,
+                      access,
+                      actor,
+                      new design.inherent.reform.operation.OperationScope.Limits(
+                          21,
+                          16,
+                          64,
+                          design.inherent.reform.operation.OperationScope.Limits.STANDARD.input()),
+                      262144));
       run(() -> actions.load(EntryPoint.GUI));
       references =
           nativeCall(
