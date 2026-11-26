@@ -847,6 +847,20 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       }
       case 631 -> {
         if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        var nativeContext = new JsonObject();
+        nativeContext.addProperty("sameList", list() == returnList);
+        nativeContext.addProperty("sameQuery", search() == returnQuery);
+        nativeContext.addProperty("listFocused", list().isFocused());
+        nativeContext.addProperty("queryValue", returnQuery.getValue());
+        nativeContext.addProperty("queryCaret", returnQuery.getCursorPosition());
+        nativeContext.addProperty("querySelection", returnQuery.getHighlighted());
+        nativeContext.addProperty("factories", factories);
+        nativeContext.addProperty("models", raw("models"));
+        nativeContext.addProperty("artwork", raw("artwork"));
+        nativeContext.addProperty("bookmarkFocus", returnBookmark.focus().orElse(""));
+        var focused = workflow.screen().getFocused();
+        nativeContext.addProperty("rootFocus", focused == null ? "none" : focused.getClass().getName());
+        returnFacts.add("nativeContext", nativeContext);
         check(
             "native return retains exact list query controls focus caret and selection",
             list() == returnList
