@@ -1,6 +1,6 @@
 # Mounted native components
 
-The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. Implemented declarations include text, actions, columns, sections, nested components, conditional and keyed case branches, keyed collections, and bounded decorative repetition. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Core owner-backed field observations/edit commands and their retained-client input adapter are available. General field hosting/disclosure parts, loading/error boundaries, picker/completion, broader layout/modifiers, and preview orchestration remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
+The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. Implemented declarations include text, independent actions, wrapping action rows, columns, sections, nested components, conditional and keyed case branches, keyed collections, and bounded decorative repetition. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Owner-backed field observations/edit commands, canonical generated-field parts, disclosures, and shared picker/completion surfaces are available with the scoped contracts below. General field hosting, loading/error boundaries, broader layout/modifiers, and preview orchestration remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
 
 ## One declaration and two hosts
 
@@ -86,6 +86,16 @@ This example deliberately leaves the original canonical field family attached. I
 List paging demand comes from actual navigation/scroll gestures, outside painting. A refresh may preserve a key event when the same generation and exact item remain present; keyboard activation additionally requires the same controlled active key. Removed, changed, disabled, or different-generation items refuse. This permits Enter during harmless page/status updates without allowing stale option callbacks.
 
 The assembled native journey remains under qualification. Full inline/task bookmarks, manual-ID completion, layout/feedback relationships, and preview/camera policies are not established by the assembly API alone. Canonical surface qualification is recorded separately in verification.
+
+## Measured blocks and action rows
+
+In dev.128, shared choice lists and query inputs use labelled blocks: label/help above the control, with the single primary control filling the offered content width. They no longer borrow a generated setting row's side-by-side label/control tracks. The existing native control, source, selection, query buffer, caret, and focus identity are retained. A narrower offer changes geometry, not admitted results or the ID domain.
+
+`Views.actions(key, children)` declares a wrapping row of one to 32 explicitly ordered `ViewSpec.Action` or `ViewSpec.Disclosure` parts. Duplicate keys, empty rows, and other direct child kinds refuse at declaration. Each trigger keeps its own command, currentness, availability, native identity, focus key, and help. Controls keep their intrinsic caption widths and the semantic inline gap; remaining space stays trailing. Expanded disclosure content follows its trigger in reading order rather than being squeezed into that command row. Subsequent parts resume flow after that content. This is an action layout, not a generic grid or a combined operation.
+
+Blocked/refused feedback remains visible with its action caption, while focused narration uses only that control's help. An unrelated kernel update preserves the exact current command offer when its declared reads are unchanged. A changed declared input, removed node, or replaced native attachment still retires the old offer. Grouping cannot invoke or merge handlers. Expanded disclosures leave a semantic section gap before following content; the same rule applies to the actual manual-ID disclosure.
+
+The standard reference picker uses separate selection-action and browser-action rows inside its existing named section. Source details retains its view-local disclosure state across a workflow return. This implemented layout does not establish adjacent list/preview composition, arbitrary nested row/grid/frame modifiers, or the typed draft/audition preview boundary; those remain selected work.
 
 ## Cached reads and actual commands
 
