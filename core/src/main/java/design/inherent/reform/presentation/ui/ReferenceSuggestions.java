@@ -522,9 +522,7 @@ public final class ReferenceSuggestions<V> {
               Optional.ofNullable(active),
               pages,
               complete,
-              search == null
-                  ? Optional.empty()
-                  : Optional.of(PickerState.Work.of(search.operation())),
+              work(true),
               report);
     } catch (PolicyRefusal failed) {
       observedFailure = failed.report();
@@ -538,7 +536,7 @@ public final class ReferenceSuggestions<V> {
               Optional.empty(),
               0,
               false,
-              Optional.empty(),
+              work(false),
               failed.report());
     }
     if (weight(facts) > scope.limits().maximumStateBytes())
@@ -551,6 +549,18 @@ public final class ReferenceSuggestions<V> {
     else observationRevision = Math.incrementExact(observationRevision);
     cached = new WeakReference<>(captured);
     return new UiObservation.Available<>(captured, observationRevision);
+  }
+
+  /** Source withdrawal hides content, not an entered operation's actual drain lifecycle. */
+  private Optional<PickerState.Work> work(boolean includeSearchReport) {
+    if (search != null)
+      return Optional.of(
+          includeSearchReport
+              ? PickerState.Work.of(search.operation())
+              : PickerState.retiring(search.operation()));
+    return retiring == null || retiring.snapshot().terminal()
+        ? Optional.empty()
+        : Optional.of(PickerState.retiring(retiring));
   }
 
   private static long weight(State value) {

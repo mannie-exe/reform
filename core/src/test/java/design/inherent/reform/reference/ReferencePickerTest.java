@@ -564,6 +564,65 @@ class ReferencePickerTest {
     }
   }
 
+  @Test
+  void revokedSuggestionSourceRetainsOnlyActualEnteredDrainFacts() throws Exception {
+    try (var h = new Harness()) {
+      var entered = new CountDownLatch(1);
+      var release = new CountDownLatch(1);
+      h.beforeSearch.set(
+          query -> {
+            entered.countDown();
+            awaitGate(release);
+          });
+      try {
+        var port =
+            h.call(() -> h.picker.suggestions(new ReferenceSuggestions.Policy(4, 128, 8, 0)));
+        h.call(
+            () -> {
+              port.request("fixture:a");
+              return null;
+            });
+        suggestionUpdate(h, port);
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        var actual = suggestionUpdate(h, port).work().orElseThrow();
+        h.sourceRead.set(false);
+        var withdrawn = suggestionUpdate(h, port);
+        assertTrue(withdrawn.choices().isEmpty());
+        assertTrue(withdrawn.stamp().isEmpty());
+        assertEquals("", withdrawn.prefix());
+        var draining = withdrawn.work().orElseThrow();
+        assertEquals(actual.id(), draining.id());
+        // Cancelling this READ operation also requires current READ authority. Withdrawal must
+        // retain its live drain facts, not claim the refused cancellation was acknowledged.
+        var afterCancellation = suggestionUpdate(h, port).work().orElseThrow();
+        assertEquals(actual.id(), afterCancellation.id());
+        assertFalse(afterCancellation.cancellationRequested());
+        assertTrue(draining.report().isEmpty());
+        assertTrue(h.context.outstandingCalls() > 0);
+        h.sourceRead.set(true);
+        h.call(
+            () -> {
+              port.request("fixture:b");
+              return null;
+            });
+        var replacement = suggestionUpdate(h, port);
+        assertEquals(PickerState.Phase.DRAINING, replacement.phase());
+        assertEquals(actual.id(), replacement.work().orElseThrow().id());
+        assertEquals(1, h.searches.get());
+        h.beforeSearch.set(ignored -> {});
+        release.countDown();
+        var fresh = awaitSuggestions(h, port);
+        assertEquals("fixture:b", fresh.prefix());
+        assertEquals(
+            List.of(new ReferenceSuggestions.Choice("fixture:b", "fixture:b")), fresh.choices());
+        assertTrue(fresh.work().isEmpty());
+        h.unchanged();
+      } finally {
+        release.countDown();
+      }
+    }
+  }
+
   private static ReferenceSuggestions.State suggestionUpdate(
       Harness h, ReferenceSuggestions<?> port) throws Exception {
     return h.call(

@@ -8,6 +8,7 @@ import design.inherent.reform.edit.DraftNode;
 import design.inherent.reform.minecraft.client.*;
 import design.inherent.reform.minecraft.client.ui.*;
 import design.inherent.reform.operation.*;
+import design.inherent.reform.owner.OwnerContext;
 import design.inherent.reform.presentation.*;
 import design.inherent.reform.presentation.ui.*;
 import design.inherent.reform.reference.*;
@@ -16,6 +17,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.Minecraft;
@@ -80,6 +82,40 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private ClientEditor<Profile> editor;
   private ClientEditor<Profile> discardedEditor;
   private ReferenceActions<String, List<String>> source;
+  private OwnerContext sourceContext;
+  private final AtomicBoolean sourceReadable = new AtomicBoolean(true);
+  private volatile SearchGate searchGate;
+  private ReferenceSuggestions.Option withdrawnOption;
+  private int withdrawnSearches, withdrawnLookups, withdrawnFactories;
+  private UUID heldSearch;
+  private boolean completionReadWithdrawal, completionSourceDrain;
+  private final JsonObject sourceAuthorityFacts = new JsonObject();
+
+  private static final class SearchGate {
+    final CountDownLatch entered = new CountDownLatch(1);
+    final CountDownLatch release = new CountDownLatch(1);
+    final CountDownLatch exited = new CountDownLatch(1);
+    final AtomicBoolean claimed = new AtomicBoolean();
+    volatile String thread, prefix;
+
+    void await(ReferenceQuery query) {
+      if (query.match() != ReferenceQuery.Match.KEY_PREFIX || !claimed.compareAndSet(false, true))
+        return;
+      thread = Thread.currentThread().getName();
+      prefix = query.filter();
+      entered.countDown();
+      try {
+        if (!release.await(25, TimeUnit.SECONDS))
+          throw new AssertionError("Owned native source gate did not drain within its bound");
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(interrupted);
+      } finally {
+        exited.countDown();
+      }
+    }
+  }
+
   private ReferencePicker<Profile, List<String>> task, inline;
   private ReferenceSuggestions<List<String>> suggestions;
   private boolean completionVerified, completionDismissed, completionPointer, completionBlur;
@@ -141,8 +177,19 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private ReferenceActions<String, List<String>> source() {
     factories++;
     if (source == null) {
+      sourceContext =
+          new OwnerContext(
+              client::execute,
+              NativeClientProbe.ioPool(),
+              () -> {
+                if (!client.isSameThread())
+                  throw new IllegalStateException("Actual native source owner thread required");
+              },
+              OwnerContext.Limits.STANDARD);
       source =
-          settings.references(
+          new ReferenceActions<>(
+              sourceContext,
+              sourceContext.access(sourceReadable::get, () -> false),
               SOURCE,
               ValueTypes.text(128),
               ValueTypes.list(ValueTypes.text(128), 8).snapshotPolicy(),
@@ -181,6 +228,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
 
               public ReferencePage<String> search(ReferenceQuery query) {
                 searches.incrementAndGet();
+                var held = searchGate;
+                if (held != null) held.await(query);
                 return index.search(query);
               }
 
@@ -253,29 +302,30 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   }
 
   private void completionPointer(int index) {
+    completionPointer(workflow.screen(), manualWidget, index);
+  }
+
+  private void completionPointer(Screen screen, EditBox anchor, int index) {
     // Black-box native pointer coordinates from the actual anchor and offered root geometry.
     int row = Math.max(20, ClientTheme.standard().values().value(ThemeValues.Role.CONTROL_HEIGHT));
     int heading = client.font.lineHeight + 2;
     int fixed = heading * 2 + 4;
-    int below =
-        Math.max(0, workflow.screen().height - 4 - manualWidget.getY() - manualWidget.getHeight());
-    int above = Math.max(0, manualWidget.getY() - 4);
+    int below = Math.max(0, screen.height - 4 - anchor.getY() - anchor.getHeight());
+    int above = Math.max(0, anchor.getY() - 4);
     boolean down = below >= fixed + row * 4 || below >= above;
     int rows = Math.min(4, Math.max(0, (down ? below : above) - fixed) / row);
     check("pointer witness has its actual offered row", rows > index);
     int y =
-        (down
-                ? manualWidget.getY() + manualWidget.getHeight()
-                : manualWidget.getY() - fixed - row * rows)
+        (down ? anchor.getY() + anchor.getHeight() : anchor.getY() - fixed - row * rows)
             + 2
             + heading
             + index * row
             + row / 2;
-    double x = Math.clamp(manualWidget.getX(), 4, workflow.screen().width - 184) + 20;
+    double x = Math.clamp(anchor.getX(), 4, screen.width - 184) + 20;
     check(
         "native pointer is consumed by the completion offer",
-        NativeClientProbe.pointerDown(workflow.screen(), x, y));
-    NativeClientProbe.pointerUp(workflow.screen(), x, y);
+        NativeClientProbe.pointerDown(screen, x, y));
+    NativeClientProbe.pointerUp(screen, x, y);
   }
 
   private String standaloneRaw(String field) {
@@ -1236,10 +1286,157 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         driver.capture(
             "pickers-completion-standalone.png",
             () -> {
-              standaloneKey("enter");
-              stage = 264;
+              withdrawnOption = standaloneSuggestions.activeOption().orElseThrow();
+              withdrawnSearches = searches.get();
+              withdrawnLookups = lookups.get();
+              withdrawnFactories = factories;
+              sourceReadable.set(false);
+              completionPointer(standalone, standaloneWidget, 1);
+              frames = PlatformFrameObservations.sequence();
+              stage = 270;
             });
         stage = -1;
+      }
+      case 270 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        var offer = standaloneSuggestions.state().snapshot().value();
+        check(
+            "actual source READ loss withdraws suggestions without editing the original draft",
+            offer.choices().isEmpty()
+                && offer.stamp().isEmpty()
+                && standaloneRaw("artwork").equals("fixture:profile_00")
+                && standaloneRaw("models").equals(id(0))
+                && searches.get() == withdrawnSearches
+                && lookups.get() == withdrawnLookups
+                && factories == withdrawnFactories);
+        check(
+            "actual READ refusal reaches original field feedback and root narration",
+            standalone.controlReport().issues().stream()
+                    .anyMatch(
+                        issue ->
+                            issue.code().equals("owner.permission")
+                                && issue.path().equals(ART_ROLE.field()))
+                && standalone.getNarrationMessage().getString().contains("permission"));
+        sourceAuthorityFacts.addProperty("readyRefusal", standalone.controlReport().toString());
+        sourceAuthorityFacts.addProperty("readyNarration", standalone.getNarrationMessage().getString());
+        sourceReadable.set(true);
+        clock.addAndGet(1_000_000_000L);
+        frames = PlatformFrameObservations.sequence();
+        stage = 271;
+      }
+      case 271 -> {
+        if (PlatformFrameObservations.sequence() - frames < 8) return false;
+        check(
+            "restoring source READ alone cannot revive suggestions or enter source work",
+            standaloneSuggestions.state().snapshot().value().choices().isEmpty()
+                && searches.get() == withdrawnSearches
+                && lookups.get() == withdrawnLookups
+                && factories == withdrawnFactories);
+        try {
+          standaloneSuggestions.requireChoice(withdrawnOption);
+          throw new AssertionError("A withdrawn suggestion cannot regain acceptance authority");
+        } catch (design.inherent.reform.owner.PolicyRefusal expected) {
+          checks.add("withdrawn source option remains refused after READ restoration");
+        }
+        unchanged();
+        completionReadWithdrawal = true;
+        standaloneKey("down");
+        clock.addAndGet(200_000_000L);
+        stage = 272;
+      }
+      case 272 -> {
+        var offer = standaloneSuggestions.state().snapshot().value();
+        if (offer.phase() != PickerState.Phase.READY || offer.choices().size() != 4) return false;
+        check("explicit source recovery reuses one actual source service", factories == 4);
+        searchGate = new SearchGate();
+        standaloneWidget.setValue("fixture:profile_02");
+        stage = 273;
+      }
+      case 273 -> {
+        if (!standaloneSettled() || !standaloneRaw("artwork").equals("fixture:profile_02"))
+          return false;
+        clock.addAndGet(200_000_000L);
+        stage = 274;
+      }
+      case 274 -> {
+        if (searchGate.entered.getCount() != 0) return false;
+        var offer = standaloneSuggestions.state().snapshot().value();
+        if (offer.work().isEmpty()) return false;
+        heldSearch = offer.work().orElseThrow().id();
+        check(
+            "native source search entered its actual worker before READ loss",
+            offer.phase() == PickerState.Phase.RUNNING
+                && sourceContext.outstandingCalls() > 0
+                && searchGate.prefix.equals("fixture:profile_02")
+                && !searchGate.thread.equals(Thread.currentThread().getName()));
+        withdrawnSearches = searches.get();
+        sourceReadable.set(false);
+        frames = PlatformFrameObservations.sequence();
+        stage = 275;
+      }
+      case 275 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        var offer = standaloneSuggestions.state().snapshot().value();
+        check(
+            "READ loss retains actual live drain facts without claiming unauthorized cancellation",
+            offer.stamp().isEmpty()
+                && offer.choices().isEmpty()
+                && offer.work().isPresent()
+                && offer.work().orElseThrow().id().equals(heldSearch)
+                && !offer.work().orElseThrow().cancellationRequested()
+                && offer.work().orElseThrow().report().isEmpty()
+                && sourceContext.outstandingCalls() > 0
+                && searchGate.exited.getCount() == 1);
+        sourceAuthorityFacts.addProperty("withdrawnWork", offer.work().orElseThrow().toString());
+        sourceAuthorityFacts.addProperty("withdrawnPhase", offer.phase().name());
+        sourceAuthorityFacts.addProperty("withdrawnChoices", offer.choices().size());
+        sourceAuthorityFacts.addProperty("withdrawnStampPresent", offer.stamp().isPresent());
+        sourceAuthorityFacts.addProperty("withdrawnOutstandingCalls", sourceContext.outstandingCalls());
+        sourceReadable.set(true);
+        standaloneWidget.setValue("fixture:profile_00");
+        stage = 276;
+      }
+      case 276 -> {
+        if (!standaloneSettled() || !standaloneRaw("artwork").equals("fixture:profile_00"))
+          return false;
+        clock.addAndGet(200_000_000L);
+        frames = PlatformFrameObservations.sequence();
+        stage = 277;
+      }
+      case 277 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        var offer = standaloneSuggestions.state().snapshot().value();
+        check(
+            "replacement suggestion query waits for actual entered source drain",
+            offer.phase() == PickerState.Phase.DRAINING
+                && offer.work().isPresent()
+                && offer.work().orElseThrow().id().equals(heldSearch)
+                && searches.get() == withdrawnSearches
+                && searchGate.exited.getCount() == 1);
+        sourceAuthorityFacts.addProperty("replacementPhase", offer.phase().name());
+        sourceAuthorityFacts.addProperty("replacementWork", offer.work().orElseThrow().toString());
+        sourceAuthorityFacts.addProperty("replacementSourceEntriesWhileHeld", searches.get() - withdrawnSearches);
+        searchGate.release.countDown();
+        stage = 278;
+      }
+      case 278 -> {
+        var offer = standaloneSuggestions.state().snapshot().value();
+        if (offer.phase() != PickerState.Phase.READY || offer.choices().size() != 4) return false;
+        check(
+            "late denied source output cannot replace the fresh prefix result",
+            searchGate.exited.getCount() == 0
+                && offer.choices().stream()
+                    .allMatch(choice -> choice.key().startsWith("fixture:profile_00"))
+                && searches.get() == withdrawnSearches + 1
+                && factories == 4);
+        sourceAuthorityFacts.addProperty("freshPrefix", offer.prefix());
+        sourceAuthorityFacts.addProperty("freshSourceEntries", searches.get() - withdrawnSearches);
+        sourceAuthorityFacts.addProperty("freshChoices", offer.choices().toString());
+        completionSourceDrain = true;
+        standaloneKey("down");
+        standaloneKey("down");
+        standaloneKey("enter");
+        stage = 264;
       }
       case 264 -> {
         if (!standaloneSettled() || !standaloneRaw("artwork").equals(id(1))) return false;
@@ -1249,7 +1446,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && standaloneWidget.isFocused()
                 && factories == 4);
         unchanged();
-        undoRemaining = 2;
+        undoRemaining = 4;
         pending =
             standalone
                 .editingActions()
@@ -1317,6 +1514,23 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("completionStaleFeedback", completionStaleFeedback);
     out.addProperty("completionReflow", completionReflow);
     out.addProperty("standaloneCompletion", standaloneCompletion);
+    out.addProperty("completionReadWithdrawal", completionReadWithdrawal);
+    out.addProperty("completionSourceDrain", completionSourceDrain);
+    out.add("sourceAuthority", sourceAuthorityFacts.deepCopy());
+    if (sourceContext != null)
+      out.addProperty("sourceOutstandingCalls", sourceContext.outstandingCalls());
+    if (standalone != null && standaloneScope != null && standaloneScope.isOpen()) {
+      out.addProperty("standaloneCodes", standalone.controlReport().toString());
+      out.addProperty("standaloneNarration", standalone.getNarrationMessage().getString());
+      out.addProperty(
+          "standaloneSuggestions", standaloneSuggestions.state().snapshot().value().toString());
+    }
+    if (searchGate != null) {
+      out.addProperty("heldSourceThread", searchGate.thread);
+      out.addProperty("heldSourcePrefix", searchGate.prefix);
+      out.addProperty("heldSourceEntered", searchGate.entered.getCount() == 0);
+      out.addProperty("heldSourceExited", searchGate.exited.getCount() == 0);
+    }
     out.addProperty("standaloneFactories", standaloneFactories);
     out.addProperty("standaloneCloses", standaloneCloses);
     out.addProperty("factories", factories);
@@ -1382,7 +1596,11 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
 
   @Override
   public void close() {
+    if (searchGate != null) searchGate.release.countDown();
+    if (standalone != null && standalone.editingActions().isOpen())
+      standalone.editingActions().close();
     if (workflow != null && workflow.isOpen()) workflow.close();
+    if (sourceContext != null && sourceContext.isOpen()) sourceContext.close();
     if (width[0] > 0) NativeClientProbe.resize(client, width[0], height[0]);
     NativeScreens.open(client, parent);
   }
