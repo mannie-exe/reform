@@ -52,7 +52,7 @@ abstract class GraphicDrawMixin {
       GraphicCamera camera,
       CallbackInfoReturnable<Object> result) {
     example.reform.platform.PlatformSubjectPreviewChecks.draw(
-        this, result.getReturnValue(), camera, width, height);
+        this, result.getReturnValue(), camera, x, y, width, height);
     example.reform.platform.PlatformNativeItemShutdownChecks.recordDraw(
         this, result.getReturnValue());
     example.reform.platform.PlatformLoadedBlockChecks.draw(this, result.getReturnValue());

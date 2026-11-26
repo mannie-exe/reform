@@ -520,7 +520,7 @@ class PlatformOutcomeTests(unittest.TestCase):
             return successful_boot(self.process, self.native, self.library, self.target,
                                    "0.20.1", required_scenarios=("semanticPreviews",))
         complete = {"status": "PASS", "passed": True, "prepares": 18, "subjects": 12,
-                    "draws": 15, "inputBytes": 0, "nativeBytes": 0, "sceneBytes": 0}
+                    "draws": 15, "visiblePixels": 64, "inputBytes": 0, "nativeBytes": 0, "sceneBytes": 0}
         self.assertFalse(accepted())
         self.native["semanticPreviews"] = dict(complete)
         self.assertTrue(accepted())

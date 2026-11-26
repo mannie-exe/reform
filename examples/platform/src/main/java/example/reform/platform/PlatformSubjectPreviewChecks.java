@@ -44,7 +44,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private static PlatformSubjectPreviewChecks observing;
 
   public static void draw(
-      Object graphic, Object outcome, GraphicCamera camera, int width, int height) {
+      Object graphic, Object outcome, GraphicCamera camera, int x, int y, int width, int height) {
     var active = observing;
     if (active != null
         && graphic instanceof PreparedGraphic prepared
@@ -53,6 +53,8 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       active.draws++;
       active.lastDraw = prepared.stamp();
       active.drawCamera = camera;
+      active.viewportX = x;
+      active.viewportY = y;
       active.viewportWidth = width;
       active.viewportHeight = height;
     }
@@ -77,7 +79,8 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private SubjectForms.Form<Subject> subjects;
   private CompletableFuture<NavigationAttempt.Result> navigation;
   private ClientGraphicHost.Attempt held;
-  private int stage, draws, viewportWidth, viewportHeight, combination;
+  private int stage, draws, viewportX, viewportY, viewportWidth, viewportHeight, combination;
+  private long visiblePixels;
   private long frames, gesture, stoppedFrames = -1;
   private GraphicSourceStamp lastDraw;
   private GraphicCamera drawCamera, camera;
@@ -269,7 +272,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                       new GraphicSceneData(
                           request.stamp(),
                           PlatformMeshChecks.pattern(),
-                          GraphicCamera.STANDARD,
+                          new GraphicCamera(0, 0, 0.8, 0, 0),
                           List.of(
                               new GraphicSceneData.Fact(
                                   DocumentId.parse("fixture:subject"),
@@ -395,7 +398,12 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         check(
             "accepted list selection retains independent flags and camera",
             value().equals(new Subject(2, true, true)) && drawCamera.equals(camera));
-        driver.capture("previews-ready.png", () -> stage = 6);
+        driver.capture(
+            "previews-ready.png",
+            () -> {
+              pixels("previews-ready.png");
+              stage = 6;
+            });
         stage = -1;
       }
       case 6 -> {
@@ -489,7 +497,12 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       case 15 -> {
         if (!ready(17)) return false;
         check("explicit return preparation keeps user camera", drawCamera.equals(camera));
-        driver.capture("previews-returned.png", () -> stage = 16);
+        driver.capture(
+            "previews-returned.png",
+            () -> {
+              pixels("previews-returned.png");
+              stage = 16;
+            });
         stage = -1;
       }
       case 16 -> {
@@ -531,6 +544,38 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     return false;
   }
 
+  private void pixels(String filename) {
+    try {
+      var image =
+          javax.imageio.ImageIO.read(
+              client.gameDirectory.toPath().resolve("platform-" + filename).toFile());
+      double sx = (double) image.getWidth() / workflow.screen().width;
+      double sy = (double) image.getHeight() / workflow.screen().height;
+      var counts = new long[4];
+      for (int y = Math.max(0, (int) Math.ceil((viewportY + 4) * sy));
+          y < Math.min(image.getHeight(), (int) Math.floor((viewportY + viewportHeight - 4) * sy));
+          y++)
+        for (int x = Math.max(0, (int) Math.ceil((viewportX + 4) * sx));
+            x < Math.min(image.getWidth(), (int) Math.floor((viewportX + viewportWidth - 4) * sx));
+            x++) {
+          int pixel = image.getRGB(x, y),
+              r = (pixel >>> 16) & 255,
+              g = (pixel >>> 8) & 255,
+              b = pixel & 255;
+          if (r > 240 && g < 16 && b < 16) counts[0]++;
+          if (r < 16 && g > 240 && b < 16) counts[1]++;
+          if (r < 16 && g < 16 && b > 240) counts[2]++;
+          if (r > 240 && g > 240 && b < 16) counts[3]++;
+        }
+      check(
+          "actual viewport image contains all four fixture colors: " + filename,
+          java.util.Arrays.stream(counts).allMatch(count -> count >= 16));
+      visiblePixels += java.util.Arrays.stream(counts).sum();
+    } catch (java.io.IOException failed) {
+      throw new AssertionError("Cannot inspect actual preview image", failed);
+    }
+  }
+
   public JsonObject report() {
     var result = new JsonObject();
     result.addProperty("status", complete ? "PASS" : "FAIL");
@@ -540,6 +585,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     result.addProperty("prepares", entries.size());
     result.addProperty("subjects", combinations.size());
     result.addProperty("draws", draws);
+    result.addProperty("viewportX", viewportX);
+    result.addProperty("viewportY", viewportY);
+    result.addProperty("visiblePixels", visiblePixels);
     result.addProperty("viewportWidth", viewportWidth);
     result.addProperty("viewportHeight", viewportHeight);
     result.addProperty("inputBytes", host == null ? 0 : host.retainedInput().bytes());

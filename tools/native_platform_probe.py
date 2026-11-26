@@ -275,6 +275,8 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                 and native["semanticPreviews"]["subjects"] == 12
                 and type(native["semanticPreviews"].get("draws")) is int
                 and native["semanticPreviews"]["draws"] >= 15
+                and type(native["semanticPreviews"].get("visiblePixels")) is int
+                and native["semanticPreviews"]["visiblePixels"] >= 64
                 and all(type(native["semanticPreviews"].get(key)) is int
                         and native["semanticPreviews"][key] == 0
                         for key in ("inputBytes", "nativeBytes", "sceneBytes"))))
