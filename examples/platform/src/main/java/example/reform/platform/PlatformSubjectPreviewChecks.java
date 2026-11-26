@@ -78,7 +78,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private CompletableFuture<NavigationAttempt.Result> navigation;
   private ClientGraphicHost.Attempt held;
   private int stage, draws, viewportWidth, viewportHeight, combination;
-  private long frames, gesture;
+  private long frames, gesture, stoppedFrames = -1;
   private GraphicSourceStamp lastDraw;
   private GraphicCamera drawCamera, camera;
   private DraftRevision revision;
@@ -445,7 +445,18 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       }
       case 11 -> {
         if (!held.completion().toCompletableFuture().isDone() || !empty()) return false;
+        if (stoppedFrames < 0) {
+          stoppedFrames = PlatformFrameObservations.sequence();
+          return false;
+        }
+        if (PlatformFrameObservations.sequence() - stoppedFrames < 4) return false;
+        check(
+            "cancelled operation has a freshly rendered terminal offer",
+            preview.state().snapshot().value().phase() == PreviewController.Phase.CANCELLED);
         press("Prepare preview");
+        check(
+            "actual Prepare dispatch replaces the cancelled attempt",
+            preview.attempt().orElseThrow() != held);
         focusPreview();
         stage++;
       }
@@ -545,7 +556,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         + " draws="
         + draws
         + " phase="
-        + (preview == null ? "none" : workflow.isOpen() ? preview.state().snapshot() : "closed");
+        + (preview == null
+            ? "none"
+            : workflow.isOpen() ? preview.state().snapshot().value() : "closed");
   }
 
   public void close() {
