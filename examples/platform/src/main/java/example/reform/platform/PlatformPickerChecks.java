@@ -803,6 +803,28 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             || taskState().searching() != PickerState.Phase.READY
             || taskState().inspecting() != PickerState.Phase.READY) return false;
         var returned = taskState();
+        var comparisons = new JsonObject();
+        comparisons.addProperty("query", returned.query().equals(returnBefore.query()));
+        comparisons.addProperty("stamp", returned.stamp().equals(returnBefore.stamp()));
+        comparisons.addProperty("window", returned.window().equals(returnBefore.window()));
+        comparisons.addProperty("active", returned.active().equals(returnBefore.active()));
+        comparisons.addProperty(
+            "inspection", returned.inspection().equals(returnBefore.inspection()));
+        comparisons.addProperty(
+            "anchor", task.listAnchor().snapshot().value().equals(returnAnchor));
+        comparisons.addProperty(
+            "newQueryGeneration", returned.queryGeneration() != returnBefore.queryGeneration());
+        comparisons.addProperty(
+            "draft",
+            returnDraft.equals(
+                design.inherent.reform.edit.DraftRevision.of(
+                    editor.view().snapshot().orElseThrow())));
+        comparisons.addProperty("owner", workflow.editor(ROUTE) == editor);
+        returnFacts.add("comparisons", comparisons);
+        returnFacts.addProperty("before", returnBefore.toString());
+        returnFacts.addProperty("returned", returned.toString());
+        returnFacts.addProperty("returnedAnchor", task.listAnchor().snapshot().value().orElse(""));
+
         check(
             "same-source return restores bounded window and distinct picker context",
             returned.query().equals(returnBefore.query())

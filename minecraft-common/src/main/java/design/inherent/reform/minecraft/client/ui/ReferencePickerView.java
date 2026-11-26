@@ -147,10 +147,19 @@ public final class ReferencePickerView {
             picker.anchorList(),
             (Optional<String> key) -> key.map(value -> option(state, value)),
             inputs);
+    var position = picker.listAnchor();
+    UiRead<Optional<String>> readyPosition =
+        scope.derive(
+            key("viewport", scope, value -> 32L + value.map(text -> 2L * text.length()).orElse(0L)),
+            List.of(state, position),
+            values ->
+                values.value(state).searching() == PickerState.Phase.READY
+                    ? values.value(position)
+                    : Optional.empty());
     UiBinding<Optional<String>> viewport =
         new UiBinding<>() {
           public UiRead<Optional<String>> value() {
-            return picker.listAnchor();
+            return readyPosition;
           }
 
           public UiCommand<Optional<String>> changes() {

@@ -1231,7 +1231,8 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     }
     pages.clear();
     pages.putAll(next);
-    if (listAnchor != null
+    if (returningThrough < 0
+        && listAnchor != null
         && pages.values().stream()
             .flatMap(value -> value.choices().stream())
             .noneMatch(choice -> choice.key().equals(listAnchor)))

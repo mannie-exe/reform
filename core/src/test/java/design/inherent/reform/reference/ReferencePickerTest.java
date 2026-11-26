@@ -1045,6 +1045,46 @@ class ReferencePickerTest {
   }
 
   @Test
+  void returningAnchorOnALaterPageSurvivesEarlierPageHydration() throws Exception {
+    try (var h =
+        new Harness(UiLimits.STANDARD, new ReferencePicker.Policy(1, 128, 32768, 0, 3, 8))) {
+      var first = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            first.update();
+            return null;
+          });
+      awaitState(h, value -> value.searching() == PickerState.Phase.READY);
+      for (int page = 0; page < 2; page++) {
+        done(pending(h.call(() -> h.picker.nextPage().invoke(null))));
+        h.update();
+      }
+      var top = h.option("fixture:b");
+      h.call(() -> h.picker.anchorList().invoke(Optional.of(top)));
+      h.call(
+          () -> {
+            first.close();
+            return null;
+          });
+      var next = h.call(() -> h.picker.mount());
+      h.call(
+          () -> {
+            next.update();
+            return null;
+          });
+      awaitState(h, value -> value.searching() == PickerState.Phase.READY);
+      assertEquals(
+          Optional.of("fixture:b"), h.call(() -> h.picker.listAnchor().snapshot().value()));
+      h.unchanged();
+      h.call(
+          () -> {
+            next.close();
+            return null;
+          });
+    }
+  }
+
+  @Test
   void mountedReturnDoesNotReuseAnotherSourceSnapshotOrStageItsPinnedInspection() throws Exception {
     try (var h =
         new Harness(UiLimits.STANDARD, new ReferencePicker.Policy(1, 128, 32768, 0, 2, 8))) {
