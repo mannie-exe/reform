@@ -38,6 +38,105 @@ class ClientFieldPartsTest {
   @TempDir Path directory;
 
   @Test
+  void surfaceKeepsOneSemanticControlAndLazilyRevealsTheOriginalInput() {
+    try (var h = new Host(directory)) {
+      var expanded = new AtomicReference<design.inherent.reform.presentation.ui.UiLocal<Boolean>>();
+      var baseline = h.scope.usage();
+      try (var tree =
+          MountedUiTree.field(
+              h.scope,
+              (scope, parts) -> {
+                var open =
+                    scope.local(
+                        new design.inherent.reform.presentation.ViewStateKey<>(
+                            DocumentId.parse("example:native_open"), ValueTypes.bool()),
+                        false);
+                expanded.set(open);
+                return Views.column(
+                    "field",
+                    List.of(
+                        parts.label("label"),
+                        parts.controlSurface(
+                            "control",
+                            Views.text(
+                                "replacement", Component.literal("Choices"), Component.empty()),
+                            design.inherent.reform.presentation.ui.UiBindings.local(open),
+                            UiText.of(Component.literal("ID"))),
+                        parts.feedback("feedback")));
+              },
+              h::parts)) {
+        assertTrue(tree.failure().isEmpty());
+        assertEquals(
+            1,
+            tree.snapshot().stream()
+                .filter(row -> row.kind() == MountedUiTree.Kind.SURFACE)
+                .count());
+        assertEquals(
+            0,
+            tree.snapshot().stream().filter(row -> row.kind() == MountedUiTree.Kind.FIELD).count());
+        expanded.get().replace(true);
+        tree.refresh(true);
+        assertTrue(tree.failure().isEmpty());
+        assertEquals(
+            1,
+            tree.snapshot().stream().filter(row -> row.kind() == MountedUiTree.Kind.FIELD).count());
+        expanded.get().replace(false);
+        tree.refresh(true);
+        assertEquals(
+            0,
+            tree.snapshot().stream().filter(row -> row.kind() == MountedUiTree.Kind.FIELD).count());
+        assertFalse(h.actions.view().dirty());
+      }
+      assertEquals(baseline, h.scope.usage());
+      assertTrue(h.actions.isOpen());
+    }
+  }
+
+  @Test
+  void duplicateSurfaceOrOrphanNativeInputCannotReplaceTheRequiredFieldFamily() {
+    try (var h = new Host(directory)) {
+      var baseline = h.scope.usage();
+      for (boolean orphan : List.of(false, true)) {
+        var failure =
+            assertThrows(
+                PolicyRefusal.class,
+                () ->
+                    MountedUiTree.field(
+                        h.scope,
+                        (scope, parts) -> {
+                          var open =
+                              scope.local(
+                                  new design.inherent.reform.presentation.ViewStateKey<>(
+                                      DocumentId.parse("example:native_open"), ValueTypes.bool()),
+                                  false);
+                          var surface =
+                              (design.inherent.reform.minecraft.client.ui.ViewSpec.FieldSurface)
+                                  parts.controlSurface(
+                                      "surface",
+                                      Views.text("empty", Component.empty(), Component.empty()),
+                                      design.inherent.reform.presentation.ui.UiBindings.local(open),
+                                      UiText.of(Component.literal("ID")));
+                          return Views.column(
+                              "field",
+                              List.of(
+                                  parts.label("label"),
+                                  orphan
+                                      ? new design.inherent.reform.minecraft.client.ui.ViewSpec
+                                          .NativeFieldInput("orphan", surface.surface())
+                                      : surface,
+                                  parts.control("duplicate"),
+                                  parts.feedback("feedback")));
+                        },
+                        h::parts));
+        assertEquals(
+            orphan ? "ui.foreign_field_part" : "ui.duplicate_field_part",
+            failure.report().issues().getFirst().code());
+        assertEquals(baseline, h.scope.usage());
+      }
+    }
+  }
+
+  @Test
   void missingDuplicateAndForeignPartsRefuseBeforeAttachmentAndRefundChildAdmission() {
     try (var h = new Host(directory)) {
       var baseline = h.scope.usage();

@@ -62,6 +62,7 @@ final class MountedUiTree implements AutoCloseable {
     DISCLOSURE,
     CHOICE_LIST,
     QUERY_INPUT,
+    SURFACE,
     FIELD,
     OPEN,
     CLOSE
@@ -329,6 +330,10 @@ final class MountedUiTree implements AutoCloseable {
             add(declared, part.field().labelText().dependencies());
             add(declared, part.field().descriptionText().dependencies());
           }
+          case ViewSpec.FieldSurface surface ->
+              add(declared, List.of(surface.surface().field().state()));
+          case ViewSpec.NativeFieldInput input ->
+              add(declared, List.of(input.surface().field().state()));
           default -> {}
         }
         reads = List.copyOf(declared);
@@ -349,6 +354,8 @@ final class MountedUiTree implements AutoCloseable {
             });
         switch (spec) {
           case ViewSpec.Managed managed -> children.add(new Node(managed.content(), scope));
+          case ViewSpec.FieldSurface surface ->
+              children.add(new Node(surface.surface().content(), scope));
           case ViewSpec.Column column -> construct(column.children());
           case ViewSpec.Section section -> construct(section.children());
           case ViewSpec.Component<?> component -> children.add(component(component));
@@ -818,6 +825,16 @@ final class MountedUiTree implements AutoCloseable {
                     section.title().resolve(),
                     Component.empty(),
                     UiAvailability.READY);
+            case ViewSpec.FieldSurface surface ->
+                new Row(
+                    this, Kind.SURFACE, Component.empty(), Component.empty(), UiAvailability.READY);
+            case ViewSpec.NativeFieldInput input ->
+                new Row(
+                    this,
+                    Kind.FIELD,
+                    input.surface().field().labelText().resolve(),
+                    Component.empty(),
+                    UiAvailability.READY);
             default -> null;
           };
       cachedRow = next;
@@ -890,17 +907,42 @@ final class MountedUiTree implements AutoCloseable {
     var families =
         new java.util.IdentityHashMap<
             ClientFieldParts<?>, java.util.EnumSet<ClientFieldParts.Role>>();
+    var surfaces =
+        new java.util.IdentityHashMap<ClientFieldParts<?>, ClientFieldParts.Surface<?>>();
+    var nativeSlots = new java.util.IdentityHashMap<ClientFieldParts.Surface<?>, Boolean>();
     for (var row : rows) {
-      if (!(row.node().spec instanceof ViewSpec.FieldPart part)) continue;
-      if (part.field() != requiredField || !part.field().belongsTo(root))
+      ClientFieldParts<?> field;
+      ClientFieldParts.Role role;
+      if (row.node().spec instanceof ViewSpec.FieldPart part) {
+        field = part.field();
+        role = part.role();
+      } else if (row.node().spec instanceof ViewSpec.FieldSurface surface) {
+        field = surface.surface().field();
+        role = ClientFieldParts.Role.CONTROL;
+        surfaces.put(field, surface.surface());
+      } else if (row.node().spec instanceof ViewSpec.NativeFieldInput input) {
+        field = input.surface().field();
+        if (field != requiredField || !field.belongsTo(root))
+          throw new PolicyRefusal(
+              "ui.foreign_field_part", "Field parts must belong to this mounted field.");
+        if (nativeSlots.put(input.surface(), true) != null)
+          throw new PolicyRefusal(
+              "ui.duplicate_field_part", "Use the original native input only once.");
+        continue;
+      } else continue;
+      if (field != requiredField || !field.belongsTo(root))
         throw new PolicyRefusal(
             "ui.foreign_field_part", "Field parts must belong to this mounted field.");
       var roles =
           families.computeIfAbsent(
-              part.field(), ignored -> java.util.EnumSet.noneOf(ClientFieldParts.Role.class));
-      if (!roles.add(part.role()))
+              field, ignored -> java.util.EnumSet.noneOf(ClientFieldParts.Role.class));
+      if (!roles.add(role))
         throw new PolicyRefusal("ui.duplicate_field_part", "Use each field part only once.");
     }
+    for (var surface : nativeSlots.keySet())
+      if (surfaces.get(surface.field()) != surface)
+        throw new PolicyRefusal(
+            "ui.foreign_field_part", "The native input needs its original field surface.");
     if (requiredField != null && !families.containsKey(requiredField))
       throw new PolicyRefusal(
           "ui.missing_field_part", "A field needs its label, control, and feedback parts.");
@@ -1021,6 +1063,13 @@ final class MountedUiTree implements AutoCloseable {
     return rows;
   }
 
+  boolean nativeInputVisible() {
+    root.requireCurrent();
+    return attached
+        && rows.stream()
+            .anyMatch(row -> row.kind() == Kind.FIELD && row.availability().available());
+  }
+
   Optional<RuntimeException> failure() {
     if (failure != null) return Optional.of(failure);
     return tree == null ? Optional.empty() : tree.collectionFailure();
@@ -1064,6 +1113,7 @@ final class MountedUiTree implements AutoCloseable {
     tree.focusRedirects(panel);
     for (var row : rows) {
       switch (row.kind()) {
+        case SURFACE -> {} // Ownership/semantics marker; its children supply the actual surface.
         case TEXT -> {
           if (!(row.node().spec instanceof ViewSpec.FieldPart)
               || !row.label().getString().isBlank()
@@ -1071,8 +1121,10 @@ final class MountedUiTree implements AutoCloseable {
             panel.anchorRow(row.node().id, row.label(), row.body());
         }
         case FIELD -> {
-          var part = (ViewSpec.FieldPart) row.node().spec;
-          var widgets = part.field().widgets();
+          var widgets =
+              row.node().spec instanceof ViewSpec.NativeFieldInput input
+                  ? input.surface().field().nativeWidgets()
+                  : ((ViewSpec.FieldPart) row.node().spec).field().widgets();
           if (failure != null || !row.availability().available()) {
             for (var widget : widgets) {
               widget.active = false;

@@ -43,6 +43,22 @@ public sealed interface ViewSpec {
     }
   }
 
+  /** A control capability minted by the actual field; visual content cannot mint a new writer. */
+  record FieldSurface(String key, ClientFieldParts.Surface<?> surface) implements ViewSpec {
+    public FieldSurface {
+      key = identity(key);
+      Objects.requireNonNull(surface);
+    }
+  }
+
+  /** The original input slot owned by a surface, never a caller-supplied widget. */
+  record NativeFieldInput(String key, ClientFieldParts.Surface<?> surface) implements ViewSpec {
+    public NativeFieldInput {
+      key = identity(key);
+      Objects.requireNonNull(surface);
+    }
+  }
+
   record ChoiceList(String key, ChoiceListParts parts) implements ViewSpec {
     public ChoiceList {
       key = identity(key);

@@ -83,6 +83,12 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private ReferencePicker<Profile, List<String>> task, inline;
   private UiScope taskScope, inlineScope, fieldScope;
   private UiLocal<Boolean> expanded;
+  private UiLocal<Boolean> manualExpanded;
+  private ClientTextInput originalInput;
+  private ClientTextInput.Stamp hiddenStamp;
+  private EditBox manualWidget;
+  private design.inherent.reform.edit.DraftRevision manualRevision;
+  private int undoRemaining;
   private ClientFieldParts<?> originalParts;
   private CompletableFuture<?> pending;
   private CompletableFuture<NavigationAttempt.Result> navigation;
@@ -94,6 +100,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private int[] width = {0}, height = {0};
   private long frames;
   private boolean complete;
+  private int fieldFactories, fieldRetirements;
+  private long inlineWaitFrame = -1;
   private final JsonObject pointerFacts = new JsonObject();
 
   private void pointerBounds(String phase) {
@@ -235,9 +243,14 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
 
   private boolean arrived() {
     if (!navigation.isDone()) return false;
+    var result = navigation.join();
+    if (result.outcome() != NavigationAttempt.Outcome.REVEALED)
+      throw new AssertionError(
+          "Picker navigation " + result.target() + ": " + result.outcome() + " " + result.report(),
+          result.cause().orElse(null));
     check(
         "identified picker destination revealed",
-        navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED);
+        result.outcome() == NavigationAttempt.Outcome.REVEALED);
     return true;
   }
 
@@ -268,6 +281,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 .withComponent(
                     ART_ROLE.field(),
                     (scope, parts) -> {
+                      fieldFactories++;
+                      scope.onRetire(() -> fieldRetirements++);
                       originalParts = parts;
                       fieldScope = scope;
                       expanded =
@@ -276,33 +291,46 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                                   DocumentId.parse("fixture:inline_picker_open"),
                                   ValueTypes.bool()),
                               false);
+                      manualExpanded =
+                          scope.local(
+                              new ViewStateKey<>(
+                                  DocumentId.parse("fixture:manual_id_open"), ValueTypes.bool()),
+                              false);
+                      var choices =
+                          Views.disclosure(
+                              "inline",
+                              UiBindings.local(expanded),
+                              DisclosureParts.retained(
+                                  UiText.of(text("Artwork choices")),
+                                  UiText.of(Component.empty()),
+                                  UiText.of(Component.empty()),
+                                  branch -> {
+                                    inlineScope = branch;
+                                    inline =
+                                        ReferencePicker.open(
+                                            branch,
+                                            parts.binding(),
+                                            DEFINITION,
+                                            SOURCE,
+                                            this::source,
+                                            List.of(MODEL_ROLE, ART_ROLE),
+                                            Map.of("artwork", parts.frontend()),
+                                            POLICY,
+                                            clock::get);
+                                    return ReferencePickerView.build(
+                                        branch, inline, presentation(), Optional.of(ART_ROLE));
+                                  }));
                       return Views.column(
                           "artwork",
                           List.of(
-                              parts.standard("canonical"),
-                              Views.disclosure(
-                                  "inline",
-                                  UiBindings.local(expanded),
-                                  DisclosureParts.retained(
-                                      UiText.of(text("Artwork choices")),
-                                      UiText.of(Component.empty()),
-                                      UiText.of(Component.empty()),
-                                      branch -> {
-                                        inlineScope = branch;
-                                        inline =
-                                            ReferencePicker.open(
-                                                branch,
-                                                parts.binding(),
-                                                DEFINITION,
-                                                SOURCE,
-                                                this::source,
-                                                List.of(MODEL_ROLE, ART_ROLE),
-                                                Map.of("artwork", parts.frontend()),
-                                                POLICY,
-                                                clock::get);
-                                        return ReferencePickerView.build(
-                                            branch, inline, presentation(), Optional.of(ART_ROLE));
-                                      }))));
+                              parts.label("label"),
+                              parts.description("description"),
+                              parts.controlSurface(
+                                  "control",
+                                  choices,
+                                  UiBindings.local(manualExpanded),
+                                  UiText.of(text("Artwork ID"))),
+                              parts.feedback("feedback")));
                     });
         var form = settings.form(text("Profile selection"), options).atRoute(ROUTE);
         var layout =
@@ -552,11 +580,33 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "field uses same owner and collapsed source remains lazy",
             workflow.editor(ROUTE) == editor && inline == null && factories == 1);
+        originalInput = originalParts.input().orElseThrow();
+        check(
+            "collapsed surface does not reveal the original native input",
+            originalInput.state().snapshot() instanceof UiObservation.Unavailable<?>);
+        frames = PlatformFrameObservations.sequence();
+        stage = 141;
+      }
+      case 141 -> {
+        // Let the host observe the newly admitted input subscription before using its controls.
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
         press("Show Artwork choices");
         stage = 15;
       }
       case 15 -> {
-        if (inline == null || inlineState().searching() != PickerState.Phase.READY) return false;
+        if (inline == null || inlineState().searching() != PickerState.Phase.READY) {
+          if (inlineWaitFrame < 0) inlineWaitFrame = PlatformFrameObservations.sequence();
+          if (PlatformFrameObservations.sequence() - inlineWaitFrame > 12) {
+            driver.capture(
+                "pickers-surface-diagnostic.png",
+                () -> {
+                  throw new AssertionError(
+                      "Early inline diagnostic after accepted expansion gesture");
+                });
+            stage = -1;
+          }
+          return false;
+        }
         check(
             "inline source uses original field input guard",
             originalParts.binding().identity().context().equals(editor.actions().context())
@@ -601,6 +651,77 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         int[] w = {0}, h = {0};
         NativeClientProbe.size(client, w, h);
         if (w[0] != width[0] || h[0] != height[0] || !editor.canSubmit()) return false;
+        press("Show Artwork ID");
+        stage = 24;
+      }
+      case 24 -> {
+        if (!(originalInput.state().snapshot() instanceof UiObservation.Available<?>)) return false;
+        manualWidget =
+            widgets(workflow.screen()).stream()
+                .filter(EditBox.class::isInstance)
+                .map(EditBox.class::cast)
+                .filter(widget -> widget.getMessage().getString().equals("Artwork"))
+                .findFirst()
+                .orElseThrow();
+        check(
+            "manual disclosure mounts the actual field input",
+            focus(workflow.screen(), manualWidget));
+        manualWidget.setValue("fixture:unlisted");
+        manualWidget.setCursorPosition(3);
+        manualWidget.setHighlightPos(1);
+        stage = 25;
+      }
+      case 25 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals("fixture:unlisted")) return false;
+        var state = originalInput.state().snapshot().value();
+        if (!state.raw().equals("fixture:unlisted") || state.caret() != 3 || state.anchor() != 1)
+          return false;
+        hiddenStamp = state.stamp();
+        manualRevision =
+            design.inherent.reform.edit.DraftRevision.of(editor.view().snapshot().orElseThrow());
+        check(
+            "manual ID edits only its real draft and never resolves on typing",
+            raw("models").equals(id(3)) && lookups.get() == 3);
+        UiBindings.local(manualExpanded).changes().invoke(false);
+        frames = PlatformFrameObservations.sequence();
+        stage = 26;
+      }
+      case 26 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        var hiddenResult =
+            originalInput
+                .replacements()
+                .invoke(new ClientTextInput.Replacement(hiddenStamp, 0, 0, "late", 0, 0));
+        check(
+            "hidden canonical input is withdrawn and old raw command refuses",
+            originalInput.state().snapshot() instanceof UiObservation.Unavailable<?>
+                && hiddenResult instanceof UiActionResult.Refused refused
+                && refused.report().issues().getFirst().code().equals("field.input_unavailable"));
+        check(
+            "collapse preserves whole draft and revision",
+            manualRevision.equals(
+                    design.inherent.reform.edit.DraftRevision.of(
+                        editor.view().snapshot().orElseThrow()))
+                && raw("artwork").equals("fixture:unlisted"));
+        press("Show Artwork ID");
+        stage = 27;
+      }
+      case 27 -> {
+        if (!(originalInput.state().snapshot() instanceof UiObservation.Available<?>)) return false;
+        var state = originalInput.state().snapshot().value();
+        check(
+            "reopening restores original raw caret selection and control identity",
+            state.raw().equals("fixture:unlisted")
+                && state.caret() == 3
+                && state.anchor() == 1
+                && widgets(workflow.screen()).contains(manualWidget));
+        manualWidget.setValue(id(1));
+        stage = 28;
+      }
+      case 28 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals(id(1))) return false;
+        unchanged();
+        undoRemaining = 4;
         pending =
             editor
                 .actions()
@@ -612,13 +733,16 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       case 19 -> {
         if (!pending.isDone() || !editor.canSubmit()) return false;
         pending.join();
+        if (--undoRemaining == 0) {
+          stage = 20;
+          return false;
+        }
         pending =
             editor
                 .actions()
                 .undo(OperationDescriptor.EntryPoint.GUI)
                 .completion()
                 .toCompletableFuture();
-        stage = 20;
       }
       case 20 -> {
         if (!pending.isDone() || !editor.canSubmit()) return false;
@@ -679,6 +803,21 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("searches", searches.get());
     out.addProperty("lookups", lookups.get());
     out.addProperty("stage", stage);
+    out.addProperty("fieldFactories", fieldFactories);
+    out.addProperty("fieldRetirements", fieldRetirements);
+    out.addProperty("fieldScopeOpen", fieldScope != null && fieldScope.isOpen());
+    if (fieldScope != null && fieldScope.isOpen()) {
+      if (expanded != null) out.addProperty("inlineExpanded", expanded.snapshot().value());
+      if (manualExpanded != null)
+        out.addProperty("manualExpanded", manualExpanded.snapshot().value());
+      out.addProperty("fieldKernelRevision", fieldScope.revision());
+    }
+    if (navigation != null && navigation.isDone()) {
+      var result = navigation.join();
+      out.addProperty("navigationOutcome", result.outcome().name());
+      out.addProperty("navigationReport", result.report().toString());
+      result.cause().ifPresent(cause -> out.addProperty("navigationCause", cause.toString()));
+    }
     out.add("pointerBounds", pointerFacts.deepCopy());
     if (editor != null && editor.isOpen()) {
       out.addProperty("actorAvailability", editor.view().availability().name());

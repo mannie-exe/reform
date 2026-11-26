@@ -55,7 +55,7 @@ The controlled active key and the accepted key set are independent reads. Arrow,
 
 `Views.managed(key, lifecycle, content)` declares bounded attached work within that node's owned scope. `UiMountLifecycle.update()` runs on the owner update turn, after native query sampling and before cached source observation, only after actual attachment. Construction and paint never invoke it. `suspend()` runs when an entered subtree is hidden, withdrawn, or retired; retained Disclosure content keeps local state but suspends its work. The component must register final resource ownership with its scope and borrow, rather than close, unrelated document/source services. No timer, executor, actor, or global scheduler is created. Framework bodies drive this turn; a caller-owned host continues to call its mount's `update()`.
 
-These are shared native primitives, not a completed reference picker. The core controller still exposes one bounded current page. Continuous retained paging, the shared inline/task picker assembly, canonical field control surface, source-stamped manual-ID completion, and preview orchestration remain selected work. Existing reference screens have not yet been replaced by this component assembly.
+The shared inline/task assembly below retains a finite paging window over the bounded source service and can use a canonical field control surface. Source-stamped manual-ID completion, complete return bookmarks, and preview orchestration remain selected work. Existing reference screens have not yet been replaced by this component assembly.
 
 ### Source-backed picker assembly
 
@@ -85,7 +85,7 @@ This example deliberately leaves the original canonical field family attached. I
 
 List paging demand comes from actual navigation/scroll gestures, outside painting. A refresh may preserve a key event when the same generation and exact item remain present; keyboard activation additionally requires the same controlled active key. Removed, changed, disabled, or different-generation items refuse. This permits Enter during harmless page/status updates without allowing stale option callbacks.
 
-The assembled native journey remains under qualification. Full inline/task bookmarks, control-surface/manual completion, layout/feedback relationships, and preview/camera policies are not established by the assembly API alone.
+The assembled native journey remains under qualification. Full inline/task bookmarks, manual-ID completion, layout/feedback relationships, and preview/camera policies are not established by the assembly API alone. Canonical surface qualification is recorded separately in verification.
 
 ## Cached reads and actual commands
 
@@ -123,6 +123,10 @@ An admitted text change goes through the same quantity mapping, retained input, 
 
 A field family provides `label`, `description`, `control`, and `feedback` descriptions. `parts.standard(key)` assembles a vertical standard variant. Exactly one label, control, and feedback part is required; description is optional. Missing, duplicated, or foreign parts refuse before native attachment. A composition can add ordinary shared component text/actions/flow around those parts. Native controls keep their original caption semantics, quantities, validation, source actions, and responders; component declarations cannot inject an arbitrary widget into the description.
 
+`parts.controlSurface(key, replacement, nativeExpanded, nativeLabel)` replaces the default control presentation while retaining a field-owned native-control disclosure. It fills the required control role; label and feedback are still required. The opaque surface and original-input slot cannot authorize another field, and an orphan input or duplicate default/surface control refuses. The replacement is a shared `ViewSpec`, not another native widget or effect callback. Reference surfaces reveal the original raw input with its information/dependency actions, using the replacement picker instead of a second full-screen chooser. Other scalar controls retain their ordinary units and auxiliary controls. The original buffer, native responder, input acknowledgment, and owner edits stay authoritative.
+
+The controlled `nativeExpanded` binding uses the ordinary retained disclosure policy. A collapsed native input is unavailable through `ClientTextInput`, even while the field's guarded picker may still stage an explicit choice. Reopening retains the original buffer and control lifetime. Qualification of raw text, caret, focus, pending receipts, and actual closure is separate from the structural surface contract; this is not autocomplete or arbitrary field hosting.
+
 ```java
 options.withComponent(FieldPath.ROOT.field("enabled"), (scope, parts) ->
     Views.column("enabled", List.of(
@@ -142,4 +146,4 @@ The native trigger uses Enter/Space, reports expanded/collapsed state, and inclu
 
 Content failures clear projected content and leave the trigger available. `ClientUiMount.disclosureFailures()` reports the boundary identity, structured report, and actual cause. A failed construction is retried only after explicit collapse/reopen; an existing content source can recover through a fresh observation without recreating its scope. Failed cleanup remains a failed retirement. `UiBindings.toggle` invokes the current controlled value's actual command and never writes an optimistic expansion state after a pending or refused result.
 
-Disclosure does not replace a field's mandatory label/control/feedback family. Hiding a required field part still fails that field's composition contract. The upcoming picker/manual-ID surface must declare its canonical control ownership explicitly.
+An ordinary Disclosure does not replace a field's mandatory label/control/feedback family. Hiding a required field part still fails that field's composition contract. `controlSurface` instead declares control ownership explicitly and keeps the original native input reachable through its own retained disclosure.

@@ -356,17 +356,21 @@ public final class ReferencePickerView {
           Component.translatableWithFallback(
               "reform.ui.choices_stale", "The source changed. Refresh choices to continue.");
       case UNAVAILABLE ->
-          Component.translatableWithFallback(
-              "reform.ui.choices_unavailable",
-              "Choices are unavailable. Open Source details for the cause, or refresh to retry.");
+          failureStatus(
+              value,
+              Component.translatableWithFallback(
+                  "reform.ui.choices_unavailable",
+                  "Choices are unavailable. Refresh choices to retry."));
       case READY ->
           switch (value.searching()) {
             case RUNNING, DRAINING, DEBOUNCING ->
                 Component.translatableWithFallback("reform.ui.finding_choices", "Finding choices…");
             case FAILED, REFUSED, CANCELLED ->
-                Component.translatableWithFallback(
-                    "reform.ui.search_stopped",
-                    "The search did not finish. Open Source details for the cause, or refresh to retry.");
+                failureStatus(
+                    value,
+                    Component.translatableWithFallback(
+                        "reform.ui.search_stopped",
+                        "The search did not finish. Refresh choices to retry."));
             default ->
                 !value.window().choices().isEmpty()
                     ? Component.empty()
@@ -379,6 +383,51 @@ public final class ReferencePickerView {
                             "No matching choices. Change the search.");
           };
     };
+  }
+
+  private static Component failureStatus(PickerState state, Component fallback) {
+    var reason =
+        state
+            .page()
+            .filter(
+                page ->
+                    page.availability()
+                        != design.inherent.reform.reference.ReferencePage.Availability.READY)
+            .map(design.inherent.reform.reference.ReferencePage::reason)
+            .filter(text -> !text.isBlank());
+    if (reason.isEmpty())
+      reason =
+          state.report().issues().stream()
+              .map(issue -> issue.fallback())
+              .filter(text -> !text.isBlank())
+              .findFirst();
+    if (reason.isEmpty())
+      reason =
+          state.searchWork().stream()
+              .flatMap(work -> work.report().stream())
+              .flatMap(report -> report.issues().stream())
+              .map(issue -> issue.fallback())
+              .filter(text -> !text.isBlank())
+              .findFirst();
+    boolean unavailable =
+        state.source() == PickerState.Source.UNAVAILABLE
+            || state
+                .page()
+                .filter(
+                    page ->
+                        page.availability()
+                            != design.inherent.reform.reference.ReferencePage.Availability.READY)
+                .isPresent();
+    return reason
+        .<Component>map(
+            text ->
+                Component.translatableWithFallback(
+                    unavailable
+                        ? "reform.ui.choices_failed_cause"
+                        : "reform.ui.search_failed_cause",
+                    unavailable ? "Choices are unavailable. %s" : "The search did not finish. %s",
+                    Component.literal(text)))
+        .orElse(fallback);
   }
 
   private static Component inspectionTitle(PickerState state) {
@@ -421,6 +470,7 @@ public final class ReferencePickerView {
 
   private static List<String> details(PickerState state) {
     var blocks = new ArrayList<String>();
+    state.page().ifPresent(page -> add(blocks, "Reason", page.reason()));
     state
         .stamp()
         .ifPresent(

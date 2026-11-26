@@ -1,10 +1,12 @@
 package design.inherent.reform.minecraft.client;
 
+import design.inherent.reform.minecraft.client.ui.DisclosureParts;
 import design.inherent.reform.minecraft.client.ui.UiText;
 import design.inherent.reform.minecraft.client.ui.ViewSpec;
 import design.inherent.reform.minecraft.client.ui.Views;
 import design.inherent.reform.presentation.ui.FieldBinding;
 import design.inherent.reform.presentation.ui.FieldState;
+import design.inherent.reform.presentation.ui.UiBinding;
 import design.inherent.reform.presentation.ui.UiRead;
 import design.inherent.reform.presentation.ui.UiScope;
 import java.util.List;
@@ -19,6 +21,43 @@ import net.minecraft.client.gui.components.AbstractWidget;
  * family requires exactly one label, control, and feedback part; description is optional.
  */
 public final class ClientFieldParts<V> {
+  /**
+   * An opaque field-owned surface. Its native-input slot is supplied by the form, not the caller.
+   */
+  public static final class Surface<V> {
+    private final ClientFieldParts<V> field;
+    private final ViewSpec content;
+
+    private Surface(
+        ClientFieldParts<V> field,
+        ViewSpec replacement,
+        UiBinding<Boolean> nativeExpanded,
+        UiText nativeLabel) {
+      this.field = field;
+      content =
+          Views.column(
+              "surface",
+              List.of(
+                  Objects.requireNonNull(replacement),
+                  Views.disclosure(
+                      "native-control",
+                      nativeExpanded,
+                      DisclosureParts.retained(
+                          nativeLabel,
+                          UiText.of(net.minecraft.network.chat.Component.empty()),
+                          UiText.of(net.minecraft.network.chat.Component.empty()),
+                          branch -> new ViewSpec.NativeFieldInput("input", this)))));
+    }
+
+    public ClientFieldParts<V> field() {
+      return field;
+    }
+
+    public ViewSpec content() {
+      return content;
+    }
+  }
+
   public enum Role {
     LABEL,
     DESCRIPTION,
@@ -31,6 +70,7 @@ public final class ClientFieldParts<V> {
   private final UiText label, description;
   private Supplier<List<AbstractWidget>> controls;
   private Supplier<Optional<ClientTextInput>> input;
+  private Supplier<List<AbstractWidget>> nativeControls;
 
   ClientFieldParts(
       UiScope owner,
@@ -39,16 +79,29 @@ public final class ClientFieldParts<V> {
       UiText description,
       Supplier<List<AbstractWidget>> controls,
       Supplier<Optional<ClientTextInput>> input) {
+    this(owner, binding, label, description, controls, controls, input);
+  }
+
+  ClientFieldParts(
+      UiScope owner,
+      FieldBinding<?, V> binding,
+      UiText label,
+      UiText description,
+      Supplier<List<AbstractWidget>> controls,
+      Supplier<List<AbstractWidget>> nativeControls,
+      Supplier<Optional<ClientTextInput>> input) {
     this.owner = Objects.requireNonNull(owner);
     this.binding = Objects.requireNonNull(binding);
     this.label = Objects.requireNonNull(label);
     this.description = Objects.requireNonNull(description);
     this.controls = Objects.requireNonNull(controls);
     this.input = Objects.requireNonNull(input);
+    this.nativeControls = Objects.requireNonNull(nativeControls);
     owner.onRetire(
         () -> {
           this.controls = null;
           this.input = null;
+          this.nativeControls = null;
         });
   }
 
@@ -84,6 +137,23 @@ public final class ClientFieldParts<V> {
     return new ViewSpec.FieldPart(key, this, Role.CONTROL);
   }
 
+  /**
+   * Replace the default control presentation while keeping its original input reachable through a
+   * retained disclosure. The label and feedback parts remain mandatory. This creates no widget or
+   * alternate edit callback; all input responders and guarded commands remain authoritative.
+   */
+  public ViewSpec controlSurface(
+      String key, ViewSpec replacement, UiBinding<Boolean> nativeExpanded, UiText nativeLabel) {
+    owner.requireCurrent();
+    return new ViewSpec.FieldSurface(
+        key,
+        new Surface<>(
+            this,
+            replacement,
+            Objects.requireNonNull(nativeExpanded),
+            Objects.requireNonNull(nativeLabel)));
+  }
+
   public ViewSpec feedback(String key) {
     return new ViewSpec.FieldPart(key, this, Role.FEEDBACK);
   }
@@ -110,5 +180,10 @@ public final class ClientFieldParts<V> {
   List<AbstractWidget> widgets() {
     owner.requireCurrent();
     return List.copyOf(controls.get());
+  }
+
+  List<AbstractWidget> nativeWidgets() {
+    owner.requireCurrent();
+    return List.copyOf(nativeControls.get());
   }
 }

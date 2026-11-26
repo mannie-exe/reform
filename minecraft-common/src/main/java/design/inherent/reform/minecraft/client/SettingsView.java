@@ -282,9 +282,16 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     List<AbstractWidget> widgets;
     MountedUiTree tree;
 
-    ComposedField(FieldPath path, Component label, List<AbstractWidget> widgets) {
+    private List<AbstractWidget> nativeWidgets;
+
+    ComposedField(
+        FieldPath path,
+        Component label,
+        List<AbstractWidget> widgets,
+        List<AbstractWidget> nativeWidgets) {
       this.path = path;
       this.widgets = List.copyOf(widgets);
+      this.nativeWidgets = List.copyOf(nativeWidgets);
       if (componentScope == null) {
         componentLifetime =
             new design.inherent.reform.owner.OwnerContext(
@@ -338,6 +345,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           design.inherent.reform.minecraft.client.ui.UiText.of(label),
           design.inherent.reform.minecraft.client.ui.UiText.of(fieldHelp(path)),
           () -> this.widgets,
+          () -> this.nativeWidgets,
           new java.util.function.Supplier<>() {
             private ClientTextInput input;
 
@@ -370,6 +378,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
 
     void close() {
       widgets = List.of();
+      nativeWidgets = List.of();
       tree.close();
     }
   }
@@ -1206,6 +1215,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     if (closed
         || !isCurrent()
         || !visibleFields.contains(path)
+        || composedFields.containsKey(path) && !composedFields.get(path).tree.nativeInputVisible()
         || control == null
         || !(control.widget() instanceof FormEditBox input))
       throw new PolicyRefusal(
@@ -2407,7 +2417,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       browse.setTooltip(Tooltip.create(Component.literal(reference.source().toString())));
       structureButtons.put(browse, source != null);
       structurePaths.put(browse, path);
-      fieldRow(path, label, control.widget(), browse);
+      fieldRow(path, label, List.of(control.widget(), browse), List.of(control.widget()));
     } else if (control.quantity() != null) {
       var quantity = control.quantity();
       ControlSizing.offer(quantity.units, unitWidth(quantity.input), 20);
@@ -2550,9 +2560,18 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   private void fieldRow(FieldPath path, Component label, AbstractWidget... widgets) {
+    fieldRow(path, label, List.of(widgets), List.of(widgets));
+  }
+
+  private void fieldRow(
+      FieldPath path,
+      Component label,
+      List<AbstractWidget> widgets,
+      List<AbstractWidget> nativeWidgets) {
     if (!expandedEditors.contains(path) || !titledReferences.containsKey(path))
       prepareEntry(path, key(path));
-    var row = new ArrayList<>(List.of(widgets));
+    var row = new ArrayList<>(widgets);
+    var nativeRow = new ArrayList<>(nativeWidgets);
     var base = controls.get(path);
     if (base != null && controlAdapters.containsKey(path)) {
       var adapted = adaptedControls.get(path);
@@ -2568,15 +2587,22 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       int index = row.indexOf(base.widget());
       if (index >= 0) row.set(index, adapted.widget());
     }
-    row.add(informationButton(path, label));
-    if (hasAvailability(path)) row.add(availabilityButton(path, label));
+    var information = informationButton(path, label);
+    row.add(information);
+    nativeRow.add(information);
+    if (hasAvailability(path)) {
+      var availability = availabilityButton(path, label);
+      row.add(availability);
+      nativeRow.add(availability);
+    }
     if (fieldComponents.containsKey(path)) {
       var composed = composedFields.get(path);
       if (composed == null) {
-        composed = new ComposedField(path, label, row);
+        composed = new ComposedField(path, label, row, nativeRow);
         composedFields.put(path, composed);
       }
       composed.widgets = List.copyOf(row);
+      composed.nativeWidgets = List.copyOf(nativeRow);
       panel.anchor(key(path));
       composed.append();
     } else
@@ -4091,10 +4117,14 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
           }
           if (!fieldComponents.containsKey(path)) panel.summary(key(path), summary);
           if (control.widget() instanceof EditBox input && control.editable()) {
-            if (input instanceof NativeTextInput themed)
-              themed.valueRole(
-                  issue.isEmpty() ? ClientTheme.TextRole.VALUE : ClientTheme.TextRole.ERROR);
-            else
+            if (input instanceof NativeTextInput themed) {
+              var composed = composedFields.get(path);
+              // A surface retains the original buffer while its native slot is hidden. Its
+              // actual parent supplies the theme on reveal; do not invent a visual attachment.
+              if (composed == null || composed.tree.nativeInputVisible())
+                themed.valueRole(
+                    issue.isEmpty() ? ClientTheme.TextRole.VALUE : ClientTheme.TextRole.ERROR);
+            } else
               input.setTextColor(
                   FormCanvas.textColor(
                       issue.isEmpty() ? FormPanel.TITLE_TEXT : FormPanel.ERROR_TEXT));

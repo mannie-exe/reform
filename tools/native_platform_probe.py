@@ -517,7 +517,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
             if isolated_scene == "pickers":
-                roles={"platform-pickers-pointer.png","platform-pickers-task.png","platform-pickers-inline.png","platform-pickers-narrow.png"}
+                roles={"platform-pickers-surface-diagnostic.png","platform-pickers-pointer.png","platform-pickers-task.png","platform-pickers-inline.png","platform-pickers-narrow.png"}
                 for key in ("semanticPickers","sceneFailure"):
                     if isinstance(native.get(key),dict):
                         native[key]["captures"]=retain_captures(fixture,reports,native[key].get("captures",[]),roles,reopen)
