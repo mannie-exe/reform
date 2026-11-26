@@ -133,7 +133,7 @@ The native host prepares a bounded popup outside the scrolling body's clip, usin
 
 The initial dev.120/121 native checks retain their scoped evidence. Dev.122 qualifies completion keyboard/pointer/dismissal, stale-input refusal, compact-window return, and standalone settings-host interaction on all four targets. Expected completion refusals are available in `SettingsForm.controlReport()` at the actual field path and as nearby text/native narration. They do not change the actor's validation or grant/refuse persistence authority. A newer input gesture or explicit reopening clears the transient offer failure; an actor acknowledgement alone does not silently retry its old choice.
 
-This offer still needs native source READ/UI-budget withdrawal and entered-source checks, full bookmark restoration, and applicable IME/rejected-input coverage. Its normal-theme/English captures do not establish final A3 layout, custom-font coverage, or the complete picker/preview/consumer handoff.
+Dev.123 additionally qualifies source READ withdrawal and entered-source drain on all four targets using a separately owned READ-only source context. Restoring READ alone does not reopen the offer. Entered work retains only its actual lifecycle facts; cancellation is not claimed when current authority refuses it. Native UI-budget withdrawal, full bookmark restoration, and applicable IME/rejected-input coverage remain open. Its normal-theme/English captures do not establish final A3 layout, custom-font coverage, or the complete picker/preview/consumer handoff.
 
 ## Composed form fields
 
