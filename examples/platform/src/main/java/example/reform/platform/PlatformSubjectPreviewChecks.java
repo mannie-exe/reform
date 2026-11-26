@@ -107,6 +107,8 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private int sectionFactories;
   private boolean canonicalOwner, invalidSiblingRetained, nativeInputRetained;
   private EditBox originalNativeInput;
+  private AbstractWidget metadataInputBefore;
+  private final JsonObject metadataInputObservations = new JsonObject();
   private String manualRaw;
   private static final FieldPath MODELS_PATH = FieldPath.ROOT.field("models"),
       ARTWORK_PATH = FieldPath.ROOT.field("artwork");
@@ -1188,6 +1190,13 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                     .candidate()
                     .equals(new PlatformAuditionChecks.Profile("fixture:base", "fixture:base", 64))
                 && sectionFactories == 1);
+        metadataInputBefore = editor.form().fieldControl(MODELS_PATH).orElseThrow();
+        metadataInputObservations.addProperty(
+            "beforeSameAsEarlierInput", metadataInputBefore == originalNativeInput);
+        metadataInputObservations.addProperty(
+            "beforeMounted", widgets(workflow.screen()).contains(metadataInputBefore));
+        metadataInputObservations.addProperty(
+            "beforeRaw", ((EditBox) metadataInputBefore).getValue());
         navigate(new ClientDestination.View(new DestinationId(PAGE)), 870);
         frames = PlatformFrameObservations.sequence();
       }
@@ -1202,6 +1211,24 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       }
       case 871 -> {
         if (!arrived() || PlatformFrameObservations.sequence() - frames < 8) return false;
+        var currentInput = editor.form().fieldControl(MODELS_PATH).orElseThrow();
+        metadataInputObservations.addProperty("ownerSame", sectionMetadataOwner);
+        metadataInputObservations.addProperty("prepares", entries.size());
+        metadataInputObservations.addProperty("empty", empty());
+        metadataInputObservations.addProperty("dirty", editor.dirty());
+        metadataInputObservations.addProperty("factories", sectionFactories);
+        metadataInputObservations.addProperty(
+            "currentSameAsEarlierInput", currentInput == originalNativeInput);
+        metadataInputObservations.addProperty(
+            "currentSameAsBefore", currentInput == metadataInputBefore);
+        metadataInputObservations.addProperty(
+            "earlierInputMounted", widgets(workflow.screen()).contains(originalNativeInput));
+        metadataInputObservations.addProperty(
+            "beforeInputMounted", widgets(workflow.screen()).contains(metadataInputBefore));
+        metadataInputObservations.addProperty(
+            "currentInputMounted", widgets(workflow.screen()).contains(currentInput));
+        metadataInputObservations.addProperty("earlierRaw", originalNativeInput.getValue());
+        metadataInputObservations.addProperty("currentRaw", ((EditBox) currentInput).getValue());
         sectionMetadataReturn =
             sectionMetadataOwner
                 && entries.size() == 7
@@ -1756,6 +1783,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     result.addProperty("invalidSiblingRetained", invalidSiblingRetained);
     result.addProperty("nativeInputRetained", nativeInputRetained);
     result.addProperty("sectionMetadataReturn", sectionMetadataReturn);
+    result.add("metadataInputObservations", metadataInputObservations.deepCopy());
     result.addProperty("gridMode", gridMode);
     result.addProperty("gridSpans", !gridMode || gridSpans());
     result.addProperty("wideLayout", wideLayout);
