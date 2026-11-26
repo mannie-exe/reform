@@ -1030,7 +1030,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             "retiring an optional detached selector does not retire the valid draft preview",
             retiredSelection);
         if (sectionMode) {
-          press("Edit Models ID");
+          press("Show Edit Models ID");
           frames = PlatformFrameObservations.sequence();
           stage = 80;
         } else {
@@ -1116,7 +1116,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         originalNativeInput.setHighlightPos(5);
         NativeClientProbe.resize(client, 320, 240);
         frames = PlatformFrameObservations.sequence();
-        stage++;
+        stage = 83;
       }
       case 83 -> {
         int[] width = {0}, height = {0};
