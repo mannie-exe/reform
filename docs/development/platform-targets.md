@@ -23,6 +23,8 @@ The target matrix in `gradle/minecraft-targets.json` owns target selection, proj
 
 The ordinary loader pin is the declared minimum. An additional tested pin selects another qualification input; its name is not evidence that a run passed. Verification records the actual tested versions and artifact identities. Keep game-owned DFU and Gson versions tied to the corresponding Minecraft manifest rather than upgrading them independently.
 
+Optional viewer inputs distinguish the selected runtime (`jeiVersionRef`) from an explicitly lower API floor (`jeiMinimumVersionRef`) where declared. The build compiles against that floor and emits it in optional dependency metadata; ordinary native viewer runs retain the selected runtime, while an explicit API-floor run selects the lower original. Neither field alone proves native compatibility. Update the version-specific public API seam, artifact admission checks, and old/new runtime qualification together before widening admission. [Recipe links](recipe-links.md) owns the adapter behavior.
+
 Remapping is an explicit target capability. The build does not infer it from Java versions or relative game age. Fabric 1.21.1 uses named development inputs and an intermediary installable artifact; Fabric 26.3 uses official unobfuscated names. Java requirements independently select compilation and runtime toolchains.
 
 ## Build pins and installed versions

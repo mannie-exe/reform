@@ -12,6 +12,24 @@ from tools.native_platform_probe import retain_captures, retain_native_report, s
 
 
 class OptionalAdmissionTests(unittest.TestCase):
+    def test_recipe_viewer_floor_is_a_separate_exact_input(self):
+        target = {"jeiVersion": "19.76.1.481", "jeiMinimumVersion": "19.71.0.470", "emiVersion": "1.1.24"}
+        self.assertEqual(platform.recipe_viewer_version(target, "jei"), "19.76.1.481")
+        self.assertEqual(platform.recipe_viewer_version(target, "jei", True), "19.71.0.470")
+        self.assertEqual(platform.recipe_viewer_version(target, "emi", True), "1.1.24")
+        with self.assertRaisesRegex(ValueError, "No declared recipe viewer input"):
+            platform.recipe_viewer_version({"jeiVersion": "31.23.0.130"}, "jei", True)
+
+    def test_undeclared_or_unrelated_viewer_floor_refuses_before_resolution(self):
+        for target, options in [
+                ("neoforge-1_21_1", {}),
+                ("neoforge-1_21_1", {"client": True, "native_recipe_client": True, "recipe_viewer": "emi"}),
+                ("fabric-26_3", {"client": True, "recipe_links_client": True, "recipe_viewer": "jei"})]:
+            with self.subTest(target=target, options=options), patch.object(platform, "select_library") as resolve:
+                with self.assertRaises(ValueError):
+                    platform.run(target, None, 1, minimum_recipe_viewer=True, **options)
+                resolve.assert_not_called()
+
     def test_isolated_scene_refuses_unknown_or_mixed_scope_before_resolution(self):
         for scene, options in [("unknown", {"client": True}), ("operations", {}),
                                ("operations", {"client": True, "workspace_client": True}),

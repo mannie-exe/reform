@@ -26,6 +26,9 @@ def bareLibrary = providers.gradleProperty('bareLibrary').getOrElse('false').toB
 def withRecipeViewer = providers.gradleProperty('withRecipeViewer').getOrElse('')
 if (withRecipeViewer && !(withRecipeViewer in ['jei', 'emi', 'both'])) throw new GradleException('Select an admitted recipe viewer')
 if (withRecipeViewer in ['emi', 'both'] && !target.emiVersionRef) throw new GradleException('No selected EMI input for this target')
+def minimumRecipeViewer = providers.gradleProperty('minimumRecipeViewer').getOrElse('false').toBoolean()
+if (minimumRecipeViewer && (!(withRecipeViewer in ['jei', 'both']) || !target.jeiMinimumVersionRef))
+    throw new GradleException('No declared JEI API-floor runtime for this viewer scene')
 def withConnector = providers.gradleProperty('withConnector').getOrElse('false').toBoolean()
 if (withConnector && !target.connectorVersionRef)
     throw new GradleException('No qualified Connector input is declared for this target')
@@ -134,7 +137,7 @@ if (target.loader == 'neoforge') {
 
 if (withRecipeViewer) {
     def viewers = (withRecipeViewer == 'both' ? ['jei', 'emi'] : [withRecipeViewer]).collectEntries { provider ->
-        [(provider): provider == 'jei' ? "mezz.jei:jei-${game}-${target.loader}:${pin(target.jeiVersionRef)}" : "dev.emi:emi-${target.loader}:${pin(target.emiVersionRef)}"]
+        [(provider): provider == 'jei' ? "mezz.jei:jei-${game}-${target.loader}:${pin(minimumRecipeViewer ? target.jeiMinimumVersionRef : target.jeiVersionRef)}" : "dev.emi:emi-${target.loader}:${pin(target.emiVersionRef)}"]
     }
     viewers.each { provider, viewer ->
         dependencies.add(target.loader == 'fabric' && target.remapMinecraft ? 'modRuntimeOnly' : 'runtimeOnly', viewer)

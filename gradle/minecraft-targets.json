@@ -17,6 +17,7 @@
       "forgifiedFabricApiVersionRef": "forgified-fabric-api-1_21_1",
       "remapMinecraft": false,
       "jeiVersionRef": "jei-1_21_1",
+      "jeiMinimumVersionRef": "jei-1_21_1-api-floor",
       "emiVersionRef": "emi-1_21_1",
       "emiMinimumVersionRef": "emi-1_21_1-api-floor",
       "emiUpperBound": "2"
@@ -38,6 +39,7 @@
       "developmentNamespace": "named",
       "productionNamespace": "intermediary",
       "jeiVersionRef": "jei-1_21_1",
+      "jeiMinimumVersionRef": "jei-1_21_1-api-floor",
       "emiVersionRef": "emi-1_21_1",
       "emiMinimumVersionRef": "emi-1_21_1-api-floor",
       "emiUpperBound": "2"

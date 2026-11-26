@@ -32,7 +32,7 @@ repositories {
 
 dependencies {
     if (target.emiVersion) compileOnly "dev.emi:emi-xplat-mojmap:${target.emiVersion}"
-    compileOnly "mezz.jei:jei-${target.minecraftVersion}-common-api:${target.jeiVersion}"
+    compileOnly "mezz.jei:jei-${target.minecraftVersion}-common-api:${target.jeiMinimumVersion ?: target.jeiVersion}"
     compileOnly rootProject.libs.mixinextras.common
     compileOnly project(':core')
     api "com.mojang:datafixerupper:${target.dfuVersion}"
@@ -53,7 +53,7 @@ tasks.named('processResources') {
     def metadata = [version: project.version.toString(), minecraft: target.minecraftVersion,
                     loader: target.loaderVersion, javaVersion: target.java,
                     loaderUpperBound: target.loaderUpperBound ?: '', fabricApi: target.fabricApiVersion ?: '',
-                    fmlVersionRange: target.fmlVersionRange ?: '', jei: target.jeiVersion,
+                    fmlVersionRange: target.fmlVersionRange ?: '', jei: target.jeiMinimumVersion ?: target.jeiVersion,
                     jeiUpper: (target.jeiVersion.tokenize('.')[0].toInteger() + 1).toString(),
                     emi: target.emiVersion ?: '', emiMinimum: target.emiMinimumVersion ?: '', emiUpper: target.emiUpperBound ?: '']
     inputs.properties metadata

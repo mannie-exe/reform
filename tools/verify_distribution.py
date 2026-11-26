@@ -47,6 +47,7 @@ def inspect_jar(path, native_major=65):
 
 
 def metadata(archive, target, version):
+    jei_minimum = target.get("jeiMinimumVersion", target["jeiVersion"])
     if target["loader"] == "neoforge":
         require("fabric.mod.json" not in archive.namelist(), "Foreign loader metadata")
         value = tomllib.loads(archive.read("META-INF/neoforge.mods.toml").decode("utf-8"))
@@ -62,7 +63,7 @@ def metadata(archive, target, version):
                 "Unexpected dependency authority/side")
         by_id = {d["modId"]: d for d in dependencies}
         require(by_id["jei"]["type"] == "optional" and by_id["jei"]["side"] == "CLIENT"
-                and by_id["jei"]["versionRange"] == f"[{target['jeiVersion']},{int(target['jeiVersion'].split('.')[0]) + 1})",
+                and by_id["jei"]["versionRange"] == f"[{jei_minimum},{int(target['jeiVersion'].split('.')[0]) + 1})",
                 "Optional JEI dependency authority/side/version differs")
         if target.get("emiVersion"):
             require(by_id["emi"]["type"] == "optional" and by_id["emi"]["side"] == "CLIENT"
@@ -90,7 +91,7 @@ def metadata(archive, target, version):
             "Optional Mod Menu entry point differs")
     require(value["entrypoints"].get("jei_mod_plugin") == ["design.inherent.reform.minecraft.optional.jei.ReformJeiPlugin"],
             "Optional JEI client plugin differs")
-    require(value.get("breaks", {}).get("jei") == ["<" + target["jeiVersion"], ">=" + str(int(target["jeiVersion"].split('.')[0]) + 1)],
+    require(value.get("breaks", {}).get("jei") == ["<" + jei_minimum, ">=" + str(int(target["jeiVersion"].split('.')[0]) + 1)],
             "Optional JEI API admission differs")
     if target.get("emiVersion"):
         require(value["entrypoints"].get("emi") == ["design.inherent.reform.minecraft.optional.emi.ReformEmiPlugin"]

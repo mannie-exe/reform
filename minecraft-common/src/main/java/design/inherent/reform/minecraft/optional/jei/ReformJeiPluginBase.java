@@ -36,7 +36,7 @@ public abstract class ReformJeiPluginBase implements IModPlugin {
     refresh();
   }
 
-  @Override
+  // JEI's newer runtime invokes this callback; the 1.21.1 API floor predates its declaration.
   public void onRuntimeRefreshed() {
     refresh();
   }
@@ -147,7 +147,7 @@ public abstract class ReformJeiPluginBase implements IModPlugin {
             .get()
             .findAny()
             .isEmpty()) throw missing();
-        show = () -> expected.getGuiRuntime().getRecipesGui().show(focus);
+        show = () -> NativeJeiGui.recipes(expected).show(focus);
       } else if (request.kind() == RecipeLinkRequest.Kind.CATEGORY) {
         var category =
             categories.stream()
@@ -160,12 +160,7 @@ public abstract class ReformJeiPluginBase implements IModPlugin {
                             .equals(request.identity().toString()))
                 .findFirst()
                 .orElseThrow(ReformJeiPluginBase::missing);
-        show =
-            () ->
-                expected
-                    .getGuiRuntime()
-                    .getRecipesGui()
-                    .showTypes(List.of(category.getRecipeType()));
+        show = () -> NativeJeiGui.recipes(expected).showTypes(List.of(category.getRecipeType()));
       } else if (request.kind() == RecipeLinkRequest.Kind.WORKSTATION) {
         var item = NativeRecipeItems.item(request.identity()).getItem();
         int[] inspected = {0};
@@ -176,7 +171,7 @@ public abstract class ReformJeiPluginBase implements IModPlugin {
                 .map(IRecipeCategory::getRecipeType)
                 .toList();
         if (types.isEmpty()) throw missing();
-        show = () -> expected.getGuiRuntime().getRecipesGui().showTypes(List.copyOf(types));
+        show = () -> NativeJeiGui.recipes(expected).showTypes(List.copyOf(types));
       } else {
         int[] inspected = {0};
         show = null;
@@ -206,14 +201,12 @@ public abstract class ReformJeiPluginBase implements IModPlugin {
             throw refusal(
                 "recipe.context_changed", "The world changed. Open the recipe link again.");
           action.run();
-          if (!expected.getGuiRuntime().getRecipesGui().isOpen()) throw missing();
+          if (!NativeJeiGui.isOpen(expected)) throw missing();
         }
 
         public boolean hasParent(Screen parent) {
-          return expected.getGuiRuntime().getRecipesGui().isOpen()
-              && expected
-                  .getGuiRuntime()
-                  .getRecipesGui()
+          return NativeJeiGui.isOpen(expected)
+              && NativeJeiGui.recipes(expected)
                   .getParentScreen()
                   .filter(screen -> screen == parent)
                   .isPresent();
@@ -232,10 +225,7 @@ public abstract class ReformJeiPluginBase implements IModPlugin {
           if (category.getSourceRecipeIds(recipe).stream()
               .anyMatch(id -> id.toString().equals(request.identity().toString())))
             return () ->
-                expected
-                    .getGuiRuntime()
-                    .getRecipesGui()
-                    .showRecipes(category, List.of(recipe), List.of());
+                NativeJeiGui.recipes(expected).showRecipes(category, List.of(recipe), List.of());
         }
       }
       return null;

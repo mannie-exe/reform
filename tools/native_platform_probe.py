@@ -504,7 +504,17 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                                 and len(native["imageSha256"]) == 64)))
 
 
-def run(project, java_home, timeout, version=None, tested_loader=False, client=False, synced_override=False, world_client=False, mod_menu=False, initialization_failure=False, recipe_client=False, authoring_client=False, chooser_client=False, connector=False, command_client=False, workspace_client=False, workflow_client=False, recipe_viewer=None, recipe_links_client=False, native_recipe_client=False, isolated_scene=None):
+def recipe_viewer_version(target, provider, minimum=False):
+    if provider not in ("jei", "emi"):
+        raise ValueError("Select an admitted recipe viewer")
+    key = "jeiMinimumVersion" if minimum and provider == "jei" else provider + "Version"
+    version = target.get(key)
+    if not isinstance(version, str) or not version:
+        raise ValueError("No declared recipe viewer input for this target and role")
+    return version
+
+
+def run(project, java_home, timeout, version=None, tested_loader=False, client=False, synced_override=False, world_client=False, mod_menu=False, initialization_failure=False, recipe_client=False, authoring_client=False, chooser_client=False, connector=False, command_client=False, workspace_client=False, workflow_client=False, recipe_viewer=None, recipe_links_client=False, native_recipe_client=False, isolated_scene=None, minimum_recipe_viewer=False):
     target = next((t for t in load_targets(ROOT) if t["project"] == project), None)
     if target is None:
         raise ValueError("Select an admitted native target")
@@ -540,14 +550,18 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
         raise ValueError("Native recipes require their own native client scenario")
     if recipe_viewer and not ((recipe_viewer == "jei" and recipe_links_client) or (recipe_viewer in ("emi", "both") and native_recipe_client and target.get("emiVersion"))):
         raise ValueError("The selected viewer requires its own declared recipe client target")
+    if minimum_recipe_viewer:
+        if recipe_viewer not in ("jei", "both"):
+            raise ValueError("A minimum recipe viewer requires the declared JEI client scene")
+        recipe_viewer_version(target, "jei", True)
     viewer_inputs = []
     for provider in (("jei", "emi") if recipe_viewer == "both" else (recipe_viewer,) if recipe_viewer else ()):
         if provider == "jei":
-            viewer_version = target["jeiVersion"]
+            viewer_version = recipe_viewer_version(target, "jei", minimum_recipe_viewer)
             module = "jei-" + target["minecraftVersion"] + "-" + target["loader"]
             url = "https://maven.blamejared.com/mezz/jei/" + module + "/" + viewer_version + "/" + module + "-" + viewer_version + ".jar"
         else:
-            viewer_version = target["emiVersion"]
+            viewer_version = recipe_viewer_version(target, "emi", minimum_recipe_viewer)
             module = "emi-" + target["loader"]
             url = "https://maven.terraformersmc.com/releases/dev/emi/" + module + "/" + viewer_version + "/" + module + "-" + viewer_version + ".jar"
         saved = ROOT / ".cache/recipe-viewers" / (module + "-" + viewer_version + ".jar")
@@ -576,6 +590,8 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
         mode = "client-" + isolated_scene if isolated_scene else "client-native-recipes" if native_recipe_client else "client-recipe-links" if recipe_links_client else "client-workflow" if workflow_client else "client-workspace" if workspace_client else "client-commands" if command_client else "client-chooser" if chooser_client else "client-authoring" if authoring_client else "client-recipe" if recipe_client else "client-world" if world_client else "client"
         if recipe_viewer:
             mode += "-" + recipe_viewer
+        if minimum_recipe_viewer:
+            mode += "-api-floor"
         if mod_menu:
             mode += "-modmenu"
         if initialization_failure:
@@ -613,7 +629,8 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
         hashes = (json.dumps({value["provider"]: value["sha256"] for value in viewer_inputs})
                   if recipe_viewer == "both" else viewer_input["sha256"])
         command.extend(["-PwithRecipeViewer=" + recipe_viewer, "-PviewerSha256=" + hashes])
-    report = {"isolatedScene": isolated_scene, "nativeRecipeClient": native_recipe_client, "recipeLinksClient": recipe_links_client, "recipeViewer": viewer_input, "status": "FAIL", "target": target, "version": library.version, "sha256": library.sha256,
+        command.append("-PminimumRecipeViewer=" + str(minimum_recipe_viewer).lower())
+    report = {"isolatedScene": isolated_scene, "nativeRecipeClient": native_recipe_client, "recipeLinksClient": recipe_links_client, "recipeViewer": viewer_input, "minimumRecipeViewer": minimum_recipe_viewer, "status": "FAIL", "target": target, "version": library.version, "sha256": library.sha256,
               "launch": "Independent addon source container; verified Maven library; no library source roots",
               "loaderRole": role, "loaderVersion": loader_version, "mode": "client" if client else "dedicated", "syncedWorldOverride": synced_override, "worldClient": world_client, "recipeClient": recipe_client, "authoringClient": authoring_client, "chooserClient": chooser_client, "commandClient": command_client, "workspaceClient": workspace_client, "workflowClient": workflow_client, "modMenu": mod_menu, "connector": connector, "initializationFailure": initialization_failure, "boots": [],
               "sources": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -755,6 +772,7 @@ if __name__ == "__main__":
     parser.add_argument("--native-recipe-client", action="store_true", help="Actual owner-supplied native book and optional inventory viewer context")
     parser.add_argument("--recipe-links-client", action="store_true", help="Separate optional recipe-viewer and exact parent-return qualification")
     parser.add_argument("--recipe-viewer", choices=["jei", "emi", "both"], help="Recipe client with exact optional runtimes and original-input hash verification")
+    parser.add_argument("--minimum-recipe-viewer", action="store_true", help="Use the target's separately declared JEI API-floor runtime, with the same original-input hash verification")
     parser.add_argument("--target", required=True, choices=[t["project"] for t in load_targets(ROOT)])
     parser.add_argument("--java-home", type=Path, help="Build JDK; game uses its declared target toolchain")
     parser.add_argument("--timeout", type=int, default=240, help="Each bounded build/server boot, 1..600 seconds")
@@ -775,4 +793,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not 1 <= args.timeout <= 600:
         parser.error("Expected a bounded 1..600 second timeout")
-    raise SystemExit(run(args.target, args.java_home, args.timeout, args.library_version, args.tested_loader, args.client, args.synced_world_override, args.world_client, args.mod_menu, args.init_failure, args.recipe_client, args.authoring_client, args.chooser_client, args.connector, args.commands_client, args.workspace_client, args.workflow_client, args.recipe_viewer, args.recipe_links_client, args.native_recipe_client, args.isolated_scene))
+    raise SystemExit(run(args.target, args.java_home, args.timeout, args.library_version, args.tested_loader, args.client, args.synced_world_override, args.world_client, args.mod_menu, args.init_failure, args.recipe_client, args.authoring_client, args.chooser_client, args.connector, args.commands_client, args.workspace_client, args.workflow_client, args.recipe_viewer, args.recipe_links_client, args.native_recipe_client, args.isolated_scene, args.minimum_recipe_viewer))
