@@ -129,6 +129,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private static final PickerRole<PlatformAuditionChecks.Profile> ARTWORK_ROLE =
       new PickerRole<>("artwork", FieldPath.ROOT.field("artwork"));
   private boolean privateWithdrawn, explicitRecovery, noReturnPrepare;
+  private boolean sectionMetadataOwner, sectionMetadataReturn;
   private final PlatformFormProbe.Driver driver;
   private final Minecraft client = Minecraft.getInstance();
   private final Screen parent = NativeScreens.current(client);
@@ -690,12 +691,19 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 UiLimits.STANDARD,
                 form.route(),
                 PlatformAuditionChecks.DEFINITION,
-                (scope, owner, state) -> component(scope, owner));
+                (scope, owner, state) -> {
+                  if (!sectionMode) return component(scope, owner);
+                  sectionMetadataOwner = owner == editor;
+                  check(
+                      "owner-associated view borrows the original section editor",
+                      sectionMetadataOwner);
+                  return Views.text("owner", text("Shared owner details"), Component.empty());
+                });
         var metadata =
             ClientWorkspacePresentation.standard(
                 new WorkspaceIdentity(
                     DocumentId.parse("fixture:preview_workspace"), text("Typed preview controls")));
-        if (!sectionMode) metadata = metadata.withView(body);
+        metadata = metadata.withView(body);
         workflow = ClientEditingWorkflow.open(parent, List.of(form), layout, metadata);
         NativeScreens.open(client, workflow.screen());
         frames = PlatformFrameObservations.sequence();
@@ -1180,6 +1188,31 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                     .candidate()
                     .equals(new PlatformAuditionChecks.Profile("fixture:base", "fixture:base", 64))
                 && sectionFactories == 1);
+        navigate(new ClientDestination.View(new DestinationId(PAGE)), 870);
+        frames = PlatformFrameObservations.sequence();
+      }
+      case 870 -> {
+        if (!arrived() || !empty() || PlatformFrameObservations.sequence() - frames < 8)
+          return false;
+        check(
+            "owner-associated view retires the section without preparing or replacing its owner",
+            sectionMetadataOwner && entries.size() == 7 && !editor.dirty());
+        navigate(previewDestination(), 871);
+        frames = PlatformFrameObservations.sequence();
+      }
+      case 871 -> {
+        if (!arrived() || PlatformFrameObservations.sequence() - frames < 8) return false;
+        sectionMetadataReturn =
+            sectionMetadataOwner
+                && entries.size() == 7
+                && empty()
+                && !editor.dirty()
+                && sectionFactories == 1
+                && editor.form().fieldControl(MODELS_PATH).orElseThrow() == originalNativeInput
+                && widgets(workflow.screen()).contains(originalNativeInput);
+        check(
+            "same-owner view roundtrip restores original native input without replaying preparation",
+            sectionMetadataReturn);
         workflow.close();
         stage = 13;
       }
@@ -1722,6 +1755,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     result.addProperty("canonicalOwner", canonicalOwner);
     result.addProperty("invalidSiblingRetained", invalidSiblingRetained);
     result.addProperty("nativeInputRetained", nativeInputRetained);
+    result.addProperty("sectionMetadataReturn", sectionMetadataReturn);
     result.addProperty("gridMode", gridMode);
     result.addProperty("gridSpans", !gridMode || gridSpans());
     result.addProperty("wideLayout", wideLayout);

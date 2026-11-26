@@ -640,7 +640,7 @@ class PlatformOutcomeTests(unittest.TestCase):
                     "combinedDraft": True, "sameValueActivated": True, "noReturnPrepare": True,
                     "restored": True, "inputBytes": 0, "nativeBytes": 0, "sceneBytes": 0,
                     "canonicalOwner": True, "invalidSiblingRetained": True, "nativeInputRetained": True,
-                    "sectionMode": True, "sectionFactories": 1,
+                    "sectionMode": True, "sectionMetadataReturn": True, "sectionFactories": 1,
                     "captures": ["one", "two", "three", "four", "five"],
                     "layoutObservations": {"wide": wide, "compact": compact, "returned": wide}}
         def accepted():

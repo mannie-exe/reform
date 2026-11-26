@@ -348,7 +348,7 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                 and all(native["semanticPreviewSection"].get(key) is True
                         for key in ("wideLayout", "compactLayout", "returnedLayout", "retiredSelection",
                                     "firstSelectionActivated", "inspectionDidNotEdit", "combinedDraft",
-                                    "sameValueActivated", "noReturnPrepare", "restored", "canonicalOwner", "invalidSiblingRetained", "nativeInputRetained", "sectionMode"))
+                                    "sameValueActivated", "noReturnPrepare", "restored", "canonicalOwner", "invalidSiblingRetained", "nativeInputRetained", "sectionMode", "sectionMetadataReturn"))
                 and all(type(native["semanticPreviewSection"].get(key)) is int
                         and native["semanticPreviewSection"][key] == 0
                         for key in ("inputBytes", "nativeBytes", "sceneBytes"))
