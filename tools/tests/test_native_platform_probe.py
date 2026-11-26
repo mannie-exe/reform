@@ -412,7 +412,7 @@ class PlatformOutcomeTests(unittest.TestCase):
         fact = dict(self.native["runtimeArtifacts"]["reform"])
         fact.update(path="/actual/emi.jar", witness="dev/emi/emi/api/EmiApi.class", sha256="c" * 64)
         self.native["runtimeArtifacts"]["emi"] = fact
-        original = {"provider": "emi", "sha256": "d" * 64}
+        original = {"provider": "emi", "version": "1.1.24", "sha256": "d" * 64}
         self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
         original["sha256"] = "c" * 64
         self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
@@ -424,7 +424,7 @@ class PlatformOutcomeTests(unittest.TestCase):
             fact = dict(self.native["runtimeArtifacts"]["reform"])
             fact.update(path="/actual/" + provider + ".jar", witness=witness, sha256=digest)
             self.native["runtimeArtifacts"][provider] = fact
-            originals.append({"provider": provider, "sha256": digest})
+            originals.append({"provider": provider, "version": "19" if provider == "jei" else "1", "sha256": digest})
         self.native["recipeViewers"] = {"jei": "19", "emi": "1"}
         inputs = {"provider": "both", "inputs": originals}
         self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, inputs))
@@ -434,6 +434,22 @@ class PlatformOutcomeTests(unittest.TestCase):
         self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, inputs))
         inputs["inputs"] = originals[:1]
         self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, inputs))
+
+    def test_remapped_viewer_still_requires_exact_loaded_version(self):
+        self.target["remapMinecraft"] = True
+        self.native["recipeViewers"] = {"jei": "19.71.0.470"}
+        fact = dict(self.native["runtimeArtifacts"]["reform"])
+        fact.update(path="/actual/jei-remapped.jar", witness="mezz/jei/api/IModPlugin.class", sha256="c" * 64)
+        self.native["runtimeArtifacts"]["jei"] = fact
+        original = {"provider": "jei", "version": "19.71.0.470", "sha256": "d" * 64}
+        self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+        self.native["recipeViewers"]["jei"] = "19.76.1.481"
+        self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+        self.native["recipeViewers"]["jei"] = "19.71.0.470"
+        for value in (None, "", True):
+            with self.subTest(version=value):
+                original["version"] = value
+                self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
 
     def test_runtime_archive_rejects_invalid_or_unbounded_facts(self):
         fact = self.native["runtimeArtifacts"]["reform"]

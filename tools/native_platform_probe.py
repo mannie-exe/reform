@@ -222,6 +222,9 @@ def runtime_artifacts_match(native, library, target, viewer_input=None):
     originals = [] if viewer_input is None else viewer_input.get("inputs", [viewer_input])
     if {original["provider"] for original in originals} != set(viewers):
         return False
+    if any(not isinstance(original.get("version"), str) or not original["version"]
+           or viewers.get(original["provider"]) != original["version"] for original in originals):
+        return False
     for identity, fact in artifacts.items():
         if (not isinstance(fact, dict) or not isinstance(fact.get("path"), str)
                 or not Path(fact["path"]).is_absolute() or not fact["path"].endswith(".jar")
