@@ -436,6 +436,26 @@ public final class EditorActor<T> implements AutoCloseable {
             });
   }
 
+  /** Read-only owner verification of a complete alternate candidate; no proposal escapes. */
+  public CompletionStage<ValidationReport> verifyPreviewCandidate(
+      DraftRevision expected, Candidate<T> candidate) {
+    Objects.requireNonNull(expected);
+    Objects.requireNonNull(candidate);
+    if (candidate.definition() != definition)
+      throw new IllegalArgumentException("Preview candidate belongs to another definition");
+    return act(() -> {
+          var selected = ready();
+          if (!expected.matches(selected.editor.snapshot()))
+            throw new PolicyRefusal("preview.stale", "The preview's base draft changed");
+          return selected.source;
+        })
+        .thenCompose(
+            observed ->
+                readAtRevision(expected.sourceRevision())
+                    .thenCompose(ignored -> source.prepare(observed, candidate.draft())))
+        .handle((prepared, failed) -> failed == null ? ValidationReport.VALID : report(failed));
+  }
+
   /** Verify a source dependency through its actual owner without installing an editor baseline. */
   public CompletionStage<Void> verifySourceRevision(String expected) {
     Objects.requireNonNull(expected);

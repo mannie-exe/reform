@@ -3,7 +3,10 @@ package design.inherent.reform.presentation.graphics;
 import design.inherent.reform.owner.PolicyRefusal;
 import java.util.Objects;
 
-/** Known native buffer/image payload and owned-object accounting, not a driver-memory estimate. */
+/**
+ * Known copied input, scene, or native payload and owned-object accounting; not a heap or driver
+ * estimate.
+ */
 public final class GraphicLedger {
   public record State(long bytes, int resources, long peakBytes, int peakResources) {}
 
@@ -18,7 +21,8 @@ public final class GraphicLedger {
     }
 
     /**
-     * Call only after actual native release; a close request alone is not a release observation.
+     * Call only after the associated work or resource actually retires; a close request alone is
+     * not a release observation.
      */
     @Override
     public void close() {
@@ -38,6 +42,19 @@ public final class GraphicLedger {
   private final GraphicLedger parent;
   private long retainedBytes, peakBytes;
   private int retainedResources, peakResources;
+
+  /**
+   * A separate aggregate for captured input payload, distinct from retained scene/native payload.
+   */
+  public static GraphicLedger inputs(GraphicLimits limits) {
+    return new GraphicLedger(
+        new GraphicLimits(
+            limits.inputBytes(),
+            limits.outputBytes(),
+            limits.decodedPixels(),
+            limits.resources(),
+            limits.inputBytes()));
+  }
 
   public GraphicLedger(GraphicLimits limits) {
     this(limits, null);
@@ -68,14 +85,14 @@ public final class GraphicLedger {
   public Allocation reserve(long bytes, int resources) {
     if (bytes < 0 || resources < 1)
       throw new IllegalArgumentException(
-          "A native allocation needs nonnegative payload and positive object accounting");
+          "An allocation needs nonnegative payload and positive object accounting");
     synchronized (gate) {
       for (var ledger = this; ledger != null; ledger = ledger.parent)
         if (bytes > ledger.limits.nativeBytes() - ledger.retainedBytes
             || resources > ledger.limits.resources() - ledger.retainedResources)
           throw new PolicyRefusal(
               "preview.budget",
-              "Outstanding graphic allocations exceed the native payload or object allowance");
+              "Outstanding graphic allocations exceed their payload or object allowance");
       for (var ledger = this; ledger != null; ledger = ledger.parent) {
         ledger.retainedBytes += bytes;
         ledger.retainedResources += resources;

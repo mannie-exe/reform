@@ -44,9 +44,9 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
     browser = new ReferenceBrowser<>(source);
   }
 
-  private record Field(DraftTarget target, String raw) {}
+  record Field(DraftTarget target, String raw, design.inherent.reform.value.ValueType<?> type) {}
 
-  private static <T> Field field(
+  static <T> Field field(
       DocumentActions<T> document,
       FieldPath path,
       design.inherent.reform.definition.DocumentId source) {
@@ -61,7 +61,7 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
           "Selection requires the field's declared reference source");
     if (!(snapshot.draft().at(path) instanceof DraftNode.Scalar scalar))
       throw new PolicyRefusal("reference.draft", "Repair this field before selecting a reference");
-    return new Field(snapshot.target(path), scalar.raw());
+    return new Field(snapshot.target(path), scalar.raw(), type);
   }
 
   /**
@@ -130,6 +130,12 @@ public final class ReferenceSelection<T, V> implements AutoCloseable {
   private static <T> OperationHandle<EditorActor.View<T>> stage(
       EntryPoint entry, DocumentActions<T> document, DraftTarget target, String selected) {
     return document.edit(entry, new DraftEdit(target, new DraftEdit.SetRaw(selected)));
+  }
+
+  /** Mint a read-only audition over this browser's exact inspected key; never stage the field. */
+  public static <T, V> ReferenceAudition<T> auditionFromBrowser(
+      String role, DocumentActions<T> document, FieldPath path, ReferenceBrowser<V> browser) {
+    return ReferenceAudition.capture(role, document, path, browser);
   }
 
   public DraftTarget target() {

@@ -9,6 +9,7 @@ public sealed interface GraphicSourceStamp
     permits GraphicRequest.Stamp, LoadedGraphicRequest.Stamp {
   enum Kind {
     DRAFT,
+    AUDITION,
     LOADED
   }
 

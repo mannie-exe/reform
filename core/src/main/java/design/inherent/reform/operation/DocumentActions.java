@@ -139,6 +139,14 @@ public final class DocumentActions<T> implements AutoCloseable {
           .field(TEXT, FieldInput::text)
           .build();
 
+  private record AuditionWork<T>(
+      design.inherent.reform.reference.ReferenceAudition<T> reference,
+      DraftRevision expected,
+      design.inherent.reform.presentation.graphics.GraphicLedger inputs,
+      AuditionCapture<T> capture) {}
+
+  private final java.util.Map<UUID, AuditionWork<T>> auditions = new java.util.HashMap<>();
+  private final OperationDescriptor<UUID, AuditionCapture.Receipt> auditionCapture;
   private final OwnerContext context;
   private final OwnerContext.Access access;
   private final EditorActor<T> actor;
@@ -194,8 +202,8 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (!context.id().equals(actor.context()) || maximumExportBytes < 1)
       throw new IllegalArgumentException(
           "Actions require their actual editing context and export bound");
-    if (limits.maximumDefinitions() < 19)
-      throw new IllegalArgumentException("Actions require room for nineteen operation definitions");
+    if (limits.maximumDefinitions() < 20)
+      throw new IllegalArgumentException("Actions require room for twenty operation definitions");
     this.context = context;
     this.access = access;
     this.actor = actor;
@@ -461,6 +469,75 @@ public final class DocumentActions<T> implements AutoCloseable {
                                           true)
                                       .and(captured.report()));
                             return captured;
+                          }));
+        });
+    auditionCapture =
+        descriptor(
+            "capture_audition",
+            ValueTypes.uuid(),
+            OwnerContext.Right.READ,
+            Set.of(OperationDescriptor.Effect.INSPECT));
+    scope.register(
+        auditionCapture,
+        (execution, ticket) -> {
+          final AuditionWork<T> work;
+          synchronized (auditions) {
+            work = auditions.get(ticket);
+          }
+          if (work == null)
+            throw new PolicyRefusal(
+                "preview.capture_closed", "The audition capture is no longer admitted");
+          work.capture().checkpoint(execution);
+          var plan = work.reference().plan(this, work.expected());
+          return actor
+              .preflight()
+              .thenCompose(
+                  base ->
+                      context.onOwner(
+                          () -> {
+                            work.capture().checkpoint(execution);
+                            work.reference().requireCurrent(this, work.expected());
+                            if (!work.expected().equals(base.target()))
+                              throw new PolicyRefusal(
+                                  "preview.stale", "The base draft changed while it was captured");
+                            if (!base.report().valid())
+                              throw new PolicyRefusal(
+                                  new ValidationReport(
+                                          List.of(
+                                              Issue.error(
+                                                  "preview.input_invalid",
+                                                  FieldPath.ROOT,
+                                                  "Repair the complete draft before auditioning a profile")),
+                                          true)
+                                      .and(base.report()));
+                            return base;
+                          }))
+              .thenCompose(
+                  base ->
+                      context.onWorker(
+                          () ->
+                              plan.project(
+                                  base,
+                                  base.observation().snapshot().jsonLimits(),
+                                  work.inputs(),
+                                  work.capture()::charge,
+                                  () -> work.capture().checkpoint(execution))))
+              .thenCompose(
+                  overlay ->
+                      actor
+                          .verifyPreviewCandidate(work.expected(), overlay.candidate())
+                          .thenApply(
+                              report -> {
+                                if (!report.valid()) throw new PolicyRefusal(report);
+                                return overlay;
+                              }))
+              .thenCompose(
+                  overlay ->
+                      context.onOwner(
+                          () -> {
+                            work.capture().checkpoint(execution);
+                            work.reference().requireCurrent(this, work.expected());
+                            return work.capture().offer(overlay);
                           }));
         });
     scope.freeze();
@@ -820,6 +897,50 @@ public final class DocumentActions<T> implements AutoCloseable {
         previewCapture, entry, java.util.Objects.requireNonNull(expected), readiness(entry));
   }
 
+  /** Cached actual READ/revision admission; never flushes native input or grants WRITE. */
+  public void requirePreviewCurrent(DraftRevision expected) {
+    requirePreviewRevision(java.util.Objects.requireNonNull(expected));
+  }
+
+  /**
+   * Capture an explicitly inspected source choice as a complete read-only alternate candidate.
+   * Native callers additionally guard their exact input epoch before request and delivery. The
+   * returned lease and its counted borrows retain the copied-input charge until actual drain.
+   */
+  public AuditionCapture<T> captureAudition(
+      OperationDescriptor.EntryPoint entry,
+      DraftRevision expected,
+      design.inherent.reform.reference.ReferenceAudition<T> reference,
+      design.inherent.reform.presentation.graphics.GraphicLedger inputs) {
+    reference.requireCurrent(this, expected);
+    java.util.Objects.requireNonNull(inputs);
+    if (inputs.limits().nativeBytes() != inputs.limits().inputBytes())
+      throw new IllegalArgumentException("Use a dedicated captured-input ledger");
+    UUID ticket = UUID.randomUUID();
+    synchronized (auditions) {
+      if (auditions.size() >= 8)
+        throw new PolicyRefusal(
+            "preview.busy", "Close a previous audition capture before opening another");
+      var capture =
+          new AuditionCapture<T>(
+              context,
+              () -> reference.requireCurrent(this, expected),
+              () -> {
+                synchronized (auditions) {
+                  auditions.remove(ticket);
+                }
+              });
+      auditions.put(ticket, new AuditionWork<>(reference, expected, inputs, capture));
+      try {
+        capture.bind(scope.submit(auditionCapture, entry, ticket, readiness(entry)));
+      } catch (RuntimeException | Error failed) {
+        capture.submissionFailed(failed);
+        throw failed;
+      }
+      return capture;
+    }
+  }
+
   private void requirePreviewRevision(DraftRevision expected) {
     requireBatch(OwnerContext.Right.READ, Optional.empty());
     if (!expected.matches(actor.view().snapshot().orElseThrow()))
@@ -968,6 +1089,11 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (closed) return;
     if (context.isOpen()) context.checkOwnerThread();
     closed = true;
+    final java.util.List<AuditionCapture<T>> captured;
+    synchronized (auditions) {
+      captured = auditions.values().stream().map(AuditionWork::capture).toList();
+    }
+    captured.forEach(AuditionCapture::close);
     importEpoch = new Object();
     conflictEpoch = new Object();
     try {

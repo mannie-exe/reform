@@ -102,6 +102,21 @@ class ReferenceSelectionTest {
     final Path file = root.resolve("profile.json");
 
     Harness() throws Exception {
+      this(java.util.function.UnaryOperator.identity());
+    }
+
+    Harness(
+        java.util.function.UnaryOperator<design.inherent.reform.owner.DocumentSession<Profile>>
+            decorate)
+        throws Exception {
+      this(decorate, DEFINITION);
+    }
+
+    Harness(
+        java.util.function.UnaryOperator<design.inherent.reform.owner.DocumentSession<Profile>>
+            decorate,
+        DocumentDefinition<Profile> definition)
+        throws Exception {
       long thread = nativeCall(() -> Thread.currentThread().threadId());
       context =
           new OwnerContext(
@@ -112,7 +127,7 @@ class ReferenceSelectionTest {
       var json = new JsonLimits(32768, 64, 4096, 1024, 128, 1024);
       var store =
           new JsonStore<>(
-              DEFINITION,
+              definition,
               new OwnedFile(StorageBinding.relative(root, "profile.json"), 32768, 4096),
               JsonStore.Format.NEW_ENVELOPE,
               json,
@@ -134,7 +149,12 @@ class ReferenceSelectionTest {
           nativeCall(
               () ->
                   new EditorActor<>(
-                      context, session, DEFINITION, json, DraftLimits.CONFIGURATION, 32));
+                      context,
+                      decorate.apply(session),
+                      definition,
+                      json,
+                      DraftLimits.CONFIGURATION,
+                      32));
       actions = nativeCall(() -> new DocumentActions<>(context, access, actor));
       run(() -> actions.load(EntryPoint.GUI));
       references =

@@ -12,7 +12,16 @@ public record DraftPreviewInput<T>(
     PreviewInputStamp stamp,
     Candidate<T> candidate,
     SourceInfo provenance,
-    Map<DocumentId, ReferenceStamp> observedReferences) {
+    Map<DocumentId, ReferenceStamp> observedReferences)
+    implements CapturedGraphicInput<T> {
+  public GraphicInputBasis basis() {
+    return new GraphicInputBasis.Draft();
+  }
+
+  public DraftPreviewInput<T> base() {
+    return this;
+  }
+
   public DraftPreviewInput {
     Objects.requireNonNull(stamp);
     Objects.requireNonNull(candidate);

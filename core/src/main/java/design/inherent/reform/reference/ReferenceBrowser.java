@@ -119,6 +119,13 @@ public final class ReferenceBrowser<V> implements AutoCloseable {
     return current() ? Optional.ofNullable(resolution) : Optional.empty();
   }
 
+  Object selectedEpoch() {
+    thread();
+    if (selectedKey().isEmpty())
+      throw new PolicyRefusal("reference.unresolved", "Inspect a resolved reference first");
+    return lookupEpoch;
+  }
+
   public Optional<String> selectedKey() {
     return resolution()
         .filter(value -> value.status() == ReferenceResolution.Status.RESOLVED)
