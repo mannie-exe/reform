@@ -22,6 +22,8 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 
+PICKER_CAPTURES = {"platform-pickers-completion-stale.png","platform-pickers-completion-narrow.png","platform-pickers-completion-returned.png","platform-pickers-completion-standalone.png","platform-pickers-completion.png","platform-pickers-surface-diagnostic.png","platform-pickers-pointer.png","platform-pickers-task.png","platform-pickers-task-returned.png","platform-pickers-inline.png","platform-pickers-narrow.png"}
+
 
 WORKSPACE_CAPTURES = {
     'platform-field-order.png',
@@ -519,7 +521,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
             if isolated_scene == "pickers":
-                roles={"platform-pickers-completion-stale.png","platform-pickers-completion-narrow.png","platform-pickers-completion-returned.png","platform-pickers-completion-standalone.png","platform-pickers-completion.png","platform-pickers-surface-diagnostic.png","platform-pickers-pointer.png","platform-pickers-task.png","platform-pickers-inline.png","platform-pickers-narrow.png"}
+                roles=PICKER_CAPTURES
                 for key in ("semanticPickers","sceneFailure"):
                     if isinstance(native.get(key),dict):
                         native[key]["captures"]=retain_captures(fixture,reports,native[key].get("captures",[]),roles,reopen)

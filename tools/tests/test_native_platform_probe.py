@@ -119,6 +119,21 @@ class CaptureRetentionTests(unittest.TestCase):
                 retain_captures(fixture, reports, [names[0], names[0]],
                                 platform.WORKSPACE_CAPTURES, True)
 
+    def test_picker_return_capture_is_retained_but_unknown_roles_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture, reports = root / "fixture", root / "reports"
+            fixture.mkdir()
+            reports.mkdir()
+            name = "platform-pickers-task-returned.png"
+            (fixture / name).write_bytes(b"owned native return pixels")
+            for reopen in [False, True]:
+                kept = retain_captures(fixture, reports, [name], platform.PICKER_CAPTURES, reopen)
+                self.assertEqual(1, len(kept))
+                self.assertEqual((fixture / name).read_bytes(), (reports / kept[0]["file"]).read_bytes())
+            with self.assertRaisesRegex(ValueError, "Unrecognized native capture"):
+                retain_captures(fixture, reports, ["platform-pickers-foreign.png"], platform.PICKER_CAPTURES, False)
+
     def test_authoring_retains_its_embedded_workflow_graphics_only(self):
         names = ["platform-form-graphic-texture.png", "platform-form-graphic-layers.png",
                  "platform-form-graphic-orbit.png"]
