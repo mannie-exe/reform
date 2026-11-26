@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import tempfile
 import unittest
 import zipfile
@@ -352,6 +352,22 @@ class CaptureRetentionTests(unittest.TestCase):
             self.assertEqual([], list(reports.iterdir()))
 
 
+class NativeUnloadRetentionTests(unittest.TestCase):
+    def test_bounded_unload_observations_are_retained_for_each_boot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "unload.json"
+            raw.write_text('{"samples": [{"generationRefCount": 1}]}')
+            reports = root / "reports"
+            reports.mkdir()
+            for reopen, prefix in [(False, "first"), (True, "reopen")]:
+                retained = retain_native_report(raw, reports, reopen, "native-unload")
+                self.assertEqual(retained["file"], prefix + "-native-unload.json")
+                copied = reports / retained["file"]
+                self.assertEqual(raw.read_bytes(), copied.read_bytes())
+                self.assertEqual(retained["sha256"], hashlib.sha256(copied.read_bytes()).hexdigest())
+
+
 class RuntimeArtifactRetentionTests(unittest.TestCase):
     def fixture(self, root):
         source = root / "actual.jar"
@@ -413,14 +429,15 @@ class PlatformOutcomeTests(unittest.TestCase):
                 for phase, writes, distance in [("PREPARE", 0, 7), ("RETURN", 1, 9)]]
 
     def setUp(self):
+        archive = Path("actual/library.jar").resolve()
         self.process = {"exitCode": 0, "termination": None}
         self.native = {"status": "PASS", "shutdownClosed": True, "librarySha256": "a" * 64,
-                       "java": "25.0.4+101", "loadedLibrary": "file:/actual/library.jar",
+                       "java": "25.0.4+101", "loadedLibrary": archive.as_uri(),
                        "minecraft": "26.3", "loader": "0.20.1"}
         self.native["runtimeArtifacts"] = {"reform": {
-            "path": "/actual/library.jar", "bytes": 100, "sha256": "a" * 64,
+            "path": str(archive), "bytes": 100, "sha256": "a" * 64,
             "witness": "design/inherent/reform/minecraft/configuration/ServerSettings.class",
-            "witnessSha256": "b" * 64, "resource": "jar:file:/actual/library.jar!/witness.class",
+            "witnessSha256": "b" * 64, "resource": "jar:" + archive.as_uri() + "!/witness.class",
             "resourceMatchesArchive": True}}
         self.library = SimpleNamespace(sha256="a" * 64)
         self.target = {"java": 25, "minecraftVersion": "26.3"}
@@ -430,6 +447,15 @@ class PlatformOutcomeTests(unittest.TestCase):
 
     def test_complete_native_outcome(self):
         self.assertTrue(self.accepted())
+
+    def test_windows_runtime_archive_requires_a_drive_or_unc_root(self):
+        with patch.object(platform, "Path", PureWindowsPath):
+            for value in [r"C:\actual\library.jar", r"\\host\share\library.jar"]:
+                self.native["runtimeArtifacts"]["reform"]["path"] = value
+                self.assertTrue(self.accepted(), value)
+            for value in ["/actual/library.jar", r"\actual\library.jar", r"C:library.jar", "relative.jar"]:
+                self.native["runtimeArtifacts"]["reform"]["path"] = value
+                self.assertFalse(self.accepted(), value)
 
     def test_native_recipe_exit_requires_queued_origin_and_completed_disconnect(self):
         fields = ("nativeDisconnectDeferredOutsideObserverTick", "nativeDisconnectOriginRetained",
@@ -473,7 +499,7 @@ class PlatformOutcomeTests(unittest.TestCase):
     def test_unremapped_viewer_archive_must_match_selected_original(self):
         self.native["recipeViewers"] = {"emi": "1.1.24"}
         fact = dict(self.native["runtimeArtifacts"]["reform"])
-        fact.update(path="/actual/emi.jar", witness="dev/emi/emi/api/EmiApi.class", sha256="c" * 64)
+        fact.update(path=str(Path("actual/emi.jar").resolve()), witness="dev/emi/emi/api/EmiApi.class", sha256="c" * 64)
         self.native["runtimeArtifacts"]["emi"] = fact
         original = {"provider": "emi", "version": "1.1.24", "sha256": "d" * 64}
         self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
@@ -485,7 +511,7 @@ class PlatformOutcomeTests(unittest.TestCase):
         for provider, witness, digest in [("jei", "mezz/jei/api/IModPlugin.class", "c" * 64),
                                            ("emi", "dev/emi/emi/api/EmiApi.class", "d" * 64)]:
             fact = dict(self.native["runtimeArtifacts"]["reform"])
-            fact.update(path="/actual/" + provider + ".jar", witness=witness, sha256=digest)
+            fact.update(path=str((Path("actual") / (provider + ".jar")).resolve()), witness=witness, sha256=digest)
             self.native["runtimeArtifacts"][provider] = fact
             originals.append({"provider": provider, "version": "19" if provider == "jei" else "1", "sha256": digest})
         self.native["recipeViewers"] = {"jei": "19", "emi": "1"}
@@ -502,7 +528,7 @@ class PlatformOutcomeTests(unittest.TestCase):
         self.target["remapMinecraft"] = True
         self.native["recipeViewers"] = {"jei": "19.71.0.470"}
         fact = dict(self.native["runtimeArtifacts"]["reform"])
-        fact.update(path="/actual/jei-remapped.jar", witness="mezz/jei/api/IModPlugin.class", sha256="c" * 64)
+        fact.update(path=str(Path("actual/jei-remapped.jar").resolve()), witness="mezz/jei/api/IModPlugin.class", sha256="c" * 64)
         self.native["runtimeArtifacts"]["jei"] = fact
         original = {"provider": "jei", "version": "19.71.0.470", "sha256": "d" * 64}
         self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
@@ -517,7 +543,7 @@ class PlatformOutcomeTests(unittest.TestCase):
     def test_loader_mod_version_may_differ_from_maven_but_must_match_exactly(self):
         self.native["recipeViewers"] = {"emi": "1.1.24+1.21.1+neoforge"}
         fact = dict(self.native["runtimeArtifacts"]["reform"])
-        fact.update(path="/actual/emi.jar", witness="dev/emi/emi/api/EmiApi.class", sha256="c" * 64)
+        fact.update(path=str(Path("actual/emi.jar").resolve()), witness="dev/emi/emi/api/EmiApi.class", sha256="c" * 64)
         self.native["runtimeArtifacts"]["emi"] = fact
         original = {"provider": "emi", "version": "1.1.24+1.21.1", "sha256": "c" * 64,
                     "modVersion": "1.1.24+1.21.1+neoforge"}

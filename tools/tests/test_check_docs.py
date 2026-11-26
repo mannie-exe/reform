@@ -39,7 +39,7 @@ class DocumentationScopeTest(unittest.TestCase):
                 errors = io.StringIO()
                 with contextlib.redirect_stderr(errors):
                     self.assertEqual(check_docs.main(), 1)
-                self.assertIn("docs/guide.md: missing destination: missing.md", errors.getvalue())
+                self.assertIn(f"{Path('docs/guide.md')}: missing destination: missing.md", errors.getvalue())
 
 
 if __name__ == "__main__":

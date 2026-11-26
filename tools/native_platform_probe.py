@@ -147,7 +147,7 @@ def retain_native_report(source, reports, reopen, role="native"):
         return None
     if source.is_symlink() or not source.is_file() or source.stat().st_size > 16 * 1024 * 1024:
         raise ValueError("Native report is not a bounded regular file")
-    if role not in {"native", "scene-failure"}:
+    if role not in {"native", "scene-failure", "native-unload"}:
         raise ValueError("Unrecognized native report role")
     saved = reports / (("reopen-" if reopen else "first-") + role + ".json")
     shutil.copy2(source, saved)
