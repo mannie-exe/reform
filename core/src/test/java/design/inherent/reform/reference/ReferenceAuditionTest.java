@@ -79,6 +79,41 @@ class ReferenceAuditionTest {
   }
 
   @Test
+  void opaqueSelectionIdentityTracksAcceptedInspectionAndRoleWithoutGrantingAuthority()
+      throws Exception {
+    try (var h = fixture().new Harness()) {
+      var browser = browser(h, "fixture:b");
+      var first = audition(h, browser);
+      var repeated = audition(h, browser);
+      assertTrue(first.sameSelection(repeated));
+      var otherRole =
+          h.nativeCall(
+              () ->
+                  ReferenceSelection.auditionFromBrowser("artwork", h.actions, h.first(), browser));
+      assertFalse(first.sameSelection(otherRole));
+      var anotherBrowser = audition(h, browser(h, "fixture:b"));
+      assertFalse(first.sameSelection(anotherBrowser));
+      resolve(h, browser, "fixture:b");
+      var refreshed = audition(h, browser);
+      assertFalse(first.sameSelection(refreshed), "Same key is not the same admitted inspection");
+      h.sourceRead.set(false);
+      assertTrue(refreshed.sameSelection(refreshed), "Identity alone conveys no current authority");
+      assertInstanceOf(
+          PolicyRefusal.class,
+          assertThrows(
+                  ExecutionException.class,
+                  () ->
+                      h.nativeCall(
+                          () -> {
+                            refreshed.requireCurrent(h.actions, revision(h));
+                            return null;
+                          }))
+              .getCause());
+      assertFalse(h.actions.view().dirty());
+    }
+  }
+
+  @Test
   void actualReadOnlyCaptureOverlaysOneFieldAndRetainsOnlyMetadataInHistory() throws Exception {
     try (var h = fixture().new Harness()) {
       byte[] saved = Files.readAllBytes(h.file);

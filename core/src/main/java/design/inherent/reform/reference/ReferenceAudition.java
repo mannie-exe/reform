@@ -60,6 +60,19 @@ public final class ReferenceAudition<T> {
     return new ReferenceAudition<>(role, document, path, browser);
   }
 
+  /** Opaque equality of the admitted inspection and role, not authority or value equality. */
+  public boolean sameSelection(ReferenceAudition<?> other) {
+    return other != null
+        && document == other.document
+        && browser == other.browser
+        && inspected == other.inspected
+        && field.equals(other.field)
+        && type == other.type
+        && role.equals(other.role)
+        && stamp.equals(other.stamp)
+        && key.equals(other.key);
+  }
+
   public void requireCurrent(DocumentActions<T> actual, DraftRevision expected) {
     if (actual != document)
       throw new IllegalArgumentException("Use the audition's actual document service");

@@ -535,6 +535,27 @@ class PlatformOutcomeTests(unittest.TestCase):
         self.assertFalse(accepted())
         del self.native["semanticPreviews"]
 
+    def test_mounted_basis_requires_privacy_recovery_no_autoreturn_and_actual_release(self):
+        def accepted():
+            return successful_boot(self.process, self.native, self.library, self.target,
+                                   "0.20.1", required_scenarios=("semanticPreviewBasis",))
+        complete = {"status": "PASS", "passed": True, "prepares": 5, "visiblePixels": 64,
+                    "privateWithdrawn": True, "explicitRecovery": True, "noReturnPrepare": True,
+                    "inputBytes": 0, "nativeBytes": 0, "sceneBytes": 0}
+        self.assertFalse(accepted())
+        self.native["semanticPreviewBasis"] = dict(complete)
+        self.assertTrue(accepted())
+        for field, value in complete.items():
+            wrong = [None, "missing", False] if type(value) is not int else [None, str(value), True, -1]
+            for replacement in wrong:
+                with self.subTest(field=field, replacement=replacement):
+                    self.native["semanticPreviewBasis"][field] = replacement
+                    self.assertFalse(accepted())
+            self.native["semanticPreviewBasis"][field] = value
+        self.native["semanticPreviewBasis"]["prepares"] = 4
+        self.assertFalse(accepted())
+        del self.native["semanticPreviewBasis"]
+
     def test_audition_success_requires_typed_basis_counts_and_actual_retirement(self):
         def accepted():
             return successful_boot(self.process, self.native, self.library, self.target,

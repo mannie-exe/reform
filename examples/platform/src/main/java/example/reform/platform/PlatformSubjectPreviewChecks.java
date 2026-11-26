@@ -7,10 +7,11 @@ import design.inherent.reform.definition.*;
 import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.minecraft.client.*;
 import design.inherent.reform.minecraft.client.ui.*;
+import design.inherent.reform.owner.*;
 import design.inherent.reform.presentation.*;
 import design.inherent.reform.presentation.graphics.*;
 import design.inherent.reform.presentation.ui.*;
-import design.inherent.reform.reference.ReferenceStamp;
+import design.inherent.reform.reference.*;
 import design.inherent.reform.value.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -64,6 +65,21 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     return PlatformFormProbe.run(registration, "PREVIEWS", PlatformSubjectPreviewChecks::new);
   }
 
+  static CompletionStage<JsonObject> runBasis(ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration, "PREVIEW_BASIS", driver -> new PlatformSubjectPreviewChecks(driver, true));
+  }
+
+  private final boolean basisMode;
+  private final AtomicBoolean sourceRead = new AtomicBoolean(true);
+  private OwnerContext sourceContext;
+  private ReferenceActions<String, List<String>> source;
+  private ReferencePicker<PlatformAuditionChecks.Profile, List<String>> picker;
+  private static final PickerRole<PlatformAuditionChecks.Profile> MODELS_ROLE =
+      new PickerRole<>("models", FieldPath.ROOT.field("models"));
+  private static final PickerRole<PlatformAuditionChecks.Profile> ARTWORK_ROLE =
+      new PickerRole<>("artwork", FieldPath.ROOT.field("artwork"));
+  private boolean privateWithdrawn, explicitRecovery, noReturnPrepare;
   private final PlatformFormProbe.Driver driver;
   private final Minecraft client = Minecraft.getInstance();
   private final Screen parent = NativeScreens.current(client);
@@ -91,6 +107,11 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private boolean complete;
 
   private PlatformSubjectPreviewChecks(PlatformFormProbe.Driver driver) {
+    this(driver, false);
+  }
+
+  private PlatformSubjectPreviewChecks(PlatformFormProbe.Driver driver, boolean basisMode) {
+    this.basisMode = basisMode;
     this.driver = driver;
     observing = this;
   }
@@ -231,6 +252,10 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     var generation = UUID.randomUUID();
     var provider =
         new ClientCapturedGraphicProvider<PlatformAuditionChecks.Profile, Subject>() {
+          public Inputs inputs() {
+            return Inputs.DRAFT_AND_AUDITION;
+          }
+
           public DocumentId id() {
             return PROVIDER;
           }
@@ -255,7 +280,20 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 () -> {
                   if (client.isSameThread())
                     throw new AssertionError("Material work entered native thread");
-                  if (!request
+                  if (basisMode) {
+                    var basis = request.input().basis();
+                    if (!(basis instanceof GraphicInputBasis.Audition audition))
+                      throw new AssertionError("A followed profile must not fall back to DRAFT");
+                    var expected =
+                        audition.role().equals("models")
+                            ? new PlatformAuditionChecks.Profile(
+                                "fixture:alternate", "fixture:base", 64)
+                            : new PlatformAuditionChecks.Profile(
+                                "fixture:base", "fixture:alternate", 64);
+                    if (!request.input().candidate().value().equals(expected))
+                      throw new AssertionError(
+                          "Audition must overlay only its actual declared field");
+                  } else if (!request
                       .input()
                       .candidate()
                       .value()
@@ -290,10 +328,78 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             subjects,
             text("Subject preview"),
             PreviewController.Automatic.ACCEPTED_CHANGES);
-    return preview.content();
+    if (!basisMode) return preview.content();
+    sourceContext =
+        new OwnerContext(
+            client::execute,
+            NativeClientProbe.ioPool(),
+            () -> {
+              if (!client.isSameThread()) throw new IllegalStateException("Client thread required");
+            },
+            OwnerContext.Limits.STANDARD);
+    source =
+        new ReferenceActions<>(
+            sourceContext,
+            sourceContext.access(sourceRead::get, () -> false),
+            PlatformAuditionChecks.SOURCE,
+            ValueTypes.text(128),
+            ValueTypes.list(ValueTypes.text(128), 4).snapshotPolicy(),
+            ReferenceLimits.STANDARD);
+    bindSource();
+    picker =
+        ReferencePicker.open(
+            scope,
+            admitted.actions(),
+            PlatformAuditionChecks.SOURCE,
+            () -> source,
+            List.of(MODELS_ROLE, ARTWORK_ROLE),
+            Map.of(),
+            ReferencePicker.Policy.STANDARD,
+            System::nanoTime);
+    check(
+        "shared follow binding does not stage or admit a source",
+        preview.follow(picker, MODELS_ROLE, text("Models")) instanceof UiActionResult.Applied
+            && entries.isEmpty());
+    return Views.column(
+        "profile-with-preview",
+        List.of(
+            ReferencePickerView.build(
+                scope,
+                picker,
+                new ReferencePickerView.Presentation<>(
+                    label("Profiles"),
+                    label("Try a profile without editing settings."),
+                    label("Available profiles"),
+                    label("Search profiles"),
+                    List.of(),
+                    4,
+                    2),
+                Optional.empty()),
+            preview.content()));
+  }
+
+  private void bindSource() {
+    source.bind(
+        "same-display-revision",
+        stamp ->
+            new ReferenceIndex<>(
+                stamp,
+                ValueTypes.text(128),
+                ValueTypes.list(ValueTypes.text(128), 4).snapshotPolicy(),
+                ReferenceLimits.STANDARD,
+                List.of(
+                    new ReferenceIndex.Entry<>(
+                        "fixture:base", List.of("base"), "Base", "Base", Map.of()),
+                    new ReferenceIndex.Entry<>(
+                        "fixture:alternate",
+                        List.of(),
+                        "Private inherited",
+                        "Private inherited",
+                        Map.of()))));
   }
 
   public boolean tick() throws Exception {
+    if (basisMode && stage > 0) return tickBasis();
     switch (stage) {
       case 0 -> {
         var form = PlatformAuditionChecks.settings.form(text("Preview settings"));
@@ -544,6 +650,183 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     return false;
   }
 
+  private boolean inspectionReady() {
+    var observed = picker.state().snapshot();
+    return observed instanceof UiObservation.Available<PickerState>
+        && observed.value().source() == PickerState.Source.READY
+        && observed.value().inspecting() == PickerState.Phase.READY;
+  }
+
+  private boolean tickBasis() throws Exception {
+    switch (stage) {
+      case 1 -> {
+        if (PlatformFrameObservations.sequence() - frames < 8) return false;
+        check("Home has no audition source or provider", picker == null && entries.isEmpty());
+        navigate(new ClientDestination.View(new DestinationId(PAGE)), 2);
+      }
+      case 2 -> {
+        if (!arrived()
+            || picker == null
+            || picker.state().snapshot().value().source() != PickerState.Source.READY) return false;
+        check("opening the browser does not prepare", entries.isEmpty());
+        revision = DraftRevision.of(editor.view().snapshot().orElseThrow());
+        file =
+            client
+                .gameDirectory
+                .toPath()
+                .resolve("config/reform_platform_example/audition_profiles.json");
+        bytes = Files.readAllBytes(file);
+        attributes = Files.readAttributes(file, BasicFileAttributes.class);
+        picker.inspect().invoke("fixture:alternate");
+        focusPreview();
+        stage++;
+      }
+      case 3 -> {
+        if (!ready(1)) return false;
+        check(
+            "resolved inspection automatically auditions Models with a guarded title",
+            preview.state().snapshot().value().basis() == GraphicSourceStamp.Kind.AUDITION
+                && preview
+                    .state()
+                    .snapshot()
+                    .value()
+                    .basisLabel()
+                    .equals("Trying Private inherited for Models")
+                && !editor.dirty());
+        check(
+            "role switch is explicit and does not stage",
+            preview.follow(picker, ARTWORK_ROLE, text("Artwork"))
+                instanceof UiActionResult.Applied);
+        stage++;
+      }
+      case 4 -> {
+        if (!ready(2)) return false;
+        check(
+            "role switch retains complete staged base",
+            preview
+                    .state()
+                    .snapshot()
+                    .value()
+                    .basisLabel()
+                    .equals("Trying Private inherited for Artwork")
+                && revision.equals(DraftRevision.of(editor.view().snapshot().orElseThrow())));
+        sourceRead.set(false);
+        stage++;
+      }
+      case 5 -> {
+        if (!empty()) return false;
+        privateWithdrawn = preview.state().snapshot() instanceof UiObservation.Unavailable<?>;
+        check(
+            "READ revocation withdraws cached audition title, native output and source facts",
+            privateWithdrawn
+                && picker.state().snapshot() instanceof UiObservation.Unavailable<?>
+                && entries.size() == 2);
+        sourceRead.set(true);
+        picker.refresh().invoke(null);
+        stage++;
+      }
+      case 6 -> {
+        if (picker.state().snapshot().value().source() != PickerState.Source.READY) return false;
+        picker.inspect().invoke("fixture:alternate");
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 7 -> {
+        if (!inspectionReady() || PlatformFrameObservations.sequence() - frames < 12) return false;
+        explicitRecovery = entries.size() == 2 && empty();
+        check("read recovery cannot auto prepare or substitute a draft", explicitRecovery);
+        press("Prepare preview");
+        focusPreview();
+        stage++;
+      }
+      case 8 -> {
+        if (!ready(3)) return false;
+        bindSource();
+        stage++;
+      }
+      case 9 -> {
+        if (!empty()) return false;
+        check(
+            "same text revision with a new source generation withdraws the old preview",
+            entries.size() == 3);
+        picker.refresh().invoke(null);
+        stage++;
+      }
+      case 10 -> {
+        if (picker.state().snapshot().value().source() != PickerState.Source.READY) return false;
+        picker.inspect().invoke("fixture:alternate");
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 11 -> {
+        if (!inspectionReady() || PlatformFrameObservations.sequence() - frames < 12) return false;
+        check(
+            "new source admission still requires explicit preparation",
+            entries.size() == 3 && empty());
+        press("Prepare preview");
+        focusPreview();
+        stage++;
+      }
+      case 12 -> {
+        if (!ready(4)) return false;
+        driver.capture(
+            "preview-basis-ready.png",
+            () -> {
+              pixels("preview-basis-ready.png");
+              stage = 13;
+            });
+        stage = -1;
+      }
+      case 13 -> {
+        navigate(new ClientDestination.Home(), 14);
+        frames = PlatformFrameObservations.sequence();
+      }
+      case 14 -> {
+        if (!arrived() || !empty() || PlatformFrameObservations.sequence() - frames < 8)
+          return false;
+        navigate(new ClientDestination.View(new DestinationId(PAGE)), 15);
+        frames = PlatformFrameObservations.sequence();
+      }
+      case 15 -> {
+        if (!arrived() || !inspectionReady() || PlatformFrameObservations.sequence() - frames < 20)
+          return false;
+        noReturnPrepare = entries.size() == 4 && empty();
+        check(
+            "asynchronous pinned inspection restoration is not an audition gesture",
+            noReturnPrepare);
+        press("Prepare preview");
+        focusPreview();
+        stage++;
+      }
+      case 16 -> {
+        if (!ready(5)) return false;
+        check(
+            "complete original settings and revision survive all auditions",
+            !editor.dirty()
+                && revision.equals(DraftRevision.of(editor.view().snapshot().orElseThrow())));
+        workflow.close();
+        stage++;
+      }
+      case 17 -> {
+        if (!empty()) return false;
+        var after = Files.readAttributes(file, BasicFileAttributes.class);
+        check(
+            "audition never writes settings",
+            Arrays.equals(bytes, Files.readAllBytes(file))
+                && attributes.lastModifiedTime().equals(after.lastModifiedTime())
+                && Objects.equals(attributes.fileKey(), after.fileKey()));
+        check(
+            "exact bounded audition entries and no cleanup failure",
+            entries.size() == 5 && host.releaseFailure().isEmpty());
+        complete = true;
+        NativeScreens.open(client, parent);
+        return true;
+      }
+      default -> {}
+    }
+    return false;
+  }
+
   private void pixels(String filename) {
     try {
       var image =
@@ -584,6 +867,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     result.addProperty("stage", stage);
     result.addProperty("prepares", entries.size());
     result.addProperty("subjects", combinations.size());
+    result.addProperty("privateWithdrawn", privateWithdrawn);
+    result.addProperty("explicitRecovery", explicitRecovery);
+    result.addProperty("noReturnPrepare", noReturnPrepare);
     result.addProperty("draws", draws);
     result.addProperty("viewportX", viewportX);
     result.addProperty("viewportY", viewportY);
@@ -613,5 +899,6 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     observing = null;
     if (drain != null) drain.complete(null);
     if (workflow != null && workflow.isOpen()) workflow.close();
+    if (sourceContext != null) sourceContext.close();
   }
 }

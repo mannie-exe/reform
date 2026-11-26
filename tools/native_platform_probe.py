@@ -280,6 +280,17 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                 and all(type(native["semanticPreviews"].get(key)) is int
                         and native["semanticPreviews"][key] == 0
                         for key in ("inputBytes", "nativeBytes", "sceneBytes"))))
+            and ("semanticPreviewBasis" not in required_scenarios or (
+                native["semanticPreviewBasis"].get("passed") is True
+                and type(native["semanticPreviewBasis"].get("prepares")) is int
+                and native["semanticPreviewBasis"]["prepares"] == 5
+                and type(native["semanticPreviewBasis"].get("visiblePixels")) is int
+                and native["semanticPreviewBasis"]["visiblePixels"] >= 64
+                and all(native["semanticPreviewBasis"].get(key) is True
+                        for key in ("privateWithdrawn", "explicitRecovery", "noReturnPrepare"))
+                and all(type(native["semanticPreviewBasis"].get(key)) is int
+                        and native["semanticPreviewBasis"][key] == 0
+                        for key in ("inputBytes", "nativeBytes", "sceneBytes"))))
             and ("semanticAuditions" not in required_scenarios or (
                 native["semanticAuditions"].get("passed") is True
                 and type(native["semanticAuditions"].get("prepares")) is int
@@ -395,7 +406,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
     target = next((t for t in load_targets(ROOT) if t["project"] == project), None)
     if target is None:
         raise ValueError("Select an admitted native target")
-    if isolated_scene is not None and (isolated_scene not in ("operations", "controls", "captions", "references", "entries", "batches", "components", "pickers", "auditions", "previews") or not client or any((world_client, recipe_client, authoring_client, chooser_client, connector, command_client, workspace_client, workflow_client, native_recipe_client, recipe_links_client, recipe_viewer, mod_menu, initialization_failure, synced_override))):
+    if isolated_scene is not None and (isolated_scene not in ("operations", "controls", "captions", "references", "entries", "batches", "components", "pickers", "auditions", "previews", "preview-basis") or not client or any((world_client, recipe_client, authoring_client, chooser_client, connector, command_client, workspace_client, workflow_client, native_recipe_client, recipe_links_client, recipe_viewer, mod_menu, initialization_failure, synced_override))):
         raise ValueError("Select a separate admitted isolated client scene")
     if connector and (client or synced_override or "connectorVersion" not in target):
         raise ValueError("Connector requires a declared dedicated NeoForge target")
@@ -472,7 +483,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
     reports = ROOT / "build/reports/native-platform" / project / role / mode
     reports.mkdir(parents=True, exist_ok=True)
     required_scenarios = tuple(name for name, enabled in
-                               [("semanticPreviews",isolated_scene=="previews"),("semanticAuditions",isolated_scene=="auditions"),("semanticPickers",isolated_scene=="pickers"),("semanticComponents", isolated_scene == "components"), ("batchFailures", isolated_scene == "batches"), ("entrySlots", isolated_scene == "entries"), ("referencePresentation", isolated_scene == "references"), ("choiceCaptions", isolated_scene == "captions"), ("customControls", isolated_scene == "controls"), ("operations", isolated_scene == "operations"), ("nativeRecipes", native_recipe_client), ("recipeLinks", recipe_links_client), ("world", world_client), ("recipe", recipe_client), ("authoring", authoring_client),
+                               [("semanticPreviewBasis",isolated_scene=="preview-basis"),("semanticPreviews",isolated_scene=="previews"),("semanticAuditions",isolated_scene=="auditions"),("semanticPickers",isolated_scene=="pickers"),("semanticComponents", isolated_scene == "components"), ("batchFailures", isolated_scene == "batches"), ("entrySlots", isolated_scene == "entries"), ("referencePresentation", isolated_scene == "references"), ("choiceCaptions", isolated_scene == "captions"), ("customControls", isolated_scene == "controls"), ("operations", isolated_scene == "operations"), ("nativeRecipes", native_recipe_client), ("recipeLinks", recipe_links_client), ("world", world_client), ("recipe", recipe_client), ("authoring", authoring_client),
                                 ("initializationFailure", initialization_failure), ("chooser", chooser_client),
                                 ("nativeCommands", not client), ("nativeSearch", not client),
                                 ("clientCommands", command_client), ("workspace", workspace_client), ("workflow", workflow_client)] if enabled)
@@ -547,9 +558,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                 for key in ("batchFailures", "sceneFailure"):
                     if isinstance(native.get(key), dict):
                         native[key]["captures"] = retain_captures(fixture, reports, native[key].get("captures", []), roles, reopen)
-            if isolated_scene in ("pickers", "previews"):
-                roles=PICKER_CAPTURES | {"platform-previews-ready.png", "platform-previews-returned.png"}
-                for key in ("semanticPickers","semanticPreviews","sceneFailure"):
+            if isolated_scene in ("pickers", "previews", "preview-basis"):
+                roles=PICKER_CAPTURES | {"platform-previews-ready.png", "platform-previews-returned.png", "platform-preview-basis-ready.png"}
+                for key in ("semanticPickers","semanticPreviews","semanticPreviewBasis","sceneFailure"):
                     if isinstance(native.get(key),dict):
                         native[key]["captures"]=retain_captures(fixture,reports,native[key].get("captures",[]),roles,reopen)
             elif isolated_scene == "components":
@@ -638,7 +649,7 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--isolated-scene", choices=["operations", "controls", "captions", "references", "entries", "batches", "components", "pickers", "auditions", "previews"], help="Separate native operation, control, or component qualification")
+    parser.add_argument("--isolated-scene", choices=["operations", "controls", "captions", "references", "entries", "batches", "components", "pickers", "auditions", "previews", "preview-basis"], help="Separate native operation, control, or component qualification")
     parser.add_argument("--native-recipe-client", action="store_true", help="Actual owner-supplied native book and optional inventory viewer context")
     parser.add_argument("--recipe-links-client", action="store_true", help="Separate optional recipe-viewer and exact parent-return qualification")
     parser.add_argument("--recipe-viewer", choices=["jei", "emi", "both"], help="Recipe client with exact optional runtimes and original-input hash verification")

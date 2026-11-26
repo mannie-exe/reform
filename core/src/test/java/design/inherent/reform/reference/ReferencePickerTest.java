@@ -996,7 +996,9 @@ class ReferencePickerTest {
       assertInstanceOf(
           UiActionResult.Applied.class,
           h.call(() -> h.picker.anchorList().invoke(Optional.of(top))));
+      assertEquals(0L, h.call(() -> h.picker.inspectionGestures().snapshot().value()));
       h.inspect("fixture:b");
+      assertEquals(1L, h.call(() -> h.picker.inspectionGestures().snapshot().value()));
       var before = h.snapshot();
       assertEquals("fixture:b", before.inspection().orElseThrow().key());
       h.call(
@@ -1020,6 +1022,10 @@ class ReferencePickerTest {
               value ->
                   value.searching() == PickerState.Phase.READY
                       && value.inspecting() != PickerState.Phase.RUNNING);
+      assertEquals(
+          1L,
+          h.call(() -> h.picker.inspectionGestures().snapshot().value()),
+          "History hydration is not another inspection gesture");
       assertEquals(before.query(), returned.query());
       assertEquals(before.stamp(), returned.stamp());
       assertEquals(before.window(), returned.window());

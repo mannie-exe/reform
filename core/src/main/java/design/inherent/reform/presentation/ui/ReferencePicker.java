@@ -135,7 +135,8 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   private PickerState.Phase searching = PickerState.Phase.IDLE, inspecting = PickerState.Phase.IDLE;
   private String active, inspected, inspectedTitle;
   private ValidationReport report = ValidationReport.VALID;
-  private long queryGeneration, deadline, observationRevision;
+  private long queryGeneration, deadline, observationRevision, inspectionGesture;
+  private final UiRead<Long> inspectionGestures;
   private boolean queryPending, seekingMatches;
   private final java.util.NavigableMap<Integer, ReferencePage<String>> pages =
       new java.util.TreeMap<>();
@@ -227,6 +228,19 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
               ReferencePicker::weight);
       scope.onRetire(this::retire);
       state = scope.observe(stateKey, this::observe);
+      var gestureKey =
+          new UiReadKey<>(
+              DocumentId.parse("reform:picker_inspection_gesture"),
+              SnapshotPolicy.<Long>immutable(),
+              SnapshotContext.Limits.CONFIGURATION,
+              16,
+              value -> 8L);
+      inspectionGestures =
+          scope.observe(
+              gestureKey,
+              () ->
+                  new UiObservation.Available<>(
+                      gestureKey.capture(inspectionGesture), inspectionGesture + 1));
     } catch (RuntimeException | Error failed) {
       try {
         scope.close();
@@ -267,6 +281,13 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
 
   public UiRead<PickerState> state() {
     return state;
+  }
+
+  /**
+   * Accepted inspect/option gestures only; focus, search and history restoration do not advance it.
+   */
+  public UiRead<Long> inspectionGestures() {
+    return inspectionGestures;
   }
 
   public UiScope scope() {
@@ -527,7 +548,9 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
     return command(
         this::sourceAvailability,
         raw -> {
-          return pending(beginLookup(raw, null));
+          var work = beginLookup(raw, null);
+          inspectionGesture = Math.incrementExact(inspectionGesture);
+          return pending(work);
         });
   }
 
@@ -542,7 +565,9 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
                   .role()
                   .map(role -> captureChoice(role, activation.option().key()))
                   .orElse(null);
-          return pending(beginLookup(activation.option().key(), choice));
+          var work = beginLookup(activation.option().key(), choice);
+          inspectionGesture = Math.incrementExact(inspectionGesture);
+          return pending(work);
         });
   }
 

@@ -99,6 +99,11 @@ public final class PreviewController<T, S> implements AutoCloseable {
   private ClientGraphicHost.View<T, S> view;
   private ClientGraphicHost.Attempt attempt;
   private ReferenceAudition<T> audition;
+  private boolean auditionRequested;
+  private ReferencePicker<T, ?> picker;
+  private PickerRole<T> role;
+  private Component roleTitle;
+  private long inspectionGesture;
   private PreviewInputStamp input;
   private ReferenceStamp resources;
   private GraphicCamera camera;
@@ -165,7 +170,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
                       basisLabel,
                       GraphicSourceStamp.Kind.DRAFT)),
               revision);
-      status = scope.observe(statusKey, () -> cached);
+      status = scope.observe(statusKey, this::observeStatus);
       content =
           Views.section(
               "preview",
@@ -232,6 +237,39 @@ public final class PreviewController<T, S> implements AutoCloseable {
     return slot = new Slot();
   }
 
+  /**
+   * Follow this picker's resolved inspection for one explicit role. Construction/admission and
+   * search remain the picker's responsibility; no source, writer, or second scheduler is made. A
+   * role switch while visible is a deliberate audition gesture. Return alone never prepares.
+   */
+  public UiActionResult follow(
+      ReferencePicker<T, ?> requested, PickerRole<T> requestedRole, Component requestedRoleTitle) {
+    require();
+    Objects.requireNonNull(requested);
+    if (!requested.roles().contains(Objects.requireNonNull(requestedRole)))
+      throw new IllegalArgumentException("Use one of the picker's declared roles");
+    if (provider.inputs() != ClientGraphicProvider.Inputs.DRAFT_AND_AUDITION)
+      return refused("preview.audition_unsupported", "This provider supports draft previews only.");
+    // Verify the shared presentation root without admitting a source or borrowing a native widget.
+    scope.project(List.of(requested.state()), () -> requested.state().snapshot());
+    var caption = ClientReferenceTask.caption(requestedRoleTitle, 128, false);
+    picker = requested;
+    role = requestedRole;
+    roleTitle = caption;
+    auditionRequested = true;
+    audition = null;
+    basisDescription = auditionUnavailable();
+    pending = false;
+    if (view != null) view.invalidate();
+    try {
+      if (mounted) followInspection(true);
+      publish();
+      return new UiActionResult.Applied();
+    } catch (PolicyRefusal refused) {
+      return refuse(refused);
+    }
+  }
+
   /** Pin an actual resolved audition; this never stages the inspected profile. */
   public UiActionResult audition(ReferenceAudition<T> requested, Component description) {
     require();
@@ -241,6 +279,8 @@ public final class PreviewController<T, S> implements AutoCloseable {
     try {
       requested.requireCurrent(
           editor.actions(), DraftRevision.of(editor.view().snapshot().orElseThrow()));
+      picker = null;
+      auditionRequested = true;
       audition = Objects.requireNonNull(requested);
       basisDescription = ClientReferenceTask.caption(description, 1024, false);
       if (automatic == Automatic.ACCEPTED_CHANGES && !explicitRequired) schedule();
@@ -256,6 +296,8 @@ public final class PreviewController<T, S> implements AutoCloseable {
    */
   public UiActionResult draft() {
     require();
+    picker = null;
+    auditionRequested = false;
     audition = null;
     basisDescription = currentDraft();
     if (mounted && automatic == Automatic.ACCEPTED_CHANGES && !explicitRequired) schedule();
@@ -273,7 +315,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
         () -> {
           pending = false;
           explicitRequired = false;
-          request();
+          if (picker == null || followInspection(false)) request();
           return new UiActionResult.Applied();
         });
   }
@@ -336,7 +378,8 @@ public final class PreviewController<T, S> implements AutoCloseable {
   private void update() {
     require();
     try {
-      if (!mounted) {
+      boolean entering = !mounted;
+      if (entering) {
         view = host.open(editor, provider);
         if (camera != null) view.camera(camera);
         mounted = true;
@@ -346,6 +389,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
         subjectRevision = subjects.value().snapshot().revision();
         input = currentInput();
         resources = provider.resourceStamp();
+        if (picker != null) inspectionGesture = picker.inspectionGestures().snapshot().value();
       }
       view.refreshCurrentness();
       var nextResources = provider.resourceStamp();
@@ -356,6 +400,10 @@ public final class PreviewController<T, S> implements AutoCloseable {
         explicitRequired = true;
       }
       var next = currentInput();
+      if (picker != null && !followInspection(false)) {
+        publish();
+        return;
+      }
       if (audition != null) audition.requireCurrent(editor.actions(), next.draft());
       var subject = subjects.value().snapshot();
       if (subject.revision() != subjectRevision) {
@@ -374,6 +422,64 @@ public final class PreviewController<T, S> implements AutoCloseable {
       publish();
     } catch (PolicyRefusal refused) {
       refuse(refused);
+    }
+  }
+
+  private boolean followInspection(boolean roleGesture) {
+    long nextGesture = picker.inspectionGestures().snapshot().value();
+    var value = picker.state().snapshot().value();
+    if (value.source() != PickerState.Source.READY
+        && value.source() != PickerState.Source.UNADMITTED)
+      throw new PolicyRefusal(
+          "preview.reference_unavailable",
+          "Refresh the available profiles before preparing again.");
+    var inspected = value.inspection();
+    if (value.source() == PickerState.Source.UNADMITTED
+        || value.inspecting() != PickerState.Phase.READY
+        || inspected.filter(v -> v.status() == ReferenceResolution.Status.RESOLVED).isEmpty()) {
+      pending = false;
+      audition = null;
+      basisDescription = auditionUnavailable();
+      failure =
+          new PolicyRefusal(
+                  "preview.reference_unresolved", "Inspect a resolved profile before preparing it.")
+              .report();
+      if (view != null) view.invalidate();
+      return false;
+    }
+    var next = picker.audition(role);
+    next.requireCurrent(editor.actions(), DraftRevision.of(editor.view().snapshot().orElseThrow()));
+    boolean changed = !next.sameSelection(audition);
+    audition = next;
+    var choice = inspected.orElseThrow();
+    basisDescription =
+        Component.translatableWithFallback(
+            "reform.ui.preview_trying_profile",
+            "Trying %s for %s",
+            choice.title().orElse(choice.key()),
+            roleTitle);
+    if (changed) {
+      failure = ValidationReport.VALID;
+      if ((roleGesture || nextGesture != inspectionGesture)
+          && automatic == Automatic.ACCEPTED_CHANGES
+          && !explicitRequired) schedule();
+      else if (view != null) view.invalidate();
+    }
+    inspectionGesture = nextGesture;
+    return true;
+  }
+
+  /** Withdraw cached private source facts even when authority changes before the next host turn. */
+  private UiObservation<State> observeStatus() {
+    long version = Math.multiplyExact(cached.revision(), 2);
+    try {
+      if (auditionRequested && audition != null)
+        audition.requireCurrent(
+            editor.actions(), DraftRevision.of(editor.view().snapshot().orElseThrow()));
+      var available = (UiObservation.Available<State>) cached;
+      return new UiObservation.Available<>(available.data(), version);
+    } catch (PolicyRefusal refused) {
+      return new UiObservation.Unavailable<>(refused.report(), Optional.of(refused), version + 1);
     }
   }
 
@@ -396,7 +502,10 @@ public final class PreviewController<T, S> implements AutoCloseable {
     if (view == null)
       throw new PolicyRefusal("preview.hidden", "Open this preview before preparing it.");
     var frozen = subjects.value().snapshot().value();
-    attempt = audition == null ? view.request(frozen) : view.request(frozen, audition);
+    if (auditionRequested && audition == null)
+      throw new PolicyRefusal(
+          "preview.reference_unresolved", "Inspect a resolved profile before preparing it.");
+    attempt = auditionRequested ? view.request(frozen, audition) : view.request(frozen);
     activated = true;
     failure = ValidationReport.VALID;
     subjectRevision = subjects.value().snapshot().revision();
@@ -411,7 +520,11 @@ public final class PreviewController<T, S> implements AutoCloseable {
       activated = false;
       explicitRequired = true;
     }
-    if (view != null) view.refreshCurrentness();
+    if (auditionRequested) basisDescription = auditionUnavailable();
+    if (view != null) {
+      view.refreshCurrentness();
+      view.invalidate();
+    }
     publish();
     return new UiActionResult.Refused(failure, Optional.of(refused));
   }
@@ -454,7 +567,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
             mounted && cancelable,
             report,
             basisLabel,
-            audition == null ? GraphicSourceStamp.Kind.DRAFT : GraphicSourceStamp.Kind.AUDITION);
+            auditionRequested ? GraphicSourceStamp.Kind.AUDITION : GraphicSourceStamp.Kind.DRAFT);
     if (!next.equals(cached.value()))
       cached = new UiObservation.Available<>(statusKey.capture(next), ++revision);
   }
@@ -474,6 +587,11 @@ public final class PreviewController<T, S> implements AutoCloseable {
 
   private static UiActionResult refused(String code, String fallback) {
     return new UiActionResult.Refused(new PolicyRefusal(code, fallback).report(), Optional.empty());
+  }
+
+  private static Component auditionUnavailable() {
+    return Component.translatableWithFallback(
+        "reform.ui.preview_audition_unavailable", "Profile audition unavailable");
   }
 
   private static Component currentDraft() {
