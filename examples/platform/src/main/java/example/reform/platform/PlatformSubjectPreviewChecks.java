@@ -1197,6 +1197,11 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             "beforeMounted", widgets(workflow.screen()).contains(metadataInputBefore));
         metadataInputObservations.addProperty(
             "beforeRaw", ((EditBox) metadataInputBefore).getValue());
+        metadataInputObservations.addProperty(
+            "beforeCursor", ((EditBox) metadataInputBefore).getCursorPosition());
+        metadataInputObservations.addProperty(
+            "beforeSelection", ((EditBox) metadataInputBefore).getHighlighted());
+        metadataInputObservations.addProperty("beforeFocused", metadataInputBefore.isFocused());
         navigate(new ClientDestination.View(new DestinationId(PAGE)), 870);
         frames = PlatformFrameObservations.sequence();
       }
@@ -1229,6 +1234,11 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             "currentInputMounted", widgets(workflow.screen()).contains(currentInput));
         metadataInputObservations.addProperty("earlierRaw", originalNativeInput.getValue());
         metadataInputObservations.addProperty("currentRaw", ((EditBox) currentInput).getValue());
+        metadataInputObservations.addProperty(
+            "currentCursor", ((EditBox) currentInput).getCursorPosition());
+        metadataInputObservations.addProperty(
+            "currentSelection", ((EditBox) currentInput).getHighlighted());
+        metadataInputObservations.addProperty("currentFocused", currentInput.isFocused());
         sectionMetadataReturn =
             sectionMetadataOwner
                 && entries.size() == 7
