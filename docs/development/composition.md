@@ -38,6 +38,14 @@ The native panel preserves each widget's intrinsic offer separately from its ass
 
 These constraints follow the owned [Playground composition contracts](https://github.com/mannie-exe/playground/blob/d7a1c9989b2596f062d5f0314474f011470fe902/docs/ui/CONTRACTS.md#6-placement-and-responsive-composition): parents own placement, controls own intrinsic measurement, and presentation is derived from the actual available space. Playground's renderer, runtime, and 3D scene system are not dependencies. A future preview remains content in a measured viewport; it does not give ordinary settings a third layout axis.
 
+## Stable location and history
+
+Development dev.127 places one Back/Forward pair beside the workflow breadcrumb in its existing location slot. Both supported games supply the native page-backward/page-forward sprites; native controls retain readable action names, disabled state, focus, and resource-pack styling. History still restores the actual workflow destination/bookmark. It is distinct from selecting an ancestor.
+
+The breadcrumb draws ancestors as text links, muted `>` separators, and the highlighted, underlined current item. The current item is descriptive and cannot activate. Long paths expose an explicit Location menu and retain the complete path in narration and the tooltip. The menu remains the hierarchy frontdoor; a clipped title never changes the destination identity. No duplicate hidden ancestor controls are mounted. Each descriptive narration contains the complete path once.
+
+`HeaderLayout.location` measures the history pair and the remaining path offer independently of current route text. Short offers flow in authored order, and the existing header-in-content policy moves required controls into the scrolling tree. Workflow navigation and Home no longer mount duplicate history buttons in their bodies. Selective standalone forms retain their existing navigation region, using the same native arrow controls and guarded history service; they do not acquire a workflow owner or workspace header.
+
 ## Author relationships and groups
 
 `FormPresentation.withLayout(FormLayout)` adds immutable local declarations. `FormLayout.Row` declares two or three distinct sibling leaf paths in their displayed order. `FormLayout.Group` declares a titled box, optional localized help, and one to 128 sibling fields or subtrees. Direct scalar and reference controls can share rows, including defaulted booleans. Other defaulted values use structural override editors and belong in groups rather than direct rows. Layout paths retain their real identities; labels do not rename them.
