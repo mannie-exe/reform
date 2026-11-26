@@ -6,8 +6,10 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import tomllib
 import uuid
 import urllib.request
+import zipfile
 
 if __package__:
     from .native_config_probe import execute
@@ -223,7 +225,10 @@ def runtime_artifacts_match(native, library, target, viewer_input=None):
     if {original["provider"] for original in originals} != set(viewers):
         return False
     if any(not isinstance(original.get("version"), str) or not original["version"]
-           or viewers.get(original["provider"]) != original["version"] for original in originals):
+           or not isinstance(original.get("modVersion", original["version"]), str)
+           or not original.get("modVersion", original["version"])
+           or viewers.get(original["provider"]) != original.get("modVersion", original["version"])
+           for original in originals):
         return False
     for identity, fact in artifacts.items():
         if (not isinstance(fact, dict) or not isinstance(fact.get("path"), str)
@@ -534,6 +539,32 @@ def recipe_original(module, version, url):
             "sha256": hashlib.sha256(saved.read_bytes()).hexdigest(), "path": str(saved.relative_to(ROOT))}
 
 
+def recipe_mod_version(original, provider, loader):
+    """Read exact loader identity from the verified original, separately from its Maven version."""
+    if provider not in ("jei", "emi") or loader not in ("fabric", "neoforge"):
+        raise ValueError("Select an admitted recipe viewer and loader")
+    path = ROOT / original["path"]
+    if (path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 64 * 1024 * 1024
+            or hashlib.sha256(path.read_bytes()).hexdigest() != original["sha256"]):
+        raise ValueError("Recipe metadata requires the verified original archive")
+    name = "fabric.mod.json" if loader == "fabric" else "META-INF/neoforge.mods.toml"
+    with zipfile.ZipFile(path) as archive:
+        entries = [entry for entry in archive.infolist() if entry.filename == name]
+        if len(entries) != 1 or not 0 < entries[0].file_size <= 256 * 1024:
+            raise ValueError("Recipe loader metadata is missing, duplicate, or exceeds its bound")
+        payload = archive.read(entries[0]).decode("utf-8")
+    if loader == "fabric":
+        metadata = json.loads(payload)
+        versions = [metadata.get("version")] if metadata.get("id") == provider else []
+    else:
+        metadata = tomllib.loads(payload)
+        versions = [mod.get("version") for mod in metadata.get("mods", []) if mod.get("modId") == provider]
+    if (len(versions) != 1 or not isinstance(versions[0], str) or not versions[0].strip()
+            or len(versions[0]) > 256 or "${" in versions[0]):
+        raise ValueError("Recipe loader metadata requires one literal matching mod version")
+    return versions[0]
+
+
 def run(project, java_home, timeout, version=None, tested_loader=False, client=False, synced_override=False, world_client=False, mod_menu=False, initialization_failure=False, recipe_client=False, authoring_client=False, chooser_client=False, connector=False, command_client=False, workspace_client=False, workflow_client=False, recipe_viewer=None, recipe_links_client=False, native_recipe_client=False, isolated_scene=None, minimum_recipe_viewer=False):
     target = next((t for t in load_targets(ROOT) if t["project"] == project), None)
     if target is None:
@@ -584,7 +615,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             viewer_version = recipe_viewer_version(target, "emi", minimum_recipe_viewer)
             module = "emi-" + target["loader"]
             url = "https://maven.terraformersmc.com/releases/dev/emi/" + module + "/" + viewer_version + "/" + module + "-" + viewer_version + ".jar"
-        viewer_inputs.append({"provider": provider, **recipe_original(module, viewer_version, url)})
+        original = recipe_original(module, viewer_version, url)
+        viewer_inputs.append({"provider": provider, **original,
+                              "modVersion": recipe_mod_version(original, provider, target["loader"])})
     viewer_companion = None
     if recipe_viewer in ("jei", "both") and target.get("jeiConfigVersion"):
         module = "mezz_config-" + target["minecraftVersion"] + "-" + target["loader"]

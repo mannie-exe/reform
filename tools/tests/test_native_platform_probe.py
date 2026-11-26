@@ -2,9 +2,11 @@
 
 from types import SimpleNamespace
 import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 from tools import native_platform_probe as platform
@@ -12,6 +14,49 @@ from tools.native_platform_probe import retain_captures, retain_native_report, s
 
 
 class OptionalAdmissionTests(unittest.TestCase):
+    def test_recipe_mod_version_uses_exact_verified_loader_metadata(self):
+        for loader, name, payload, expected in [
+                ("neoforge", "META-INF/neoforge.mods.toml",
+                 '[[mods]]\nmodId="emi"\nversion="1.1.24+1.21.1+neoforge"\n', "1.1.24+1.21.1+neoforge"),
+                ("fabric", "fabric.mod.json", json.dumps({"id": "emi", "version": "1.1.24+1.21.1"}),
+                 "1.1.24+1.21.1")]:
+            with self.subTest(loader=loader), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                archive = root / "viewer.jar"
+                with zipfile.ZipFile(archive, "w") as output:
+                    output.writestr(name, payload)
+                original = {"path": "viewer.jar", "version": "1.1.24+1.21.1",
+                            "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
+                with patch.object(platform, "ROOT", root):
+                    self.assertEqual(platform.recipe_mod_version(original, "emi", loader), expected)
+                    original["sha256"] = "0" * 64
+                    with self.assertRaisesRegex(ValueError, "verified original"):
+                        platform.recipe_mod_version(original, "emi", loader)
+
+    def test_recipe_mod_version_refuses_wrong_ambiguous_or_symbolic_identity(self):
+        for payload in ('[[mods]]\nmodId="other"\nversion="1"\n',
+                        '[[mods]]\nmodId="emi"\nversion="${file.jarVersion}"\n',
+                        '[[mods]]\nmodId="emi"\nversion="1"\n[[mods]]\nmodId="emi"\nversion="2"\n'):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                archive = root / "viewer.jar"
+                with zipfile.ZipFile(archive, "w") as output:
+                    output.writestr("META-INF/neoforge.mods.toml", payload)
+                original = {"path": "viewer.jar", "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
+                with patch.object(platform, "ROOT", root), self.assertRaisesRegex(ValueError, "one literal matching"):
+                    platform.recipe_mod_version(original, "emi", "neoforge")
+
+    def test_recipe_mod_version_refuses_missing_or_oversized_metadata(self):
+        for name, payload in [("wrong.toml", "missing"), ("fabric.mod.json", " " * (256 * 1024 + 1))]:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                archive = root / "viewer.jar"
+                with zipfile.ZipFile(archive, "w") as output:
+                    output.writestr(name, payload)
+                original = {"path": "viewer.jar", "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
+                with patch.object(platform, "ROOT", root), self.assertRaisesRegex(ValueError, "exceeds its bound"):
+                    platform.recipe_mod_version(original, "emi", "fabric")
+
     def test_recipe_original_refuses_dangling_link_before_network_or_write(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(platform.urllib.request, "urlopen") as network:
             root = Path(temporary)
@@ -450,6 +495,21 @@ class PlatformOutcomeTests(unittest.TestCase):
             with self.subTest(version=value):
                 original["version"] = value
                 self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+
+    def test_loader_mod_version_may_differ_from_maven_but_must_match_exactly(self):
+        self.native["recipeViewers"] = {"emi": "1.1.24+1.21.1+neoforge"}
+        fact = dict(self.native["runtimeArtifacts"]["reform"])
+        fact.update(path="/actual/emi.jar", witness="dev/emi/emi/api/EmiApi.class", sha256="c" * 64)
+        self.native["runtimeArtifacts"]["emi"] = fact
+        original = {"provider": "emi", "version": "1.1.24+1.21.1", "sha256": "c" * 64,
+                    "modVersion": "1.1.24+1.21.1+neoforge"}
+        for remapped in (False, True):
+            with self.subTest(remapped=remapped):
+                self.target["remapMinecraft"] = remapped
+                self.assertTrue(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+                self.native["recipeViewers"]["emi"] = "1.1.23+1.21.1+neoforge"
+                self.assertFalse(platform.runtime_artifacts_match(self.native, self.library, self.target, original))
+                self.native["recipeViewers"]["emi"] = "1.1.24+1.21.1+neoforge"
 
     def test_runtime_archive_rejects_invalid_or_unbounded_facts(self):
         fact = self.native["runtimeArtifacts"]["reform"]
