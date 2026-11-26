@@ -165,7 +165,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private int[] width = {0}, height = {0};
   private long frames;
   private boolean complete;
-  private int fieldFactories, fieldRetirements;
+  private int fieldFactories, fieldRetirements, completionBaselineLookups;
   private long inlineWaitFrame = -1;
   private final JsonObject pointerFacts = new JsonObject();
 
@@ -1039,6 +1039,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "manual disclosure mounts the actual field input",
             focus(workflow.screen(), manualWidget));
+        completionBaselineLookups = lookups.get();
         manualWidget.setValue("fixture:profile_00");
         stage = 240;
       }
@@ -1054,7 +1055,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "completion uses bounded actual key-prefix source with no resolve or browsing query change",
             offer.prefix().equals("fixture:profile_00")
-                && lookups.get() == 3
+                && lookups.get() == completionBaselineLookups
                 && inlineState().query().text().isEmpty());
         check(
             "suggestions do not implicitly select or accept the first option",
@@ -1311,7 +1312,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             design.inherent.reform.edit.DraftRevision.of(editor.view().snapshot().orElseThrow());
         check(
             "manual ID edits only its real draft and never resolves on typing",
-            raw("models").equals(id(3)) && lookups.get() == 3);
+            raw("models").equals(id(3)) && lookups.get() == completionBaselineLookups);
         UiBindings.local(manualExpanded).changes().invoke(false);
         // This still-painted Hide offer is now obsolete. It must not toggle the new closed state.
         press("Hide Artwork ID");
