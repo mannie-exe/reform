@@ -130,7 +130,9 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   private Optional<ReferenceQuery.Cursor> queryCursor = Optional.empty();
   private PickerState.Query queryValue = PickerState.Query.atEnd("");
   private OperationHandle<EditorActor.View<T>> edit;
-  private PendingChoice<T> pendingChoice;
+  private PendingChoice<T> pendingChoice, editingChoice;
+  private java.util.UUID observedEdit;
+  private PickerState.Accepted acceptedSelection;
   private PickerState.Source sourceState = PickerState.Source.UNADMITTED;
   private PickerState.Phase searching = PickerState.Phase.IDLE, inspecting = PickerState.Phase.IDLE;
   private String active, inspected, inspectedTitle;
@@ -638,6 +640,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
                       () -> refusal("reference.unresolved", "Inspect a resolved choice first."));
           var choice = captureChoice(role, selected);
           edit = stage(choice);
+          editingChoice = choice;
           return pending(edit);
         });
   }
@@ -728,6 +731,7 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
             }
             pollSearch();
             pollLookup();
+            pollEdit();
             if (browser != null && lookupDemand != null && retiringLookup == null) {
               var desired = lookupDemand;
               lookupDemand = null;
@@ -837,10 +841,37 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
       if (selected.selectedKey().isEmpty())
         throw refusal("reference.unresolved", "This ID is not resolved; inspect another choice.");
       var operation = stage(choice);
-      if (browser == selected && lookup == requested) edit = operation;
+      if (browser == selected && lookup == requested) {
+        edit = operation;
+        editingChoice = choice;
+      }
     } catch (PolicyRefusal refused) {
       if (browser == selected && lookup == requested) report = refused.report();
     }
+  }
+
+  private void pollEdit() {
+    var work = edit;
+    var choice = editingChoice;
+    if (work == null || choice == null || work.snapshot().id().equals(observedEdit)) return;
+    var outcome = work.snapshot();
+    if (!outcome.terminal()) return;
+    observedEdit = outcome.id();
+    editingChoice = null;
+    if (outcome.state() != OperationSnapshot.State.COMPLETED) return;
+    var actual = outcome.result().orElseThrow();
+    if (actual.availability() != EditorActor.Availability.READY
+        || !actual.operationReport().valid()
+        || actual.snapshot().isEmpty()) return;
+    var after = DraftRevision.of(actual.snapshot().orElseThrow());
+    acceptedSelection =
+        new PickerState.Accepted(
+            outcome.id(),
+            choice.role().id(),
+            choice.role().field(),
+            choice.revision(),
+            after,
+            choice.stamp());
   }
 
   private OperationHandle<?> admitSource(boolean returning) {
@@ -1106,6 +1137,9 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
               sourceWork(lookup == null ? null : lookup.operation(), retiringLookup),
               work(edit),
               acceptance(),
+              browser != null && sourceState == PickerState.Source.READY
+                  ? Optional.ofNullable(acceptedSelection)
+                  : Optional.empty(),
               report.and(returnReport));
       return observed(facts);
     } catch (PolicyRefusal denied) {
@@ -1321,6 +1355,10 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
   }
 
   private void releaseBrowser() {
+    acceptedSelection = null;
+    // An owner edit may drain while hidden, but that old action must not activate a returned view.
+    if (edit != null) observedEdit = edit.snapshot().id();
+    editingChoice = null;
     cancelSearch();
     cancelLookup();
     var previous = browser;
@@ -1473,6 +1511,17 @@ public final class ReferencePicker<T, V> implements AutoCloseable {
               + 2L * (value.key().length() + value.reason().length())
               + textWeight(value.facts())
               + value.title().map(title -> 2L * title.length()).orElse(0L);
+    }
+    if (state.accepted().isPresent()) {
+      var accepted = state.accepted().orElseThrow();
+      size +=
+          384L
+              + 2L
+                  * (accepted.role().length()
+                      + accepted.field().toString().length()
+                      + accepted.before().toString().length()
+                      + accepted.after().toString().length()
+                      + accepted.source().toString().length());
     }
     if (state.acceptance().isPresent()) {
       var expected = state.acceptance().orElseThrow();

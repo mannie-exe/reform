@@ -1541,6 +1541,47 @@ class ReferencePickerTest {
   }
 
   @Test
+  void acceptedSelectionReportsActualRoleEditButNotBrowseWorkAndWithdrawsOnReadLoss()
+      throws Exception {
+    try (var h = new Harness()) {
+      h.admit();
+      h.inspect("fixture:b");
+      assertTrue(h.snapshot().accepted().isEmpty(), "Resolved lookup is not an accepted edit");
+      var option = h.option("fixture:b");
+      h.call(() -> h.picker.active().invoke(option));
+      assertTrue(h.snapshot().accepted().isEmpty(), "Focus is not an accepted edit");
+      var before = h.call(() -> DraftRevision.of(h.actions.view().snapshot().orElseThrow()));
+      var edit = pending(h.call(() -> h.picker.acceptInspected(MODEL_ROLE).invoke(null)));
+      done(edit);
+      h.update();
+      var accepted = h.snapshot().accepted().orElseThrow();
+      assertEquals(edit.snapshot().id(), accepted.operation());
+      assertEquals("models", accepted.role());
+      assertEquals(MODEL_ROLE.field(), accepted.field());
+      assertEquals(before, accepted.before());
+      assertTrue(h.call(() -> accepted.after().matches(h.actions.view().snapshot().orElseThrow())));
+      assertEquals(h.snapshot().stamp().orElseThrow(), accepted.source());
+      assertEquals("fixture:b", h.raw("models"));
+      assertEquals("fixture:a", h.raw("artwork"));
+      h.edit("count", "invalid");
+      h.inspect("fixture:empty");
+      done(pending(h.call(() -> h.picker.acceptInspected(ART_ROLE).invoke(null))));
+      h.update();
+      var sibling = h.snapshot().accepted().orElseThrow();
+      assertEquals("artwork", sibling.role());
+      assertNotEquals(accepted.operation(), sibling.operation());
+      assertEquals("invalid", h.raw("count"), "Acceptance retains an invalid unrelated field");
+      assertFalse(h.actions.view().validation().valid());
+      h.sourceRead.set(false);
+      assertTrue(h.snapshot().accepted().isEmpty(), "Revoked source receipt facts are withdrawn");
+      h.sourceRead.set(true);
+      h.admit();
+      assertTrue(h.snapshot().accepted().isEmpty(), "Source admission cannot replay old edits");
+      h.unchanged();
+    }
+  }
+
+  @Test
   void delayedInlineAcceptanceCannotOverwriteANewerDraftOrNativeInputEpoch() throws Exception {
     try (var h = new Harness()) {
       h.admit();
@@ -1560,6 +1601,8 @@ class ReferencePickerTest {
       h.input.set(Optional.of(new FieldFrontend.Input("bad raw", 3, 3, 3, false, false)));
       assertEquals(
           "reference.input_unaccepted", code(h.call(() -> h.picker.activate().invoke(activation))));
+      assertTrue(
+          h.snapshot().accepted().isEmpty(), "Refused/stale edits never mint accepted events");
       h.unchanged();
     }
   }

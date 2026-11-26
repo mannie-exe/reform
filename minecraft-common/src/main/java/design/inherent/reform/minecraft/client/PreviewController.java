@@ -104,6 +104,8 @@ public final class PreviewController<T, S> implements AutoCloseable {
   private PickerRole<T> role;
   private Component roleTitle;
   private long inspectionGesture;
+  private List<ReferencePicker<T, ?>> draftSelections = List.of();
+  private final Map<ReferencePicker<T, ?>, UUID> observedSelections = new IdentityHashMap<>();
   private PreviewInputStamp input;
   private ReferenceStamp resources;
   private GraphicCamera camera;
@@ -253,6 +255,8 @@ public final class PreviewController<T, S> implements AutoCloseable {
     // Verify the shared presentation root without admitting a source or borrowing a native widget.
     scope.project(List.of(requested.state()), () -> requested.state().snapshot());
     var caption = ClientReferenceTask.caption(requestedRoleTitle, 128, false);
+    draftSelections = List.of();
+    observedSelections.clear();
     picker = requested;
     role = requestedRole;
     roleTitle = caption;
@@ -270,6 +274,57 @@ public final class PreviewController<T, S> implements AutoCloseable {
     }
   }
 
+  /**
+   * Declare shared picker edit results that activate this complete DRAFT preview. Binding itself
+   * performs no admission, edit, or preparation. Sources may be collapsed/unadmitted; only a fresh
+   * actual accepted edit at the current complete revision activates the existing demand lane.
+   */
+  public void activateAfterSelection(List<? extends ReferencePicker<T, ?>> selections) {
+    require();
+    if (auditionRequested)
+      throw new IllegalStateException("Return to the draft before binding draft selections");
+    if (selections.size() > 16)
+      throw new IllegalArgumentException("Declare at most16 selection controllers");
+    var identities =
+        Collections.newSetFromMap(new IdentityHashMap<ReferencePicker<T, ?>, Boolean>());
+    for (var selection : selections) {
+      Objects.requireNonNull(selection);
+      if (!identities.add(selection))
+        throw new IllegalArgumentException("Bind each actual selection controller once");
+      scope.project(List.of(selection.state()), () -> selection.state().snapshot());
+    }
+    draftSelections = List.copyOf(selections);
+    selectionBaseline();
+  }
+
+  private void selectionBaseline() {
+    observedSelections.clear();
+    for (var selection : draftSelections) {
+      var state = selection.state().snapshot();
+      observedSelections.put(
+          selection,
+          state instanceof UiObservation.Available<PickerState>
+              ? state.value().accepted().map(PickerState.Accepted::operation).orElse(null)
+              : null);
+    }
+  }
+
+  private void pollSelections() {
+    for (var selection : draftSelections) {
+      var observed = selection.state().snapshot();
+      if (!(observed instanceof UiObservation.Available<PickerState>)) continue;
+      var state = observed.value();
+      if (state.source() != PickerState.Source.READY || state.accepted().isEmpty()) continue;
+      var accepted = state.accepted().orElseThrow();
+      if (accepted.operation().equals(observedSelections.get(selection))) continue;
+      observedSelections.put(selection, accepted.operation());
+      if (state.stamp().filter(accepted.source()::equals).isPresent()
+          && accepted.after().matches(editor.view().snapshot().orElseThrow())
+          && automatic == Automatic.ACCEPTED_CHANGES
+          && !explicitRequired) schedule();
+    }
+  }
+
   /** Pin an actual resolved audition; this never stages the inspected profile. */
   public UiActionResult audition(ReferenceAudition<T> requested, Component description) {
     require();
@@ -279,6 +334,8 @@ public final class PreviewController<T, S> implements AutoCloseable {
     try {
       requested.requireCurrent(
           editor.actions(), DraftRevision.of(editor.view().snapshot().orElseThrow()));
+      draftSelections = List.of();
+      observedSelections.clear();
       picker = null;
       auditionRequested = true;
       audition = Objects.requireNonNull(requested);
@@ -390,6 +447,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
         input = currentInput();
         resources = provider.resourceStamp();
         if (picker != null) inspectionGesture = picker.inspectionGestures().snapshot().value();
+        selectionBaseline();
       }
       view.refreshCurrentness();
       var nextResources = provider.resourceStamp();
@@ -400,6 +458,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
         explicitRequired = true;
       }
       var next = currentInput();
+      if (!entering) pollSelections();
       if (picker != null && !followInspection(false)) {
         publish();
         return;
@@ -469,7 +528,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
     return true;
   }
 
-  /** Withdraw cached private source facts even when authority changes before the next host turn. */
+  /** Withdraw cached private source facts on the actual presentation refresh. */
   private UiObservation<State> observeStatus() {
     long version = Math.multiplyExact(cached.revision(), 2);
     try {

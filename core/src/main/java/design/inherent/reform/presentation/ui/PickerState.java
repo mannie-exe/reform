@@ -1,5 +1,6 @@
 package design.inherent.reform.presentation.ui;
 
+import design.inherent.reform.definition.FieldPath;
 import design.inherent.reform.edit.DraftRevision;
 import design.inherent.reform.operation.OperationSnapshot;
 import design.inherent.reform.reference.ReferencePage;
@@ -30,7 +31,72 @@ public record PickerState(
     Optional<Work> lookupWork,
     Optional<Work> editWork,
     Optional<Acceptance> acceptance,
+    Optional<Accepted> accepted,
     ValidationReport report) {
+  /** Source-compatible unknown success history, never inferred from a COMPLETED label. */
+  public PickerState(
+      Source source,
+      Query query,
+      long queryGeneration,
+      Optional<ReferenceStamp> stamp,
+      Phase searching,
+      Optional<ReferencePage<String>> page,
+      Window window,
+      Optional<String> active,
+      Phase inspecting,
+      Optional<String> inspectionRequest,
+      Optional<Inspection> inspection,
+      Map<String, Requested> requested,
+      Optional<Work> searchWork,
+      Optional<Work> lookupWork,
+      Optional<Work> editWork,
+      Optional<Acceptance> acceptance,
+      ValidationReport report) {
+    this(
+        source,
+        query,
+        queryGeneration,
+        stamp,
+        searching,
+        page,
+        window,
+        active,
+        inspecting,
+        inspectionRequest,
+        inspection,
+        requested,
+        searchWork,
+        lookupWork,
+        editWork,
+        acceptance,
+        Optional.empty(),
+        report);
+  }
+
+  /** Metadata for one actual accepted field edit, not a writer, candidate, or save receipt. */
+  public record Accepted(
+      UUID operation,
+      String role,
+      FieldPath field,
+      DraftRevision before,
+      DraftRevision after,
+      ReferenceStamp source) {
+    public Accepted {
+      Objects.requireNonNull(operation);
+      Objects.requireNonNull(role);
+      Objects.requireNonNull(field);
+      Objects.requireNonNull(before);
+      Objects.requireNonNull(after);
+      Objects.requireNonNull(source);
+      if (role.isBlank()
+          || role.length() > 128
+          || !before.document().equals(after.document())
+          || !before.context().equals(after.context())
+          || !before.session().equals(after.session()))
+        throw new IllegalArgumentException("An accepted selection retains its actual document");
+    }
+  }
+
   /** Bounded admitted pages and cursor bookkeeping, not a known source total. */
   public record Window(
       List<ReferencePage.Choice<String>> choices,
@@ -175,6 +241,7 @@ public record PickerState(
     Objects.requireNonNull(lookupWork);
     Objects.requireNonNull(editWork);
     Objects.requireNonNull(acceptance);
+    Objects.requireNonNull(accepted);
     Objects.requireNonNull(report);
   }
 }

@@ -159,7 +159,9 @@ public final class PlatformClient {
       if ("pickers".equals(isolatedScene)) PlatformPickerChecks.register(registration);
       if ("auditions".equals(isolatedScene)
           || "previews".equals(isolatedScene)
-          || "preview-basis".equals(isolatedScene)) PlatformAuditionChecks.register(registration);
+          || "preview-basis".equals(isolatedScene)
+          || "preview-selections".equals(isolatedScene))
+        PlatformAuditionChecks.register(registration);
       if ("captions".equals(isolatedScene)) PlatformChoiceCaptionChecks.register(registration);
       if ("entries".equals(isolatedScene)) PlatformEntryPresentationChecks.register(registration);
       if ("references".equals(isolatedScene)) {
@@ -334,6 +336,13 @@ public final class PlatformClient {
         case 7 -> {
           if (!pending.isDone()) return;
           report.add("nativeKeys", (JsonObject) pending.join());
+          if ("preview-selections".equals(isolatedScene)) {
+            pending =
+                PlatformSubjectPreviewChecks.runSelections(clientRegistration)
+                    .toCompletableFuture();
+            stage = 42;
+            return;
+          }
           if ("preview-basis".equals(isolatedScene)) {
             pending =
                 PlatformSubjectPreviewChecks.runBasis(clientRegistration).toCompletableFuture();
@@ -602,6 +611,11 @@ public final class PlatformClient {
         case 36 -> {
           if (!pending.isDone()) return;
           report.add("batchFailures", (JsonObject) pending.join());
+          beginShutdown();
+        }
+        case 42 -> {
+          if (!pending.isDone()) return;
+          report.add("semanticPreviewSelections", (JsonObject) pending.join());
           beginShutdown();
         }
         case 41 -> {

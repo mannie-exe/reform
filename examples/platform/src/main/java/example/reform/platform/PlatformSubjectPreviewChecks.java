@@ -29,7 +29,11 @@ import net.minecraft.network.chat.Component;
 public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Scene {
   record Subject(int container, boolean looted, boolean open) {}
 
-  record Entry(Subject subject, GraphicSourceStamp stamp, long at) {}
+  record Entry(
+      Subject subject,
+      GraphicSourceStamp stamp,
+      PlatformAuditionChecks.Profile candidate,
+      long at) {}
 
   static final FieldKey<Integer> CONTAINER = FieldKey.of("container", ValueTypes.integer(0, 2));
   static final FieldKey<Boolean> LOOTED = FieldKey.of("looted", ValueTypes.bool()),
@@ -70,11 +74,23 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         registration, "PREVIEW_BASIS", driver -> new PlatformSubjectPreviewChecks(driver, true));
   }
 
-  private final boolean basisMode;
+  static CompletionStage<JsonObject> runSelections(ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration,
+        "PREVIEW_SELECTIONS",
+        driver -> new PlatformSubjectPreviewChecks(driver, false, true));
+  }
+
+  private final boolean basisMode, inlineMode;
   private final AtomicBoolean sourceRead = new AtomicBoolean(true);
   private OwnerContext sourceContext;
   private ReferenceActions<String, List<String>> source;
-  private ReferencePicker<PlatformAuditionChecks.Profile, List<String>> picker;
+  private ReferencePicker<PlatformAuditionChecks.Profile, List<String>> picker, artworkPicker;
+  private boolean firstSelectionActivated,
+      inspectionDidNotEdit,
+      combinedDraft,
+      sameValueActivated,
+      restored;
   private static final PickerRole<PlatformAuditionChecks.Profile> MODELS_ROLE =
       new PickerRole<>("models", FieldPath.ROOT.field("models"));
   private static final PickerRole<PlatformAuditionChecks.Profile> ARTWORK_ROLE =
@@ -107,11 +123,17 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private boolean complete;
 
   private PlatformSubjectPreviewChecks(PlatformFormProbe.Driver driver) {
-    this(driver, false);
+    this(driver, false, false);
   }
 
   private PlatformSubjectPreviewChecks(PlatformFormProbe.Driver driver, boolean basisMode) {
+    this(driver, basisMode, false);
+  }
+
+  private PlatformSubjectPreviewChecks(
+      PlatformFormProbe.Driver driver, boolean basisMode, boolean inlineMode) {
     this.basisMode = basisMode;
+    this.inlineMode = inlineMode;
     this.driver = driver;
     observing = this;
   }
@@ -280,7 +302,12 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 () -> {
                   if (client.isSameThread())
                     throw new AssertionError("Material work entered native thread");
-                  if (basisMode) {
+                  if (inlineMode) {
+                    if (request.input().basis().kind() != GraphicSourceStamp.Kind.DRAFT)
+                      throw new AssertionError("Inline selection must prepare the actual DRAFT");
+                    if (request.input().candidate().value().distance() != 64)
+                      throw new AssertionError("Selection discarded an unrelated draft field");
+                  } else if (basisMode) {
                     var basis = request.input().basis();
                     if (!(basis instanceof GraphicInputBasis.Audition audition))
                       throw new AssertionError("A followed profile must not fall back to DRAFT");
@@ -299,7 +326,12 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                       .value()
                       .equals(PlatformAuditionChecks.DEFINITION.defaults()))
                     throw new AssertionError("Subject controls changed complete settings input");
-                  entries.add(new Entry(request.subject(), request.stamp(), System.nanoTime()));
+                  entries.add(
+                      new Entry(
+                          request.subject(),
+                          request.stamp(),
+                          request.input().candidate().value(),
+                          System.nanoTime()));
                   if (blockNext.getAndSet(false)) {
                     var held = new CompletableFuture<Void>();
                     drain = held;
@@ -328,7 +360,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             subjects,
             text("Subject preview"),
             PreviewController.Automatic.ACCEPTED_CHANGES);
-    if (!basisMode) return preview.content();
+    if (!basisMode && !inlineMode) return preview.content();
     sourceContext =
         new OwnerContext(
             client::execute,
@@ -346,6 +378,35 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             ValueTypes.list(ValueTypes.text(128), 4).snapshotPolicy(),
             ReferenceLimits.STANDARD);
     bindSource();
+    if (inlineMode) {
+      picker =
+          ReferencePicker.open(
+              scope,
+              admitted.actions(),
+              PlatformAuditionChecks.SOURCE,
+              () -> source,
+              List.of(MODELS_ROLE),
+              Map.of(),
+              ReferencePicker.Policy.STANDARD,
+              System::nanoTime);
+      artworkPicker =
+          ReferencePicker.open(
+              scope,
+              admitted.actions(),
+              PlatformAuditionChecks.SOURCE,
+              () -> source,
+              List.of(ARTWORK_ROLE),
+              Map.of(),
+              ReferencePicker.Policy.STANDARD,
+              System::nanoTime);
+      preview.activateAfterSelection(List.of(picker, artworkPicker));
+      return Views.column(
+          "inline-selections",
+          List.of(
+              selectionView(scope, picker, MODELS_ROLE, "Model profiles"),
+              selectionView(scope, artworkPicker, ARTWORK_ROLE, "Artwork profiles"),
+              preview.content()));
+    }
     picker =
         ReferencePicker.open(
             scope,
@@ -381,6 +442,25 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             preview.content()));
   }
 
+  private ViewSpec selectionView(
+      UiScope scope,
+      ReferencePicker<PlatformAuditionChecks.Profile, List<String>> selection,
+      PickerRole<PlatformAuditionChecks.Profile> role,
+      String caption) {
+    return ReferencePickerView.build(
+        scope,
+        selection,
+        new ReferencePickerView.Presentation<>(
+            label(caption),
+            label("Choose a value for this draft."),
+            label(caption),
+            label("Search profiles"),
+            List.of(new ReferencePickerView.RoleAction<>(role, label("Use selection"))),
+            4,
+            2),
+        Optional.of(role));
+  }
+
   private void bindSource() {
     source.bind(
         "same-display-revision",
@@ -402,6 +482,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   }
 
   public boolean tick() throws Exception {
+    if (inlineMode && stage > 0) return tickSelections();
     if (basisMode && stage > 0) return tickBasis();
     switch (stage) {
       case 0 -> {
@@ -653,6 +734,174 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     return false;
   }
 
+  private boolean choicesReady(ReferencePicker<?, ?> selection) {
+    var state = selection.state().snapshot().value();
+    return state.source() == PickerState.Source.READY && state.window().choices().size() == 2;
+  }
+
+  private void choose(String caption, boolean alternate) {
+    var list =
+        widgets(workflow.screen()).stream()
+            .filter(w -> w.getMessage().getString().equals(caption) && !(w instanceof Button))
+            .findFirst()
+            .orElseThrow();
+    check("native inline list accepts focus: " + caption, focus(workflow.screen(), list));
+    key("home");
+    if (alternate) key("down");
+    key("enter");
+    focusPreview();
+  }
+
+  private boolean tickSelections() throws Exception {
+    switch (stage) {
+      case 1 -> {
+        if (PlatformFrameObservations.sequence() - frames < 8) return false;
+        check(
+            "unopened Home has no selection controller or preparation",
+            picker == null && entries.isEmpty());
+        navigate(new ClientDestination.View(new DestinationId(PAGE)), 2);
+      }
+      case 2 -> {
+        if (!arrived() || picker == null || !choicesReady(picker) || !choicesReady(artworkPicker))
+          return false;
+        check(
+            "two inline choices share one idle complete-draft preview",
+            entries.isEmpty() && !editor.dirty());
+        file =
+            client
+                .gameDirectory
+                .toPath()
+                .resolve("config/reform_platform_example/audition_profiles.json");
+        bytes = Files.readAllBytes(file);
+        attributes = Files.readAttributes(file, BasicFileAttributes.class);
+        choose("Model profiles", true);
+        stage++;
+      }
+      case 3 -> {
+        if (!ready(1)) return false;
+        firstSelectionActivated =
+            entries
+                .getLast()
+                .candidate()
+                .equals(
+                    new PlatformAuditionChecks.Profile("fixture:alternate", "fixture:base", 64));
+        check(
+            "first accepted inline choice activates complete DRAFT without prior Prepare",
+            firstSelectionActivated
+                && preview.state().snapshot().value().basis() == GraphicSourceStamp.Kind.DRAFT);
+        revision = DraftRevision.of(editor.view().snapshot().orElseThrow());
+        artworkPicker.inspect().invoke("fixture:alternate");
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 4 -> {
+        if (artworkPicker.state().snapshot().value().inspecting() != PickerState.Phase.READY
+            || PlatformFrameObservations.sequence() - frames < 12) return false;
+        inspectionDidNotEdit =
+            entries.size() == 1
+                && artworkPicker.state().snapshot().value().accepted().isEmpty()
+                && revision.equals(DraftRevision.of(editor.view().snapshot().orElseThrow()));
+        check(
+            "inspection alone neither stages Artwork nor activates draft preview",
+            inspectionDidNotEdit);
+        choose("Artwork profiles", true);
+        stage++;
+      }
+      case 5 -> {
+        if (!ready(2)) return false;
+        combinedDraft =
+            entries
+                .getLast()
+                .candidate()
+                .equals(
+                    new PlatformAuditionChecks.Profile(
+                        "fixture:alternate", "fixture:alternate", 64));
+        check("independent Artwork selection prepares both current draft fields", combinedDraft);
+        choose("Model profiles", false);
+        stage++;
+      }
+      case 6 -> {
+        if (!ready(3)) return false;
+        check(
+            "changing Models preserves staged Artwork",
+            entries
+                .getLast()
+                .candidate()
+                .equals(
+                    new PlatformAuditionChecks.Profile("fixture:base", "fixture:alternate", 64)));
+        choose("Model profiles", false);
+        stage++;
+      }
+      case 7 -> {
+        if (!ready(4)) return false;
+        sameValueActivated =
+            entries.getLast().candidate().equals(entries.get(entries.size() - 2).candidate());
+        check(
+            "deliberate same-value acceptance is a new explicit preview gesture",
+            sameValueActivated);
+        driver.capture(
+            "preview-selections-ready.png",
+            () -> {
+              pixels("preview-selections-ready.png");
+              stage = 8;
+            });
+        stage = -1;
+      }
+      case 8 -> {
+        navigate(new ClientDestination.Home(), 9);
+        frames = PlatformFrameObservations.sequence();
+      }
+      case 9 -> {
+        if (!arrived() || !empty() || PlatformFrameObservations.sequence() - frames < 8)
+          return false;
+        navigate(new ClientDestination.View(new DestinationId(PAGE)), 10);
+        frames = PlatformFrameObservations.sequence();
+      }
+      case 10 -> {
+        if (!arrived()
+            || !choicesReady(picker)
+            || !choicesReady(artworkPicker)
+            || PlatformFrameObservations.sequence() - frames < 20) return false;
+        noReturnPrepare = entries.size() == 4 && empty();
+        check("return cannot replay an old successful selection", noReturnPrepare);
+        press("Prepare preview");
+        focusPreview();
+        stage++;
+      }
+      case 11 -> {
+        if (!ready(5)) return false;
+        choose("Artwork profiles", false);
+        stage++;
+      }
+      case 12 -> {
+        if (!ready(6)) return false;
+        restored =
+            entries.getLast().candidate().equals(PlatformAuditionChecks.DEFINITION.defaults())
+                && !editor.dirty();
+        check("explicit actual selection restores the saved values without writing", restored);
+        workflow.close();
+        stage++;
+      }
+      case 13 -> {
+        if (!empty()) return false;
+        var after = Files.readAttributes(file, BasicFileAttributes.class);
+        check(
+            "inline selection does not persist settings",
+            Arrays.equals(bytes, Files.readAllBytes(file))
+                && attributes.lastModifiedTime().equals(after.lastModifiedTime())
+                && Objects.equals(attributes.fileKey(), after.fileKey()));
+        check(
+            "six exact complete-draft preparations retire without failure",
+            entries.size() == 6 && host.releaseFailure().isEmpty());
+        complete = true;
+        NativeScreens.open(client, parent);
+        return true;
+      }
+      default -> {}
+    }
+    return false;
+  }
+
   private boolean inspectionReady() {
     var observed = picker.state().snapshot();
     return observed instanceof UiObservation.Available<PickerState>
@@ -872,6 +1121,11 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     result.addProperty("stage", stage);
     result.addProperty("prepares", entries.size());
     result.addProperty("subjects", combinations.size());
+    result.addProperty("firstSelectionActivated", firstSelectionActivated);
+    result.addProperty("inspectionDidNotEdit", inspectionDidNotEdit);
+    result.addProperty("combinedDraft", combinedDraft);
+    result.addProperty("sameValueActivated", sameValueActivated);
+    result.addProperty("restored", restored);
     result.addProperty("privateWithdrawn", privateWithdrawn);
     result.addProperty("explicitRecovery", explicitRecovery);
     result.addProperty("noReturnPrepare", noReturnPrepare);
