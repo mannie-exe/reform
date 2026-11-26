@@ -63,7 +63,7 @@ final class WorkspaceHeader implements AutoCloseable {
         new HeaderLayout.Offer(
             roles.value(ThemeValues.Role.CONTROL_MINIMUM_WIDTH),
             roles.value(ThemeValues.Role.MEASURE_INFORMATION_PREFERRED),
-            w -> roles.value(ThemeValues.Role.CONTROL_HEIGHT)));
+            w -> locationLayout(w).height()));
     if (!theme
         .text(ClientTheme.TextRole.SUPPORT, presentation.identity().subtitle())
         .getString()
@@ -122,13 +122,14 @@ final class WorkspaceHeader implements AutoCloseable {
       Font font,
       FormGeometry.Placement bounds,
       List<Crumb> trail,
+      List<Button> history,
       BooleanSupplier current,
       Consumer<List<Crumb>> overflow) {
     this.bounds = bounds;
     ensureCanvas();
     var location = at(HeaderComposition.Slot.LOCATION);
     if (location == null || trail.isEmpty()) return List.of();
-    return locationButtons(font, location, trail, current, overflow);
+    return locationControls(font, location, trail, history, current, overflow);
   }
 
   private void ensureCanvas() {
@@ -183,6 +184,7 @@ final class WorkspaceHeader implements AutoCloseable {
       FormPanel panel,
       Font font,
       List<Crumb> trail,
+      List<Button> history,
       BooleanSupplier current,
       Consumer<List<Crumb>> overflow) {
     bounds = null;
@@ -200,29 +202,17 @@ final class WorkspaceHeader implements AutoCloseable {
           }
           case LOCATION -> {
             if (trail.isEmpty()) continue;
-            var location = locationText(trail);
-            var button =
-                theme
-                    .buttonBuilder(
-                        trail.getLast().title(),
-                        ignored -> {
-                          if (current.getAsBoolean()) overflow.accept(trail);
-                        })
-                    .bounds(
-                        0,
-                        0,
-                        theme.values().value(ThemeValues.Role.CONTROL_MINIMUM_WIDTH),
-                        theme.values().value(ThemeValues.Role.CONTROL_HEIGHT))
-                    .createNarration(
-                        original ->
-                            Component.translatableWithFallback(
-                                    "reform.workspace.location", "Location")
-                                .append(": ")
-                                .append(location))
-                    .build();
-            // The custom narration already contains this complete path.
-            button.setTooltip(Tooltip.create(location, null));
-            panel.actions("workspace:location", button);
+            var controls =
+                locationControls(
+                    font,
+                    new FormGeometry.Placement(
+                        0, 0, panel.contentWidth(), locationLayout(panel.contentWidth()).height()),
+                    trail,
+                    history,
+                    current,
+                    overflow);
+            panel.actions("workspace:location", controls.toArray(AbstractWidget[]::new));
+            panel.keepTogether(history.get(0), history.get(1));
           }
           case CANVAS -> {
             var offer = presentation.header().canvas().orElseThrow();
@@ -246,73 +236,160 @@ final class WorkspaceHeader implements AutoCloseable {
   private static Component locationText(List<Crumb> trail) {
     var full = Component.empty();
     for (int i = 0; i < trail.size(); i++) {
-      if (i > 0) full.append(" / ");
+      if (i > 0) full.append(" > ");
       full.append(trail.get(i).title());
     }
     return full;
   }
 
-  private List<AbstractWidget> locationButtons(
+  private FormGeometry.Controls locationLayout(int width) {
+    return HeaderLayout.location(
+        width,
+        theme.values().value(ThemeValues.Role.CONTROL_HEIGHT),
+        31,
+        theme.values().value(ThemeValues.Role.CONTROL_MINIMUM_WIDTH),
+        theme.values().value(ThemeValues.Role.SPACE_INLINE));
+  }
+
+  private List<AbstractWidget> locationControls(
       Font font,
       FormGeometry.Placement location,
       List<Crumb> trail,
+      List<Button> history,
       BooleanSupplier current,
       Consumer<List<Crumb>> overflow) {
+    if (history.size() != 2) throw new IllegalArgumentException("History needs Back and Forward");
+    var geometry = locationLayout(location.width());
+    var controls = new ArrayList<AbstractWidget>();
+    for (int i = 0; i < history.size(); i++) {
+      var at = geometry.placements().get(i);
+      var control = history.get(i);
+      control.setPosition(location.x() + at.x(), location.y() + at.y());
+      control.setWidth(at.width());
+      controls.add(control);
+    }
+    var at = geometry.placements().get(2);
+    var path =
+        new FormGeometry.Placement(
+            location.x() + at.x(), location.y() + at.y(), at.width(), at.height());
     var full = locationText(trail);
-    var buttons = new ArrayList<AbstractWidget>();
-    int gap = theme.values().value(ThemeValues.Role.SPACE_INLINE);
-    int total =
-        trail.stream().mapToInt(c -> Math.max(32, font.width(c.title()) + 20)).sum()
-            + gap * (trail.size() - 1);
-    int x = location.x();
-    if (total <= location.width()) {
-      for (int index = 0; index < trail.size(); index++) {
-        var crumb = trail.get(index);
-        boolean leaf = index + 1 == trail.size();
-        var label = crumb.title().copy();
-        var button =
-            theme
-                .buttonBuilder(
-                    label,
-                    ignored -> {
-                      if (current.getAsBoolean()) crumb.selected().run();
-                    })
-                .bounds(x, location.y(), Math.max(32, font.width(label) + 20), location.height())
-                .createNarration(
-                    original ->
-                        Component.translatableWithFallback(
-                                leaf
-                                    ? "reform.workspace.current_location"
-                                    : "reform.workspace.location",
-                                leaf ? "Current location" : "Location")
-                            .append(": ")
-                            .append(full))
-                .build();
-        button.active = !leaf;
-        button.setTooltip(Tooltip.create(full, null));
-        buttons.add(button);
-        x += button.getWidth() + gap;
+    var separator = theme.text(ClientTheme.TextRole.SUPPORT, Component.literal(" > "));
+    long total =
+        trail.stream()
+                .mapToLong(c -> font.width(theme.text(ClientTheme.TextRole.VALUE, c.title())))
+                .sum()
+            + (long) (trail.size() - 1) * font.width(separator);
+    int x = path.x();
+    if (total <= path.width()) {
+      for (int i = 0; i < trail.size(); i++) {
+        var crumb = trail.get(i);
+        boolean leaf = i + 1 == trail.size();
+        var prefix = i == 0 ? Component.empty() : separator;
+        var control =
+            new LocationText(
+                font,
+                crumb.title(),
+                prefix,
+                full,
+                leaf,
+                () -> {
+                  if (!leaf && current.getAsBoolean()) crumb.selected().run();
+                });
+        control.setPosition(x, path.y());
+        control.setWidth(
+            font.width(theme.text(ClientTheme.TextRole.VALUE, crumb.title())) + font.width(prefix));
+        controls.add(control);
+        x += control.getWidth();
       }
     } else {
-      var leaf = trail.getLast().title();
-      var button =
-          theme
-              .buttonBuilder(
-                  leaf,
-                  ignored -> {
-                    if (current.getAsBoolean()) overflow.accept(trail);
-                  })
-              .bounds(x, location.y(), location.width(), location.height())
-              .createNarration(
-                  original ->
-                      Component.translatableWithFallback("reform.workspace.location", "Location")
-                          .append(": ")
-                          .append(full))
-              .build();
-      button.setTooltip(Tooltip.create(full, null));
-      buttons.add(button);
+      var menu =
+          new LocationText(
+              font,
+              Component.literal("…"),
+              Component.empty(),
+              full,
+              false,
+              () -> {
+                if (current.getAsBoolean()) overflow.accept(trail);
+              });
+      menu.setMessage(Component.translatableWithFallback("reform.workspace.location", "Location"));
+      menu.display = Component.literal("…");
+      menu.setPosition(x, path.y());
+      menu.setWidth(Math.min(path.width(), Math.max(20, font.width(menu.display))));
+      controls.add(menu);
+      int remaining = path.width() - menu.getWidth();
+      if (remaining > 0) {
+        var leaf = new LocationText(font, trail.getLast().title(), separator, full, true, () -> {});
+        leaf.setPosition(x + menu.getWidth(), path.y());
+        leaf.setWidth(remaining);
+        controls.add(leaf);
+      }
     }
-    return List.copyOf(buttons);
+    return List.copyOf(controls);
+  }
+
+  /** Text links retain native activation/focus; the current item is descriptive and inactive. */
+  private final class LocationText extends NativeNavigationButton {
+    private final Font font;
+    private final Component prefix, full;
+    private final boolean leaf;
+    private Component display;
+
+    LocationText(
+        Font font,
+        Component label,
+        Component prefix,
+        Component full,
+        boolean leaf,
+        Runnable selected) {
+      super(label.copy(), 1, selected);
+      this.font = font;
+      this.prefix = prefix;
+      this.full = full;
+      this.leaf = leaf;
+      display = label.copy();
+      active = !leaf;
+      setHeight(theme.values().value(ThemeValues.Role.CONTROL_HEIGHT));
+      setTooltip(Tooltip.create(full, null));
+    }
+
+    @Override
+    protected net.minecraft.network.chat.MutableComponent createNarrationMessage() {
+      return Component.translatableWithFallback(
+              leaf ? "reform.workspace.current_location" : "reform.workspace.location",
+              leaf ? "Current location" : "Location")
+          .append(": ")
+          .append(full);
+    }
+
+    @Override
+    protected void renderNavigation(FormCanvas target, int mouseX, int mouseY, float delta) {
+      int y = getY() + (getHeight() - font.lineHeight) / 2;
+      int leading = font.width(prefix);
+      target.enableScissor(getX(), getY(), getRight(), getBottom());
+      try {
+        theme.draw(target, font, ClientTheme.TextRole.SUPPORT, prefix, getX(), y, true);
+        var label =
+            theme
+                .text(ClientTheme.TextRole.VALUE, display)
+                .copy()
+                .withStyle(style -> style.withUnderlined(leaf || isHoveredOrFocused()));
+        target.drawArgb(
+            font,
+            label.getVisualOrderText(),
+            getX() + leading,
+            y,
+            theme.values().value(leaf ? ThemeValues.Role.TEXT_ACTIVE : ThemeValues.Role.TEXT),
+            true);
+        if (isFocused()) {
+          int color = theme.values().value(ThemeValues.Role.FOCUS);
+          target.hLine(getX(), getRight() - 1, getY(), color);
+          target.hLine(getX(), getRight() - 1, getBottom() - 1, color);
+        }
+      } finally {
+        target.disableScissor();
+      }
+    }
   }
 
   void render(FormCanvas target, Font font) {

@@ -141,7 +141,7 @@ final class WorkspaceNavigation {
   private String query = "", focusedRow;
   private int queryCursor, querySelection;
   private boolean searchFocused;
-  private Object generation;
+  private Object generation, historyGeneration;
   private ClientTheme theme = ClientTheme.standard();
 
   record Widgets(FormEditBox search, FormPanel panel, List<Button> history) {}
@@ -240,30 +240,26 @@ final class WorkspaceNavigation {
     }
   }
 
-  List<Button> historyControls(net.minecraft.client.gui.Font font) {
+  List<Button> historyControls(ClientTheme theme, BooleanSupplier mounted) {
     var token = new Object();
-    generation = token;
-    return historyControls(font, token);
-  }
-
-  private List<Button> historyControls(net.minecraft.client.gui.Font font, Object token) {
-    var historyButtons = new ArrayList<Button>();
+    historyGeneration = token;
+    var buttons = new ArrayList<Button>();
     for (boolean forward : List.of(false, true)) {
       var label = forward ? text("forward", "Forward") : text("back", "Back");
       var button =
-          theme
-              .buttonBuilder(
-                  label,
-                  ignored -> {
-                    if (current(token)) move(forward);
-                  })
-              .bounds(0, 0, Math.max(40, font.width(label) + 16), 20)
-              .build();
+          NativeHistoryControls.create(
+              forward,
+              label,
+              () -> {
+                if (historyGeneration == token && mounted.getAsBoolean() && active.getAsBoolean())
+                  move(forward);
+              },
+              theme);
       button.active = history != null && (forward ? history.canForward() : history.canBack());
-      button.setTooltip(Tooltip.create(label));
-      historyButtons.add(button);
+      button.setTooltip(Tooltip.create(label, null));
+      buttons.add(button);
     }
-    historyWidgets = List.copyOf(historyButtons);
+    historyWidgets = List.copyOf(buttons);
     return historyWidgets;
   }
 
@@ -366,7 +362,16 @@ final class WorkspaceNavigation {
       Key selected,
       FormCatalog.Limits limits,
       List<Component> notices) {
-    return build(client, bounds, declared, selected, limits, notices, ignored -> {});
+    return build(
+        client,
+        bounds,
+        declared,
+        selected,
+        limits,
+        notices,
+        ignored -> {},
+        ClientTheme.standard(),
+        true);
   }
 
   Widgets build(
@@ -390,6 +395,19 @@ final class WorkspaceNavigation {
       List<Component> notices,
       Consumer<FormPanel> prefix,
       ClientTheme theme) {
+    return build(client, bounds, declared, selected, limits, notices, prefix, theme, false);
+  }
+
+  private Widgets build(
+      Minecraft client,
+      FormGeometry.Placement bounds,
+      List<Entry> declared,
+      Key selected,
+      FormCatalog.Limits limits,
+      List<Component> notices,
+      Consumer<FormPanel> prefix,
+      ClientTheme theme,
+      boolean sidebarHistory) {
     this.theme = Objects.requireNonNull(theme);
     Objects.requireNonNull(limits);
     var entries = admit(declared, limits.maximumEntries());
@@ -404,7 +422,8 @@ final class WorkspaceNavigation {
     }
     var token = new Object();
     generation = token;
-    var historyButtons = historyControls(client.font, token);
+    var historyButtons =
+        sidebarHistory ? historyControls(theme, () -> current(token)) : List.<Button>of();
     var historyGeometry =
         FormGeometry.controls(
             historyButtons.stream()
@@ -413,12 +432,11 @@ final class WorkspaceNavigation {
             Math.max(1, bounds.width()),
             4);
     for (int i = 0; i < historyButtons.size(); i++) {
-      var placement = historyGeometry.placements().get(i);
-      var button = historyButtons.get(i);
-      button.setPosition(bounds.x() + placement.x(), bounds.y() + placement.y());
-      button.setWidth(placement.width());
+      var at = historyGeometry.placements().get(i);
+      historyButtons.get(i).setPosition(bounds.x() + at.x(), bounds.y() + at.y());
+      historyButtons.get(i).setWidth(at.width());
     }
-    int searchTop = bounds.y() + historyGeometry.height() + 4;
+    int searchTop = bounds.y() + (historyButtons.isEmpty() ? 0 : historyGeometry.height() + 4);
     int searchWidth = Math.max(1, bounds.width());
     search =
         new FormEditBox(
@@ -531,7 +549,7 @@ final class WorkspaceNavigation {
       if (pendingUi.focus() != null) panel.restoreFocus(pendingUi.focus());
       pendingUi = null;
     }
-    return new Widgets(search, panel, List.copyOf(historyButtons));
+    return new Widgets(search, panel, historyButtons);
   }
 
   private static Key nearest(Key requested, Map<Key, Entry> entries) {

@@ -2915,11 +2915,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
               .title()
               .map(at -> new FormGeometry.Placement(at.x(), at.y(), at.width(), headerHeight))
               .orElse(new FormGeometry.Placement(padding, bodyTop, available, headerHeight));
+      var headerHistory = navigation.historyControls(theme(), () -> current(token));
       if (!outerFrame.headerInContent())
         for (var widget :
             header.mount(
-                font, headerBounds, locationTrail(), () -> current(token), this::locationMenu))
-          addRenderableWidget(widget);
+                font,
+                headerBounds,
+                locationTrail(),
+                headerHistory,
+                () -> current(token),
+                this::locationMenu)) addRenderableWidget(widget);
       var geometry =
           isHome() && !drawerOpen
               ? new FormGeometry.Workspace(
@@ -2955,7 +2960,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           target -> {
             if (outerFrame.headerInContent()) {
               header.appendTo(
-                  target, font, locationTrail(), () -> current(token), this::locationMenu);
+                  target,
+                  font,
+                  locationTrail(),
+                  headerHistory,
+                  () -> current(token),
+                  this::locationMenu);
               if (categoriesToggle != null)
                 target.actions("workspace:categories", categoriesToggle);
             }
@@ -3229,7 +3239,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 prefix -> {
                   if (geometry.navigationOverlay() && outerFrame.headerInContent()) {
                     header.appendTo(
-                        prefix, font, locationTrail(), () -> current(token), this::locationMenu);
+                        prefix,
+                        font,
+                        locationTrail(),
+                        headerHistory,
+                        () -> current(token),
+                        this::locationMenu);
                     if (categoriesToggle != null)
                       prefix.actions("workspace:categories", categoriesToggle);
                   }
@@ -3237,7 +3252,6 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 theme());
         addRenderableWidget(navigationWidgets.search());
         addRenderableWidget(navigationWidgets.panel());
-        for (var control : navigationWidgets.history()) addRenderableWidget(control);
         if (navigation.restoreSearchFocus()) setFocused(navigationWidgets.search());
         else if (navigation.restoreTreeFocus()) {
           setFocused(navigationWidgets.panel());
@@ -3390,10 +3404,6 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                 () -> revealNavigation(node.key()));
         panel.row("home:" + node.key(), Component.empty(), node.help(), open);
       }
-      var history = navigation.historyControls(font);
-      panel.actions(
-          "home:history",
-          history.toArray(net.minecraft.client.gui.components.AbstractWidget[]::new));
       if (documents().stream().anyMatch(DocumentState::dirty)) {
         if (layout == null)
           panel.actions(

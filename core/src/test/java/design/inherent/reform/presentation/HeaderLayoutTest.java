@@ -7,6 +7,33 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class HeaderLayoutTest {
+  @Test
+  void historyStaysAdjacentToThePathAndCompactOffersFlowInReadingOrder() {
+    var wide = HeaderLayout.location(400, 20, 31, 80, 4);
+    assertEquals(
+        List.of(
+            new FormGeometry.Placement(0, 0, 31, 20),
+            new FormGeometry.Placement(35, 0, 31, 20),
+            new FormGeometry.Placement(70, 0, 330, 20)),
+        wide.placements());
+    assertEquals(20, wide.height());
+    var compact = HeaderLayout.location(140, 20, 31, 80, 4);
+    assertEquals(new FormGeometry.Placement(0, 24, 140, 20), compact.placements().get(2));
+    assertEquals(44, compact.height());
+    for (int width : List.of(1, 31, 65, 66, 140, 149, 150, 400, Integer.MAX_VALUE)) {
+      var measured = HeaderLayout.location(width, 20, 31, 80, 4);
+      assertTrue(
+          measured.placements().stream()
+              .allMatch(
+                  p ->
+                      p.x() >= 0
+                          && (long) p.x() + p.width() <= width
+                          && p.y() + p.height() <= measured.height()));
+    }
+    assertThrows(IllegalArgumentException.class, () -> HeaderLayout.location(100, 0, 31, 80, 4));
+    assertThrows(IllegalArgumentException.class, () -> HeaderLayout.location(100, 20, 0, 80, 4));
+  }
+
   private static HeaderLayout.Offer fixed(int minimum, int preferred, int height) {
     return new HeaderLayout.Offer(minimum, preferred, ignored -> height);
   }

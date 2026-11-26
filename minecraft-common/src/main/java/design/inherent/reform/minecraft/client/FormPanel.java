@@ -636,6 +636,10 @@ final class FormPanel extends ScrollFrame {
     return getFocused() == target.orElseThrow().widget;
   }
 
+  int contentWidth() {
+    return usableWidth();
+  }
+
   private int usableWidth() {
     return Math.max(1, width - 2 * border - SCROLLBAR_GUTTER);
   }

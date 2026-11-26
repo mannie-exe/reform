@@ -154,6 +154,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private BasicFileAttributes attrs;
   private int stage, factories, pagingPass, baselineSearches, sourceReturns;
   private boolean pickerReturnVerified, pickerFocusOverrideVerified;
+  private final JsonArray headerObservations = new JsonArray();
+  private List<Integer> wideHistoryBounds;
   private PickerState returnBefore;
   private NavigationBookmark returnBookmark;
   private AbstractWidget returnList;
@@ -759,6 +761,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       }
       case 112 -> {
         if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        observeHeader("task-before", false);
         returnBefore = taskState();
         returnList = list();
         returnQuery = search();
@@ -802,6 +805,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "hidden picker does no automatic search",
             searches.get() == baselineSearches && factories == 1 + sourceReturns);
+        observeHeader("home", false);
         navigation =
             workflow.navigation().restore(returnBookmark).completion().toCompletableFuture();
         stage = 630;
@@ -889,6 +893,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         returnFacts.addProperty("sameControls", list() == returnList && search() == returnQuery);
         returnFacts.addProperty("listFocused", list().isFocused());
         unchanged();
+        observeHeader("task-returned", false);
         pickerReturnVerified = true;
         returnBookmark = workflow.navigation().bookmark();
         driver.capture("pickers-task-returned.png", () -> open(new ClientDestination.Home(), 632));
@@ -1012,6 +1017,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             workflow.editor(ROUTE) == editor
                 && raw("artwork").equals(id(1))
                 && expanded.snapshot().value());
+        observeHeader("inline-narrow", true);
         driver.capture(
             "pickers-narrow.png",
             () -> {
@@ -1024,6 +1030,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         int[] w = {0}, h = {0};
         NativeClientProbe.size(client, w, h);
         if (w[0] != width[0] || h[0] != height[0] || !editor.canSubmit()) return false;
+        observeHeader("inline-returned", false);
         press("Show Artwork ID");
         stage = 24;
       }
@@ -1339,6 +1346,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                     design.inherent.reform.edit.DraftRevision.of(
                         editor.view().snapshot().orElseThrow()))
                 && raw("artwork").equals("fixture:unlisted"));
+        observeHeader("inline-returned", false);
         press("Show Artwork ID");
         stage = 27;
       }
@@ -1692,6 +1700,71 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     return "shared picker stage=" + stage;
   }
 
+  private void observeHeader(String phase, boolean compact) {
+    var buttons =
+        widgets(workflow.screen()).stream()
+            .filter(net.minecraft.client.gui.components.Button.class::isInstance)
+            .map(net.minecraft.client.gui.components.Button.class::cast)
+            .toList();
+    var back =
+        buttons.stream()
+            .filter(w -> w.getMessage().getString().equals("Back"))
+            .min(Comparator.comparingInt(AbstractWidget::getY))
+            .orElseThrow();
+    var forward =
+        buttons.stream()
+            .filter(w -> w.getMessage().getString().equals("Forward"))
+            .min(Comparator.comparingInt(AbstractWidget::getY))
+            .orElseThrow();
+    check(
+        "history uses real native arrow controls: " + phase,
+        back.getClass().getName().contains("SpriteIconButton")
+            && forward.getClass().getName().contains("SpriteIconButton"));
+    check(
+        "history pair stays adjacent in authored order: " + phase,
+        back.getY() == forward.getY()
+            && forward.getX() >= back.getRight()
+            && forward.getX() - back.getRight() <= 8);
+    var trail =
+        buttons.stream()
+            .filter(w -> w.getClass().getName().endsWith("WorkspaceHeader$LocationText"))
+            .toList();
+    check(
+        "current breadcrumb is descriptive rather than an active command: " + phase,
+        !trail.isEmpty() && !trail.getLast().active);
+    var narration = NativeNarrationProbe.read(trail.getLast());
+    check(
+        "current breadcrumb narrates its full text path: " + phase,
+        narration.contains("Current location:") && !narration.contains(" / "));
+    var bounds =
+        List.of(
+            back.getX(),
+            back.getY(),
+            back.getWidth(),
+            back.getHeight(),
+            forward.getX(),
+            forward.getY(),
+            forward.getWidth(),
+            forward.getHeight());
+    if (!compact) {
+      if (wideHistoryBounds == null) wideHistoryBounds = bounds;
+      else
+        check(
+            "history slots do not move with page/path length: " + phase,
+            wideHistoryBounds.equals(bounds));
+    }
+    var observed = new JsonObject();
+    observed.addProperty("phase", phase);
+    observed.addProperty("compact", compact);
+    observed.addProperty("arrowClass", back.getClass().getName());
+    observed.add("historyBounds", new Gson().toJsonTree(bounds));
+    observed.addProperty("currentText", trail.getLast().getMessage().getString());
+    observed.addProperty("currentNarration", narration);
+    observed.addProperty("currentActive", trail.getLast().active);
+    observed.addProperty("pathParts", trail.size());
+    headerObservations.add(observed);
+  }
+
   @Override
   public JsonObject report() {
     var out = new JsonObject();
@@ -1702,6 +1775,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("pickerReturnVerified", pickerReturnVerified);
     out.addProperty("pickerFocusOverrideVerified", pickerFocusOverrideVerified);
     out.add("pickerReturn", returnFacts.deepCopy());
+    out.add("headerObservations", headerObservations.deepCopy());
     out.addProperty("completionVerified", completionVerified);
     out.addProperty("completionDismissed", completionDismissed);
     out.addProperty("completionBlur", completionBlur);

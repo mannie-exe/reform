@@ -65,5 +65,22 @@ public final class HeaderLayout {
     return new Layout<>(placed, y);
   }
 
+  /** Stable history slots followed by a path offer, independent of the current path's text. */
+  public static FormGeometry.Controls location(
+      int width, int height, int historyWidth, int pathMinimum, int gap) {
+    if (height < 1 || historyWidth < 1 || pathMinimum < 1)
+      throw new IllegalArgumentException("Invalid location offer");
+    long history = 2L * historyWidth + 2L * gap;
+    int pathWidth = history + pathMinimum <= width ? (int) (width - history) : width;
+    return FormGeometry.controls(
+        List.of(
+            new FormGeometry.Size(historyWidth, height),
+            new FormGeometry.Size(historyWidth, height),
+            new FormGeometry.Size(pathWidth, height)),
+        width,
+        gap,
+        Set.of(0));
+  }
+
   private HeaderLayout() {}
 }
