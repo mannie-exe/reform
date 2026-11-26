@@ -1,6 +1,6 @@
 # Mounted native components
 
-The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. Implemented declarations include text, independent actions, wrapping action rows, columns, sections, nested components, conditional and keyed case branches, keyed collections, and bounded decorative repetition. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Owner-backed field observations/edit commands, canonical generated-field parts, disclosures, and shared picker/completion surfaces are available with the scoped contracts below. General field hosting, loading/error boundaries, broader layout/modifiers, and complete preview/browser composition remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
+The revised 0.4 development line introduces a shared component tree for framework bodies and caller-owned native screens. Implemented declarations include text, independent actions, wrapping action rows, columns, measured rows and width frames, explicit grids, sections, nested components, conditional and keyed case branches, keyed collections, and bounded decorative repetition. They are in `design.inherent.reform.minecraft.client.ui`; [scoped state](scoped-state.md) supplies the neutral data/lifetime layer. Owner-backed field observations/edit commands, canonical generated-field parts, disclosures, and shared picker/completion surfaces are available with the scoped contracts below. General field hosting, loading/error boundaries, broader layout/modifiers, and complete preview/browser composition remain required implementation work. This page does not claim the complete semantic design is available or natively qualified.
 
 ## One declaration and two hosts
 
@@ -104,6 +104,14 @@ Dev.135 adds `Views.row(key, new UiLayout.Row(minimumGap, maximumGap), children)
 The native panel measures the existing child tree at those allotted widths. A row or frame creates no second scroll owner, widget, input, source, or command. Nested groups wrap and draw at their actual scoped content width, and focus uses the original child. The native body consistently reserves its scrollbar gutter so content extent cannot toggle the offered width. Structural depth remains bounded.
 
 These are width primitives, not height constraints, a grid, an environment/modifier system, or the final adaptive browser. A narrow row can stack while its complete contents still require scrolling. The actual window qualification preserves widget identity, draft, and edited camera through adjacency, stacking, and return; it does not claim simultaneous visibility of every selector and preview control.
+
+### Explicit grid tracks and spans
+
+Dev.136 adds `Views.grid(key, grid, List.of(Views.cell(row, column, rowSpan, columnSpan, content), ...))`. `UiGrid.Grid` declares one to sixteen tracks per axis, one to sixty-four nonoverlapping cells, and bounded row/column gaps. Out-of-grid spans and overlap refuse before mounting. Cell declaration order remains the logical reading order, including in the narrow fallback; coordinates place content without reordering its commands or accessibility traversal.
+
+Fixed tracks reserve their exact width. Content tracks consume admitted intrinsic minimum/preferred widths up to their bound; fractional tracks distribute remaining width by declared positive weights. Spanned intrinsic deficits contribute only to flexible tracks. If minima cannot fit or a fixed/bounded track cannot admit its content, the cells stack in authored order rather than changing a domain or clipping the required controls. Row heights come from the actual rewrapped child content, including row spans; this is a bounded track solver, not a general constraint system.
+
+The native host measures each existing cell once at its allotted width and translates its original widgets, group decoration, artwork, and focus anchors to the final row positions. It retains the same outer scroll owner. Row and track counts are checked before copying caller collections; intrinsic prefixes and group insets use widened arithmetic before a finite presentation offer is selected. Height-aware browser selection, frame height constraints, environments/modifiers, and canonical section contribution are still separate work.
 
 ## Cached reads and actual commands
 
