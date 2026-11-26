@@ -49,6 +49,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   static final PickerRole<Profile> ART_ROLE =
       new PickerRole<>("artwork", FieldPath.ROOT.field("artwork"));
   static final DocumentId TASK = DocumentId.parse("fixture:shared_picker_task");
+  static final DocumentId ROUTE = DocumentId.parse("fixture:shared_picker_owner_route");
   static final ReferenceLimits LIMITS = new ReferenceLimits(64, 65536, 4, 128, 4);
   static final ReferencePicker.Policy POLICY =
       new ReferencePicker.Policy(4, 128, 32768, 200_000_000L, 3, 128);
@@ -77,6 +78,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private final AtomicLong clock = new AtomicLong();
   private ClientEditingWorkflow workflow;
   private ClientEditor<Profile> editor;
+  private ClientEditor<Profile> discardedEditor;
   private ReferenceActions<String, List<String>> source;
   private ReferencePicker<Profile, List<String>> task, inline;
   private UiScope taskScope, inlineScope, fieldScope;
@@ -302,7 +304,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                                             branch, inline, presentation(), Optional.of(ART_ROLE));
                                       }))));
                     });
-        var form = settings.form(text("Profile selection"), options);
+        var form = settings.form(text("Profile selection"), options).atRoute(ROUTE);
         var layout =
             new ClientWorkflowLayout(
                 List.of(
@@ -324,25 +326,28 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                         List.of())),
                 List.of());
         var body =
-            ClientCustomView.component(
+            ClientCustomView.documentComponent(
                 new ViewKey<>(
                     new DestinationId(TASK),
                     new ViewStateKey<>(
                         DocumentId.parse("fixture:picker_task_state"), ValueTypes.integer(0, 1))),
                 0,
                 UiLimits.STANDARD,
-                (scope, state) -> {
+                form.route(),
+                DEFINITION,
+                (scope, admittedEditor, state) -> {
+                  editor = admittedEditor;
                   taskScope = scope;
                   var modelInput =
                       ClientFieldBindings.field(
-                          scope, workflow.editor(DEFINITION), MODEL_ROLE.field(), MODELS.type());
+                          scope, admittedEditor, MODEL_ROLE.field(), MODELS.type());
                   var artworkInput =
                       ClientFieldBindings.field(
-                          scope, workflow.editor(DEFINITION), ART_ROLE.field(), ARTWORK.type());
+                          scope, admittedEditor, ART_ROLE.field(), ARTWORK.type());
                   task =
                       ReferencePicker.open(
                           scope,
-                          workflow.editor(DEFINITION).actions(),
+                          admittedEditor.actions(),
                           SOURCE,
                           this::source,
                           List.of(MODEL_ROLE, ART_ROLE),
@@ -375,36 +380,18 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && inline == null
                 && workflow.documents().stream()
                     .noneMatch(ClientEditingWorkflow.DocumentState::opened));
-        pending = workflow.openEditor(DEFINITION.id()).toCompletableFuture();
-        stage = 2;
-      }
-      case 2 -> {
-        if (!pending.isDone()) return false;
-        pending.join();
-        editor = workflow.editor(DEFINITION);
-        pending =
-            editor
-                .actions()
-                .ensureLoaded(OperationDescriptor.EntryPoint.GUI)
-                .completion()
-                .toCompletableFuture();
-        stage = 21;
-      }
-      case 21 -> {
-        if (!pending.isDone()) return false;
-        pending.join();
-        check(
-            "explicit public owner load is ready",
-            editor.view().availability()
-                == design.inherent.reform.owner.EditorActor.Availability.READY);
-        check(
-            "opening actual owner leaves collapsed picker unadmitted",
-            factories == 0 && inline == null);
         open(new ClientDestination.View(new DestinationId(TASK)), 3);
       }
       case 3 -> {
         if (!arrived() || task == null || taskState().searching() != PickerState.Phase.READY)
           return false;
+        check(
+            "framework view admission supplies exact loaded retained owner",
+            editor == workflow.editor(ROUTE)
+                && editor.actions().definition() == DEFINITION
+                && editor.view().availability()
+                    == design.inherent.reform.owner.EditorActor.Availability.READY
+                && inline == null);
         check(
             "task admits one actual bounded source search",
             factories == 1 && searches.get() == 1 && taskState().window().choices().size() == 4);
@@ -558,13 +545,13 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "hidden picker does no automatic search",
             searches.get() == baselineSearches && factories == 1);
-        open(new ClientDestination.Document(DEFINITION.id()), 14);
+        open(new ClientDestination.Document(ROUTE), 14);
       }
       case 14 -> {
         if (!arrived() || !editor.canStage(ART_ROLE.field())) return false;
         check(
             "field uses same owner and collapsed source remains lazy",
-            workflow.editor(DEFINITION) == editor && inline == null && factories == 1);
+            workflow.editor(ROUTE) == editor && inline == null && factories == 1);
         press("Show Artwork choices");
         stage = 15;
       }
@@ -599,7 +586,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         if (w[0] != 320 || h[0] != 240) return false;
         check(
             "real compact window retains original owner and selection",
-            workflow.editor(DEFINITION) == editor
+            workflow.editor(ROUTE) == editor
                 && raw("artwork").equals(id(1))
                 && expanded.snapshot().value());
         driver.capture(
@@ -639,11 +626,31 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "original owner Undo restores both draft roles without saving",
             raw("models").equals(id(0)) && raw("artwork").equals(id(0)) && !editor.dirty());
+        discardedEditor = editor;
+        var previousTaskScope = taskScope;
+        workflow.discard(ROUTE);
+        check(
+            "discard ends document-associated component and field scopes",
+            !discardedEditor.isOpen()
+                && !previousTaskScope.isOpen()
+                && previousTaskScope.usage().stateBytes() == 0
+                && !inlineScope.isOpen());
+        open(new ClientDestination.View(new DestinationId(TASK)), 23);
+      }
+      case 23 -> {
+        if (!arrived() || taskState().searching() != PickerState.Phase.READY) return false;
+        check(
+            "fresh view reopens one fresh owner and default component state",
+            editor != discardedEditor
+                && editor == workflow.editor(ROUTE)
+                && raw("models").equals(id(0))
+                && raw("artwork").equals(id(0))
+                && taskState().query().text().isEmpty()
+                && factories == 3);
         workflow.close();
         check(
             "all picker scopes retire with actual workflow",
             !taskScope.isOpen()
-                && !inlineScope.isOpen()
                 && taskScope.usage().stateBytes() == 0
                 && fieldScope.usage().stateBytes() == 0);
         unchanged();

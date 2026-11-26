@@ -270,7 +270,7 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                 and native["semanticPickers"].get("sourceUnchanged") is True
                 and native["semanticPickers"].get("scopesRetired") is True
                 and type(native["semanticPickers"].get("factories")) is int
-                and native["semanticPickers"]["factories"] == 2
+                and native["semanticPickers"]["factories"] == 3
                 and type(native["semanticPickers"].get("searches")) is int
                 and native["semanticPickers"]["searches"] > 2
                 and type(native["semanticPickers"].get("lookups")) is int

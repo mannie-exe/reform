@@ -249,9 +249,22 @@ public record ClientWorkspacePresentation(
     if (placementCount + referenceTasks.size() + views.size()
         > ClientWorkflowLayout.MAXIMUM_PLACEMENTS)
       issues.add(issue("Task bodies and field placements exceed their shared allowance"));
-    for (var id : views.keySet())
+    for (var id : views.keySet()) {
       if (!taskCategories.contains(id))
         issues.add(issue("Custom view requires a declared category: " + id));
+      views
+          .get(id)
+          .owner()
+          .ifPresent(
+              owner -> {
+                if (forms.stream()
+                    .noneMatch(
+                        form ->
+                            form.route().equals(owner.route())
+                                && form.document().equals(owner.definition().id())))
+                  issues.add(issue("Custom view requires its declared owner: " + id));
+              });
+    }
     if (ids.isEmpty()) issues.add(issue("A workspace requires a declared destination"));
     design.inherent.reform.presentation.graphics.GraphicLimits graphicLimits = null;
     int graphicViews = 0;

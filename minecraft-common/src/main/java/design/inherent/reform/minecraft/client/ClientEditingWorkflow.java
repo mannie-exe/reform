@@ -111,15 +111,29 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
   private final Map<DestinationId, TaskEntry> taskViews = new LinkedHashMap<>();
 
-  private record CustomEntry(OwnerContext lifetime, CustomView view) {}
+  private record CustomEntry(OwnerContext lifetime, CustomView view, ClientEditor<?> owner) {}
 
   private final Map<DestinationId, CustomEntry> customViews = new LinkedHashMap<>();
 
   private CustomView customView(DestinationId id) {
-    var existing = customViews.get(id);
-    if (existing != null) return existing.view();
     var declaration = presentation.views().get(id);
     if (declaration == null) throw missingDestination();
+    var actual = declaration.owner().map(owner -> entry(owner.route()).editor).orElse(null);
+    if (declaration.owner().isPresent()) {
+      if (actual == null
+          || !actual.isOpen()
+          || actual.view().availability() != EditorActor.Availability.READY)
+        throw new PolicyRefusal(
+            "client.document_unavailable", "Open a ready document before entering this view.");
+      actual.actions().requireInspection();
+    }
+    var existing = customViews.get(id);
+    if (existing != null) {
+      if (existing.owner() != actual)
+        throw new PolicyRefusal(
+            "client.editor_changed", "Return to the current document before entering this view.");
+      return existing.view();
+    }
     var client = Minecraft.getInstance();
     var owner =
         new OwnerContext(
@@ -142,10 +156,11 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                     && NativeScreens.current(client) == overview) overview.rebuildWidgets();
               },
               this::graphics,
-              overview::setFocused);
+              overview::setFocused,
+              actual);
       requireOpen();
       owner.requireOwner();
-      customViews.put(id, new CustomEntry(owner, view));
+      customViews.put(id, new CustomEntry(owner, view, actual));
       owner.onClose(closing::close);
       return view;
     } catch (RuntimeException | Error failure) {
@@ -391,6 +406,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       Optional<DocumentId> route,
       Optional<FormTarget> target) {}
 
+  private Optional<DocumentId> associatedRoute(DestinationId id) {
+    var task = presentation.referenceTasks().get(id);
+    if (task != null) return Optional.of(task.route());
+    var view = presentation.views().get(id);
+    return view == null
+        ? Optional.empty()
+        : view.owner().map(ClientCustomView.DocumentOwner::route);
+  }
+
   private static PolicyRefusal missingDestination() {
     return new PolicyRefusal(
         "navigation.target_missing", "That destination is absent from this workflow or draft.");
@@ -428,8 +452,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
             return new NavigationSelection(
                 overview.category(category.id().value()),
                 List.copyOf(group.path().subList(0, depth + 1)),
-                Optional.ofNullable(presentation.referenceTasks().get(category.id()))
-                    .map(ClientReferenceTask::route),
+                associatedRoute(category.id()),
                 Optional.empty());
       }
       throw missingDestination();
@@ -1349,6 +1372,16 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       for (var item : List.copyOf(taskViews.entrySet())) {
         if (item.getValue().owner() != previous) continue;
         taskViews.remove(item.getKey());
+        try {
+          item.getValue().lifetime().close();
+        } catch (RuntimeException | Error failed) {
+          if (failure == null) failure = failed;
+          else if (failure != failed) failure.addSuppressed(failed);
+        }
+      }
+      for (var item : List.copyOf(customViews.entrySet())) {
+        if (item.getValue().owner() != previous) continue;
+        customViews.remove(item.getKey());
         try {
           item.getValue().lifetime().close();
         } catch (RuntimeException | Error failed) {
@@ -2729,6 +2762,9 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       }
       var taskDeclaration = declaredTask();
       if (taskDeclaration != null) selected.put(taskDeclaration.route(), List.of());
+      var customDeclaration = declaredCustomView();
+      if (customDeclaration != null)
+        customDeclaration.owner().ifPresent(owner -> selected.put(owner.route(), List.of()));
       if (inspection != null) selected.put(inspectionRoute, List.of());
       if (conflict != null) selected.put(conflictRoute, List.of());
       if (documentMenu != null) selected.put(documentMenuRoute, List.of());
@@ -2946,7 +2982,15 @@ public final class ClientEditingWorkflow implements AutoCloseable {
       var customBody =
           metadata == null
                   && !geometry.navigationOverlay()
-                  && presentation.views().containsKey(customId)
+                  && customDeclaration != null
+                  && (customDeclaration.owner().isEmpty()
+                      || Optional.ofNullable(
+                              entry(customDeclaration.owner().orElseThrow().route()).editor)
+                          .filter(ClientEditor::isOpen)
+                          .filter(
+                              value ->
+                                  value.view().availability() == EditorActor.Availability.READY)
+                          .isPresent())
               ? customView(customId)
               : null;
       for (var custom : customViews.values()) if (custom.view() != customBody) custom.view().hide();
@@ -3423,6 +3467,12 @@ public final class ClientEditingWorkflow implements AutoCloseable {
     private ClientReferenceTask<?, ?> declaredTask() {
       return selectedKey != null && selectedKey.kind() == WorkspaceNavigation.Kind.CATEGORY
           ? presentation.referenceTasks().get(new DestinationId(selectedKey.placement()))
+          : null;
+    }
+
+    private ClientCustomView<?> declaredCustomView() {
+      return selectedKey != null && selectedKey.kind() == WorkspaceNavigation.Kind.CATEGORY
+          ? presentation.views().get(new DestinationId(selectedKey.placement()))
           : null;
     }
 
@@ -3963,7 +4013,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
           (restoringDestination || navigation.restoring())
               && navigation.position(selectedKey).isPresent();
       rebuildWidgets();
-      if (!restoreFocus && declaredTask() == null)
+      if (!restoreFocus && declaredTask() == null && declaredCustomView() == null)
         selected.presentation().focusAfterLoad(target.orElse(new FormTarget.Field(FieldPath.ROOT)));
     }
 
