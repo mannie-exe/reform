@@ -28,6 +28,10 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
   private List<String> unlocked;
   private byte[] source;
   private CompletableFuture<Void> survival;
+  private CompletableFuture<Void> nativeDisconnect;
+  private boolean nativeDisconnectDeferredOutsideObserverTick,
+      nativeDisconnectOriginRetained,
+      nativeDisconnectCompleted;
   private boolean emi;
   private boolean both;
   private final JsonObject dualReadiness = new JsonObject();
@@ -87,6 +91,10 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
     result.addProperty("bothRequested", both);
     result.add("dualReadiness", dualReadiness.deepCopy());
     result.addProperty("knownRecipeCount", unlocked == null ? -1 : unlocked.size());
+    result.addProperty(
+        "nativeDisconnectDeferredOutsideObserverTick", nativeDisconnectDeferredOutsideObserverTick);
+    result.addProperty("nativeDisconnectOriginRetained", nativeDisconnectOriginRetained);
+    result.addProperty("nativeDisconnectCompleted", nativeDisconnectCompleted);
     return result;
   }
 
@@ -364,10 +372,48 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
                       == NavigationAttempt.Outcome.REFUSED
                   && NativeScreens.current(client) == null);
         unchanged();
-        NativeWorldProbe.leave();
         stage = 10;
+        var expectedLevel = new java.lang.ref.WeakReference<>(client.level);
+        var expectedConnection = new java.lang.ref.WeakReference<>(client.getConnection());
+        var completion = new CompletableFuture<Void>();
+        nativeDisconnect = completion;
+        // Queue unconditionally; execute can run inline inside the current ClientTick callback.
+        NativeClientProbe.queue(
+            () -> {
+              if (completion.isCancelled()) return;
+              try {
+                nativeDisconnectDeferredOutsideObserverTick =
+                    StackWalker.getInstance()
+                        .walk(
+                            frames ->
+                                frames.noneMatch(
+                                    frame ->
+                                        frame
+                                                .getClassName()
+                                                .equals(PlatformFormProbe.Driver.class.getName())
+                                            && frame.getMethodName().equals("tick")));
+                check(
+                    "native disconnect is deferred outside the observer tick",
+                    nativeDisconnectDeferredOutsideObserverTick);
+                nativeDisconnectOriginRetained =
+                    expectedLevel.get() != null
+                        && client.level == expectedLevel.get()
+                        && expectedConnection.get() != null
+                        && client.getConnection() == expectedConnection.get();
+                check(
+                    "queued native disconnect retains the original world and connection",
+                    nativeDisconnectOriginRetained);
+                NativeWorldProbe.leave();
+                nativeDisconnectCompleted = true;
+                completion.complete(null);
+              } catch (RuntimeException | AssertionError failed) {
+                completion.completeExceptionally(failed);
+              }
+            });
       }
       case 10 -> {
+        if (nativeDisconnect == null || !nativeDisconnect.isDone()) return false;
+        nativeDisconnect.join();
         if (client.level != null
             || client.player != null
             || client.getConnection() != null
@@ -453,6 +499,7 @@ final class PlatformNativeRecipeChecks implements PlatformFormProbe.Scene {
 
   @Override
   public void close() {
+    if (nativeDisconnect != null && !nativeDisconnect.isDone()) nativeDisconnect.cancel(false);
     if (simulated != null) {
       try {
         simulated.close();

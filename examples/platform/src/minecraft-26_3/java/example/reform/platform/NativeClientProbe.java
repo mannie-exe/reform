@@ -18,6 +18,10 @@ import org.lwjgl.sdl.SDLKeyboard;
 import org.lwjgl.sdl.SDLVideo;
 
 final class NativeClientProbe {
+  static void queue(Runnable action) {
+    Minecraft.getInstance().schedule(action);
+  }
+
   static net.minecraft.client.gui.components.EditBox rawTextAlphaInput(
       net.minecraft.client.gui.Font font, int x, int y) {
     var input =

@@ -314,6 +314,10 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
             and native.get("status") == "PASS" and native.get("shutdownClosed") is True
             and all(isinstance(native.get(name), dict) and native[name].get("status") == "PASS"
                     for name in required_scenarios)
+            and ("nativeRecipes" not in required_scenarios or all(
+                native["nativeRecipes"].get(key) is True for key in (
+                    "nativeDisconnectDeferredOutsideObserverTick", "nativeDisconnectOriginRetained",
+                    "nativeDisconnectCompleted")))
             and ("semanticPreviews" not in required_scenarios or (
                 native["semanticPreviews"].get("passed") is True
                 and type(native["semanticPreviews"].get("prepares")) is int

@@ -431,6 +431,24 @@ class PlatformOutcomeTests(unittest.TestCase):
     def test_complete_native_outcome(self):
         self.assertTrue(self.accepted())
 
+    def test_native_recipe_exit_requires_queued_origin_and_completed_disconnect(self):
+        fields = ("nativeDisconnectDeferredOutsideObserverTick", "nativeDisconnectOriginRetained",
+                  "nativeDisconnectCompleted")
+        facts = {"status": "PASS", **{key: True for key in fields}}
+        self.native["nativeRecipes"] = facts
+        def accepted():
+            return successful_boot(self.process, self.native, self.library, self.target,
+                                   "0.20.1", required_scenarios=("nativeRecipes",))
+        self.assertTrue(accepted())
+        for key in fields:
+            for value in (False, None):
+                with self.subTest(key=key, value=value):
+                    facts[key] = value
+                    self.assertFalse(accepted())
+            facts.pop(key)
+            self.assertFalse(accepted())
+            facts[key] = True
+
     def test_echoed_original_without_runtime_archive_is_not_success(self):
         self.native.pop("runtimeArtifacts")
         self.assertFalse(self.accepted())

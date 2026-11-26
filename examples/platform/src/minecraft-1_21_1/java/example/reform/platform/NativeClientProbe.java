@@ -13,6 +13,10 @@ import net.minecraft.client.gui.screens.Screen;
 import org.lwjgl.glfw.GLFW;
 
 final class NativeClientProbe {
+  static void queue(Runnable action) {
+    Minecraft.getInstance().tell(action);
+  }
+
   static net.minecraft.client.gui.components.EditBox rawTextAlphaInput(
       net.minecraft.client.gui.Font font, int x, int y) {
     var input =
