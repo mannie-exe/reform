@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (release preparation)
+## 0.4.0
 
 - Add a stable composable header, lazy Home, typed destinations, ancestry, history, and retained navigation bookmarks. Navigation follows the authored form order without changing codec field order.
 - Arrange choosers, inspection, and operation results beside their primary content when measured space permits, with a focused layout for compact offers. Preserve native input, selection, focus, disclosure, and scroll state through reflow.
