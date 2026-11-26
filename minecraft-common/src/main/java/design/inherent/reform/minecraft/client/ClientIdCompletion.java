@@ -115,7 +115,9 @@ final class ClientIdCompletion implements AutoCloseable {
       scope.refreshObservation(input.state());
       var observation = input.state().snapshot();
       if (!(observation instanceof UiObservation.Available<ClientTextInput.State> available)) {
-        dismiss(false);
+        // Retain the last buffer dismissal across an authority withdrawal; restored permission
+        // alone must not become a new suggestion demand.
+        dismiss(true);
         return;
       }
       var current = available.data().value();
@@ -326,13 +328,20 @@ final class ClientIdCompletion implements AutoCloseable {
             && key != InputConstants.KEY_RETURN) return false;
     if (closed || !attached) return false;
     update();
+    if (!wanted && (key == InputConstants.KEY_DOWN || key == InputConstants.KEY_UP)) {
+      // An explicit arrow gesture can reopen a dismissed offer without editing its input.
+      // The real field/read/source guards still run in update and on acceptance.
+      dismissed = null;
+      update();
+    }
     if (!wanted || widget == null || !widget.isFocused()) return false;
     if (key == InputConstants.KEY_ESCAPE) {
       dismiss(true);
       return true;
     }
     if (key == InputConstants.KEY_RETURN) {
-      prepared.active().ifPresent(this::accept);
+      if (prepared.active().isEmpty()) return false;
+      accept(prepared.active().orElseThrow());
       return true;
     }
     if (visible()) list.listKey(key);

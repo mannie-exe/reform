@@ -429,7 +429,6 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     private void updateManaged() {
-      if (completion != null) completion.update();
       if (spec instanceof ViewSpec.ChoiceList list && listWidget != null)
         listWidget
             .takeBoundary()

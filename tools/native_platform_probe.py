@@ -267,6 +267,7 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                     for name in required_scenarios)
             and ("semanticPickers" not in required_scenarios or (
                 native["semanticPickers"].get("passed") is True
+                and all(native["semanticPickers"].get(field) is True for field in ("completionVerified", "completionDismissed", "completionBlur", "completionPointer"))
                 and native["semanticPickers"].get("sourceUnchanged") is True
                 and native["semanticPickers"].get("scopesRetired") is True
                 and type(native["semanticPickers"].get("factories")) is int

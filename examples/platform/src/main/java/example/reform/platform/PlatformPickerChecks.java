@@ -82,7 +82,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private ReferenceActions<String, List<String>> source;
   private ReferencePicker<Profile, List<String>> task, inline;
   private ReferenceSuggestions<List<String>> suggestions;
-  private boolean completionVerified;
+  private boolean completionVerified, completionDismissed, completionPointer, completionBlur;
   private UiScope taskScope, inlineScope, fieldScope;
   private UiLocal<Boolean> expanded;
   private UiLocal<Boolean> manualExpanded;
@@ -711,9 +711,10 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "suggestions do not implicitly select or accept the first option",
             offer.active().isEmpty() && raw("artwork").equals("fixture:profile_00"));
-        key("enter");
+        NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", true);
+        NativeClientProbe.key(workflow.screen(), "key.keyboard.enter", false);
         check(
-            "Enter without an active suggestion does not edit",
+            "Enter without an active suggestion follows field handling without acceptance",
             raw("artwork").equals("fixture:profile_00"));
         key("down");
         key("down");
@@ -743,6 +744,106 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && manualWidget.isFocused());
         unchanged();
         completionVerified = true;
+        manualWidget.setValue("fixture:profile_00");
+        manualWidget.setCursorPosition(3);
+        manualWidget.setHighlightPos(1);
+        stage = 244;
+      }
+      case 244 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals("fixture:profile_00")) return false;
+        clock.addAndGet(200_000_000L);
+        stage = 245;
+      }
+      case 245 -> {
+        var offer = suggestions.state().snapshot().value();
+        if (offer.phase() != PickerState.Phase.READY || offer.choices().size() != 4) return false;
+        check(
+            "actual root narration describes the focused completion offer",
+            workflow.screen().getNarrationMessage().getString().contains("Suggested artwork IDs"));
+        var revision =
+            design.inherent.reform.edit.DraftRevision.of(editor.view().snapshot().orElseThrow());
+        key("escape");
+        check(
+            "first Escape dismisses suggestions without closing or editing the field",
+            editor.isOpen()
+                && NativeScreens.current(client) == workflow.screen()
+                && manualWidget.isFocused()
+                && manualWidget.getValue().equals("fixture:profile_00")
+                && design.inherent.reform.edit.DraftRevision.of(
+                        editor.view().snapshot().orElseThrow())
+                    .equals(revision)
+                && suggestions.state().snapshot().value().choices().isEmpty());
+        completionDismissed = true;
+        key("down");
+        clock.addAndGet(200_000_000L);
+        stage = 246;
+      }
+      case 246 -> {
+        if (suggestions.state().snapshot().value().phase() != PickerState.Phase.READY) return false;
+        check(
+            "explicit arrow reopens a dismissed suggestion offer",
+            !suggestions.state().snapshot().value().choices().isEmpty());
+        check(
+            "another real field control takes native focus",
+            focus(workflow.screen(), button(workflow.screen(), "Hide Artwork ID")));
+        frames = PlatformFrameObservations.sequence();
+        stage = 247;
+      }
+      case 247 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        check(
+            "native blur withdraws suggestions without accepting",
+            suggestions.state().snapshot().value().choices().isEmpty()
+                && raw("artwork").equals("fixture:profile_00"));
+        completionBlur = true;
+        check("original input can regain native focus", focus(workflow.screen(), manualWidget));
+        key("down");
+        clock.addAndGet(200_000_000L);
+        stage = 248;
+      }
+      case 248 -> {
+        var offer = suggestions.state().snapshot().value();
+        if (offer.phase() != PickerState.Phase.READY || offer.choices().size() != 4) return false;
+        frames = PlatformFrameObservations.sequence();
+        stage = 249;
+      }
+      case 249 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        // Root-space offer measured from the actual input; acceptance must still prove that
+        // the native popup, rather than an underlying form control, receives this pointer.
+        int row =
+            Math.max(20, ClientTheme.standard().values().value(ThemeValues.Role.CONTROL_HEIGHT));
+        int heading = client.font.lineHeight + 2;
+        int fixed = heading * 2 + 4;
+        int below =
+            Math.max(
+                0, workflow.screen().height - 4 - manualWidget.getY() - manualWidget.getHeight());
+        int above = Math.max(0, manualWidget.getY() - 4);
+        boolean down = below >= fixed + row * 4 || below >= above;
+        int rows = Math.min(4, Math.max(0, (down ? below : above) - fixed) / row);
+        check("pointer witness has at least two actual offered rows", rows >= 2);
+        int y =
+            (down
+                    ? manualWidget.getY() + manualWidget.getHeight()
+                    : manualWidget.getY() - fixed - row * rows)
+                + 2
+                + heading
+                + row
+                + row / 2;
+        double x = Math.clamp(manualWidget.getX(), 4, workflow.screen().width - 184) + 20;
+        check(
+            "native pointer is consumed by the explicit completion option",
+            NativeClientProbe.pointerDown(workflow.screen(), x, y));
+        NativeClientProbe.pointerUp(workflow.screen(), x, y);
+        stage = 250;
+      }
+      case 250 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals(id(1))) return false;
+        check(
+            "pointer completion stages only Artwork and retains original input focus",
+            manualWidget.isFocused() && raw("models").equals(id(3)));
+        completionPointer = true;
+        unchanged();
         manualWidget.setValue("fixture:unlisted");
         manualWidget.setCursorPosition(3);
         manualWidget.setHighlightPos(1);
@@ -803,7 +904,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       case 28 -> {
         if (!editor.canSubmit() || !raw("artwork").equals(id(1))) return false;
         unchanged();
-        undoRemaining = 6;
+        undoRemaining = 8;
         pending =
             editor
                 .actions()
@@ -882,6 +983,9 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("sourceUnchanged", complete);
     out.addProperty("scopesRetired", complete);
     out.addProperty("completionVerified", completionVerified);
+    out.addProperty("completionDismissed", completionDismissed);
+    out.addProperty("completionBlur", completionBlur);
+    out.addProperty("completionPointer", completionPointer);
     out.addProperty("factories", factories);
     out.addProperty("searches", searches.get());
     out.addProperty("lookups", lookups.get());

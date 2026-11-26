@@ -1105,7 +1105,16 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   }
 
   Component contextMessage() {
-    return contextLabel.copy();
+    var message = contextLabel.copy();
+    appendCompletionNarration(message);
+    return message;
+  }
+
+  private void appendCompletionNarration(net.minecraft.network.chat.MutableComponent message) {
+    for (var completion : List.copyOf(completions)) {
+      var extra = completion.narration();
+      if (!extra.getString().isBlank()) message.append(". ").append(extra);
+    }
   }
 
   FormCatalog.Limits navigationLimits() {
@@ -4326,10 +4335,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   @Override
   public Component getNarrationMessage() {
     var message = title.copy().append(". ").append(contextLabel).append(". ").append(status());
-    for (var completion : List.copyOf(completions)) {
-      var extra = completion.narration();
-      if (!extra.getString().isBlank()) message.append(". ").append(extra);
-    }
+    appendCompletionNarration(message);
     return catalog == null ? message : message.append(". ").append(catalog.narration());
   }
 
