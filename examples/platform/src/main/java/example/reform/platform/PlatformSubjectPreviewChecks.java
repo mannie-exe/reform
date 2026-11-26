@@ -742,7 +742,17 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     return state.source() == PickerState.Source.READY && state.window().choices().size() == 2;
   }
 
-  private void choose(String caption, boolean alternate) {
+  private void choose(
+      ReferencePicker<PlatformAuditionChecks.Profile, List<String>> selection,
+      String caption,
+      String keyValue) {
+    var choices = selection.state().snapshot().value().window().choices();
+    int index =
+        java.util.stream.IntStream.range(0, choices.size())
+            .filter(i -> choices.get(i).key().equals(keyValue))
+            .findFirst()
+            .orElseThrow();
+    var before = DraftRevision.of(editor.view().snapshot().orElseThrow());
     var list =
         widgets(workflow.screen()).stream()
             .filter(w -> w.getMessage().getString().equals(caption) && !(w instanceof Button))
@@ -750,7 +760,13 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             .orElseThrow();
     check("native inline list accepts focus: " + caption, focus(workflow.screen(), list));
     key("home");
-    if (alternate) key("down");
+    for (int i = 0; i < index; i++) key("down");
+    check(
+        "native list activates exact admitted key: " + keyValue,
+        selection.state().snapshot().value().active().filter(keyValue::equals).isPresent());
+    check(
+        "inline list focus/navigation does not stage a value",
+        before.equals(DraftRevision.of(editor.view().snapshot().orElseThrow())));
     key("enter");
     focusPreview();
   }
@@ -777,7 +793,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 .resolve("config/reform_platform_example/audition_profiles.json");
         bytes = Files.readAllBytes(file);
         attributes = Files.readAttributes(file, BasicFileAttributes.class);
-        choose("Model profiles", true);
+        choose(picker, "Model profiles", "fixture:alternate");
         stage++;
       }
       case 3 -> {
@@ -807,7 +823,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         check(
             "inspection alone neither stages Artwork nor activates draft preview",
             inspectionDidNotEdit);
-        choose("Artwork profiles", true);
+        choose(artworkPicker, "Artwork profiles", "fixture:alternate");
         stage++;
       }
       case 5 -> {
@@ -820,7 +836,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                     new PlatformAuditionChecks.Profile(
                         "fixture:alternate", "fixture:alternate", 64));
         check("independent Artwork selection prepares both current draft fields", combinedDraft);
-        choose("Model profiles", false);
+        choose(picker, "Model profiles", "fixture:base");
         stage++;
       }
       case 6 -> {
@@ -832,7 +848,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 .candidate()
                 .equals(
                     new PlatformAuditionChecks.Profile("fixture:base", "fixture:alternate", 64)));
-        choose("Model profiles", false);
+        choose(picker, "Model profiles", "fixture:base");
         stage++;
       }
       case 7 -> {
@@ -873,7 +889,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
       }
       case 11 -> {
         if (!ready(5)) return false;
-        choose("Artwork profiles", false);
+        choose(artworkPicker, "Artwork profiles", "fixture:base");
         stage++;
       }
       case 12 -> {
@@ -1123,6 +1139,16 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     result.add("checks", checks.deepCopy());
     result.addProperty("stage", stage);
     result.addProperty("prepares", entries.size());
+    var candidates = new JsonArray();
+    for (var entry : entries) {
+      var value = new JsonObject();
+      value.addProperty("models", entry.candidate().models());
+      value.addProperty("artwork", entry.candidate().artwork());
+      value.addProperty("distance", entry.candidate().distance());
+      value.addProperty("basis", entry.stamp().kind().name());
+      candidates.add(value);
+    }
+    result.add("candidates", candidates);
     result.addProperty("subjects", combinations.size());
     result.addProperty("firstSelectionActivated", firstSelectionActivated);
     result.addProperty("inspectionDidNotEdit", inspectionDidNotEdit);
