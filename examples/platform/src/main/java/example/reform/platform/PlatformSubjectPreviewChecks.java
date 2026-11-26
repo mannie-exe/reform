@@ -88,7 +88,14 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         driver -> new PlatformSubjectPreviewChecks(driver, false, true, true));
   }
 
-  private final boolean basisMode, inlineMode, layoutMode;
+  static CompletionStage<JsonObject> runGrid(ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration,
+        "PREVIEW_GRID",
+        driver -> new PlatformSubjectPreviewChecks(driver, false, true, true, true));
+  }
+
+  private final boolean basisMode, inlineMode, layoutMode, gridMode;
   private design.inherent.reform.presentation.ui.UiLocal<Boolean> modelVisible;
   private AbstractWidget originalList, originalViewport;
   private final int[] originalWidth = {0}, originalHeight = {0};
@@ -149,6 +156,16 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
 
   private PlatformSubjectPreviewChecks(
       PlatformFormProbe.Driver driver, boolean basisMode, boolean inlineMode, boolean layoutMode) {
+    this(driver, basisMode, inlineMode, layoutMode, false);
+  }
+
+  private PlatformSubjectPreviewChecks(
+      PlatformFormProbe.Driver driver,
+      boolean basisMode,
+      boolean inlineMode,
+      boolean layoutMode,
+      boolean gridMode) {
+    this.gridMode = gridMode;
     this.layoutMode = layoutMode;
     this.basisMode = basisMode;
     this.inlineMode = inlineMode;
@@ -434,6 +451,48 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
                 design.inherent.reform.presentation.UiLayout.Offer.flexible(220, 280),
                 4,
                 design.inherent.reform.presentation.UiLayout.Alignment.START);
+        if (gridMode) {
+          var grid =
+              new design.inherent.reform.presentation.UiGrid.Grid(
+                  List.of(
+                      design.inherent.reform.presentation.UiGrid.Track.fraction(
+                          180, 280, 1000000, 1),
+                      design.inherent.reform.presentation.UiGrid.Track.fraction(
+                          220, 280, 1000000, 1)),
+                  3,
+                  12,
+                  12);
+          return Views.grid(
+              "browser-preview",
+              grid,
+              List.of(
+                  Views.cell(
+                      0,
+                      0,
+                      1,
+                      1,
+                      Views.frame(
+                          "models",
+                          left,
+                          Views.show(
+                              "visible",
+                              modelVisible,
+                              branch ->
+                                  selectionView(branch, picker, MODELS_ROLE, "Model profiles"),
+                              branch ->
+                                  Views.text(
+                                      "closed", text("Model choices closed"), Component.empty())))),
+                  Views.cell(
+                      2,
+                      0,
+                      1,
+                      2,
+                      Views.frame(
+                          "artwork",
+                          left,
+                          selectionView(scope, artworkPicker, ARTWORK_ROLE, "Artwork profiles"))),
+                  Views.cell(0, 1, 2, 1, Views.frame("preview", right, preview.content()))));
+        }
         return Views.row(
             "browser-preview",
             offers,
@@ -1326,6 +1385,21 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     }
   }
 
+  private boolean gridSpans() {
+    for (String mode : List.of("wide", "returned")) {
+      if (!layoutObservations.has(mode)) return false;
+      var data = layoutObservations.getAsJsonObject(mode);
+      var models = data.getAsJsonObject("list");
+      var artwork = data.getAsJsonObject("artwork");
+      var viewport = data.getAsJsonObject("preview");
+      if (artwork.get("width").getAsInt() <= models.get("width").getAsInt()
+          || artwork.get("x").getAsInt() != models.get("x").getAsInt()
+          || artwork.get("y").getAsInt()
+              <= viewport.get("y").getAsInt() + viewport.get("height").getAsInt()) return false;
+    }
+    return true;
+  }
+
   public JsonObject report() {
     var result = new JsonObject();
     result.addProperty("status", complete ? "PASS" : "FAIL");
@@ -1344,6 +1418,8 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     }
     result.add("candidates", candidates);
     result.addProperty("subjects", combinations.size());
+    result.addProperty("gridMode", gridMode);
+    result.addProperty("gridSpans", !gridMode || gridSpans());
     result.addProperty("wideLayout", wideLayout);
     result.addProperty("compactLayout", compactLayout);
     result.addProperty("returnedLayout", returnedLayout);

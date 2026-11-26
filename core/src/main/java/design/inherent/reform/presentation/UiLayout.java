@@ -86,9 +86,10 @@ public final class UiLayout {
   public static Allocation row(Row spec, List<Offer> offers, int available) {
     finite(available);
     Objects.requireNonNull(spec);
-    offers = List.copyOf(offers);
+    Objects.requireNonNull(offers);
     if (offers.isEmpty() || offers.size() > 64)
       throw new IllegalArgumentException("A row needs one to 64 finite children");
+    offers = List.copyOf(offers);
     long gaps = (long) spec.minimumGap() * (offers.size() - 1);
     long minimum = gaps;
     for (var offer : offers) minimum += offer.minimum();

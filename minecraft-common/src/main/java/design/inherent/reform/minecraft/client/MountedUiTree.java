@@ -68,6 +68,7 @@ final class MountedUiTree implements AutoCloseable {
     SURFACE,
     FIELD,
     LAYOUT_ROW,
+    LAYOUT_GRID,
     LAYOUT_FRAME,
     LAYOUT_CELL,
     LAYOUT_END,
@@ -417,6 +418,8 @@ final class MountedUiTree implements AutoCloseable {
               children.add(new Node(surface.surface().content(), scope));
           case ViewSpec.Column column -> construct(column.children());
           case ViewSpec.Row row -> construct(row.children());
+          case ViewSpec.Grid grid ->
+              construct(grid.children().stream().map(ViewSpec.GridChild::content).toList());
           case ViewSpec.Frame frame -> children.add(new Node(frame.content(), scope));
           case ViewSpec.Actions actions -> construct(actions.children());
           case ViewSpec.Section section -> construct(section.children());
@@ -773,7 +776,7 @@ final class MountedUiTree implements AutoCloseable {
         into.add(current.withFlow(flow));
       }
       for (var child : children) {
-        if (spec instanceof ViewSpec.Row)
+        if (spec instanceof ViewSpec.Row || spec instanceof ViewSpec.Grid)
           into.add(
               new Row(
                   child,
@@ -782,7 +785,7 @@ final class MountedUiTree implements AutoCloseable {
                   Component.empty(),
                   UiAvailability.READY));
         child.rows(into, childrenAvailability, spec instanceof ViewSpec.Actions ? this : null);
-        if (spec instanceof ViewSpec.Row)
+        if (spec instanceof ViewSpec.Row || spec instanceof ViewSpec.Grid)
           into.add(
               new Row(
                   child,
@@ -820,7 +823,9 @@ final class MountedUiTree implements AutoCloseable {
           }
         }
       } else if (branch != null) branch.rows(into, childrenAvailability);
-      if (spec instanceof ViewSpec.Row || spec instanceof ViewSpec.Frame)
+      if (spec instanceof ViewSpec.Row
+          || spec instanceof ViewSpec.Grid
+          || spec instanceof ViewSpec.Frame)
         into.add(
             new Row(
                 this, Kind.LAYOUT_END, Component.empty(), Component.empty(), UiAvailability.READY));
@@ -948,6 +953,13 @@ final class MountedUiTree implements AutoCloseable {
                 new Row(
                     this,
                     Kind.LAYOUT_ROW,
+                    Component.empty(),
+                    Component.empty(),
+                    UiAvailability.READY);
+            case ViewSpec.Grid ignored ->
+                new Row(
+                    this,
+                    Kind.LAYOUT_GRID,
                     Component.empty(),
                     Component.empty(),
                     UiAvailability.READY);
@@ -1503,6 +1515,13 @@ final class MountedUiTree implements AutoCloseable {
         }
         case LAYOUT_ROW ->
             panel.beginMeasured(row.node().id, ((ViewSpec.Row) row.node().spec).layout());
+        case LAYOUT_GRID -> {
+          var grid = (ViewSpec.Grid) row.node().spec;
+          panel.beginGrid(
+              row.node().id,
+              grid.layout(),
+              grid.children().stream().map(ViewSpec.GridChild::position).toList());
+        }
         case LAYOUT_FRAME ->
             panel.beginMeasured(row.node().id, ((ViewSpec.Frame) row.node().spec).layout());
         case LAYOUT_CELL -> panel.beginCell(row.node().id + ":layout-cell");

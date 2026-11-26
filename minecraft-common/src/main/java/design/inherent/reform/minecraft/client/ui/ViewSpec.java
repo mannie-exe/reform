@@ -123,9 +123,33 @@ public sealed interface ViewSpec {
     public Row {
       key = identity(key);
       Objects.requireNonNull(layout);
-      children = ordered(children);
+      Objects.requireNonNull(children);
       if (children.isEmpty() || children.size() > 64)
         throw new IllegalArgumentException("A measured row needs one to 64 children");
+      children = ordered(children);
+    }
+  }
+
+  record GridChild(design.inherent.reform.presentation.UiGrid.Cell position, ViewSpec content) {
+    public GridChild {
+      Objects.requireNonNull(position);
+      Objects.requireNonNull(content);
+    }
+  }
+
+  record Grid(
+      String key, design.inherent.reform.presentation.UiGrid.Grid layout, List<GridChild> children)
+      implements ViewSpec {
+    public Grid {
+      key = identity(key);
+      Objects.requireNonNull(layout);
+      Objects.requireNonNull(children);
+      if (children.isEmpty() || children.size() > 64)
+        throw new IllegalArgumentException("A measured grid needs one to 64 cells");
+      children = List.copyOf(children);
+      design.inherent.reform.presentation.UiGrid.validate(
+          layout, children.stream().map(GridChild::position).toList());
+      ordered(children.stream().map(GridChild::content).toList());
     }
   }
 

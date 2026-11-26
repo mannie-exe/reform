@@ -17,6 +17,36 @@ import org.junit.jupiter.api.Test;
 
 class MeasuredCompositionTest {
   @Test
+  void boundedRowsAndGridsRejectBeforeCopyAndKeepDeclaredCellsUnique() {
+    var excessive =
+        new java.util.AbstractList<ViewSpec>() {
+          public int size() {
+            return 65;
+          }
+
+          public ViewSpec get(int index) {
+            throw new AssertionError("Reject oversized rows before visiting children");
+          }
+        };
+    assertThrows(
+        IllegalArgumentException.class, () -> Views.row("row", new UiLayout.Row(0, 0), excessive));
+    var grid =
+        new design.inherent.reform.presentation.UiGrid.Grid(
+            List.of(design.inherent.reform.presentation.UiGrid.Track.fixed(20)), 1, 0, 0);
+    var label = Views.text("same", Component.literal("Choice"), Component.empty());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            Views.grid(
+                "grid",
+                grid,
+                List.of(Views.cell(0, 0, 1, 1, label), Views.cell(0, 0, 1, 1, label))));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> Views.grid("grid", grid, List.of(Views.cell(0, 0, 1, 2, label))));
+  }
+
+  @Test
   void wrappersKeepReadingOrderAndDoNotReplaceUnchangedActionProjection() {
     try (var owner =
         new OwnerContext(Runnable::run, Runnable::run, () -> {}, OwnerContext.Limits.STANDARD)) {

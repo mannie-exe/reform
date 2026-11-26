@@ -4,6 +4,7 @@ import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.presentation.SectionNavigation;
 import design.inherent.reform.presentation.ThemeValues;
+import design.inherent.reform.presentation.UiGrid;
 import design.inherent.reform.presentation.UiLayout;
 import java.util.ArrayList;
 import java.util.List;
@@ -275,6 +276,8 @@ final class FormPanel extends ScrollFrame {
 
   private record Frame(int left, int width, int top, int labelWidth, ClientTheme theme) {}
 
+  private record GridGeometry(UiGrid.Grid grid, List<UiGrid.Cell> cells) {}
+
   private enum Cell {
     INSTANCE
   }
@@ -283,12 +286,20 @@ final class FormPanel extends ScrollFrame {
   private final java.util.Map<Integer, Integer> measuredEnds = new java.util.HashMap<>();
 
   void beginMeasured(String id, Object spec) {
-    if (!(spec instanceof UiLayout.Row || spec instanceof UiLayout.Frame || spec == Cell.INSTANCE))
+    if (!(spec instanceof UiLayout.Row
+        || spec instanceof UiLayout.Frame
+        || spec instanceof GridGeometry
+        || spec == Cell.INSTANCE))
       throw new IllegalArgumentException("Use a declared measured container");
     var marker =
         row(id, Component.empty(), Component.empty(), List.of(), false, null, false, 2, null);
     measuredGroups.put(marker, spec);
     rows.add(marker);
+  }
+
+  void beginGrid(String id, UiGrid.Grid grid, List<UiGrid.Cell> cells) {
+    UiGrid.validate(grid, cells);
+    beginMeasured(id, new GridGeometry(grid, List.copyOf(cells)));
   }
 
   void beginCell(String id) {
@@ -733,8 +744,13 @@ final class FormPanel extends ScrollFrame {
                 2 * groupDepth, theme.values().value(ThemeValues.Role.SPACE_CONTENT))));
   }
 
+  private record MeasuredAnchor(String id, int y) {}
+
+  private final List<MeasuredAnchor> measuredAnchors = new ArrayList<>();
+
   private void measure() {
     positions.clear();
+    measuredAnchors.clear();
     layout.clear();
     outlines.clear();
     artworkLayout.clear();
@@ -750,6 +766,7 @@ final class FormPanel extends ScrollFrame {
     }
     if (!open.isEmpty()) throw new IllegalStateException("Unclosed measured container");
     extent = Math.max(1, measureSequence(0, rows.size(), 0, 0, usableWidth(), 0));
+    for (var anchor : measuredAnchors) sections.add(anchor.id(), anchor.y());
   }
 
   private int measureSequence(int from, int to, int left, int top, int wrap, int depth) {
@@ -884,7 +901,7 @@ final class FormPanel extends ScrollFrame {
               start + 1, end, left + at.contentX(), top + at.padding(), at.contentWidth(), depth));
     }
     if (spec == Cell.INSTANCE) return measureSequence(start + 1, end, left, top, width, depth);
-    if (!(spec instanceof UiLayout.Row row))
+    if (!(spec instanceof UiLayout.Row || spec instanceof GridGeometry))
       throw new IllegalStateException("Missing layout specification");
     var cells = new ArrayList<Integer>();
     for (int i = start + 1; i < end; ) {
@@ -894,7 +911,9 @@ final class FormPanel extends ScrollFrame {
       i = measuredEnds.get(i) + 1;
     }
     var offers = cells.stream().map(i -> containerOffer(i, measuredEnds.get(i), depth)).toList();
-    var allocation = UiLayout.row(row, offers, width);
+    if (spec instanceof GridGeometry grid)
+      return measureGrid(grid, cells, offers, left, top, width, depth);
+    var allocation = UiLayout.row((UiLayout.Row) spec, offers, width);
     int x = left, y = top, height = 0;
     for (int index = 0; index < cells.size(); index++) {
       int cell = cells.get(index);
@@ -909,6 +928,89 @@ final class FormPanel extends ScrollFrame {
       }
     }
     return allocation.stacked() ? y - top : height;
+  }
+
+  private record MeasuredSlice(int positions, int layouts, int outlines, int anchors) {}
+
+  private MeasuredSlice measuredSlice() {
+    return new MeasuredSlice(
+        positions.size(), layout.size(), outlines.size(), measuredAnchors.size());
+  }
+
+  // Translate the measured original children, including group decoration and native focus anchors.
+  private void translateSlice(MeasuredSlice from, MeasuredSlice to, int dy) {
+    for (int i = from.positions(); i < to.positions(); i++) {
+      var at = positions.get(i);
+      positions.set(i, new Positioned(at.widget, at.x, Math.addExact(at.y, dy), at.key));
+    }
+    for (int i = from.layouts(); i < to.layouts(); i++) {
+      var at = layout.get(i);
+      layout.set(
+          i,
+          new Layout(
+              at.row,
+              at.x,
+              Math.addExact(at.y, dy),
+              at.height,
+              at.textWidth,
+              at.textY,
+              at.summaryY,
+              at.stacked));
+      var art = artworkLayout.get(at.row);
+      if (art != null)
+        artworkLayout.put(
+            at.row,
+            new ArtworkLayout(
+                art.row,
+                art.content,
+                art.x,
+                Math.addExact(art.y, dy),
+                art.width,
+                art.height,
+                art.leadingWidth,
+                art.leadingHeight));
+    }
+    for (int i = from.outlines(); i < to.outlines(); i++) {
+      var at = outlines.get(i);
+      outlines.set(
+          i,
+          new Outline(
+              at.left,
+              at.width,
+              Math.addExact(at.top, dy),
+              Math.addExact(at.bottom, dy),
+              at.labelWidth,
+              at.theme));
+    }
+    for (int i = from.anchors(); i < to.anchors(); i++) {
+      var at = measuredAnchors.get(i);
+      measuredAnchors.set(i, new MeasuredAnchor(at.id, Math.addExact(at.y, dy)));
+    }
+  }
+
+  private int measureGrid(
+      GridGeometry grid,
+      List<Integer> cells,
+      List<UiLayout.Offer> offers,
+      int left,
+      int top,
+      int width,
+      int depth) {
+    var plan = UiGrid.plan(grid.grid(), grid.cells(), offers, width);
+    var heights = new ArrayList<Integer>();
+    var slices = new ArrayList<MeasuredSlice>();
+    for (int i = 0; i < cells.size(); i++) {
+      slices.add(measuredSlice());
+      int cell = cells.get(i);
+      var at = plan.placements().get(i);
+      heights.add(
+          measureSequence(cell + 1, measuredEnds.get(cell), left + at.x(), top, at.width(), depth));
+    }
+    slices.add(measuredSlice());
+    var placed = UiGrid.arrange(plan, heights);
+    for (int i = 0; i < cells.size(); i++)
+      translateSlice(slices.get(i), slices.get(i + 1), placed.tops().get(i));
+    return placed.height();
   }
 
   private UiLayout.Offer containerOffer(int start, int end, int depth) {
@@ -930,12 +1032,13 @@ final class FormPanel extends ScrollFrame {
         minimum =
             Math.max(
                 minimum,
-                Math.min(
-                    UiLayout.LIMIT,
-                    minimumWidth(row)
-                        + 2
-                            * Math.max(0, groups)
-                            * row.theme.values().value(ThemeValues.Role.SPACE_CONTENT)));
+                (int)
+                    Math.min(
+                        UiLayout.LIMIT,
+                        (long) minimumWidth(row)
+                            + 2L
+                                * Math.max(0, groups)
+                                * row.theme.values().value(ThemeValues.Role.SPACE_CONTENT)));
     }
     return UiLayout.Offer.flexible(minimum, minimum);
   }
@@ -990,17 +1093,22 @@ final class FormPanel extends ScrollFrame {
         entryArtwork.containsKey(row.key)
             ? entryArtwork.get(row.key).leadingOffer().map(FormGeometry.Size::width).orElse(0)
             : 0;
-    return (leading == 0 ? 0 : leading + row.theme.values().value(ThemeValues.Role.SPACE_INLINE))
-        + Math.max(
-            Math.min(
-                client.font.width(row.label),
-                row.theme.values().value(ThemeValues.Role.MEASURE_LABEL_PREFERRED_LIMIT)),
-            Math.max(
-                1,
-                FormGeometry.minimumControlWidth(
-                    row.preferred,
-                    row.theme.values().value(ThemeValues.Role.SPACE_INLINE),
-                    joins(row))));
+    return (int)
+        Math.min(
+            UiLayout.LIMIT,
+            (leading == 0
+                    ? 0L
+                    : (long) leading + row.theme.values().value(ThemeValues.Role.SPACE_INLINE))
+                + Math.max(
+                    Math.min(
+                        client.font.width(row.label),
+                        row.theme.values().value(ThemeValues.Role.MEASURE_LABEL_PREFERRED_LIMIT)),
+                    Math.max(
+                        1,
+                        FormGeometry.minimumControlWidth(
+                            row.preferred,
+                            row.theme.values().value(ThemeValues.Role.SPACE_INLINE),
+                            joins(row)))));
   }
 
   private record TextMeasure(int summaryY, int height) {}
@@ -1049,7 +1157,7 @@ final class FormPanel extends ScrollFrame {
   }
 
   private int measureContentRow(Row row, int left, int y, int wrap) {
-    if (row.anchor != null) sections.add(row.anchor, y);
+    if (row.anchor != null) measuredAnchors.add(new MeasuredAnchor(row.anchor, y));
     if (row.heading) {
       int height = 12 + client.font.split(row.label, wrap).size() * client.font.lineHeight;
       layout.add(new Layout(row, left, y + 6, height, wrap, 0, 0, false));
@@ -1150,7 +1258,7 @@ final class FormPanel extends ScrollFrame {
       ControlSizing.resize(widget, at.width());
       widget.setHeight(at.height());
       var controlId = controlIds.get(widget);
-      if (controlId != null) sections.add(controlId, actionY + at.y());
+      if (controlId != null) measuredAnchors.add(new MeasuredAnchor(controlId, actionY + at.y()));
       positions.add(
           new Positioned(
               widget,

@@ -33,6 +33,20 @@ public final class Views {
     return new ViewSpec.Row(key, layout, children);
   }
 
+  public static ViewSpec grid(
+      String key,
+      design.inherent.reform.presentation.UiGrid.Grid layout,
+      List<ViewSpec.GridChild> children) {
+    return new ViewSpec.Grid(key, layout, children);
+  }
+
+  public static ViewSpec.GridChild cell(
+      int row, int column, int rowSpan, int columnSpan, ViewSpec content) {
+    return new ViewSpec.GridChild(
+        new design.inherent.reform.presentation.UiGrid.Cell(row, column, rowSpan, columnSpan),
+        content);
+  }
+
   public static ViewSpec frame(
       String key, design.inherent.reform.presentation.UiLayout.Frame layout, ViewSpec content) {
     return new ViewSpec.Frame(key, layout, content);

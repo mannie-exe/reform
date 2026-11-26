@@ -535,6 +535,39 @@ class PlatformOutcomeTests(unittest.TestCase):
         self.assertFalse(accepted())
         del self.native["semanticPreviews"]
 
+    def test_grid_requires_observed_spans_not_just_a_claimed_flag(self):
+        import copy
+        wide = {"list": {"x": 0, "y": 0, "width": 100, "height": 80},
+                "artwork": {"x": 0, "y": 200, "width": 220, "height": 80},
+                "preview": {"x": 112, "y": 0, "width": 100, "height": 100}}
+        compact = {"list": dict(wide["list"]), "artwork": dict(wide["artwork"]),
+                   "preview": {"x": 0, "y": 300, "width": 80, "height": 80}}
+        complete = {"status": "PASS", "passed": True, "prepares": 6, "visiblePixels": 64,
+                    "wideLayout": True, "compactLayout": True, "returnedLayout": True,
+                    "retiredSelection": True, "firstSelectionActivated": True, "inspectionDidNotEdit": True,
+                    "combinedDraft": True, "sameValueActivated": True, "noReturnPrepare": True,
+                    "restored": True, "inputBytes": 0, "nativeBytes": 0, "sceneBytes": 0,
+                    "captures": ["one", "two", "three", "four"], "gridMode": True, "gridSpans": True,
+                    "layoutObservations": {"wide": wide, "compact": compact, "returned": copy.deepcopy(wide)}}
+        def accepted():
+            return successful_boot(self.process, self.native, self.library, self.target,
+                                   "0.20.1", required_scenarios=("semanticPreviewGrid",))
+        self.assertFalse(accepted())
+        self.native["semanticPreviewGrid"] = complete
+        self.assertTrue(accepted())
+        for key, value in list(complete.items()):
+            for wrong in (None, False, "missing"):
+                complete[key] = wrong
+                self.assertFalse(accepted(), key)
+            complete[key] = value
+        for mode in ("wide", "returned"):
+            original = copy.deepcopy(complete["layoutObservations"][mode])
+            for key, wrong in (("width", 99), ("y", 99), ("x", 1)):
+                complete["layoutObservations"][mode]["artwork"][key] = wrong
+                self.assertFalse(accepted(), (mode, key))
+                complete["layoutObservations"][mode] = copy.deepcopy(original)
+        del self.native["semanticPreviewGrid"]
+
     def test_measured_layout_requires_actual_nonoverlap_stack_return_and_lifetime(self):
         def accepted():
             return successful_boot(self.process, self.native, self.library, self.target,
