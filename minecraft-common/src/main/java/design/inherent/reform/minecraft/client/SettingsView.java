@@ -2030,16 +2030,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private void appendComposedRows(EditorActor.View<T> current) {
     panel = composition.panel();
     if (composition.selections().isEmpty()) {
-      visibleFields.clear();
-      bodyVisible = false;
-      visibleSections.clear();
-      composedFields
-          .values()
-          .forEach(
-              field -> {
-                if (field.tree != null) field.tree.hide();
-              });
-      composedSections.values().forEach(section -> section.tree.hide());
+      hideBody();
       adaptedControls.values().forEach(AdaptedControl::rememberSelection);
       adaptedControls.values().forEach(AdaptedControl::retire);
       adaptedControls.clear();
@@ -2052,6 +2043,20 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
       return;
     }
     panel.scoped(theme(), () -> appendScopedRows(current));
+  }
+
+  /** Suspends mounted contributions without retiring the editor or its retained component state. */
+  void hideBody() {
+    visibleFields.clear();
+    visibleSections.clear();
+    bodyVisible = false;
+    composedFields
+        .values()
+        .forEach(
+            field -> {
+              if (field.tree != null) field.tree.hide();
+            });
+    composedSections.values().forEach(section -> section.tree.hide());
   }
 
   private void appendScopedRows(EditorActor.View<T> current) {
@@ -4724,6 +4729,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     dependencyView = null;
     dependencyEvaluation = null;
     dependencyVersion = -1;
+    hideBody();
     if (!handoff) {
       if (!closed) abandonEditing();
       disposePresentation();

@@ -2979,6 +2979,18 @@ public final class ClientEditingWorkflow implements AutoCloseable {
                       "temporary_reveal",
                       "Temporarily showing the linked destination; your filter is unchanged."));
           };
+      // A retained owner may have no mounted form at all (Home, metadata, or a task body).
+      // Suspend its managed interests before another body borrows the same graphics admission.
+      // A selected generated body remains attached through ordinary reflow.
+      for (var bound : entries.values()) {
+        var selections = selected.get(bound.form.route());
+        if (bound.editor != null
+            && bound.editor.isOpen()
+            && (metadata != null
+                || geometry.navigationOverlay()
+                || selections == null
+                || selections.isEmpty())) bound.editor.presentation().hideBody();
+      }
       ReferenceTaskView<?, ?> taskBody = null;
       if (metadata == null && !geometry.navigationOverlay() && taskDeclaration != null) {
         var taskOwner = entry(taskDeclaration.route()).editor;
