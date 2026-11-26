@@ -157,6 +157,32 @@ abstract class FormView {
 
   public void render(FormCanvas canvas, int x, int y, float delta) {}
 
+  void renderCompletion(FormCanvas canvas, int x, int y, float delta) {}
+
+  boolean completionCovers(double x, double y) {
+    return false;
+  }
+
+  boolean completionKey(int key, int scan, int modifiers) {
+    return false;
+  }
+
+  boolean completionClick(double x, double y, int button) {
+    return false;
+  }
+
+  boolean completionDrag(double x, double y, int button) {
+    return false;
+  }
+
+  boolean completionRelease() {
+    return false;
+  }
+
+  boolean completionScroll(double x, double y, double horizontal, double vertical) {
+    return false;
+  }
+
   public Component getNarrationMessage() {
     return title.copy();
   }

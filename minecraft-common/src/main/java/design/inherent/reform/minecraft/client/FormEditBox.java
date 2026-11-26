@@ -1,6 +1,8 @@
 package design.inherent.reform.minecraft.client;
 
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.narration.NarratedElementType;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
 
 /** Observe the native selection setter without reflection or a second text/value authority. */
@@ -8,6 +10,18 @@ class FormEditBox extends NativeTextInput {
   private int anchor;
   private int maximumCharacters;
   private boolean acceptsInput;
+  private Component completionNarration = Component.empty();
+
+  void completionNarration(Component value) {
+    completionNarration = value.copy();
+  }
+
+  @Override
+  public void updateWidgetNarration(NarrationElementOutput output) {
+    super.updateWidgetNarration(output);
+    if (!completionNarration.getString().isBlank())
+      output.add(NarratedElementType.HINT, completionNarration);
+  }
 
   FormEditBox(Font font, int x, int y, int width, int height, Component label) {
     super(font, x, y, width, height, label);

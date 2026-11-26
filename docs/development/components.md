@@ -125,6 +125,14 @@ The port prefers the source's explicitly supported key-prefix query. Text-only s
 
 `requireField(binding)` checks the exact original actor and declared role before an input can use this port. `move` changes only the local active suggestion. `activeOption()` reads it authoritatively for consecutive native events; `requireChoice(option)` rechecks the exact source stamp, prefix generation, and current key. Neither method writes an input. Native acceptance must still capture and use the original `ClientTextInput.replacements()` command, with its own raw/selection/draft/epoch guards. Native popup, focus, blur, Escape, and input-acceptance wiring remain implementation work; these APIs and core tests do not establish that journey.
 
+### Native completion offer under qualification
+
+The unpublished dev.120 field surface accepts an optional `CompletionParts(picker.suggestions(policy), label, visibleRows)`. The offer belongs to the same field family and appears only with that surface's original revealed native input. An orphan, duplicate, or foreign offer refuses before native attachment. The declaration does not admit its source while the input is collapsed.
+
+The native host prepares a bounded popup outside the scrolling body's clip, using the original input's measured position. `ClientTextInput.State.focused()` reports actual focus; the popup uses a local active descendant while the original EditBox retains native focus. Choosing a suggestion invokes that input's stamped replacement command. Source keys remain exact UTF-16 values, distinct from bounded native row identities. Popup snapshots, input captures, and row metadata share the admitted presentation budget. Rendering does not query or resolve the source.
+
+This is initial implementation, not complete native qualification. Key and pointer routing, focus, dismissal, resize, narration, source withdrawal, and restoration require actual packaged-host evidence. The complete picker, preview, and consumer handoff remains separate.
+
 ## Composed form fields
 
 `ClientFormOptions.withComponent(path, component)` declares a scalar/reference field composition in the actual generated form. `SettingsScreen.withComponents` supplies the same boundary for a standalone form. The component runs once per admitted field/session lifetime and receives its scope and `ClientFieldParts`. `parts.binding()` is the actual owner/path/type binding; `parts.input()` lazily borrows the same text-input command path when the field uses text rather than a cycle. There is no second native input, actor, draft, or save action.

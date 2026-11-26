@@ -161,6 +161,10 @@ public final class ReferenceSuggestions<V> {
     return policy;
   }
 
+  public boolean isOpen() {
+    return scope.isOpen();
+  }
+
   /** The native input must belong to this controller's exact actor and declared reference role. */
   public void requireField(FieldBinding<?, ?> field) {
     scope.requireCurrent();
@@ -397,6 +401,16 @@ public final class ReferenceSuggestions<V> {
     requireChoice(option);
     if (!option.key().equals(active)) throw stale();
     return Optional.of(option);
+  }
+
+  /** Explicit local navigation in the current suggestion offer; not an edit or resolution. */
+  public void highlight(Option option) {
+    scope.update(
+        () -> {
+          String key = requireChoice(option);
+          active = key;
+          publish();
+        });
   }
 
   /** Read admission only. The caller must still use its exact original input's edit guards. */

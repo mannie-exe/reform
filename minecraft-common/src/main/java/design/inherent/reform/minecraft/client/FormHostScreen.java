@@ -250,8 +250,45 @@ abstract class FormHostScreen extends NativeFormScreen {
 
   @Override
   public void render(FormCanvas canvas, int x, int y, float delta) {
-    super.render(canvas, x, y, delta);
-    for (var view : views) view.render(canvas, x, y, delta);
+    boolean covered = views.stream().anyMatch(view -> view.completionCovers(x, y));
+    super.render(canvas, covered ? -1 : x, covered ? -1 : y, delta);
+    for (var view : views) view.render(canvas, covered ? -1 : x, covered ? -1 : y, delta);
+  }
+
+  @Override
+  protected final void renderTopLayer(FormCanvas canvas, int x, int y, float delta) {
+    for (var view : List.copyOf(views)) view.renderCompletion(canvas, x, y, delta);
+  }
+
+  protected final boolean completionKeyPressed(int key, int scan, int modifiers) {
+    for (var view : List.copyOf(views)) if (view.completionKey(key, scan, modifiers)) return true;
+    return false;
+  }
+
+  @Override
+  public boolean mouseClicked(double x, double y, int button) {
+    for (var view : List.copyOf(views)) if (view.completionClick(x, y, button)) return true;
+    return super.mouseClicked(x, y, button);
+  }
+
+  @Override
+  public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+    for (var view : List.copyOf(views)) if (view.completionDrag(x, y, button)) return true;
+    return super.mouseDragged(x, y, button, dx, dy);
+  }
+
+  @Override
+  public boolean mouseReleased(double x, double y, int button) {
+    boolean handled = false;
+    for (var view : List.copyOf(views)) handled |= view.completionRelease();
+    return super.mouseReleased(x, y, button) || handled;
+  }
+
+  @Override
+  public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+    for (var view : List.copyOf(views))
+      if (view.completionScroll(x, y, horizontal, vertical)) return true;
+    return super.mouseScrolled(x, y, horizontal, vertical);
   }
 
   @Override
@@ -261,6 +298,7 @@ abstract class FormHostScreen extends NativeFormScreen {
 
   @Override
   public boolean keyPressed(int key, int scan, int modifiers) {
+    if (completionKeyPressed(key, scan, modifiers)) return true;
     mountedView();
     return mounted == null
         ? super.keyPressed(key, scan, modifiers)

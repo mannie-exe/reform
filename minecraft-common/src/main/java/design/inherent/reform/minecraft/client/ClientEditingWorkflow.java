@@ -4235,6 +4235,7 @@ public final class ClientEditingWorkflow implements AutoCloseable {
 
     @Override
     public boolean keyPressed(int key, int scan, int modifiers) {
+      if (completionKeyPressed(key, scan, modifiers)) return true;
       if (key == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE
           && navigation.clearFocusedFilter()) return true;
       if (key == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE && drawerOpen) {

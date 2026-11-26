@@ -533,6 +533,7 @@ public final class SettingsScreen<T> extends FormHostScreen implements SettingsF
 
   @Override
   public boolean keyPressed(int key, int scan, int modifiers) {
+    if (completionKeyPressed(key, scan, modifiers)) return true;
     if (key == InputConstants.KEY_ESCAPE && navigation.clearFocusedFilter()) return true;
     if (key == InputConstants.KEY_ESCAPE && drawerOpen) {
       drawerOpen = false;

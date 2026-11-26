@@ -365,12 +365,27 @@ class ReferencePickerTest {
           new ReferenceSuggestions.Option(
               found.stamp().orElseThrow(), found.generation(), "fixture:empty");
       assertEquals("fixture:empty", h.call(() -> port.requireChoice(old)));
+      assertTrue(h.call(port::activeOption).isEmpty());
+      h.call(
+          () -> {
+            port.highlight(old);
+            return null;
+          });
+      assertEquals(old, h.call(port::activeOption).orElseThrow());
       h.call(
           () -> {
             port.request("fixture:b");
             return null;
           });
       assertThrows(ExecutionException.class, () -> h.call(() -> port.requireChoice(old)));
+      assertThrows(
+          ExecutionException.class,
+          () ->
+              h.call(
+                  () -> {
+                    port.highlight(old);
+                    return null;
+                  }));
       h.now.addAndGet(200_000_000L);
       assertEquals("fixture:b", awaitSuggestions(h, port).choices().getFirst().key());
       h.admit();

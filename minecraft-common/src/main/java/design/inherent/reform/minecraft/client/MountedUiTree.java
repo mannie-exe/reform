@@ -62,6 +62,7 @@ final class MountedUiTree implements AutoCloseable {
     DISCLOSURE,
     CHOICE_LIST,
     QUERY_INPUT,
+    COMPLETION,
     SURFACE,
     FIELD,
     OPEN,
@@ -276,6 +277,7 @@ final class MountedUiTree implements AutoCloseable {
     private UiCommand<Void> disclosureCommand;
     private ChoiceListWidget listWidget;
     private NativeQueryInput queryWidget;
+    private ClientIdCompletion completion;
     private design.inherent.reform.minecraft.client.ui.ChoiceListData listData;
     private Optional<String> listActive = Optional.empty();
     private java.util.Set<String> listAccepted = java.util.Set.of();
@@ -334,12 +336,17 @@ final class MountedUiTree implements AutoCloseable {
               add(declared, List.of(surface.surface().field().state()));
           case ViewSpec.NativeFieldInput input ->
               add(declared, List.of(input.surface().field().state()));
+          case ViewSpec.FieldCompletion input -> {
+            add(declared, List.of(input.surface().field().state()));
+            add(declared, input.parts().label().dependencies());
+          }
           default -> {}
         }
         reads = List.copyOf(declared);
         scope.onRetire(
             () -> {
               suspend();
+              if (completion != null) completion.close();
               if (listWidget != null) listWidget.clear();
               if (queryWidget != null) {
                 queryWidget.changed = () -> {};
@@ -422,6 +429,7 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     private void updateManaged() {
+      if (completion != null) completion.update();
       if (spec instanceof ViewSpec.ChoiceList list && listWidget != null)
         listWidget
             .takeBoundary()
@@ -455,6 +463,7 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     void suspend() {
+      if (completion != null) completion.suspend();
       if (lifecycleActive && spec instanceof ViewSpec.Managed managed) {
         lifecycleActive = false;
         managed.lifecycle().suspend();
@@ -691,7 +700,8 @@ final class MountedUiTree implements AutoCloseable {
                 || current.kind() == Kind.DISCLOSURE
                 || current.kind() == Kind.FIELD
                 || current.kind() == Kind.CHOICE_LIST
-                || current.kind() == Kind.QUERY_INPUT)
+                || current.kind() == Kind.QUERY_INPUT
+                || current.kind() == Kind.COMPLETION)
             && !inherited.available())
           current = new Row(this, current.kind(), current.label(), current.body(), inherited);
         into.add(current);
@@ -714,7 +724,8 @@ final class MountedUiTree implements AutoCloseable {
                     || row.kind() == Kind.DISCLOSURE
                     || row.kind() == Kind.FIELD
                     || row.kind() == Kind.CHOICE_LIST
-                    || row.kind() == Kind.QUERY_INPUT))
+                    || row.kind() == Kind.QUERY_INPUT
+                    || row.kind() == Kind.COMPLETION))
               row = new Row(row.node(), row.kind(), row.label(), row.body(), childrenAvailability);
             into.add(row);
           }
@@ -828,6 +839,13 @@ final class MountedUiTree implements AutoCloseable {
             case ViewSpec.FieldSurface surface ->
                 new Row(
                     this, Kind.SURFACE, Component.empty(), Component.empty(), UiAvailability.READY);
+            case ViewSpec.FieldCompletion input ->
+                new Row(
+                    this,
+                    Kind.COMPLETION,
+                    input.parts().label().resolve(),
+                    Component.empty(),
+                    UiAvailability.READY);
             case ViewSpec.NativeFieldInput input ->
                 new Row(
                     this,
@@ -910,6 +928,7 @@ final class MountedUiTree implements AutoCloseable {
     var surfaces =
         new java.util.IdentityHashMap<ClientFieldParts<?>, ClientFieldParts.Surface<?>>();
     var nativeSlots = new java.util.IdentityHashMap<ClientFieldParts.Surface<?>, Boolean>();
+    var completionSlots = new java.util.IdentityHashMap<ClientFieldParts.Surface<?>, Boolean>();
     for (var row : rows) {
       ClientFieldParts<?> field;
       ClientFieldParts.Role role;
@@ -920,6 +939,14 @@ final class MountedUiTree implements AutoCloseable {
         field = surface.surface().field();
         role = ClientFieldParts.Role.CONTROL;
         surfaces.put(field, surface.surface());
+      } else if (row.node().spec instanceof ViewSpec.FieldCompletion input) {
+        field = input.surface().field();
+        if (field != requiredField || !field.belongsTo(root))
+          throw new PolicyRefusal(
+              "ui.foreign_field_part", "Suggestions need their original field surface.");
+        if (completionSlots.put(input.surface(), true) != null)
+          throw new PolicyRefusal("ui.duplicate_field_part", "Use field suggestions only once.");
+        continue;
       } else if (row.node().spec instanceof ViewSpec.NativeFieldInput input) {
         field = input.surface().field();
         if (field != requiredField || !field.belongsTo(root))
@@ -943,6 +970,11 @@ final class MountedUiTree implements AutoCloseable {
       if (surfaces.get(surface.field()) != surface)
         throw new PolicyRefusal(
             "ui.foreign_field_part", "The native input needs its original field surface.");
+    for (var surface : completionSlots.keySet())
+      if (!nativeSlots.containsKey(surface) || surfaces.get(surface.field()) != surface)
+        throw new PolicyRefusal(
+            "ui.foreign_field_part",
+            "Suggestions need their visible original input and field surface.");
     if (requiredField != null && !families.containsKey(requiredField))
       throw new PolicyRefusal(
           "ui.missing_field_part", "A field needs its label, control, and feedback parts.");
@@ -1027,7 +1059,8 @@ final class MountedUiTree implements AutoCloseable {
                               || row.kind() == Kind.DISCLOSURE
                               || row.kind() == Kind.FIELD
                               || row.kind() == Kind.CHOICE_LIST
-                              || row.kind() == Kind.QUERY_INPUT)
+                              || row.kind() == Kind.QUERY_INPUT
+                              || row.kind() == Kind.COMPLETION)
                           ? new Row(row.node(), row.kind(), row.label(), row.body(), blocked)
                           : row)
               .toList();
@@ -1114,6 +1147,19 @@ final class MountedUiTree implements AutoCloseable {
     for (var row : rows) {
       switch (row.kind()) {
         case SURFACE -> {} // Ownership/semantics marker; its children supply the actual surface.
+        case COMPLETION -> {
+          var node = row.node();
+          if (failure != null || !row.availability().available()) {
+            if (node.completion != null) node.completion.suspend();
+            break;
+          }
+          var spec = (ViewSpec.FieldCompletion) node.spec;
+          if (node.completion == null)
+            node.completion =
+                new ClientIdCompletion(
+                    node.scope, spec.surface().field().input().orElseThrow(), spec.parts());
+          node.completion.attach(row.label(), theme);
+        }
         case TEXT -> {
           if (!(row.node().spec instanceof ViewSpec.FieldPart)
               || !row.label().getString().isBlank()

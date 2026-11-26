@@ -59,6 +59,17 @@ public sealed interface ViewSpec {
     }
   }
 
+  /** Field-owned overlay marker, accepted only alongside its exact active native-input slot. */
+  record FieldCompletion(String key, ClientFieldParts.Surface<?> surface, CompletionParts parts)
+      implements ViewSpec {
+    public FieldCompletion {
+      key = identity(key);
+      Objects.requireNonNull(surface);
+      Objects.requireNonNull(parts);
+      parts.suggestions().requireField(surface.field().binding());
+    }
+  }
+
   record ChoiceList(String key, ChoiceListParts parts) implements ViewSpec {
     public ChoiceList {
       key = identity(key);

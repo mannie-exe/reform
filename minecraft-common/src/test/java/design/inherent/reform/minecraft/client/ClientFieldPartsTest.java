@@ -93,6 +93,91 @@ class ClientFieldPartsTest {
   }
 
   @Test
+  void completionRequiresTheSameVisibleNativeSlotAndDoesNotAdmitItsSourceDuringProjection() {
+    try (var h = new Host(directory, true)) {
+      var baseline = h.scope.usage();
+      for (int invalid = 0; invalid < 3; invalid++) {
+        final int mode = invalid;
+        java.util.function.Supplier<MountedUiTree> mount =
+            () ->
+                MountedUiTree.field(
+                    h.scope,
+                    (scope, parts) -> {
+                      var picker =
+                          design.inherent.reform.presentation.ui.ReferencePicker.open(
+                              scope,
+                              h.actions,
+                              DocumentId.parse("example:choices"),
+                              () -> {
+                                throw new AssertionError(
+                                    "Collapsed/projected suggestions must not admit a source");
+                              },
+                              List.of(
+                                  new design.inherent.reform.presentation.ui.PickerRole<String>(
+                                      "value", FieldPath.ROOT)),
+                              Map.of(),
+                              design.inherent.reform.presentation.ui.ReferencePicker.Policy
+                                  .STANDARD,
+                              () -> 0L);
+                      var completion =
+                          new design.inherent.reform.minecraft.client.ui.CompletionParts(
+                              picker.suggestions(
+                                  design.inherent.reform.presentation.ui.ReferenceSuggestions.Policy
+                                      .STANDARD),
+                              UiText.of(Component.literal("Suggested IDs")),
+                              4);
+                      var open =
+                          scope.local(
+                              new design.inherent.reform.presentation.ViewStateKey<>(
+                                  DocumentId.parse("example:completion_open"), ValueTypes.bool()),
+                              mode == 0);
+                      var surface =
+                          (design.inherent.reform.minecraft.client.ui.ViewSpec.FieldSurface)
+                              parts.controlSurface(
+                                  "surface",
+                                  Views.text("choices", Component.empty(), Component.empty()),
+                                  design.inherent.reform.presentation.ui.UiBindings.local(open),
+                                  UiText.of(Component.literal("Edit ID")),
+                                  completion);
+                      var orphan =
+                          new design.inherent.reform.minecraft.client.ui.ViewSpec.FieldCompletion(
+                              "orphan", surface.surface(), completion);
+                      return Views.column(
+                          "field",
+                          List.of(
+                              parts.label("label"),
+                              mode == 2 ? orphan : surface,
+                              mode == 1
+                                  ? orphan
+                                  : Views.text("empty", Component.empty(), Component.empty()),
+                              parts.feedback("feedback")));
+                    },
+                    h::parts);
+        if (mode == 0) {
+          try (var tree = mount.get()) {
+            assertTrue(tree.failure().isEmpty());
+            assertEquals(
+                1,
+                tree.snapshot().stream()
+                    .filter(row -> row.kind() == MountedUiTree.Kind.COMPLETION)
+                    .count());
+            assertEquals(
+                1,
+                tree.snapshot().stream()
+                    .filter(row -> row.kind() == MountedUiTree.Kind.FIELD)
+                    .count());
+          }
+        } else
+          assertEquals(
+              "ui.foreign_field_part",
+              assertThrows(PolicyRefusal.class, mount::get).report().issues().getFirst().code());
+        assertEquals(baseline, h.scope.usage());
+        assertFalse(h.actions.view().dirty());
+      }
+    }
+  }
+
+  @Test
   void duplicateSurfaceOrOrphanNativeInputCannotReplaceTheRequiredFieldFamily() {
     try (var h = new Host(directory)) {
       var baseline = h.scope.usage();
@@ -273,12 +358,20 @@ class ClientFieldPartsTest {
   private static final class Host implements AutoCloseable {
     final OwnerContext context =
         new OwnerContext(Runnable::run, Runnable::run, () -> {}, OwnerContext.Limits.STANDARD);
-    final design.inherent.reform.value.ValueType<String> type = ValueTypes.text(128);
+    final design.inherent.reform.value.ValueType<String> type;
     final DocumentActions<String> actions;
     final UiScope scope;
     final Path path;
 
     Host(Path directory) {
+      this(directory, false);
+    }
+
+    Host(Path directory, boolean reference) {
+      type =
+          reference
+              ? ValueTypes.reference(ValueTypes.text(128), DocumentId.parse("example:choices"))
+              : ValueTypes.text(128);
       path = directory.resolve("parts.json");
       var definition =
           new DocumentDefinition<>(DocumentId.parse("example:parts"), 1, type, () -> "original");

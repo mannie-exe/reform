@@ -69,10 +69,21 @@ public final class ClientTextInput implements AutoCloseable {
 
   /** Cached actual native state; editable is feedback, never a transferable permission grant. */
   public record State(
-      Stamp stamp, String raw, int caret, int anchor, int maximumCharacters, boolean editable) {
+      Stamp stamp,
+      String raw,
+      int caret,
+      int anchor,
+      int maximumCharacters,
+      boolean editable,
+      boolean focused) {
     public State {
       Objects.requireNonNull(stamp);
       Objects.requireNonNull(raw);
+    }
+
+    public State(
+        Stamp stamp, String raw, int caret, int anchor, int maximumCharacters, boolean editable) {
+      this(stamp, raw, caret, anchor, maximumCharacters, editable, false);
     }
   }
 
@@ -160,6 +171,16 @@ public final class ClientTextInput implements AutoCloseable {
 
   public UiRead<State> state() {
     return state;
+  }
+
+  SettingsView<?> view() {
+    scope.requireCurrent();
+    return view;
+  }
+
+  FormEditBox widget() {
+    scope.requireCurrent();
+    return view.inputWidget(path, producer);
   }
 
   public UiCommand<Replacement> replacements() {

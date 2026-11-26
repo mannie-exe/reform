@@ -987,6 +987,12 @@ final class FormPanel extends ScrollFrame {
     }
   }
 
+  boolean completionAnchor(AbstractWidget input) {
+    if (positions.stream().noneMatch(at -> at.widget == input)) return false;
+    position();
+    return input.getY() >= top + border && input.getY() + input.getHeight() <= bottom - border;
+  }
+
   @Override
   protected int getContentHeight() {
     return extent;

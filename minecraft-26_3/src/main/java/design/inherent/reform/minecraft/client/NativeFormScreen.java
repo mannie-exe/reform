@@ -100,8 +100,12 @@ public abstract class NativeFormScreen extends Screen {
 
   @Override
   public final void extractRenderState(GuiGraphicsExtractor graphics, int x, int y, float delta) {
-    render(new NativeCanvas(graphics), x, y, delta);
+    var canvas = new NativeCanvas(graphics);
+    render(canvas, x, y, delta);
+    renderTopLayer(canvas, x, y, delta);
   }
+
+  protected void renderTopLayer(FormCanvas canvas, int x, int y, float delta) {}
 
   public void render(FormCanvas canvas, int x, int y, float delta) {
     super.extractRenderState(((NativeCanvas) canvas).graphics(), x, y, delta);

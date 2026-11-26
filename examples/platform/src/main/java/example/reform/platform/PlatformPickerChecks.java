@@ -81,6 +81,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private ClientEditor<Profile> discardedEditor;
   private ReferenceActions<String, List<String>> source;
   private ReferencePicker<Profile, List<String>> task, inline;
+  private ReferenceSuggestions<List<String>> suggestions;
+  private boolean completionVerified;
   private UiScope taskScope, inlineScope, fieldScope;
   private UiLocal<Boolean> expanded;
   private UiLocal<Boolean> manualExpanded;
@@ -162,6 +164,10 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
             return new ReferenceResolver<String, List<String>>() {
               public ReferenceStamp stamp() {
                 return stamp;
+              }
+
+              public boolean supports(ReferenceQuery.Match match) {
+                return index.supports(match);
               }
 
               public ReferencePage<String> search(ReferenceQuery query) {
@@ -303,6 +309,19 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                               new ViewStateKey<>(
                                   DocumentId.parse("fixture:manual_id_open"), ValueTypes.bool()),
                               false);
+                      inlineScope = scope;
+                      inline =
+                          ReferencePicker.open(
+                              scope,
+                              parts.binding(),
+                              DEFINITION,
+                              SOURCE,
+                              this::source,
+                              List.of(MODEL_ROLE, ART_ROLE),
+                              Map.of("artwork", parts.frontend()),
+                              POLICY,
+                              clock::get);
+                      suggestions = inline.suggestions(ReferenceSuggestions.Policy.STANDARD);
                       var choices =
                           Views.disclosure(
                               "inline",
@@ -312,18 +331,6 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                                   UiText.of(Component.empty()),
                                   UiText.of(Component.empty()),
                                   branch -> {
-                                    inlineScope = branch;
-                                    inline =
-                                        ReferencePicker.open(
-                                            branch,
-                                            parts.binding(),
-                                            DEFINITION,
-                                            SOURCE,
-                                            this::source,
-                                            List.of(MODEL_ROLE, ART_ROLE),
-                                            Map.of("artwork", parts.frontend()),
-                                            POLICY,
-                                            clock::get);
                                     return ReferencePickerView.build(
                                         branch, inline, presentation(), Optional.of(ART_ROLE));
                                   }));
@@ -336,7 +343,9 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                                   "control",
                                   choices,
                                   UiBindings.local(manualExpanded),
-                                  UiText.of(text("Artwork ID"))),
+                                  UiText.of(text("Artwork ID")),
+                                  new CompletionParts(
+                                      suggestions, UiText.of(text("Suggested artwork IDs")), 4)),
                               parts.feedback("feedback")));
                     });
         var form = settings.form(text("Profile selection"), options).atRoute(ROUTE);
@@ -586,7 +595,10 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         if (!arrived() || !editor.canStage(ART_ROLE.field())) return false;
         check(
             "field uses same owner and collapsed source remains lazy",
-            workflow.editor(ROUTE) == editor && inline == null && factories == 1);
+            workflow.editor(ROUTE) == editor
+                && inline != null
+                && inlineState().source() == PickerState.Source.UNADMITTED
+                && factories == 1);
         originalInput = originalParts.input().orElseThrow();
         check(
             "collapsed surface does not reveal the original native input",
@@ -679,6 +691,58 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         check(
             "manual disclosure mounts the actual field input",
             focus(workflow.screen(), manualWidget));
+        manualWidget.setValue("fixture:profile_00");
+        stage = 240;
+      }
+      case 240 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals("fixture:profile_00")) return false;
+        check("completion typing preserves the original field focus", manualWidget.isFocused());
+        clock.addAndGet(200_000_000L);
+        stage = 241;
+      }
+      case 241 -> {
+        var offer = suggestions.state().snapshot().value();
+        if (offer.phase() != PickerState.Phase.READY || offer.choices().size() != 4) return false;
+        check(
+            "completion uses bounded actual key-prefix source with no resolve or browsing query change",
+            offer.prefix().equals("fixture:profile_00")
+                && lookups.get() == 3
+                && inlineState().query().text().isEmpty());
+        check(
+            "suggestions do not implicitly select or accept the first option",
+            offer.active().isEmpty() && raw("artwork").equals("fixture:profile_00"));
+        key("enter");
+        check(
+            "Enter without an active suggestion does not edit",
+            raw("artwork").equals("fixture:profile_00"));
+        key("down");
+        key("down");
+        check(
+            "native arrows select a suggestion while original input keeps focus",
+            suggestions.activeOption().orElseThrow().key().equals(id(1))
+                && manualWidget.isFocused());
+        frames = PlatformFrameObservations.sequence();
+        stage = 242;
+      }
+      case 242 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        driver.capture(
+            "pickers-completion.png",
+            () -> {
+              key("enter");
+              stage = 243;
+            });
+        stage = -1;
+      }
+      case 243 -> {
+        if (!editor.canSubmit() || !raw("artwork").equals(id(1))) return false;
+        check(
+            "explicit completion acceptance uses original field and no save",
+            manualWidget.getValue().equals(id(1))
+                && raw("models").equals(id(3))
+                && manualWidget.isFocused());
+        unchanged();
+        completionVerified = true;
         manualWidget.setValue("fixture:unlisted");
         manualWidget.setCursorPosition(3);
         manualWidget.setHighlightPos(1);
@@ -739,7 +803,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
       case 28 -> {
         if (!editor.canSubmit() || !raw("artwork").equals(id(1))) return false;
         unchanged();
-        undoRemaining = 4;
+        undoRemaining = 6;
         pending =
             editor
                 .actions()
@@ -817,6 +881,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("passed", complete);
     out.addProperty("sourceUnchanged", complete);
     out.addProperty("scopesRetired", complete);
+    out.addProperty("completionVerified", completionVerified);
     out.addProperty("factories", factories);
     out.addProperty("searches", searches.get());
     out.addProperty("lookups", lookups.get());

@@ -1,5 +1,6 @@
 package design.inherent.reform.minecraft.client;
 
+import design.inherent.reform.minecraft.client.ui.CompletionParts;
 import design.inherent.reform.minecraft.client.ui.DisclosureParts;
 import design.inherent.reform.minecraft.client.ui.UiText;
 import design.inherent.reform.minecraft.client.ui.ViewSpec;
@@ -32,8 +33,10 @@ public final class ClientFieldParts<V> {
         ClientFieldParts<V> field,
         ViewSpec replacement,
         UiBinding<Boolean> nativeExpanded,
-        UiText nativeLabel) {
+        UiText nativeLabel,
+        Optional<CompletionParts> completion) {
       this.field = field;
+      completion.ifPresent(parts -> parts.suggestions().requireField(field.binding()));
       content =
           Views.column(
               "surface",
@@ -46,7 +49,18 @@ public final class ClientFieldParts<V> {
                           nativeLabel,
                           UiText.of(net.minecraft.network.chat.Component.empty()),
                           UiText.of(net.minecraft.network.chat.Component.empty()),
-                          branch -> new ViewSpec.NativeFieldInput("input", this)))));
+                          branch ->
+                              completion
+                                  .<ViewSpec>map(
+                                      parts ->
+                                          Views.column(
+                                              "native",
+                                              List.of(
+                                                  new ViewSpec.NativeFieldInput("input", this),
+                                                  new ViewSpec.FieldCompletion(
+                                                      "completion", this, parts))))
+                                  .orElseGet(
+                                      () -> new ViewSpec.NativeFieldInput("input", this))))));
     }
 
     public ClientFieldParts<V> field() {
@@ -151,7 +165,26 @@ public final class ClientFieldParts<V> {
             this,
             replacement,
             Objects.requireNonNull(nativeExpanded),
-            Objects.requireNonNull(nativeLabel)));
+            Objects.requireNonNull(nativeLabel),
+            Optional.empty()));
+  }
+
+  /** Completion borrows this same field's original input; it cannot provide another writer. */
+  public ViewSpec controlSurface(
+      String key,
+      ViewSpec replacement,
+      UiBinding<Boolean> nativeExpanded,
+      UiText nativeLabel,
+      CompletionParts completion) {
+    owner.requireCurrent();
+    return new ViewSpec.FieldSurface(
+        key,
+        new Surface<>(
+            this,
+            replacement,
+            Objects.requireNonNull(nativeExpanded),
+            Objects.requireNonNull(nativeLabel),
+            Optional.of(Objects.requireNonNull(completion))));
   }
 
   public ViewSpec feedback(String key) {

@@ -728,6 +728,62 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   private List<FormModel.Layout> formLayout = List.of();
   private UUID formSession;
   private long formGeneration;
+  private final List<ClientIdCompletion> completions = new ArrayList<>();
+
+  void addCompletion(ClientIdCompletion completion) {
+    completions.add(completion);
+  }
+
+  void removeCompletion(ClientIdCompletion completion) {
+    completions.remove(completion);
+  }
+
+  boolean completionAnchor(FormEditBox input) {
+    return !closed && isCurrent() && bodyVisible && panel != null && panel.completionAnchor(input);
+  }
+
+  @Override
+  void renderCompletion(FormCanvas canvas, int x, int y, float delta) {
+    for (var completion : List.copyOf(completions)) completion.render(canvas, x, y, delta);
+  }
+
+  @Override
+  boolean completionCovers(double x, double y) {
+    return completions.stream().anyMatch(completion -> completion.covers(x, y));
+  }
+
+  @Override
+  boolean completionKey(int key, int scan, int modifiers) {
+    for (var completion : List.copyOf(completions)) if (completion.key(key, modifiers)) return true;
+    return false;
+  }
+
+  @Override
+  boolean completionClick(double x, double y, int button) {
+    for (var completion : List.copyOf(completions)) if (completion.click(x, y, button)) return true;
+    return false;
+  }
+
+  @Override
+  boolean completionDrag(double x, double y, int button) {
+    for (var completion : List.copyOf(completions)) if (completion.drag(x, y, button)) return true;
+    return false;
+  }
+
+  @Override
+  boolean completionRelease() {
+    boolean handled = false;
+    for (var completion : List.copyOf(completions)) handled |= completion.release();
+    return handled;
+  }
+
+  @Override
+  boolean completionScroll(double x, double y, double horizontal, double vertical) {
+    for (var completion : List.copyOf(completions))
+      if (completion.scroll(x, y, horizontal, vertical)) return true;
+    return false;
+  }
+
   private FormPanel panel;
   private FormChrome chrome;
   private EditorActor.View<T> displayed;
@@ -1239,7 +1295,13 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
         input.getCursorPosition(),
         input.selection(),
         input.maximumCharacters(),
-        editable);
+        editable,
+        input.isFocused());
+  }
+
+  FormEditBox inputWidget(FieldPath path, Object producer) {
+    textInput(path, producer);
+    return (FormEditBox) controls.get(path).widget();
   }
 
   UiActionResult replaceTextInput(
@@ -4203,6 +4265,7 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
     }
     revealRequestedFocus();
     refreshReferenceTitles();
+    for (var completion : List.copyOf(completions)) completion.update();
   }
 
   private Component status() {
@@ -4263,6 +4326,10 @@ final class SettingsView<T> extends FormView implements SettingsForm<T> {
   @Override
   public Component getNarrationMessage() {
     var message = title.copy().append(". ").append(contextLabel).append(". ").append(status());
+    for (var completion : List.copyOf(completions)) {
+      var extra = completion.narration();
+      if (!extra.getString().isBlank()) message.append(". ").append(extra);
+    }
     return catalog == null ? message : message.append(". ").append(catalog.narration());
   }
 

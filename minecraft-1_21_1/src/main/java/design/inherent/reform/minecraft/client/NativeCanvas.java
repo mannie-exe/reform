@@ -7,6 +7,16 @@ import net.minecraft.network.chat.FormattedText;
 import net.minecraft.util.FormattedCharSequence;
 
 record NativeCanvas(GuiGraphics graphics) implements FormCanvas {
+  void foreground(Runnable draw) {
+    graphics.pose().pushPose();
+    try {
+      graphics.pose().translate(0, 0, 500);
+      draw.run();
+    } finally {
+      graphics.pose().popPose();
+    }
+  }
+
   @Override
   public void drawArgb(
       Font font, FormattedCharSequence text, int x, int y, int argb, boolean shadow) {
