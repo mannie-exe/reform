@@ -18,6 +18,7 @@
       "remapMinecraft": false,
       "jeiVersionRef": "jei-1_21_1",
       "jeiMinimumVersionRef": "jei-1_21_1-api-floor",
+      "jeiConfigVersionRef": "mezz-config-1_21_1",
       "emiVersionRef": "emi-1_21_1",
       "emiMinimumVersionRef": "emi-1_21_1-api-floor",
       "emiUpperBound": "2"
@@ -40,6 +41,7 @@
       "productionNamespace": "intermediary",
       "jeiVersionRef": "jei-1_21_1",
       "jeiMinimumVersionRef": "jei-1_21_1-api-floor",
+      "jeiConfigVersionRef": "mezz-config-1_21_1",
       "emiVersionRef": "emi-1_21_1",
       "emiMinimumVersionRef": "emi-1_21_1-api-floor",
       "emiUpperBound": "2"

@@ -142,6 +142,10 @@ if (withRecipeViewer) {
     viewers.each { provider, viewer ->
         dependencies.add(target.loader == 'fabric' && target.remapMinecraft ? 'modRuntimeOnly' : 'runtimeOnly', viewer)
     }
+    def companion = viewers.containsKey('jei') && target.jeiConfigVersionRef ?
+        "net.mezzdev.config:mezz_config-${game}-${target.loader}:${pin(target.jeiConfigVersionRef)}" : null
+    if (companion)
+        dependencies.add(target.loader == 'fabric' && target.remapMinecraft ? 'modRuntimeOnly' : 'runtimeOnly', companion)
     tasks.register('verifyRecipeViewer') {
         doLast {
             def expected = withRecipeViewer == 'both' ? new groovy.json.JsonSlurper().parseText(providers.gradleProperty('viewerSha256').get()) : [(withRecipeViewer): providers.gradleProperty('viewerSha256').get()]
@@ -153,6 +157,14 @@ if (withRecipeViewer) {
                 if (actual != expected[provider])
                     throw new GradleException('Recipe viewer differs from the selected original runtime: ' + provider)
                 println "Native recipe viewer ${provider} SHA-256: ${actual}"
+            }
+            if (companion) {
+                def original = configurations.detachedConfiguration(dependencies.create(companion))
+                original.transitive = false
+                def actual = java.security.MessageDigest.getInstance('SHA-256').digest(original.singleFile.bytes).encodeHex().toString()
+                if (actual != providers.gradleProperty('viewerCompanionSha256').get())
+                    throw new GradleException('Recipe viewer companion differs from the selected original runtime')
+                println "Native recipe companion mezz_config SHA-256: ${actual}"
             }
             configurations.runtimeClasspath.resolve()
         }

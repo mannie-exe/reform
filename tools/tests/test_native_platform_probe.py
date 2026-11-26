@@ -12,6 +12,32 @@ from tools.native_platform_probe import retain_captures, retain_native_report, s
 
 
 class OptionalAdmissionTests(unittest.TestCase):
+    def test_recipe_original_refuses_dangling_link_before_network_or_write(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(platform.urllib.request, "urlopen") as network:
+            root = Path(temporary)
+            cached = root / ".cache/recipe-viewers/config-1.jar"
+            cached.parent.mkdir(parents=True)
+            outside = root / "must-not-write"
+            cached.symlink_to(outside)
+            with patch.object(platform, "ROOT", root), self.assertRaisesRegex(ValueError, "bounded original"):
+                platform.recipe_original("config", "1", "https://example.invalid/config.jar")
+            self.assertFalse(outside.exists())
+            network.assert_not_called()
+
+    def test_recipe_original_reuses_exact_nonempty_input_and_refuses_empty(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(platform.urllib.request, "urlopen") as network:
+            root = Path(temporary)
+            cached = root / ".cache/recipe-viewers/config-1.jar"
+            cached.parent.mkdir(parents=True)
+            cached.write_bytes(b"actual companion")
+            with patch.object(platform, "ROOT", root):
+                value = platform.recipe_original("config", "1", "https://example.invalid/config.jar")
+                self.assertEqual(value["sha256"], hashlib.sha256(b"actual companion").hexdigest())
+                cached.write_bytes(b"")
+                with self.assertRaisesRegex(ValueError, "bounded original"):
+                    platform.recipe_original("config", "1", "https://example.invalid/config.jar")
+            network.assert_not_called()
+
     def test_recipe_viewer_floor_is_a_separate_exact_input(self):
         target = {"jeiVersion": "19.76.1.481", "jeiMinimumVersion": "19.71.0.470", "emiVersion": "1.1.24"}
         self.assertEqual(platform.recipe_viewer_version(target, "jei"), "19.76.1.481")

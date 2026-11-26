@@ -514,6 +514,23 @@ def recipe_viewer_version(target, provider, minimum=False):
     return version
 
 
+def recipe_original(module, version, url):
+    saved = ROOT / ".cache/recipe-viewers" / (module + "-" + version + ".jar")
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    if saved.is_symlink():
+        raise ValueError("Recipe input is not a bounded original file")
+    if not saved.exists():
+        with urllib.request.urlopen(url, timeout=60) as response:
+            payload = response.read(64 * 1024 * 1024 + 1)
+        if len(payload) > 64 * 1024 * 1024:
+            raise ValueError("Recipe input exceeds its bound")
+        saved.write_bytes(payload)
+    if saved.is_symlink() or not saved.is_file() or not 0 < saved.stat().st_size <= 64 * 1024 * 1024:
+        raise ValueError("Recipe input is not a bounded original file")
+    return {"module": module, "version": version, "url": url,
+            "sha256": hashlib.sha256(saved.read_bytes()).hexdigest(), "path": str(saved.relative_to(ROOT))}
+
+
 def run(project, java_home, timeout, version=None, tested_loader=False, client=False, synced_override=False, world_client=False, mod_menu=False, initialization_failure=False, recipe_client=False, authoring_client=False, chooser_client=False, connector=False, command_client=False, workspace_client=False, workflow_client=False, recipe_viewer=None, recipe_links_client=False, native_recipe_client=False, isolated_scene=None, minimum_recipe_viewer=False):
     target = next((t for t in load_targets(ROOT) if t["project"] == project), None)
     if target is None:
@@ -564,17 +581,13 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
             viewer_version = recipe_viewer_version(target, "emi", minimum_recipe_viewer)
             module = "emi-" + target["loader"]
             url = "https://maven.terraformersmc.com/releases/dev/emi/" + module + "/" + viewer_version + "/" + module + "-" + viewer_version + ".jar"
-        saved = ROOT / ".cache/recipe-viewers" / (module + "-" + viewer_version + ".jar")
-        saved.parent.mkdir(parents=True, exist_ok=True)
-        if not saved.exists():
-            with urllib.request.urlopen(url, timeout=60) as response:
-                payload = response.read(64 * 1024 * 1024 + 1)
-            if len(payload) > 64 * 1024 * 1024: raise ValueError("Recipe viewer input exceeds its bound")
-            saved.write_bytes(payload)
-        if saved.is_symlink() or not saved.is_file() or saved.stat().st_size > 64 * 1024 * 1024:
-            raise ValueError("Recipe viewer input is not a bounded original file")
-        viewer_inputs.append({"provider": provider, "module": module, "version": viewer_version, "url": url,
-                              "sha256": hashlib.sha256(saved.read_bytes()).hexdigest(), "path": str(saved.relative_to(ROOT))})
+        viewer_inputs.append({"provider": provider, **recipe_original(module, viewer_version, url)})
+    viewer_companion = None
+    if recipe_viewer in ("jei", "both") and target.get("jeiConfigVersion"):
+        module = "mezz_config-" + target["minecraftVersion"] + "-" + target["loader"]
+        pin = target["jeiConfigVersion"]
+        url = "https://maven.blamejared.com/net/mezzdev/config/" + module + "/" + pin + "/" + module + "-" + pin + ".jar"
+        viewer_companion = recipe_original(module, pin, url)
     viewer_input = ({"provider": "both", "inputs": viewer_inputs} if recipe_viewer == "both"
                     else viewer_inputs[0] if viewer_inputs else None)
     library = select_library(ROOT, project, version)
@@ -630,7 +643,9 @@ def run(project, java_home, timeout, version=None, tested_loader=False, client=F
                   if recipe_viewer == "both" else viewer_input["sha256"])
         command.extend(["-PwithRecipeViewer=" + recipe_viewer, "-PviewerSha256=" + hashes])
         command.append("-PminimumRecipeViewer=" + str(minimum_recipe_viewer).lower())
-    report = {"isolatedScene": isolated_scene, "nativeRecipeClient": native_recipe_client, "recipeLinksClient": recipe_links_client, "recipeViewer": viewer_input, "minimumRecipeViewer": minimum_recipe_viewer, "status": "FAIL", "target": target, "version": library.version, "sha256": library.sha256,
+    if viewer_companion:
+        command.append("-PviewerCompanionSha256=" + viewer_companion["sha256"])
+    report = {"isolatedScene": isolated_scene, "nativeRecipeClient": native_recipe_client, "recipeLinksClient": recipe_links_client, "recipeViewer": viewer_input, "recipeViewerCompanion": viewer_companion, "minimumRecipeViewer": minimum_recipe_viewer, "status": "FAIL", "target": target, "version": library.version, "sha256": library.sha256,
               "launch": "Independent addon source container; verified Maven library; no library source roots",
               "loaderRole": role, "loaderVersion": loader_version, "mode": "client" if client else "dedicated", "syncedWorldOverride": synced_override, "worldClient": world_client, "recipeClient": recipe_client, "authoringClient": authoring_client, "chooserClient": chooser_client, "commandClient": command_client, "workspaceClient": workspace_client, "workflowClient": workflow_client, "modMenu": mod_menu, "connector": connector, "initializationFailure": initialization_failure, "boots": [],
               "sources": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
