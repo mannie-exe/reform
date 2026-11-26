@@ -58,7 +58,8 @@
       "loaderUpperBound": "26.4",
       "fmlVersionRange": "[12,13)",
       "remapMinecraft": false,
-      "jeiVersionRef": "jei-26_3"
+      "jeiVersionRef": "jei-26_3",
+      "jeiConfigVersionRef": "mezz-config-26_3"
     },
     {
       "project": "fabric-26_3",
@@ -74,7 +75,8 @@
       "remapMinecraft": false,
       "developmentNamespace": "official",
       "productionNamespace": "official",
-      "jeiVersionRef": "jei-26_3"
+      "jeiVersionRef": "jei-26_3",
+      "jeiConfigVersionRef": "mezz-config-26_3"
     }
   ]
 }
