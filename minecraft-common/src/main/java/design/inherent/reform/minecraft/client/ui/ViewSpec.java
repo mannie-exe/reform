@@ -99,6 +99,23 @@ public sealed interface ViewSpec {
     }
   }
 
+  /**
+   * Authored command/disclosure triggers flow together; their effects and expanded content stay
+   * independent.
+   */
+  record Actions(String key, List<ViewSpec> children) implements ViewSpec {
+    public Actions {
+      key = identity(key);
+      children = ordered(children);
+      if (children.isEmpty()
+          || children.size() > 32
+          || children.stream()
+              .anyMatch(child -> !(child instanceof Action || child instanceof Disclosure)))
+        throw new IllegalArgumentException(
+            "An action row needs one to 32 action or disclosure parts");
+    }
+  }
+
   record Section(String key, UiText title, List<ViewSpec> children) implements ViewSpec {
     public Section {
       key = identity(key);

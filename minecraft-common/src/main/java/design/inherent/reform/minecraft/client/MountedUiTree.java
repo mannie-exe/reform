@@ -69,7 +69,31 @@ final class MountedUiTree implements AutoCloseable {
     CLOSE
   }
 
-  record Row(Node node, Kind kind, Component label, Component body, UiAvailability availability) {}
+  record Row(
+      Node node,
+      Kind kind,
+      Component label,
+      Component body,
+      UiAvailability availability,
+      Node flow,
+      boolean sectionAfter,
+      Object projection) {
+    Row(Node node, Kind kind, Component label, Component body, UiAvailability availability) {
+      this(node, kind, label, body, availability, null, false, new Object());
+    }
+
+    Row withFlow(Node owner) {
+      return new Row(node, kind, label, body, availability, owner, sectionAfter, projection);
+    }
+
+    Row endDisclosure() {
+      return new Row(node, kind, label, body, availability, flow, true, projection);
+    }
+
+    Row blocked(UiAvailability unavailable) {
+      return new Row(node, kind, label, body, unavailable, flow, sectionAfter, projection);
+    }
+  }
 
   private record Keyed<I>(String key, ViewStateKey.Snapshot<I> value) {}
 
@@ -372,6 +396,7 @@ final class MountedUiTree implements AutoCloseable {
           case ViewSpec.FieldSurface surface ->
               children.add(new Node(surface.surface().content(), scope));
           case ViewSpec.Column column -> construct(column.children());
+          case ViewSpec.Actions actions -> construct(actions.children());
           case ViewSpec.Section section -> construct(section.children());
           case ViewSpec.Component<?> component -> children.add(component(component));
           case ViewSpec.ForEach<?> each -> repeated = new ForMount<>(this, each);
@@ -692,6 +717,10 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     void rows(List<Row> into, UiAvailability inherited) {
+      rows(into, inherited, null);
+    }
+
+    void rows(List<Row> into, UiAvailability inherited, Node flow) {
       var childrenAvailability = inherited;
       if (repeated != null && repeated.problem != null) {
         var diagnosis = diagnostic(repeated.problem);
@@ -715,9 +744,10 @@ final class MountedUiTree implements AutoCloseable {
                 || current.kind() == Kind.COMPLETION)
             && !inherited.available())
           current = new Row(this, current.kind(), current.label(), current.body(), inherited);
-        into.add(current);
+        into.add(current.withFlow(flow));
       }
-      for (var child : children) child.rows(into, childrenAvailability);
+      for (var child : children)
+        child.rows(into, childrenAvailability, spec instanceof ViewSpec.Actions ? this : null);
       if (spec instanceof ViewSpec.Disclosure) {
         if (expanded) {
           if (disclosureFailure != null)
@@ -736,9 +766,12 @@ final class MountedUiTree implements AutoCloseable {
                     || row.kind() == Kind.FIELD
                     || row.kind() == Kind.CHOICE_LIST
                     || row.kind() == Kind.QUERY_INPUT
-                    || row.kind() == Kind.COMPLETION))
-              row = new Row(row.node(), row.kind(), row.label(), row.body(), childrenAvailability);
+                    || row.kind() == Kind.COMPLETION)) row = row.blocked(childrenAvailability);
             into.add(row);
+          }
+          if (!disclosureRows.isEmpty()) {
+            int last = into.size() - 1;
+            into.set(last, into.get(last).endDisclosure());
           }
         }
       } else if (branch != null) branch.rows(into, childrenAvailability);
@@ -1043,6 +1076,11 @@ final class MountedUiTree implements AutoCloseable {
                 var current = new ArrayList<Row>();
                 tree.rows(current);
                 fieldParts(current);
+                // Geometry decoration must not retire an unchanged action/read projection.
+                // The projection token still changes when its actual declared reads change.
+                var prior = new java.util.HashMap<Row, Row>();
+                for (var row : rows) prior.put(row, row);
+                current.replaceAll(row -> prior.getOrDefault(row, row));
                 return List.copyOf(current);
               });
       failure = null;
@@ -1077,7 +1115,7 @@ final class MountedUiTree implements AutoCloseable {
                               || row.kind() == Kind.CHOICE_LIST
                               || row.kind() == Kind.QUERY_INPUT
                               || row.kind() == Kind.COMPLETION)
-                          ? new Row(row.node(), row.kind(), row.label(), row.body(), blocked)
+                          ? row.blocked(blocked)
                           : row)
               .toList();
     }
@@ -1160,7 +1198,16 @@ final class MountedUiTree implements AutoCloseable {
                       ? refused.report()
                       : ValidationReport.VALID));
     tree.focusRedirects(panel);
+    Node flow = null;
+    var flowParts = new ArrayList<FormPanel.ActionPart>();
     for (var row : rows) {
+      if (row.flow() != flow || (row.kind() != Kind.ACTION && row.kind() != Kind.DISCLOSURE)) {
+        if (!flowParts.isEmpty()) {
+          panel.actionFlow(flow.id, flowParts);
+          flowParts.clear();
+        }
+        flow = row.flow();
+      }
       switch (row.kind()) {
         case SURFACE -> {} // Ownership/semantics marker; its children supply the actual surface.
         case COMPLETION -> {
@@ -1286,7 +1333,7 @@ final class MountedUiTree implements AutoCloseable {
           if (!row.availability().available()) join(help, report(row.availability().report()));
           if (node.lastResult instanceof UiActionResult.Refused refused)
             join(help, report(refused.report()));
-          panel.field(node.id, row.label(), help, widget);
+          panel.blockField(node.id, row.label(), help, widget);
         }
         case QUERY_INPUT -> {
           var node = row.node();
@@ -1321,7 +1368,7 @@ final class MountedUiTree implements AutoCloseable {
           if (!row.availability().available()) join(help, report(row.availability().report()));
           if (node.lastResult instanceof UiActionResult.Refused refused)
             join(help, report(refused.report()));
-          panel.field(node.id, row.label(), help, widget);
+          panel.blockField(node.id, row.label(), help, widget);
         }
         case OPEN -> panel.beginGroup(row.node().id, row.label());
         case CLOSE -> panel.endGroup();
@@ -1347,7 +1394,7 @@ final class MountedUiTree implements AutoCloseable {
                               return;
                             }
                             if (!row.availability().available()) return;
-                            panel.restoreFocus(row.node().id);
+                            panel.restoreFocus(row.node().id + "/0");
                             focusForAction.run();
                             invoke(row.node());
                             if (root.isOpen()) changed.run();
@@ -1371,10 +1418,19 @@ final class MountedUiTree implements AutoCloseable {
               failure == null && row.node().scope.isOpen() && row.availability().available();
           if (!row.availability().available())
             button.setTooltip(Tooltip.create(report(row.availability().report())));
-          panel.row(row.node().id, Component.empty(), body, button);
+          if (flow != null) flowParts.add(new FormPanel.ActionPart(row.node().id, button, body));
+          else panel.row(row.node().id, Component.empty(), body, button);
         }
       }
+      if (row.sectionAfter() && row.kind() != Kind.CLOSE) {
+        if (!flowParts.isEmpty()) {
+          panel.actionFlow(flow.id, flowParts);
+          flowParts.clear();
+        }
+        panel.sectionGap();
+      }
     }
+    if (!flowParts.isEmpty()) panel.actionFlow(flow.id, flowParts);
   }
 
   private boolean retainedChoice(

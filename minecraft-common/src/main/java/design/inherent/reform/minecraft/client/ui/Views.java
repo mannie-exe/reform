@@ -26,6 +26,10 @@ public final class Views {
     return new ViewSpec.Column(key, children);
   }
 
+  public static ViewSpec actions(String key, List<ViewSpec> children) {
+    return new ViewSpec.Actions(key, children);
+  }
+
   public static ViewSpec section(String key, UiText title, List<ViewSpec> children) {
     return new ViewSpec.Section(key, title, children);
   }

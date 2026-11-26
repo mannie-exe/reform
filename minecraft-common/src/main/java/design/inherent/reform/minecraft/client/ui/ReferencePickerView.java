@@ -236,22 +236,26 @@ public final class ReferencePickerView {
             "inspection",
             UiText.from(state, ReferencePickerView::inspectionTitle),
             UiText.from(state, ReferencePickerView::inspectionStatus)));
+    var selectionActions = new ArrayList<ViewSpec>();
     if (fixedRole.isEmpty())
       for (var role : presentation.roles())
-        children.add(
+        selectionActions.add(
             Views.action(
                 "use-" + role.role().id(),
                 role.label(),
                 UiText.of(Component.empty()),
                 picker.acceptInspected(role.role())));
+    if (!selectionActions.isEmpty())
+      children.add(Views.actions("selection-actions", selectionActions));
+    var browserActions = new ArrayList<ViewSpec>();
     // Continuations also remain reachable when a filtered scan returns an empty intermediate page.
-    children.add(
+    browserActions.add(
         Views.action(
             "continue",
             UiText.of(Component.translatableWithFallback("reform.ui.more_choices", "More choices")),
             UiText.of(Component.empty()),
             picker.nextPage()));
-    children.add(
+    browserActions.add(
         Views.action(
             "refresh",
             UiText.of(
@@ -262,7 +266,7 @@ public final class ReferencePickerView {
         scope.local(
             new ViewStateKey<>(DocumentId.parse("reform:picker_details_open"), ValueTypes.bool()),
             false);
-    children.add(
+    browserActions.add(
         Views.disclosure(
             "source-details",
             UiBindings.local(detailsOpen),
@@ -303,6 +307,7 @@ public final class ReferencePickerView {
                               UiText.of(Component.empty()),
                               UiText.from(blocks, values -> Component.literal(values.get(index)))));
                 })));
+    children.add(Views.actions("browser-actions", browserActions));
     return Views.managed(
         "picker-interest",
         new UiMountLifecycle() {

@@ -153,7 +153,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
   private byte[] bytes;
   private BasicFileAttributes attrs;
   private int stage, factories, pagingPass, baselineSearches, sourceReturns;
-  private boolean pickerReturnVerified, pickerFocusOverrideVerified;
+  private boolean pickerReturnVerified, pickerFocusOverrideVerified, sourceDetailsReturnVerified;
+  private final JsonArray bodyObservations = new JsonArray();
   private final JsonArray headerObservations = new JsonArray();
   private List<Integer> wideHistoryBounds;
   private PickerState returnBefore;
@@ -756,12 +757,26 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         if (state.searching() != PickerState.Phase.READY || state.window().choices().size() != 5)
           return false;
         key("end");
+        press("Show Source details");
+        frames = PlatformFrameObservations.sequence();
+        stage = 1121;
+      }
+      case 1121 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4) return false;
+        check(
+            "source disclosure exposes its original active trigger",
+            button(workflow.screen(), "Hide Source details").active);
+        check(
+            "source inspection does not change accepted profile fields",
+            raw("models").equals(id(3)) && raw("artwork").equals(id(0)));
+        check("list regains native focus after opening details", focus(workflow.screen(), list()));
         frames = PlatformFrameObservations.sequence();
         stage = 112;
       }
       case 112 -> {
         if (PlatformFrameObservations.sequence() - frames < 4) return false;
         observeHeader("task-before", false);
+        observeBody("task-before", false);
         returnBefore = taskState();
         returnList = list();
         returnQuery = search();
@@ -894,6 +909,15 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         returnFacts.addProperty("listFocused", list().isFocused());
         unchanged();
         observeHeader("task-returned", false);
+        observeBody("task-returned", false);
+        check(
+            "source details remains expanded across the actual Home return",
+            button(workflow.screen(), "Hide Source details").active);
+        sourceDetailsReturnVerified = true;
+        press("Hide Source details");
+        check(
+            "list keeps its actual focus route after closing details",
+            focus(workflow.screen(), list()));
         pickerReturnVerified = true;
         returnBookmark = workflow.navigation().bookmark();
         driver.capture("pickers-task-returned.png", () -> open(new ClientDestination.Home(), 632));
@@ -1018,6 +1042,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                 && raw("artwork").equals(id(1))
                 && expanded.snapshot().value());
         observeHeader("inline-narrow", true);
+        observeBody("inline-narrow", true);
         driver.capture(
             "pickers-narrow.png",
             () -> {
@@ -1031,6 +1056,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
         NativeClientProbe.size(client, w, h);
         if (w[0] != width[0] || h[0] != height[0] || !editor.canSubmit()) return false;
         observeHeader("inline-returned", false);
+        observeBody("inline-returned", false);
         press("Show Artwork ID");
         stage = 24;
       }
@@ -1347,6 +1373,7 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
                         editor.view().snapshot().orElseThrow()))
                 && raw("artwork").equals("fixture:unlisted"));
         observeHeader("inline-returned", false);
+        observeBody("inline-returned", false);
         press("Show Artwork ID");
         stage = 27;
       }
@@ -1700,6 +1727,51 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     return "shared picker stage=" + stage;
   }
 
+  private void observeBody(String phase, boolean compact) {
+    var viewport = list();
+    var query = search();
+    check(
+        "list and query share the same complete labelled block width: " + phase,
+        viewport.getX() == query.getX() && viewport.getWidth() == query.getWidth());
+    check(
+        "list precedes its search input in native reading geometry: " + phase,
+        viewport.getBottom() < query.getY());
+    var facts = new JsonObject();
+    facts.addProperty("phase", phase);
+    facts.addProperty("compact", compact);
+    facts.add(
+        "list",
+        new Gson()
+            .toJsonTree(
+                List.of(
+                    viewport.getX(), viewport.getY(), viewport.getWidth(), viewport.getHeight())));
+    facts.add(
+        "query",
+        new Gson()
+            .toJsonTree(List.of(query.getX(), query.getY(), query.getWidth(), query.getHeight())));
+    if (phase.startsWith("task")) {
+      var models = button(workflow.screen(), "Use for Models");
+      var artwork = button(workflow.screen(), "Use for Artwork");
+      check(
+          "wide role actions share a bounded-gap row without merged effects: " + phase,
+          models.getY() == artwork.getY()
+              && artwork.getX() >= models.getRight()
+              && artwork.getX() - models.getRight() <= 8);
+      facts.add(
+          "roleActions",
+          new Gson()
+              .toJsonTree(
+                  List.of(
+                      models.getX(),
+                      models.getY(),
+                      models.getWidth(),
+                      artwork.getX(),
+                      artwork.getY(),
+                      artwork.getWidth())));
+    }
+    bodyObservations.add(facts);
+  }
+
   private void observeHeader(String phase, boolean compact) {
     var buttons =
         widgets(workflow.screen()).stream()
@@ -1776,6 +1848,8 @@ final class PlatformPickerChecks implements PlatformFormProbe.Scene {
     out.addProperty("pickerFocusOverrideVerified", pickerFocusOverrideVerified);
     out.add("pickerReturn", returnFacts.deepCopy());
     out.add("headerObservations", headerObservations.deepCopy());
+    out.add("bodyObservations", bodyObservations.deepCopy());
+    out.addProperty("sourceDetailsReturnVerified", sourceDetailsReturnVerified);
     out.addProperty("completionVerified", completionVerified);
     out.addProperty("completionDismissed", completionDismissed);
     out.addProperty("completionBlur", completionBlur);

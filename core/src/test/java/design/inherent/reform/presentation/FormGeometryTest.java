@@ -7,6 +7,32 @@ import org.junit.jupiter.api.Test;
 
 class FormGeometryTest {
   @Test
+  void labelledBlocksFillTheirOfferWhileActionRowsKeepIntrinsicWidthsAndBoundedGaps() {
+    var controls = List.of(new FormGeometry.Size(80, 20));
+    var block = FormGeometry.blockTracks(400, controls, 4, java.util.Set.of(), true);
+    assertEquals(400, block.textWidth());
+    assertEquals(0, block.controlsX());
+    assertTrue(block.stacked());
+    assertEquals(
+        new FormGeometry.Placement(0, 0, 400, 20), block.controls().placements().getFirst());
+    assertEquals(80, controls.getFirst().width(), "Placement cannot mutate the intrinsic offer");
+    var actions = List.of(new FormGeometry.Size(80, 20), new FormGeometry.Size(120, 20));
+    var wide = FormGeometry.blockTracks(600, actions, 4, java.util.Set.of(), false);
+    assertEquals(new FormGeometry.Placement(84, 0, 120, 20), wide.controls().placements().get(1));
+    var narrow = FormGeometry.blockTracks(150, actions, 4, java.util.Set.of(), false);
+    assertEquals(new FormGeometry.Placement(0, 24, 120, 20), narrow.controls().placements().get(1));
+    assertEquals(44, narrow.controls().height());
+    for (int width : List.of(1, 80, 150, 204, 600, Integer.MAX_VALUE)) {
+      var placed = FormGeometry.blockTracks(width, actions, 4, java.util.Set.of(), false);
+      assertTrue(
+          placed.controls().placements().stream().allMatch(p -> (long) p.x() + p.width() <= width));
+    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> FormGeometry.blockTracks(0, controls, 4, java.util.Set.of(), true));
+  }
+
+  @Test
   void themedRegionsAndControlFlowUseTheSameExplicitGaps() {
     var theme =
         ThemeScope.root(

@@ -274,6 +274,17 @@ public final class FormGeometry {
   /** Content constraints decide inline versus stacked; an absent label consumes no track. */
   public record FieldTracks(int textWidth, int controlsX, boolean stacked, Controls controls) {}
 
+  /** A labelled block uses one content width; a single primary control may fill that width. */
+  public static FieldTracks blockTracks(
+      int width, List<Size> sizes, int gap, Set<Integer> joinedAfter, boolean fillSingle) {
+    if (width < 1) throw new IllegalArgumentException("Invalid block width");
+    var offered =
+        fillSingle && sizes.size() == 1
+            ? List.of(new Size(width, sizes.getFirst().height()))
+            : sizes;
+    return new FieldTracks(width, 0, true, controls(offered, width, gap, joinedAfter));
+  }
+
   public static FieldTracks fieldTracks(int width, int textMinimum, List<Size> controls, int gap) {
     return fieldTracks(width, textMinimum, controls, gap, Set.of());
   }

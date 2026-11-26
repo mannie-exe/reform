@@ -383,6 +383,53 @@ final class FormPanel extends ScrollFrame {
     rows.add(row(key, label, summary, List.of(controls), false, key, false, 0, null));
   }
 
+  private final java.util.Map<Row, Boolean> blocks = new java.util.IdentityHashMap<>();
+  private final java.util.Map<Row, Integer> gaps = new java.util.IdentityHashMap<>();
+  private final java.util.Map<AbstractWidget, String> controlIds =
+      new java.util.IdentityHashMap<>();
+  private final java.util.Map<AbstractWidget, Component> controlHelp =
+      new java.util.IdentityHashMap<>();
+
+  void blockField(String key, Component label, Component summary, AbstractWidget... controls) {
+    var block = row(key, label, summary, List.of(controls), false, key, true, 0, null);
+    rows.add(block);
+    blocks.put(block, true);
+  }
+
+  record ActionPart(String key, AbstractWidget control, Component help) {}
+
+  void actionFlow(String key, List<ActionPart> parts) {
+    var summary = Component.empty();
+    for (var part : parts) {
+      controlIds.put(part.control(), part.key());
+      controlHelp.put(part.control(), part.help().copy());
+      if (!part.help().getString().isBlank()) {
+        if (!summary.getString().isEmpty()) summary.append("\n");
+        summary.append(part.control().getMessage()).append(": ").append(part.help());
+      }
+    }
+    var block =
+        row(
+            key,
+            Component.empty(),
+            summary,
+            parts.stream().map(ActionPart::control).toList(),
+            false,
+            key,
+            false,
+            0,
+            null);
+    rows.add(block);
+    blocks.put(block, false);
+  }
+
+  void sectionGap() {
+    var gap =
+        row(null, Component.empty(), Component.empty(), List.of(), false, null, false, 0, null);
+    rows.add(gap);
+    gaps.put(gap, currentTheme.values().value(ThemeValues.Role.SPACE_SECTION));
+  }
+
   void field(String key, Component label, Component summary, AbstractWidget... controls) {
     relatedField(key, null, label, summary, controls);
   }
@@ -689,6 +736,10 @@ final class FormPanel extends ScrollFrame {
                 Math.max(0, Math.min(wrap - edge * 2 - 16, client.font.width(row.label))),
                 row.theme));
       }
+      if (gaps.containsKey(row)) {
+        y = Math.addExact(y, gaps.get(row));
+        continue;
+      }
       if (row.boundary == -1) {
         if (frames.isEmpty()) throw new IllegalStateException("Unmatched settings group");
         y += 2;
@@ -914,13 +965,20 @@ final class FormPanel extends ScrollFrame {
                     Math.max(client.font.width(row.label), client.font.width(row.summary))));
     var joined = joins(row);
     var tracks =
-        FormGeometry.fieldTracks(
-            wrap,
-            preferredText,
-            row.preferred,
-            row.theme.values().value(ThemeValues.Role.SPACE_CONTENT),
-            joined,
-            row.theme.values().value(ThemeValues.Role.SPACE_INLINE));
+        blocks.containsKey(row)
+            ? FormGeometry.blockTracks(
+                wrap,
+                row.preferred,
+                row.theme.values().value(ThemeValues.Role.SPACE_INLINE),
+                joined,
+                blocks.get(row))
+            : FormGeometry.fieldTracks(
+                wrap,
+                preferredText,
+                row.preferred,
+                row.theme.values().value(ThemeValues.Role.SPACE_CONTENT),
+                joined,
+                row.theme.values().value(ThemeValues.Role.SPACE_INLINE));
     var text = textMeasure(row, Math.max(1, tracks.textWidth()));
     if (row.field && !tracks.stacked() && !row.controls.isEmpty()) {
       var alternative = textMeasure(row, wrap);
@@ -969,12 +1027,16 @@ final class FormPanel extends ScrollFrame {
       var at = controlLayout.placements().get(index);
       ControlSizing.resize(widget, at.width());
       widget.setHeight(at.height());
+      var controlId = controlIds.get(widget);
+      if (controlId != null) sections.add(controlId, actionY + at.y());
       positions.add(
           new Positioned(
               widget,
               left + start + at.x(),
               actionY + at.y(),
-              row.key == null ? null : row.key + "/" + index));
+              controlId != null
+                  ? controlId + "/0"
+                  : row.key == null ? null : row.key + "/" + index));
     }
     layout.add(
         new Layout(
@@ -1186,7 +1248,7 @@ final class FormPanel extends ScrollFrame {
               .findFirst()
               .orElse(null);
       if (row != null) {
-        Component help = row.summary;
+        Component help = controlHelp.getOrDefault(widget, row.summary);
         if (help.getString().isEmpty() && row.key != null) {
           // Collection controls inherit the authored field description, not a neighboring row.
           var parent =

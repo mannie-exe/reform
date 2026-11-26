@@ -24,6 +24,130 @@ import org.junit.jupiter.api.Test;
  * Model/projection lifecycle under each actual target classpath; not native paint qualification.
  */
 class MountedUiTreeTest {
+  @Test
+  void actionFlowKeepsIndependentCommandsStableIdentityAndDisclosureReadingOrder() {
+    try (var owner = host()) {
+      var label = new AtomicReference<UiLocal<String>>();
+      var unrelated = new AtomicReference<UiLocal<String>>();
+      var expanded = new AtomicReference<UiLocal<Boolean>>();
+      var calls = new AtomicInteger();
+      var command =
+          new design.inherent.reform.presentation.ui.UiCommand<Void>() {
+            public design.inherent.reform.presentation.ui.UiAvailability availability() {
+              return design.inherent.reform.presentation.ui.UiAvailability.READY;
+            }
+
+            public design.inherent.reform.presentation.ui.UiActionResult invoke(Void ignored) {
+              calls.incrementAndGet();
+              return new design.inherent.reform.presentation.ui.UiActionResult.Applied();
+            }
+          };
+      try (var tree =
+          MountedUiTree.open(
+              ClientViewContext.borrow(owner),
+              UiLimits.STANDARD,
+              (scope, props) -> {
+                label.set(scope.local(textKey("flow_label"), "Inspect"));
+                unrelated.set(scope.local(textKey("flow_unrelated"), "Unchanged"));
+                expanded.set(
+                    scope.local(
+                        new ViewStateKey<>(
+                            DocumentId.parse("example:flow_open"), ValueTypes.bool()),
+                        false));
+                return Views.actions(
+                    "actions",
+                    List.of(
+                        Views.action(
+                            "inspect",
+                            UiText.from(label.get(), Component::literal),
+                            UiText.of(Component.literal("Inspect this selection.")),
+                            command),
+                        Views.disclosure(
+                            "source",
+                            design.inherent.reform.presentation.ui.UiBindings.local(expanded.get()),
+                            design.inherent.reform.minecraft.client.ui.DisclosureParts.retained(
+                                UiText.of(Component.literal("Source")),
+                                UiText.of(Component.empty()),
+                                UiText.of(Component.empty()),
+                                branch ->
+                                    Views.text(
+                                        "details",
+                                        Component.empty(),
+                                        Component.literal("Exact source facts"))))));
+              },
+              "fixed")) {
+        var first = tree.snapshot().getFirst();
+        var second = tree.snapshot().getLast();
+        assertSame(first.flow(), second.flow());
+        assertNotNull(first.flow());
+        assertEquals(
+            List.of("Inspect", "Show Source"),
+            tree.snapshot().stream().map(r -> r.label().getString()).toList());
+        unrelated.get().replace("New unrelated value");
+        tree.refresh(false);
+        assertSame(
+            first,
+            tree.snapshot().getFirst(),
+            "Geometry decoration cannot invalidate unchanged action input");
+        assertSame(second, tree.snapshot().getLast());
+        expanded.get().replace(true);
+        tree.refresh(false);
+        var detail = tree.snapshot().getLast();
+        assertNull(detail.flow(), "Expanded source content stays after its trigger row");
+        assertTrue(detail.sectionAfter());
+        assertEquals("Exact source facts", detail.body().getString());
+        assertSame(first, tree.snapshot().getFirst());
+        label.get().replace("Inspect current selection");
+        tree.refresh(false);
+        assertNotSame(
+            first,
+            tree.snapshot().getFirst(),
+            "Changed declared input retires the previous action offer");
+        assertSame(first.node(), tree.snapshot().getFirst().node());
+        assertEquals(0, calls.get(), "Layout and projection cannot invoke an action");
+      }
+    }
+  }
+
+  @Test
+  void actionFlowRejectsAmbiguousPartsAndDuplicateIdentitiesInsteadOfDroppingThem() {
+    var text = Views.text("text", Component.empty(), Component.literal("Description"));
+    assertThrows(IllegalArgumentException.class, () -> Views.actions("actions", List.of(text)));
+    assertThrows(IllegalArgumentException.class, () -> Views.actions("actions", List.of()));
+    var action =
+        Views.disclosure(
+            "source",
+            new design.inherent.reform.presentation.ui.UiBinding<Boolean>() {
+              public design.inherent.reform.presentation.ui.UiRead<Boolean> value() {
+                throw new AssertionError("No source admission during declaration");
+              }
+
+              public design.inherent.reform.presentation.ui.UiCommand<Boolean> changes() {
+                throw new AssertionError("No commands during declaration");
+              }
+            },
+            design.inherent.reform.minecraft.client.ui.DisclosureParts.retained(
+                UiText.of(Component.literal("Source")),
+                UiText.of(Component.empty()),
+                UiText.of(Component.empty()),
+                scope -> text));
+    assertThrows(
+        IllegalArgumentException.class, () -> Views.actions("actions", List.of(action, action)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            Views.actions(
+                "actions",
+                java.util.stream.IntStream.range(0, 33)
+                    .mapToObj(
+                        i ->
+                            Views.disclosure(
+                                "source-" + i,
+                                ((ViewSpec.Disclosure) action).expanded(),
+                                ((ViewSpec.Disclosure) action).parts()))
+                    .toList()));
+  }
+
   private static OwnerContext host() {
     return new OwnerContext(Runnable::run, Runnable::run, () -> {}, OwnerContext.Limits.STANDARD);
   }

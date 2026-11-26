@@ -119,6 +119,9 @@ class ReferencePickerViewTest {
         var section = assertInstanceOf(ViewSpec.Section.class, managed.content());
         var details =
             section.children().stream()
+                .filter(ViewSpec.Actions.class::isInstance)
+                .map(ViewSpec.Actions.class::cast)
+                .flatMap(actionsRow -> actionsRow.children().stream())
                 .filter(ViewSpec.Disclosure.class::isInstance)
                 .map(ViewSpec.Disclosure.class::cast)
                 .findFirst()
