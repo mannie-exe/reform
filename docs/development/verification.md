@@ -1,5 +1,17 @@
 # Verification
 
+## 0.4 release stabilization
+
+The progressive release cutoff uses the implemented dev.140 API and current production consumer bindings. The complete revised semantic program remains active; this cutoff does not claim completion of all 54 obligations or deferred capabilities. All four shared section/View initial-and-reopen pairs pass eight normal exits on dev.140. Styled semantic consumer 2 separately passes four initial clients with exact draft and read-only audition inputs, real domain draws, independent retained cameras, unchanged source, and zero charged preview resources after Home and close. Compat consumer 3 qualifies its minimum workspace, operations, current-pack title Configure/save/reopen, and separately authored input cohort. Its title-only current-pack result does not establish world lifecycle behavior.
+
+Optional-viewer qualification retains the four dev.139 old/new JEI pairs on both 1.21.1 loaders. Dev.140 adds Fabric 1.21.1 held JEI/EMI coexistence and both 26.3 selected JEI pairs with the required Mezz Config companion. Each pair exits normally twice. Exact embedded mod versions are checked independently of Maven versions, and copied runtime archives and public class-resource witnesses remain separate from original Maven inputs.
+
+NeoForge 1.21.1 has retained intermittent reopened-world unload failures. Both a held JEI/EMI run and a no-viewer control reach a native `ChunkMap.scheduleUnload`/`processUnloads` loop at the unchanged 240-second bound. Queuing disconnect outside the observer tick is confirmed by a thread snapshot but does not eliminate the failure. Later no-viewer and held JEI/EMI pairs on the null-safe passive observer each pass two normal exits, with seventeen and forty-eight checks per boot respectively. No blocked-readiness samples occur in those positives. These results do not establish a causal repair or universal shutdown reliability; the original failures remain unresolved and attributed to their exact native context.
+
+One diagnostic attempt incorrectly assumed every native generation-status entry had a future. Its observer exception invalidates that attempt for shutdown attribution. The corrected observer records absent futures and contains its own failures without changing native futures, chunks, or scheduling. It samples at most twice per native map. No library product bytes change for these fixture corrections, and no timeouts or original recipe/source/inventory assertions are relaxed.
+
+Independent readback rehashes Styled's eight clean-source replica archives and source tar, and Compat's engineering handoff with nineteen directly referenced proofs. Existing clean-source dev.140 reproduction yields twelve identical Maven artifacts. These local development results do not certify the eventual stable coordinate, hosted checks, or public dependency resolution; those remain separate delivery checks.
+
 ## Revised 0.4: shared component foundation
 
 The revised semantic interaction work supersedes the earlier UX acceptance below. Dev.99 implements bounded scoped state, cached declared reads, conditional components, and guarded actions through one native component model. `ClientCustomView.component` mounts that model within the existing workflow; `ClientUiMount` mounts it in a caller-owned screen without creating a document, workflow, executor, or persistence path. These are implemented foundations, not completion of the revised candidate.

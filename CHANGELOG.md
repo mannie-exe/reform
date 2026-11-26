@@ -1,10 +1,13 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 (release preparation)
 
 - Add a stable composable header, lazy Home, typed destinations, ancestry, history, and retained navigation bookmarks. Navigation follows the authored form order without changing codec field order.
 - Arrange choosers, inspection, and operation results beside their primary content when measured space permits, with a focused layout for compact offers. Preserve native input, selection, focus, disclosure, and scroll state through reflow.
 - Expose scoped semantic themes, component variants, native control adapters, and optional field eyebrows, leading artwork, and backgrounds over the existing editor.
+- Add opt-in scoped state, guarded flow control, caller-owned component mounts, canonical field sections, bounded inline selectors, and native ID completion over the retained editor.
+- Declare typed read-only audition inputs, factored preview subjects, coalesced automatic preview updates, and independent retained cameras without staging audition values.
+- Admit the supported older JEI API alongside selected JEI and EMI runtimes, retaining exact loader versions and required viewer companions.
 - Add shared searchable reference tasks with independent guarded field choices and explicit full-draft previews. Keep inspection separate from selection, saving, and resource application.
 - Prepare bounded still images, sprites, copied items, block states, chest references, curated entities, and consumer meshes outside ordinary rendering. Retire native resources after their actual submitted uses, with explicit cancellation, source stamps, and failure accounting.
 - Offer optional view-only recipe links through admitted native or installed viewers, preserving the originating workflow and game inventory.
