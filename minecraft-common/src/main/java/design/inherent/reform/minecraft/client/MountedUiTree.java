@@ -62,6 +62,8 @@ final class MountedUiTree implements AutoCloseable {
     DISCLOSURE,
     CHOICE_LIST,
     QUERY_INPUT,
+    TOGGLE,
+    PREVIEW,
     COMPLETION,
     SURFACE,
     FIELD,
@@ -308,6 +310,8 @@ final class MountedUiTree implements AutoCloseable {
     private java.util.Set<String> listAccepted = java.util.Set.of();
     private design.inherent.reform.presentation.ui.PickerState.Query queryValue;
     private boolean lifecycleActive;
+    private boolean toggleValue;
+    private PreviewController<?, ?>.Slot previewSlot;
     private Row cachedRow;
     private long[] observed;
 
@@ -351,6 +355,17 @@ final class MountedUiTree implements AutoCloseable {
             add(declared, parts.changes().dependencies());
             add(declared, parts.submit().dependencies());
           }
+          case ViewSpec.Toggle toggle -> {
+            var parts = toggle.parts();
+            add(declared, parts.label().dependencies());
+            add(declared, parts.help().dependencies());
+            add(declared, List.of(parts.binding().value()));
+            add(declared, parts.binding().changes().dependencies());
+          }
+          case ViewSpec.Preview preview -> {
+            add(declared, List.of(preview.controller().state()));
+            previewSlot = preview.controller().attach();
+          }
           case ViewSpec.Disclosure disclosure -> {
             disclosureCommand = UiBindings.toggle(disclosure.expanded());
             add(declared, disclosureCommand.dependencies());
@@ -378,6 +393,7 @@ final class MountedUiTree implements AutoCloseable {
         scope.onRetire(
             () -> {
               suspend();
+              if (previewSlot != null) previewSlot.close();
               if (completion != null) completion.close();
               if (listWidget != null) listWidget.clear();
               if (queryWidget != null) {
@@ -478,6 +494,7 @@ final class MountedUiTree implements AutoCloseable {
         lifecycleActive = true;
         managed.lifecycle().update();
       }
+      if (previewSlot != null) previewSlot.update();
       for (var child : children) child.updateManaged();
       if (branch != null && (!(spec instanceof ViewSpec.Disclosure) || expanded))
         branch.updateManaged();
@@ -495,6 +512,7 @@ final class MountedUiTree implements AutoCloseable {
     }
 
     void suspend() {
+      if (previewSlot != null) previewSlot.suspend();
       if (completion != null) completion.suspend();
       if (lifecycleActive && spec instanceof ViewSpec.Managed managed) {
         lifecycleActive = false;
@@ -740,6 +758,8 @@ final class MountedUiTree implements AutoCloseable {
                 || current.kind() == Kind.DISCLOSURE
                 || current.kind() == Kind.FIELD
                 || current.kind() == Kind.CHOICE_LIST
+                || current.kind() == Kind.PREVIEW
+                || current.kind() == Kind.TOGGLE
                 || current.kind() == Kind.QUERY_INPUT
                 || current.kind() == Kind.COMPLETION)
             && !inherited.available())
@@ -765,6 +785,8 @@ final class MountedUiTree implements AutoCloseable {
                     || row.kind() == Kind.DISCLOSURE
                     || row.kind() == Kind.FIELD
                     || row.kind() == Kind.CHOICE_LIST
+                    || row.kind() == Kind.PREVIEW
+                    || row.kind() == Kind.TOGGLE
                     || row.kind() == Kind.QUERY_INPUT
                     || row.kind() == Kind.COMPLETION)) row = row.blocked(childrenAvailability);
             into.add(row);
@@ -823,6 +845,23 @@ final class MountedUiTree implements AutoCloseable {
                   parts.help().resolve(),
                   parts.changes().availability());
             }
+            case ViewSpec.Toggle toggle -> {
+              var parts = toggle.parts();
+              toggleValue = parts.binding().value().snapshot().value();
+              yield new Row(
+                  this,
+                  Kind.TOGGLE,
+                  parts.label().resolve(),
+                  parts.help().resolve(),
+                  parts.binding().changes().availability());
+            }
+            case ViewSpec.Preview preview ->
+                new Row(
+                    this,
+                    Kind.PREVIEW,
+                    preview.controller().title(),
+                    Component.empty(),
+                    UiAvailability.READY);
             case ViewSpec.Disclosure disclosure -> {
               var label = disclosure.parts().label().resolve();
               var body = disclosure.parts().description().resolve().copy();
@@ -1113,6 +1152,8 @@ final class MountedUiTree implements AutoCloseable {
                               || row.kind() == Kind.DISCLOSURE
                               || row.kind() == Kind.FIELD
                               || row.kind() == Kind.CHOICE_LIST
+                              || row.kind() == Kind.PREVIEW
+                              || row.kind() == Kind.TOGGLE
                               || row.kind() == Kind.QUERY_INPUT
                               || row.kind() == Kind.COMPLETION)
                           ? row.blocked(blocked)
@@ -1334,6 +1375,55 @@ final class MountedUiTree implements AutoCloseable {
           if (node.lastResult instanceof UiActionResult.Refused refused)
             join(help, report(refused.report()));
           panel.blockField(node.id, row.label(), help, widget);
+        }
+        case TOGGLE -> {
+          var node = row.node();
+          var parts = ((ViewSpec.Toggle) node.spec).parts();
+          var widget =
+              net.minecraft.client.gui.components.Checkbox.builder(
+                      theme.text(ClientTheme.TextRole.VALUE, row.label()),
+                      Minecraft.getInstance().font)
+                  .selected(node.toggleValue)
+                  .maxWidth(Math.max(1, panel.contentWidth()))
+                  .onValueChange(
+                      (button, selected) ->
+                          dispatch(
+                              token,
+                              node,
+                              hostGuard,
+                              changed,
+                              () -> execute(node, parts.binding().changes(), selected),
+                              () ->
+                                  node.cachedRow != null
+                                      && node.cachedRow.projection() == row.projection()))
+                  .build();
+          ClientControls.theme(widget, theme);
+          widget.active = failure == null && row.availability().available();
+          var help = row.body().copy();
+          if (!row.availability().available()) join(help, report(row.availability().report()));
+          if (node.lastResult instanceof UiActionResult.Refused refused)
+            join(help, report(refused.report()));
+          panel.blockField(node.id, Component.empty(), help, widget);
+        }
+        case PREVIEW -> {
+          var slot = row.node().previewSlot;
+          if (failure != null || !row.availability().available()) {
+            slot.suspend();
+            break;
+          }
+          slot.widget()
+              .ifPresent(
+                  widget -> {
+                    int size =
+                        theme
+                            .values()
+                            .value(
+                                design.inherent.reform.presentation.ThemeValues.Role
+                                    .MEASURE_GRAPHIC_PREFERRED);
+                    ControlSizing.offer(
+                        widget, size, Math.max(1, Math.min(size, panel.visibleRowHeight())));
+                    panel.anchorRow(row.node().id, Component.empty(), Component.empty(), widget);
+                  });
         }
         case QUERY_INPUT -> {
           var node = row.node();

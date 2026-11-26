@@ -440,6 +440,28 @@ public final class ClientGraphicHost implements AutoCloseable {
               camera.panY());
     }
 
+    /** Restore explicit view-local camera state without preparing or changing a subject. */
+    public void camera(GraphicCamera camera) {
+      ClientSettingsRuntime.requireClientThread();
+      this.camera = Objects.requireNonNull(camera);
+      cameraEdited = true;
+    }
+
+    /** Recheck actual currentness on the client thread; this never captures or prepares input. */
+    public void refreshCurrentness() {
+      ClientSettingsRuntime.requireClientThread();
+      if (ended) return;
+      observeClosedLease();
+      if (!context.isOpen() || editor != null && !editor.isOpen()) {
+        close();
+        return;
+      }
+      if (latest != null && !latest.current()) {
+        invalidateCurrent();
+        closeGraphic();
+      }
+    }
+
     public void zoom(double factor) {
       ClientSettingsRuntime.requireClientThread();
       if (!Double.isFinite(factor) || factor <= 0)
@@ -968,15 +990,7 @@ public final class ClientGraphicHost implements AutoCloseable {
   private void tick() {
     if (closed) return;
     for (var view : List.copyOf(views.values())) {
-      view.observeClosedLease();
-      if (!context.isOpen() || view.editor != null && !view.editor.isOpen()) {
-        view.close();
-        continue;
-      }
-      if (view.latest != null && !view.latest.current()) {
-        view.invalidateCurrent();
-        view.closeGraphic();
-      }
+      view.refreshCurrentness();
     }
     startNext();
   }

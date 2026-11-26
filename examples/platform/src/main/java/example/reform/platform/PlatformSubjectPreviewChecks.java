@@ -1,0 +1,556 @@
+package example.reform.platform;
+
+import static example.reform.platform.PlatformWidgets.*;
+
+import com.google.gson.*;
+import design.inherent.reform.definition.*;
+import design.inherent.reform.edit.DraftRevision;
+import design.inherent.reform.minecraft.client.*;
+import design.inherent.reform.minecraft.client.ui.*;
+import design.inherent.reform.presentation.*;
+import design.inherent.reform.presentation.graphics.*;
+import design.inherent.reform.presentation.ui.*;
+import design.inherent.reform.reference.ReferenceStamp;
+import design.inherent.reform.value.*;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.*;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+/**
+ * Real native subject controls and mounted host viewport; no alternate actor/render coordinator.
+ */
+public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Scene {
+  record Subject(int container, boolean looted, boolean open) {}
+
+  record Entry(Subject subject, GraphicSourceStamp stamp, long at) {}
+
+  static final FieldKey<Integer> CONTAINER = FieldKey.of("container", ValueTypes.integer(0, 2));
+  static final FieldKey<Boolean> LOOTED = FieldKey.of("looted", ValueTypes.bool()),
+      OPEN = FieldKey.of("open", ValueTypes.bool());
+  static final ValueType<Subject> SUBJECT =
+      RecordType.<Subject>builder(v -> new Subject(v.get(CONTAINER), v.get(LOOTED), v.get(OPEN)))
+          .field(CONTAINER, Subject::container)
+          .field(LOOTED, Subject::looted)
+          .field(OPEN, Subject::open)
+          .build();
+  static final DocumentId PAGE = DocumentId.parse("fixture:semantic_preview"),
+      PROVIDER = DocumentId.parse("fixture:semantic_preview_provider");
+  private static PlatformSubjectPreviewChecks observing;
+
+  public static void draw(
+      Object graphic, Object outcome, GraphicCamera camera, int width, int height) {
+    var active = observing;
+    if (active != null
+        && graphic instanceof PreparedGraphic prepared
+        && prepared.stamp().provider().equals(PROVIDER)
+        && outcome == ClientMeshGraphic.DrawOutcome.RENDERED) {
+      active.draws++;
+      active.lastDraw = prepared.stamp();
+      active.drawCamera = camera;
+      active.viewportWidth = width;
+      active.viewportHeight = height;
+    }
+  }
+
+  static CompletionStage<JsonObject> run(ClientRegistration registration) {
+    return PlatformFormProbe.run(registration, "PREVIEWS", PlatformSubjectPreviewChecks::new);
+  }
+
+  private final PlatformFormProbe.Driver driver;
+  private final Minecraft client = Minecraft.getInstance();
+  private final Screen parent = NativeScreens.current(client);
+  private final JsonArray checks = new JsonArray();
+  private final CopyOnWriteArrayList<Entry> entries = new CopyOnWriteArrayList<>();
+  private final AtomicBoolean blockNext = new AtomicBoolean();
+  private final Set<Subject> combinations = new HashSet<>();
+  private volatile CompletableFuture<Void> drain;
+  private ClientEditingWorkflow workflow;
+  private ClientEditor<PlatformAuditionChecks.Profile> editor;
+  private ClientGraphicHost host;
+  private PreviewController<PlatformAuditionChecks.Profile, Subject> preview;
+  private SubjectForms.Form<Subject> subjects;
+  private CompletableFuture<NavigationAttempt.Result> navigation;
+  private ClientGraphicHost.Attempt held;
+  private int stage, draws, viewportWidth, viewportHeight, combination;
+  private long frames, gesture;
+  private GraphicSourceStamp lastDraw;
+  private GraphicCamera drawCamera, camera;
+  private DraftRevision revision;
+  private Path file;
+  private byte[] bytes;
+  private BasicFileAttributes attributes;
+  private boolean complete;
+
+  private PlatformSubjectPreviewChecks(PlatformFormProbe.Driver driver) {
+    this.driver = driver;
+    observing = this;
+  }
+
+  private Component text(String value) {
+    return Component.literal(value);
+  }
+
+  private UiText label(String value) {
+    return UiText.of(text(value));
+  }
+
+  private void check(String description, boolean valid) {
+    if (!valid) throw new AssertionError(description);
+    checks.add(description);
+  }
+
+  private void key(String value) {
+    check(
+        "native key reaches current control: " + value,
+        NativeClientProbe.key(workflow.screen(), "key.keyboard." + value, true));
+    NativeClientProbe.key(workflow.screen(), "key.keyboard." + value, false);
+  }
+
+  private void press(String caption) {
+    var control = button(workflow.screen(), caption);
+    check("actual control is enabled: " + caption, control.active);
+    check("actual control accepts focus: " + caption, focus(workflow.screen(), control));
+    key("space");
+  }
+
+  private Checkbox toggle(String caption) {
+    return widgets(workflow.screen()).stream()
+        .filter(Checkbox.class::isInstance)
+        .map(Checkbox.class::cast)
+        .filter(widget -> widget.getMessage().getString().equals(caption))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private Subject value() {
+    return subjects.value().snapshot().value();
+  }
+
+  private void toggle(String caption, boolean selected) {
+    var control = toggle(caption);
+    if (control.selected() != selected) {
+      check("native checkbox accepts focus: " + caption, focus(workflow.screen(), control));
+      key("space");
+    }
+  }
+
+  private void select(int container) {
+    var control =
+        widgets(workflow.screen()).stream()
+            .filter(w -> w.getMessage().getString().equals("Container"))
+            .filter(w -> !(w instanceof Button))
+            .findFirst()
+            .orElseThrow();
+    check("subject list accepts native focus", focus(workflow.screen(), control));
+    int before = value().container();
+    key("home");
+    for (int i = 0; i < container; i++) key("down");
+    check("list navigation does not accept a subject", value().container() == before);
+    key("enter");
+  }
+
+  private void focusPreview() {
+    var widget =
+        widgets(workflow.screen()).stream()
+            .filter(w -> w.getMessage().getString().equals("Subject preview"))
+            .findFirst()
+            .orElseThrow();
+    check("actual shared viewport accepts focus", focus(workflow.screen(), widget));
+  }
+
+  private boolean ready(int count) {
+    return entries.size() == count
+        && preview.state().snapshot().value().phase() == PreviewController.Phase.READY
+        && lastDraw != null
+        && lastDraw.request().equals(entries.getLast().stamp().request());
+  }
+
+  private void navigate(ClientDestination target, int next) {
+    navigation = workflow.navigation().open(target).completion().toCompletableFuture();
+    stage = next;
+  }
+
+  private boolean arrived() {
+    if (!navigation.isDone()) return false;
+    check(
+        "actual navigation reveals target",
+        navigation.join().outcome() == NavigationAttempt.Outcome.REVEALED);
+    return true;
+  }
+
+  private boolean empty() {
+    return host.retainedInput().bytes() == 0
+        && host.retainedOutput().bytes() == 0
+        && host.nativeOwnership().bytes() == 0;
+  }
+
+  private ViewSpec component(UiScope scope, ClientEditor<PlatformAuditionChecks.Profile> admitted) {
+    editor = admitted;
+    subjects =
+        SubjectForms.of(
+            scope,
+            DocumentId.parse("fixture:preview_subject"),
+            SUBJECT,
+            new Subject(0, false, false),
+            List.of(
+                new SubjectForms.Select<>(
+                    "container",
+                    label("Container"),
+                    label(""),
+                    CONTAINER.type(),
+                    new UiLens<>(
+                        Subject::container, (s, v) -> new Subject(v, s.looted(), s.open())),
+                    List.of(
+                        new SubjectForms.Choice<>("chest", label("Chest"), 0),
+                        new SubjectForms.Choice<>("trapped", label("Trapped chest"), 1),
+                        new SubjectForms.Choice<>("barrel", label("Barrel"), 2)),
+                    3),
+                new SubjectForms.Toggle<>(
+                    "looted",
+                    label("Looted"),
+                    label(""),
+                    new UiLens<>(
+                        Subject::looted, (s, v) -> new Subject(s.container(), v, s.open()))),
+                new SubjectForms.Toggle<>(
+                    "open",
+                    label("Open"),
+                    label(""),
+                    new UiLens<>(
+                        Subject::open, (s, v) -> new Subject(s.container(), s.looted(), v)))));
+    host = workflow.graphics(PlatformAuditionChecks.LIMITS, 1);
+    var context = UUID.randomUUID();
+    var generation = UUID.randomUUID();
+    var provider =
+        new ClientCapturedGraphicProvider<PlatformAuditionChecks.Profile, Subject>() {
+          public DocumentId id() {
+            return PROVIDER;
+          }
+
+          public ValueType<Subject> subjectType() {
+            return SUBJECT;
+          }
+
+          public GraphicLimits limits() {
+            return PlatformAuditionChecks.LIMITS;
+          }
+
+          public ReferenceStamp resourceStamp() {
+            return new ReferenceStamp(context, PROVIDER, generation, "static-fixture");
+          }
+
+          public CompletionStage<GraphicScenePreparation> prepareCaptured(
+              CapturedGraphicRequest<PlatformAuditionChecks.Profile, Subject> request,
+              ClientGraphicWork work) {
+            check("provider entry stays on native thread", client.isSameThread());
+            return work.onWorker(
+                () -> {
+                  if (client.isSameThread())
+                    throw new AssertionError("Material work entered native thread");
+                  if (!request
+                      .input()
+                      .candidate()
+                      .value()
+                      .equals(PlatformAuditionChecks.DEFINITION.defaults()))
+                    throw new AssertionError("Subject controls changed complete settings input");
+                  entries.add(new Entry(request.subject(), request.stamp(), System.nanoTime()));
+                  if (blockNext.getAndSet(false)) {
+                    var held = new CompletableFuture<Void>();
+                    drain = held;
+                    held.get(15, TimeUnit.SECONDS);
+                  }
+                  work.checkpoint();
+                  return new GraphicScenePreparation.Ready(
+                      new GraphicSceneData(
+                          request.stamp(),
+                          PlatformMeshChecks.pattern(),
+                          GraphicCamera.STANDARD,
+                          List.of(
+                              new GraphicSceneData.Fact(
+                                  DocumentId.parse("fixture:subject"),
+                                  "Subject",
+                                  request.subject().toString()))));
+                });
+          }
+        };
+    preview =
+        PreviewController.open(
+            scope,
+            admitted,
+            host,
+            provider,
+            subjects,
+            text("Subject preview"),
+            PreviewController.Automatic.ACCEPTED_CHANGES);
+    return preview.content();
+  }
+
+  public boolean tick() throws Exception {
+    switch (stage) {
+      case 0 -> {
+        var form = PlatformAuditionChecks.settings.form(text("Preview settings"));
+        var layout =
+            new ClientWorkflowLayout(
+                List.of(
+                    new ClientWorkflowLayout.Group(
+                        List.of(
+                            new ClientWorkflowLayout.Category(
+                                PAGE, text("Preview controls"), Component.empty())),
+                        List.of(),
+                        List.of()),
+                    new ClientWorkflowLayout.Group(
+                        List.of(
+                            new ClientWorkflowLayout.Category(
+                                DocumentId.parse("fixture:preview_settings"),
+                                text("Settings"),
+                                Component.empty())),
+                        List.of(
+                            new ClientWorkflowLayout.Placement(
+                                form.route(), form.route(), form.title(), Optional.empty())),
+                        List.of())),
+                List.of());
+        var body =
+            ClientCustomView.documentComponent(
+                new ViewKey<>(
+                    new DestinationId(PAGE),
+                    new ViewStateKey<>(
+                        DocumentId.parse("fixture:preview_page"), ValueTypes.integer(0, 1))),
+                0,
+                UiLimits.STANDARD,
+                form.route(),
+                PlatformAuditionChecks.DEFINITION,
+                (scope, owner, state) -> component(scope, owner));
+        var metadata =
+            ClientWorkspacePresentation.standard(
+                    new WorkspaceIdentity(
+                        DocumentId.parse("fixture:preview_workspace"),
+                        text("Typed preview controls")))
+                .withView(body);
+        workflow = ClientEditingWorkflow.open(parent, List.of(form), layout, metadata);
+        NativeScreens.open(client, workflow.screen());
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 1 -> {
+        if (PlatformFrameObservations.sequence() - frames < 8) return false;
+        check("Home admits no subject controller or prepare", preview == null && entries.isEmpty());
+        navigate(new ClientDestination.View(new DestinationId(PAGE)), 2);
+      }
+      case 2 -> {
+        if (!arrived()
+            || preview == null
+            || preview.state().snapshot().value().phase() != PreviewController.Phase.IDLE)
+          return false;
+        check(
+            "preview entry is idle and cancel inactive",
+            entries.isEmpty() && !button(workflow.screen(), "Cancel preparation").active);
+        check(
+            "redundant Show preview is absent",
+            widgets(workflow.screen()).stream()
+                .noneMatch(w -> w.getMessage().getString().equals("Show preview")));
+        revision = DraftRevision.of(editor.view().snapshot().orElseThrow());
+        file =
+            client
+                .gameDirectory
+                .toPath()
+                .resolve("config/reform_platform_example/audition_profiles.json");
+        bytes = Files.readAllBytes(file);
+        attributes = Files.readAttributes(file, BasicFileAttributes.class);
+        gesture = System.nanoTime();
+        toggle("Open", true);
+        toggle("Looted", true);
+        focusPreview();
+        check(
+            "accepted checkbox gestures change one complete local subject",
+            value().equals(new Subject(0, true, true)));
+        stage++;
+      }
+      case 3 -> {
+        if (!ready(1)) return false;
+        check(
+            "automatic input is debounced and coalesced on actual provider lane",
+            entries.getFirst().subject().equals(new Subject(0, true, true))
+                && entries.getFirst().at() - gesture >= 120_000_000L);
+        check("READY cancel is inactive", !button(workflow.screen(), "Cancel preparation").active);
+        camera = drawCamera;
+        press("Rotate right");
+        focusPreview();
+        stage++;
+      }
+      case 4 -> {
+        if (drawCamera.yaw() != camera.yaw() + 15) return false;
+        check("camera gesture redraws without preparing", entries.size() == 1);
+        camera = drawCamera;
+        select(2);
+        focusPreview();
+        stage++;
+      }
+      case 5 -> {
+        if (!ready(2)) return false;
+        check(
+            "accepted list selection retains independent flags and camera",
+            value().equals(new Subject(2, true, true)) && drawCamera.equals(camera));
+        driver.capture("previews-ready.png", () -> stage = 6);
+        stage = -1;
+      }
+      case 6 -> {
+        int container = combination / 4;
+        boolean looted = (combination % 4) / 2 == 1, open = combination % 2 == 1;
+        select(container);
+        toggle("Looted", looted);
+        toggle("Open", open);
+        focusPreview();
+        stage = 7;
+      }
+      case 7 -> {
+        if (!ready(3 + combination)) return false;
+        var expected =
+            new Subject(combination / 4, (combination % 4) / 2 == 1, combination % 2 == 1);
+        check(
+            "all typed state factors reach actual native drawing: " + expected,
+            entries.getLast().subject().equals(expected)
+                && value().equals(expected)
+                && drawCamera.equals(camera));
+        combinations.add(expected);
+        combination++;
+        stage = combination == 12 ? 8 : 6;
+      }
+      case 8 -> {
+        blockNext.set(true);
+        toggle("Open", !value().open());
+        stage++;
+      }
+      case 9 -> {
+        if (drain == null) return false;
+        held = preview.attempt().orElseThrow();
+        check(
+            "entered automatic prepare remains input charged",
+            host.retainedInput().bytes() > 0 && !held.completion().toCompletableFuture().isDone());
+        press("Cancel preparation");
+        stage++;
+      }
+      case 10 -> {
+        check(
+            "cancel is inactive while actual preparation drains",
+            !button(workflow.screen(), "Cancel preparation").active
+                && host.retainedInput().bytes() > 0
+                && !held.completion().toCompletableFuture().isDone());
+        drain.complete(null);
+        stage++;
+      }
+      case 11 -> {
+        if (!held.completion().toCompletableFuture().isDone() || !empty()) return false;
+        press("Prepare preview");
+        focusPreview();
+        stage++;
+      }
+      case 12 -> {
+        if (!ready(16)) return false;
+        navigate(new ClientDestination.Home(), 13);
+        frames = PlatformFrameObservations.sequence();
+      }
+      case 13 -> {
+        if (!arrived() || !empty() || PlatformFrameObservations.sequence() - frames < 8)
+          return false;
+        check(
+            "hidden preview retires native/output/input without new prepares",
+            entries.size() == 16);
+        navigate(new ClientDestination.View(new DestinationId(PAGE)), 14);
+      }
+      case 14 -> {
+        if (!arrived()
+            || preview.state().snapshot().value().phase() != PreviewController.Phase.IDLE)
+          return false;
+        check(
+            "return preserves local flags and owner without automatic preparation",
+            entries.size() == 16
+                && empty()
+                && revision.equals(DraftRevision.of(editor.view().snapshot().orElseThrow())));
+        press("Prepare preview");
+        focusPreview();
+        stage++;
+      }
+      case 15 -> {
+        if (!ready(17)) return false;
+        check("explicit return preparation keeps user camera", drawCamera.equals(camera));
+        driver.capture("previews-returned.png", () -> stage = 16);
+        stage = -1;
+      }
+      case 16 -> {
+        drain = null;
+        blockNext.set(true);
+        toggle("Open", !value().open());
+        stage++;
+      }
+      case 17 -> {
+        if (drain == null) return false;
+        held = preview.attempt().orElseThrow();
+        workflow.close();
+        check(
+            "closing mounted preview does not refund entered worker",
+            !workflow.isOpen()
+                && !editor.isOpen()
+                && host.retainedInput().bytes() > 0
+                && !held.completion().toCompletableFuture().isDone());
+        drain.complete(null);
+        stage++;
+      }
+      case 18 -> {
+        if (!held.completion().toCompletableFuture().isDone() || !empty()) return false;
+        var after = Files.readAttributes(file, BasicFileAttributes.class);
+        check(
+            "typed preview controls do not edit or persist settings",
+            Arrays.equals(bytes, Files.readAllBytes(file))
+                && attributes.lastModifiedTime().equals(after.lastModifiedTime())
+                && Objects.equals(attributes.fileKey(), after.fileKey()));
+        check(
+            "exact bounded provider entries and all twelve factor combinations",
+            entries.size() == 18 && combinations.size() == 12 && host.releaseFailure().isEmpty());
+        complete = true;
+        NativeScreens.open(client, parent);
+        return true;
+      }
+      default -> {}
+    }
+    return false;
+  }
+
+  public JsonObject report() {
+    var result = new JsonObject();
+    result.addProperty("status", complete ? "PASS" : "FAIL");
+    result.addProperty("passed", complete);
+    result.add("checks", checks.deepCopy());
+    result.addProperty("stage", stage);
+    result.addProperty("prepares", entries.size());
+    result.addProperty("subjects", combinations.size());
+    result.addProperty("draws", draws);
+    result.addProperty("viewportWidth", viewportWidth);
+    result.addProperty("viewportHeight", viewportHeight);
+    result.addProperty("inputBytes", host == null ? 0 : host.retainedInput().bytes());
+    result.addProperty("nativeBytes", host == null ? 0 : host.nativeOwnership().bytes());
+    result.addProperty("sceneBytes", host == null ? 0 : host.retainedOutput().bytes());
+    return result;
+  }
+
+  public String diagnostic() {
+    return "stage="
+        + stage
+        + " prepares="
+        + entries.size()
+        + " draws="
+        + draws
+        + " phase="
+        + (preview == null ? "none" : workflow.isOpen() ? preview.state().snapshot() : "closed");
+  }
+
+  public void close() {
+    observing = null;
+    if (drain != null) drain.complete(null);
+    if (workflow != null && workflow.isOpen()) workflow.close();
+  }
+}

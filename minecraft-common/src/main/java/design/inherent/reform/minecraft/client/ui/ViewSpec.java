@@ -84,6 +84,23 @@ public sealed interface ViewSpec {
     }
   }
 
+  record Toggle(String key, ToggleParts parts) implements ViewSpec {
+    public Toggle {
+      key = identity(key);
+      Objects.requireNonNull(parts);
+    }
+  }
+
+  /** Exact host-backed viewport capability, never an arbitrary caller widget or renderer. */
+  record Preview(
+      String key, design.inherent.reform.minecraft.client.PreviewController<?, ?> controller)
+      implements ViewSpec {
+    public Preview {
+      key = identity(key);
+      Objects.requireNonNull(controller);
+    }
+  }
+
   record Managed(String key, UiMountLifecycle lifecycle, ViewSpec content) implements ViewSpec {
     public Managed {
       key = identity(key);

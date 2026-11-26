@@ -76,6 +76,15 @@ public final class Views {
     return new ViewSpec.QueryInput(key, parts);
   }
 
+  public static ViewSpec toggle(String key, ToggleParts parts) {
+    return new ViewSpec.Toggle(key, parts);
+  }
+
+  public static ViewSpec preview(
+      String key, design.inherent.reform.minecraft.client.PreviewController<?, ?> controller) {
+    return new ViewSpec.Preview(key, controller);
+  }
+
   public static ViewSpec managed(String key, UiMountLifecycle lifecycle, ViewSpec content) {
     return new ViewSpec.Managed(key, lifecycle, content);
   }

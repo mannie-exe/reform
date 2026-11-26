@@ -515,6 +515,26 @@ class PlatformOutcomeTests(unittest.TestCase):
                 self.assertTrue(accepted())
                 del self.native[name]
 
+    def test_mounted_preview_success_requires_all_subjects_native_draws_and_retirement(self):
+        def accepted():
+            return successful_boot(self.process, self.native, self.library, self.target,
+                                   "0.20.1", required_scenarios=("semanticPreviews",))
+        complete = {"status": "PASS", "passed": True, "prepares": 18, "subjects": 12,
+                    "draws": 15, "inputBytes": 0, "nativeBytes": 0, "sceneBytes": 0}
+        self.assertFalse(accepted())
+        self.native["semanticPreviews"] = dict(complete)
+        self.assertTrue(accepted())
+        for field, value in complete.items():
+            wrong = [None, "missing", False] if type(value) is not int else [None, str(value), True, -1]
+            for replacement in wrong:
+                with self.subTest(field=field, replacement=replacement):
+                    self.native["semanticPreviews"][field] = replacement
+                    self.assertFalse(accepted())
+            self.native["semanticPreviews"][field] = value
+        self.native["semanticPreviews"]["draws"] = 14
+        self.assertFalse(accepted())
+        del self.native["semanticPreviews"]
+
     def test_audition_success_requires_typed_basis_counts_and_actual_retirement(self):
         def accepted():
             return successful_boot(self.process, self.native, self.library, self.target,

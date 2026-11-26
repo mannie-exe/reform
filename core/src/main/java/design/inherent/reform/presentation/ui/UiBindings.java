@@ -7,6 +7,58 @@ import java.util.Optional;
 
 /** Restricted adapters. Local bindings carry no document or persistence capability. */
 public final class UiBindings {
+  /**
+   * Project one typed part of the same local value. Replacement runs as a pure derivation; the
+   * original local's complete codec/budget admission precedes its state change.
+   */
+  public static <S, V> UiBinding<V> lens(
+      UiScope scope,
+      UiLocal<S> state,
+      design.inherent.reform.presentation.ViewStateKey<V> part,
+      UiLens<S, V> lens) {
+    Objects.requireNonNull(lens);
+    var read = scope.derive(part, List.of(state), values -> lens.get().apply(values.value(state)));
+    var parent = local(state);
+    return new UiBinding<>() {
+      public UiRead<V> value() {
+        return read;
+      }
+
+      public UiCommand<V> changes() {
+        return new UiCommand<>() {
+          public List<UiRead<?>> dependencies() {
+            return List.of(state, read);
+          }
+
+          public UiAvailability availability() {
+            return parent.changes().availability();
+          }
+
+          public UiActionResult invoke(V input) {
+            try {
+              var frozen = part.capture(input).value();
+              var replacement =
+                  scope.project(
+                      List.of(state),
+                      () ->
+                          Objects.requireNonNull(
+                              lens.replace().apply(state.snapshot().value(), frozen)));
+              return parent.changes().invoke(replacement);
+            } catch (PolicyRefusal refused) {
+              return new UiActionResult.Refused(refused.report(), Optional.of(refused));
+            } catch (IllegalArgumentException invalid) {
+              return new UiActionResult.Refused(
+                  new PolicyRefusal(
+                          "ui.input_invalid", "This value does not fit the complete local state.")
+                      .report(),
+                  Optional.of(invalid));
+            }
+          }
+        };
+      }
+    };
+  }
+
   public static <T> UiBinding<T> local(UiLocal<T> state) {
     Objects.requireNonNull(state);
     var command =
