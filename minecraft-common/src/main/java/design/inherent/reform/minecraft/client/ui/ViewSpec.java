@@ -116,10 +116,30 @@ public sealed interface ViewSpec {
     }
   }
 
-  /**
-   * Authored command/disclosure triggers flow together; their effects and expanded content stay
-   * independent.
-   */
+  /** Measured horizontal children stack in the same authored order when offers do not fit. */
+  record Row(
+      String key, design.inherent.reform.presentation.UiLayout.Row layout, List<ViewSpec> children)
+      implements ViewSpec {
+    public Row {
+      key = identity(key);
+      Objects.requireNonNull(layout);
+      children = ordered(children);
+      if (children.isEmpty() || children.size() > 64)
+        throw new IllegalArgumentException("A measured row needs one to 64 children");
+    }
+  }
+
+  record Frame(
+      String key, design.inherent.reform.presentation.UiLayout.Frame layout, ViewSpec content)
+      implements ViewSpec {
+    public Frame {
+      key = identity(key);
+      Objects.requireNonNull(layout);
+      Objects.requireNonNull(content);
+    }
+  }
+
+  /** Authored command/disclosure triggers flow together without merging their effects. */
   record Actions(String key, List<ViewSpec> children) implements ViewSpec {
     public Actions {
       key = identity(key);

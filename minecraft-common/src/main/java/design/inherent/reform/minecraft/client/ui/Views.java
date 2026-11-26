@@ -26,6 +26,18 @@ public final class Views {
     return new ViewSpec.Column(key, children);
   }
 
+  public static ViewSpec row(
+      String key,
+      design.inherent.reform.presentation.UiLayout.Row layout,
+      List<ViewSpec> children) {
+    return new ViewSpec.Row(key, layout, children);
+  }
+
+  public static ViewSpec frame(
+      String key, design.inherent.reform.presentation.UiLayout.Frame layout, ViewSpec content) {
+    return new ViewSpec.Frame(key, layout, content);
+  }
+
   public static ViewSpec actions(String key, List<ViewSpec> children) {
     return new ViewSpec.Actions(key, children);
   }

@@ -81,7 +81,19 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         driver -> new PlatformSubjectPreviewChecks(driver, false, true));
   }
 
-  private final boolean basisMode, inlineMode;
+  static CompletionStage<JsonObject> runLayout(ClientRegistration registration) {
+    return PlatformFormProbe.run(
+        registration,
+        "PREVIEW_LAYOUT",
+        driver -> new PlatformSubjectPreviewChecks(driver, false, true, true));
+  }
+
+  private final boolean basisMode, inlineMode, layoutMode;
+  private design.inherent.reform.presentation.ui.UiLocal<Boolean> modelVisible;
+  private AbstractWidget originalList, originalViewport;
+  private final int[] originalWidth = {0}, originalHeight = {0};
+  private boolean wideLayout, compactLayout, returnedLayout, retiredSelection;
+  private final JsonObject layoutObservations = new JsonObject();
   private final AtomicBoolean sourceRead = new AtomicBoolean(true);
   private OwnerContext sourceContext;
   private ReferenceActions<String, List<String>> source;
@@ -132,6 +144,12 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
 
   private PlatformSubjectPreviewChecks(
       PlatformFormProbe.Driver driver, boolean basisMode, boolean inlineMode) {
+    this(driver, basisMode, inlineMode, false);
+  }
+
+  private PlatformSubjectPreviewChecks(
+      PlatformFormProbe.Driver driver, boolean basisMode, boolean inlineMode, boolean layoutMode) {
+    this.layoutMode = layoutMode;
     this.basisMode = basisMode;
     this.inlineMode = inlineMode;
     this.driver = driver;
@@ -400,6 +418,44 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
               ReferencePicker.Policy.STANDARD,
               System::nanoTime);
       preview.activateAfterSelection(List.of(picker, artworkPicker));
+      if (layoutMode) {
+        modelVisible =
+            scope.local(
+                new ViewStateKey<>(DocumentId.parse("fixture:model_visible"), ValueTypes.bool()),
+                true);
+        var offers = new design.inherent.reform.presentation.UiLayout.Row(12, 16);
+        var left =
+            new design.inherent.reform.presentation.UiLayout.Frame(
+                design.inherent.reform.presentation.UiLayout.Offer.flexible(180, 280),
+                4,
+                design.inherent.reform.presentation.UiLayout.Alignment.START);
+        var right =
+            new design.inherent.reform.presentation.UiLayout.Frame(
+                design.inherent.reform.presentation.UiLayout.Offer.flexible(220, 280),
+                4,
+                design.inherent.reform.presentation.UiLayout.Alignment.START);
+        return Views.row(
+            "browser-preview",
+            offers,
+            List.of(
+                Views.frame(
+                    "choices",
+                    left,
+                    Views.column(
+                        "selectors",
+                        List.of(
+                            Views.show(
+                                "models",
+                                modelVisible,
+                                branch ->
+                                    selectionView(branch, picker, MODELS_ROLE, "Model profiles"),
+                                branch ->
+                                    Views.text(
+                                        "closed", text("Model choices closed"), Component.empty())),
+                            selectionView(
+                                scope, artworkPicker, ARTWORK_ROLE, "Artwork profiles")))),
+                Views.frame("preview", right, preview.content())));
+      }
       return Views.column(
           "inline-selections",
           List.of(
@@ -485,6 +541,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   }
 
   public boolean tick() throws Exception {
+    if (layoutMode && stage >= 70) return tickLayout();
     if (inlineMode && stage > 0) return tickSelections();
     if (basisMode && stage > 0) return tickBasis();
     switch (stage) {
@@ -737,6 +794,137 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     return false;
   }
 
+  private AbstractWidget namedControl(String caption) {
+    return widgets(workflow.screen()).stream()
+        .filter(w -> w.getMessage().getString().equals(caption) && !(w instanceof Button))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private void observeLayout(String key) {
+    var list = namedControl("Model profiles");
+    var viewport = namedControl("Subject preview");
+    var item = new JsonObject();
+    for (var pair :
+        List.of(
+            Map.entry("list", list),
+            Map.entry("artwork", namedControl("Artwork profiles")),
+            Map.entry("preview", viewport))) {
+      var box = new JsonObject();
+      box.addProperty("x", pair.getValue().getX());
+      box.addProperty("y", pair.getValue().getY());
+      box.addProperty("width", pair.getValue().getWidth());
+      box.addProperty("height", pair.getValue().getHeight());
+      item.add(pair.getKey(), box);
+    }
+    layoutObservations.add(key, item);
+  }
+
+  private boolean tickLayout() throws Exception {
+    switch (stage) {
+      case 70 -> {
+        originalList = namedControl("Model profiles");
+        originalViewport = namedControl("Subject preview");
+        NativeClientProbe.size(client, originalWidth, originalHeight);
+        revision = DraftRevision.of(editor.view().snapshot().orElseThrow());
+        camera = drawCamera;
+        press("Rotate right");
+        focusPreview();
+        stage++;
+      }
+      case 71 -> {
+        if (drawCamera.yaw() != camera.yaw() + 15) return false;
+        camera = drawCamera;
+        wideLayout =
+            originalList.getRight() <= originalViewport.getX() && originalList.getWidth() > 0;
+        check("measured wide row places choices and preview in nonoverlapping columns", wideLayout);
+        observeLayout("wide");
+        driver.capture(
+            "preview-layout-wide.png",
+            () -> {
+              NativeClientProbe.resize(client, 320, 240);
+              frames = PlatformFrameObservations.sequence();
+              stage = 72;
+            });
+        stage = -1;
+      }
+      case 72 -> {
+        int[] w = {0}, h = {0};
+        NativeClientProbe.size(client, w, h);
+        if (w[0] != 320 || h[0] != 240 || PlatformFrameObservations.sequence() - frames < 8)
+          return false;
+        var list = namedControl("Model profiles");
+        var viewport = namedControl("Subject preview");
+        compactLayout =
+            Math.abs(list.getX() - viewport.getX()) <= 16
+                && viewport.getY() > namedControl("Artwork profiles").getBottom();
+        check("actual compact window stacks the same reading order", compactLayout);
+        check(
+            "reflow retains both native instances and complete draft without preparing",
+            list == originalList
+                && viewport == originalViewport
+                && entries.size() == 4
+                && revision.equals(DraftRevision.of(editor.view().snapshot().orElseThrow())));
+        focusPreview();
+        observeLayout("compact");
+        driver.capture(
+            "preview-layout-compact.png",
+            () -> {
+              NativeClientProbe.resize(client, originalWidth[0], originalHeight[0]);
+              frames = PlatformFrameObservations.sequence();
+              stage = 73;
+            });
+        stage = -1;
+      }
+      case 73 -> {
+        int[] w = {0}, h = {0};
+        NativeClientProbe.size(client, w, h);
+        if (w[0] != originalWidth[0]
+            || h[0] != originalHeight[0]
+            || PlatformFrameObservations.sequence() - frames < 8) return false;
+        focusPreview();
+        var list = namedControl("Model profiles");
+        var viewport = namedControl("Subject preview");
+        returnedLayout =
+            list == originalList
+                && viewport == originalViewport
+                && list.getRight() <= viewport.getX()
+                && camera.equals(drawCamera)
+                && entries.size() == 4
+                && revision.equals(DraftRevision.of(editor.view().snapshot().orElseThrow()));
+        check(
+            "real window return restores adjacency, camera and exact retained owner state",
+            returnedLayout);
+        observeLayout("returned");
+        driver.capture("preview-layout-returned.png", () -> stage = 8);
+        stage = -1;
+      }
+      case 75 -> {
+        if (PlatformFrameObservations.sequence() - frames < 4
+            || widgets(workflow.screen()).stream()
+                .anyMatch(w -> w.getMessage().getString().equals("Model profiles"))) return false;
+        picker.close();
+        frames = PlatformFrameObservations.sequence();
+        stage++;
+      }
+      case 76 -> {
+        if (PlatformFrameObservations.sequence() - frames < 8) return false;
+        retiredSelection =
+            preview.state().snapshot().value().phase() == PreviewController.Phase.READY
+                && entries.size() == 6
+                && !editor.dirty()
+                && host.nativeOwnership().bytes() > 0;
+        check(
+            "retiring an optional detached selector does not retire the valid draft preview",
+            retiredSelection);
+        workflow.close();
+        stage = 13;
+      }
+      default -> throw new IllegalStateException("Unexpected measured layout stage " + stage);
+    }
+    return false;
+  }
+
   private boolean choicesReady(ReferencePicker<?, ?> selection) {
     var state = selection.state().snapshot().value();
     return state.source() == PickerState.Source.READY && state.window().choices().size() == 2;
@@ -862,7 +1050,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             "preview-selections-ready.png",
             () -> {
               pixels("preview-selections-ready.png");
-              stage = 8;
+              stage = layoutMode ? 70 : 8;
             });
         stage = -1;
       }
@@ -898,8 +1086,14 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             entries.getLast().candidate().equals(PlatformAuditionChecks.DEFINITION.defaults())
                 && !editor.dirty();
         check("explicit actual selection restores the saved values without writing", restored);
-        workflow.close();
-        stage++;
+        if (layoutMode) {
+          modelVisible.replace(false);
+          frames = PlatformFrameObservations.sequence();
+          stage = 75;
+        } else {
+          workflow.close();
+          stage++;
+        }
       }
       case 13 -> {
         if (!empty()) return false;
@@ -1150,6 +1344,11 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
     }
     result.add("candidates", candidates);
     result.addProperty("subjects", combinations.size());
+    result.addProperty("wideLayout", wideLayout);
+    result.addProperty("compactLayout", compactLayout);
+    result.addProperty("returnedLayout", returnedLayout);
+    result.addProperty("retiredSelection", retiredSelection);
+    result.add("layoutObservations", layoutObservations.deepCopy());
     result.addProperty("firstSelectionActivated", firstSelectionActivated);
     result.addProperty("inspectionDidNotEdit", inspectionDidNotEdit);
     result.addProperty("combinedDraft", combinedDraft);

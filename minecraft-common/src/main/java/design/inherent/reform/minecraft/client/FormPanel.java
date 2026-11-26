@@ -4,6 +4,7 @@ import design.inherent.reform.presentation.FormGeometry;
 import design.inherent.reform.presentation.FormTokens;
 import design.inherent.reform.presentation.SectionNavigation;
 import design.inherent.reform.presentation.ThemeValues;
+import design.inherent.reform.presentation.UiLayout;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -273,6 +274,31 @@ final class FormPanel extends ScrollFrame {
       int left, int width, int top, int bottom, int labelWidth, ClientTheme theme) {}
 
   private record Frame(int left, int width, int top, int labelWidth, ClientTheme theme) {}
+
+  private enum Cell {
+    INSTANCE
+  }
+
+  private final java.util.Map<Row, Object> measuredGroups = new java.util.IdentityHashMap<>();
+  private final java.util.Map<Integer, Integer> measuredEnds = new java.util.HashMap<>();
+
+  void beginMeasured(String id, Object spec) {
+    if (!(spec instanceof UiLayout.Row || spec instanceof UiLayout.Frame || spec == Cell.INSTANCE))
+      throw new IllegalArgumentException("Use a declared measured container");
+    var marker =
+        row(id, Component.empty(), Component.empty(), List.of(), false, null, false, 2, null);
+    measuredGroups.put(marker, spec);
+    rows.add(marker);
+  }
+
+  void beginCell(String id) {
+    beginMeasured(id, Cell.INSTANCE);
+  }
+
+  void endMeasured() {
+    rows.add(
+        row(null, Component.empty(), Component.empty(), List.of(), false, null, false, -2, null));
+  }
 
   private final List<Outline> outlines = new ArrayList<>();
   private String rememberedFocus;
@@ -708,32 +734,62 @@ final class FormPanel extends ScrollFrame {
   }
 
   private void measure() {
-    int y = 0, wrap = usableWidth();
-    var frames = new java.util.ArrayDeque<Frame>();
     positions.clear();
     layout.clear();
     outlines.clear();
     artworkLayout.clear();
+    measuredEnds.clear();
     sections = new SectionNavigation();
+    var open = new java.util.ArrayDeque<Integer>();
     for (int i = 0; i < rows.size(); i++) {
+      if (rows.get(i).boundary == 2) open.push(i);
+      else if (rows.get(i).boundary == -2) {
+        if (open.isEmpty()) throw new IllegalStateException("Unmatched measured container");
+        measuredEnds.put(open.pop(), i);
+      }
+    }
+    if (!open.isEmpty()) throw new IllegalStateException("Unclosed measured container");
+    extent = Math.max(1, measureSequence(0, rows.size(), 0, 0, usableWidth(), 0));
+  }
+
+  private int measureSequence(int from, int to, int left, int top, int wrap, int depth) {
+    if (depth > 16) throw new IllegalStateException("Measured containers exceed depth 16");
+    int y = top;
+    var frames = new java.util.ArrayDeque<Frame>();
+    for (int i = from; i < to; i++) {
       var row = rows.get(i);
+      if (row.boundary == -2) throw new IllegalStateException("Unmatched measured container");
+      if (row.boundary == 2) {
+        int inset =
+            frames.isEmpty()
+                ? left
+                : Math.min(
+                    frames.peek().left
+                        + frames.peek().theme.values().value(ThemeValues.Role.SPACE_CONTENT),
+                    left + (wrap - 1) / 2);
+        int available = Math.max(1, wrap - 2 * (inset - left));
+        int end = measuredEnds.get(i);
+        y = Math.addExact(y, measureContainer(i, end, inset, y, available, depth + 1));
+        i = end;
+        continue;
+      }
       if (row.boundary == 1) {
         if (frames.size() >= 8) throw new IllegalStateException("Settings groups exceed depth 8");
         y += 4;
         int edge =
             frames.isEmpty()
-                ? 0
+                ? left
                 : Math.min(
                     Math.addExact(
                         frames.peek().left,
                         frames.peek().theme.values().value(ThemeValues.Role.SPACE_CONTENT)),
-                    Math.max(0, (wrap - 1) / 2));
+                    left + Math.max(0, (wrap - 1) / 2));
         frames.push(
             new Frame(
                 edge,
-                Math.max(1, wrap - edge * 2),
+                Math.max(1, wrap - (edge - left) * 2),
                 y + 6 + client.font.lineHeight / 2,
-                Math.max(0, Math.min(wrap - edge * 2 - 16, client.font.width(row.label))),
+                Math.max(0, Math.min(wrap - (edge - left) * 2 - 16, client.font.width(row.label))),
                 row.theme));
       }
       if (gaps.containsKey(row)) {
@@ -760,17 +816,17 @@ final class FormPanel extends ScrollFrame {
       }
       int inset =
           frames.isEmpty()
-              ? 0
+              ? left
               : (int)
                   Math.min(
                       (long) frames.peek().left
                           + frames.peek().theme.values().value(ThemeValues.Role.SPACE_CONTENT),
-                      Math.max(0, (wrap - 1) / 2));
-      int available = Math.max(1, wrap - inset * 2);
+                      left + Math.max(0, (wrap - 1) / 2));
+      int available = Math.max(1, wrap - (inset - left) * 2);
       var related = new ArrayList<Row>();
       related.add(row);
       if (row.field && row.relationship != null)
-        for (int next = i + 1; next < rows.size() && related.size() < 3; next++) {
+        for (int next = i + 1; next < to && related.size() < 3; next++) {
           var candidate = rows.get(next);
           if (!candidate.field || !row.relationship.equals(candidate.relationship)) break;
           related.add(candidate);
@@ -815,7 +871,73 @@ final class FormPanel extends ScrollFrame {
       }
     }
     if (!frames.isEmpty()) throw new IllegalStateException("Unclosed settings group");
-    extent = Math.max(1, y);
+    return y - top;
+  }
+
+  private int measureContainer(int start, int end, int left, int top, int width, int depth) {
+    var spec = measuredGroups.get(rows.get(start));
+    if (spec instanceof UiLayout.Frame frame) {
+      var at = UiLayout.frame(frame, width);
+      return Math.addExact(
+          2 * at.padding(),
+          measureSequence(
+              start + 1, end, left + at.contentX(), top + at.padding(), at.contentWidth(), depth));
+    }
+    if (spec == Cell.INSTANCE) return measureSequence(start + 1, end, left, top, width, depth);
+    if (!(spec instanceof UiLayout.Row row))
+      throw new IllegalStateException("Missing layout specification");
+    var cells = new ArrayList<Integer>();
+    for (int i = start + 1; i < end; ) {
+      if (measuredGroups.get(rows.get(i)) != Cell.INSTANCE)
+        throw new IllegalStateException("A measured row needs explicit child cells");
+      cells.add(i);
+      i = measuredEnds.get(i) + 1;
+    }
+    var offers = cells.stream().map(i -> containerOffer(i, measuredEnds.get(i), depth)).toList();
+    var allocation = UiLayout.row(row, offers, width);
+    int x = left, y = top, height = 0;
+    for (int index = 0; index < cells.size(); index++) {
+      int cell = cells.get(index);
+      int measured =
+          measureSequence(
+              cell + 1, measuredEnds.get(cell), x, y, allocation.widths().get(index), depth);
+      if (allocation.stacked())
+        y = Math.addExact(y, measured + (index + 1 < cells.size() ? allocation.gap() : 0));
+      else {
+        height = Math.max(height, measured);
+        x += allocation.widths().get(index) + allocation.gap();
+      }
+    }
+    return allocation.stacked() ? y - top : height;
+  }
+
+  private UiLayout.Offer containerOffer(int start, int end, int depth) {
+    if (depth > 16) throw new IllegalStateException("Measured containers exceed depth 16");
+    if (measuredGroups.get(rows.get(start)) instanceof UiLayout.Frame ownFrame)
+      return ownFrame.width();
+    if (end == measuredEnds.getOrDefault(start + 1, -2) + 1
+        && measuredGroups.get(rows.get(start + 1)) instanceof UiLayout.Frame frame)
+      return frame.width();
+    int minimum = 1, groups = 0;
+    for (int i = start + 1; i < end; i++) {
+      var row = rows.get(i);
+      if (row.boundary == 2) {
+        minimum = Math.max(minimum, containerOffer(i, measuredEnds.get(i), depth + 1).minimum());
+        i = measuredEnds.get(i);
+      } else if (row.boundary == 1) groups++;
+      else if (row.boundary == -1) groups--;
+      else if (!gaps.containsKey(row))
+        minimum =
+            Math.max(
+                minimum,
+                Math.min(
+                    UiLayout.LIMIT,
+                    minimumWidth(row)
+                        + 2
+                            * Math.max(0, groups)
+                            * row.theme.values().value(ThemeValues.Role.SPACE_CONTENT)));
+    }
+    return UiLayout.Offer.flexible(minimum, minimum);
   }
 
   int fieldWidth() {

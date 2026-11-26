@@ -535,6 +535,41 @@ class PlatformOutcomeTests(unittest.TestCase):
         self.assertFalse(accepted())
         del self.native["semanticPreviews"]
 
+    def test_measured_layout_requires_actual_nonoverlap_stack_return_and_lifetime(self):
+        def accepted():
+            return successful_boot(self.process, self.native, self.library, self.target,
+                                   "0.20.1", required_scenarios=("semanticPreviewLayout",))
+        wide = {"list": {"x": 0, "y": 0, "width": 100, "height": 80},
+                "artwork": {"x": 0, "y": 100, "width": 100, "height": 80},
+                "preview": {"x": 112, "y": 0, "width": 100, "height": 100}}
+        compact = {"list": dict(wide["list"]), "artwork": dict(wide["artwork"]),
+                   "preview": {"x": 0, "y": 200, "width": 80, "height": 80}}
+        complete = {"status": "PASS", "passed": True, "prepares": 6, "visiblePixels": 64,
+                    "wideLayout": True, "compactLayout": True, "returnedLayout": True,
+                    "retiredSelection": True, "firstSelectionActivated": True, "inspectionDidNotEdit": True,
+                    "combinedDraft": True, "sameValueActivated": True, "noReturnPrepare": True,
+                    "restored": True, "inputBytes": 0, "nativeBytes": 0, "sceneBytes": 0,
+                    "captures": ["one", "two", "three", "four"],
+                    "layoutObservations": {"wide": wide, "compact": compact, "returned": wide}}
+        self.assertFalse(accepted())
+        self.native["semanticPreviewLayout"] = complete
+        self.assertTrue(accepted())
+        for field, value in list(complete.items()):
+            for wrong in [None, "missing", False]:
+                with self.subTest(field=field, wrong=wrong):
+                    complete[field] = wrong
+                    self.assertFalse(accepted())
+            complete[field] = value
+        wide["preview"]["x"] = 99
+        self.assertFalse(accepted())
+        wide["preview"]["x"] = 112
+        compact["preview"]["y"] = 150
+        self.assertFalse(accepted())
+        compact["preview"]["y"] = 200
+        compact["preview"]["width"] = True
+        self.assertFalse(accepted())
+        del self.native["semanticPreviewLayout"]
+
     def test_inline_preview_requires_actual_edit_activation_and_retirement_without_replay(self):
         def accepted():
             return successful_boot(self.process, self.native, self.library, self.target,

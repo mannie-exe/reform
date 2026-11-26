@@ -284,7 +284,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
     if (auditionRequested)
       throw new IllegalStateException("Return to the draft before binding draft selections");
     if (selections.size() > 16)
-      throw new IllegalArgumentException("Declare at most16 selection controllers");
+      throw new IllegalArgumentException("Declare at most 16 selection controllers");
     var identities =
         Collections.newSetFromMap(new IdentityHashMap<ReferencePicker<T, ?>, Boolean>());
     for (var selection : selections) {
@@ -300,6 +300,7 @@ public final class PreviewController<T, S> implements AutoCloseable {
   private void selectionBaseline() {
     observedSelections.clear();
     for (var selection : draftSelections) {
+      if (!selection.scope().isOpen()) continue;
       var state = selection.state().snapshot();
       observedSelections.put(
           selection,
@@ -311,6 +312,10 @@ public final class PreviewController<T, S> implements AutoCloseable {
 
   private void pollSelections() {
     for (var selection : draftSelections) {
+      if (!selection.scope().isOpen()) {
+        observedSelections.remove(selection);
+        continue;
+      }
       var observed = selection.state().snapshot();
       if (!(observed instanceof UiObservation.Available<PickerState>)) continue;
       var state = observed.value();

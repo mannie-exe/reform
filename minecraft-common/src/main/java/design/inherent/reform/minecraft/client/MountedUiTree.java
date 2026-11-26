@@ -67,6 +67,10 @@ final class MountedUiTree implements AutoCloseable {
     COMPLETION,
     SURFACE,
     FIELD,
+    LAYOUT_ROW,
+    LAYOUT_FRAME,
+    LAYOUT_CELL,
+    LAYOUT_END,
     OPEN,
     CLOSE
   }
@@ -412,6 +416,8 @@ final class MountedUiTree implements AutoCloseable {
           case ViewSpec.FieldSurface surface ->
               children.add(new Node(surface.surface().content(), scope));
           case ViewSpec.Column column -> construct(column.children());
+          case ViewSpec.Row row -> construct(row.children());
+          case ViewSpec.Frame frame -> children.add(new Node(frame.content(), scope));
           case ViewSpec.Actions actions -> construct(actions.children());
           case ViewSpec.Section section -> construct(section.children());
           case ViewSpec.Component<?> component -> children.add(component(component));
@@ -766,8 +772,25 @@ final class MountedUiTree implements AutoCloseable {
           current = new Row(this, current.kind(), current.label(), current.body(), inherited);
         into.add(current.withFlow(flow));
       }
-      for (var child : children)
+      for (var child : children) {
+        if (spec instanceof ViewSpec.Row)
+          into.add(
+              new Row(
+                  child,
+                  Kind.LAYOUT_CELL,
+                  Component.empty(),
+                  Component.empty(),
+                  UiAvailability.READY));
         child.rows(into, childrenAvailability, spec instanceof ViewSpec.Actions ? this : null);
+        if (spec instanceof ViewSpec.Row)
+          into.add(
+              new Row(
+                  child,
+                  Kind.LAYOUT_END,
+                  Component.empty(),
+                  Component.empty(),
+                  UiAvailability.READY));
+      }
       if (spec instanceof ViewSpec.Disclosure) {
         if (expanded) {
           if (disclosureFailure != null)
@@ -797,6 +820,10 @@ final class MountedUiTree implements AutoCloseable {
           }
         }
       } else if (branch != null) branch.rows(into, childrenAvailability);
+      if (spec instanceof ViewSpec.Row || spec instanceof ViewSpec.Frame)
+        into.add(
+            new Row(
+                this, Kind.LAYOUT_END, Component.empty(), Component.empty(), UiAvailability.READY));
       if (spec instanceof ViewSpec.Section)
         into.add(
             new Row(this, Kind.CLOSE, Component.empty(), Component.empty(), UiAvailability.READY));
@@ -917,6 +944,20 @@ final class MountedUiTree implements AutoCloseable {
                         UiAvailability.READY);
               };
             }
+            case ViewSpec.Row ignored ->
+                new Row(
+                    this,
+                    Kind.LAYOUT_ROW,
+                    Component.empty(),
+                    Component.empty(),
+                    UiAvailability.READY);
+            case ViewSpec.Frame ignored ->
+                new Row(
+                    this,
+                    Kind.LAYOUT_FRAME,
+                    Component.empty(),
+                    Component.empty(),
+                    UiAvailability.READY);
             case ViewSpec.Section section ->
                 new Row(
                     this,
@@ -1460,6 +1501,12 @@ final class MountedUiTree implements AutoCloseable {
             join(help, report(refused.report()));
           panel.blockField(node.id, row.label(), help, widget);
         }
+        case LAYOUT_ROW ->
+            panel.beginMeasured(row.node().id, ((ViewSpec.Row) row.node().spec).layout());
+        case LAYOUT_FRAME ->
+            panel.beginMeasured(row.node().id, ((ViewSpec.Frame) row.node().spec).layout());
+        case LAYOUT_CELL -> panel.beginCell(row.node().id + ":layout-cell");
+        case LAYOUT_END -> panel.endMeasured();
         case OPEN -> panel.beginGroup(row.node().id, row.label());
         case CLOSE -> panel.endGroup();
         case ACTION, DISCLOSURE -> {
