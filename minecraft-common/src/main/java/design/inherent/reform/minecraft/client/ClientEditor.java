@@ -152,6 +152,16 @@ public final class ClientEditor<T> implements AutoCloseable {
     return actions.captureAudition(entry, expected, reference, inputs);
   }
 
+  /** Budgeted host draft input; completion is backend data, not native delivery admission. */
+  public design.inherent.reform.operation.DraftGraphicCapture<T> captureGraphicDraft(
+      EntryPoint entry,
+      DraftRevision expected,
+      design.inherent.reform.presentation.graphics.GraphicLedger inputs) {
+    ClientSettingsRuntime.requireClientThread();
+    presentation().previewInputStamp(Objects.requireNonNull(expected));
+    return actions.captureGraphicDraft(entry, expected, inputs);
+  }
+
   /** Cached client-thread freshness and actual READ checks, without IO, capture, or validation. */
   public boolean isPreviewCurrent(DraftPreviewInput<?> input) {
     ClientSettingsRuntime.requireClientThread();

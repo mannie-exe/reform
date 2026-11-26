@@ -11,7 +11,8 @@ public final class GraphicLedger {
   public record State(long bytes, int resources, long peakBytes, int peakResources) {}
 
   public final class Allocation implements AutoCloseable {
-    private final long bytes;
+    private final GraphicLedger owner = GraphicLedger.this;
+    private long bytes;
     private final int resources;
     private boolean released;
 
@@ -80,6 +81,28 @@ public final class GraphicLedger {
 
   public GraphicLimits limits() {
     return limits;
+  }
+
+  /** Grow one owned input block atomically before its next copy, without refunding entered work. */
+  public void grow(Allocation allocation, long bytes) {
+    Objects.requireNonNull(allocation);
+    if (allocation.owner != this)
+      throw new IllegalArgumentException("Use this allocation's actual ledger");
+    synchronized (gate) {
+      if (allocation.released) throw new IllegalStateException("This allocation already retired");
+      if (bytes < allocation.bytes)
+        throw new IllegalArgumentException("An entered allocation cannot shrink");
+      long extra = bytes - allocation.bytes;
+      for (var ledger = this; ledger != null; ledger = ledger.parent)
+        if (extra > ledger.limits.nativeBytes() - ledger.retainedBytes)
+          throw new PolicyRefusal(
+              "preview.budget", "Outstanding graphic allocations exceed their payload allowance");
+      for (var ledger = this; ledger != null; ledger = ledger.parent) {
+        ledger.retainedBytes += extra;
+        ledger.peakBytes = Math.max(ledger.peakBytes, ledger.retainedBytes);
+      }
+      allocation.bytes = bytes;
+    }
   }
 
   public Allocation reserve(long bytes, int resources) {

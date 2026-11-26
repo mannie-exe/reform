@@ -116,6 +116,17 @@ public final class ReferenceAudition<T> {
         GraphicLedger inputs,
         Consumer<GraphicLedger.Allocation> charged,
         Runnable checkpoint) {
+      return project(base, json, inputs, charged, checkpoint, null);
+    }
+
+    /** An admitted base block grows before the transformed copy; it is never double-counted. */
+    public Overlay<T> project(
+        EditorActor.Preflight<T> base,
+        JsonLimits json,
+        GraphicLedger inputs,
+        Consumer<GraphicLedger.Allocation> charged,
+        Runnable checkpoint,
+        GraphicLedger.Allocation admittedBase) {
       if (inputs.limits().nativeBytes() != inputs.limits().inputBytes())
         throw new IllegalArgumentException("Use a dedicated captured-input ledger");
       if (!expected.equals(base.target())
@@ -149,13 +160,15 @@ public final class ReferenceAudition<T> {
       if (copiedBytes > inputs.limits().inputBytes())
         throw new PolicyRefusal(
             "preview.budget", "The complete audition input exceeds its copied-input allowance");
-      var allocation = inputs.reserve(copiedBytes, 1);
-      try {
-        charged.accept(allocation);
-      } catch (RuntimeException | Error failed) {
-        allocation.close();
-        throw failed;
-      }
+      if (admittedBase == null) {
+        var allocation = inputs.reserve(copiedBytes, 1);
+        try {
+          charged.accept(allocation);
+        } catch (RuntimeException | Error failed) {
+          allocation.close();
+          throw failed;
+        }
+      } else inputs.grow(admittedBase, copiedBytes);
       checkpoint.run();
       var changed = original.draft().change(target.path(), ignored -> encoded);
       var inspected = changed.inspect(definition, json);

@@ -145,9 +145,17 @@ public final class DocumentActions<T> implements AutoCloseable {
       design.inherent.reform.presentation.graphics.GraphicLedger inputs,
       AuditionCapture<T> capture) {}
 
+  private record DraftWork<T>(
+      DraftRevision expected,
+      design.inherent.reform.presentation.graphics.GraphicLedger inputs,
+      DraftGraphicCapture<T> capture) {}
+
+  private final Object captureGate = new Object();
+  private final java.util.Map<UUID, DraftWork<T>> draftGraphics = new java.util.HashMap<>();
   private final java.util.Map<UUID, AuditionWork<T>> auditions = new java.util.HashMap<>();
   private OperationDescriptor<UUID, AuditionCapture.Receipt> auditionCapture;
-  private OperationScope auditionOperations;
+  private OperationScope graphicCaptureOperations;
+  private OperationDescriptor<UUID, DraftGraphicCapture.Receipt> draftGraphicCapture;
   private final OperationScope.Limits operationLimits;
   private final OwnerContext context;
   private final OwnerContext.Access access;
@@ -481,15 +489,15 @@ public final class DocumentActions<T> implements AutoCloseable {
   /**
    * Optional READ capture service; baseline document construction retains its original admission.
    */
-  private OperationScope auditionScope() {
+  private OperationScope graphicCaptureScope() {
     context.requireOwner();
-    if (auditionOperations != null) return auditionOperations;
+    if (graphicCaptureOperations != null) return graphicCaptureOperations;
     var selected =
         new OperationScope(
             context,
             access,
             new OperationScope.Limits(
-                1, Math.min(8, operationLimits.maximumActive()), 8, operationLimits.input()));
+                2, Math.min(8, operationLimits.maximumActive()), 8, operationLimits.input()));
     auditionCapture =
         descriptor(
             "capture_audition",
@@ -500,7 +508,7 @@ public final class DocumentActions<T> implements AutoCloseable {
         auditionCapture,
         (execution, ticket) -> {
           final AuditionWork<T> work;
-          synchronized (auditions) {
+          synchronized (captureGate) {
             work = auditions.get(ticket);
           }
           if (work == null)
@@ -509,7 +517,18 @@ public final class DocumentActions<T> implements AutoCloseable {
           work.capture().checkpoint(execution);
           var plan = work.reference().plan(this, work.expected());
           return actor
-              .preflight()
+              .preflight(
+                  json -> {
+                    work.capture().checkpoint(execution);
+                    long bytes =
+                        design.inherent.reform.presentation.graphics.GraphicInputBasis.Content.of(
+                                json)
+                            .bytes();
+                    requireInputBytes(work.inputs(), bytes);
+                    work.capture().charge(work.inputs().reserve(bytes, 1));
+                    work.capture().checkpoint(execution);
+                  },
+                  () -> work.capture().checkpoint(execution))
               .thenCompose(
                   base ->
                       context.onOwner(
@@ -540,7 +559,8 @@ public final class DocumentActions<T> implements AutoCloseable {
                                   base.observation().snapshot().jsonLimits(),
                                   work.inputs(),
                                   work.capture()::charge,
-                                  () -> work.capture().checkpoint(execution))))
+                                  () -> work.capture().checkpoint(execution),
+                                  work.capture().allocation())))
               .thenCompose(
                   overlay ->
                       actor
@@ -559,8 +579,77 @@ public final class DocumentActions<T> implements AutoCloseable {
                             return work.capture().offer(overlay);
                           }));
         });
+    draftGraphicCapture =
+        descriptor(
+            "capture_graphic_draft",
+            ValueTypes.uuid(),
+            OwnerContext.Right.READ,
+            Set.of(OperationDescriptor.Effect.INSPECT));
+    selected.register(
+        draftGraphicCapture,
+        (execution, ticket) -> {
+          final DraftWork<T> work;
+          synchronized (captureGate) {
+            work = draftGraphics.get(ticket);
+          }
+          if (work == null)
+            throw new PolicyRefusal(
+                "preview.capture_closed", "The draft capture is no longer admitted");
+          requirePreviewRevision(work.expected());
+          work.capture().checkpoint(execution);
+          var admitted =
+              new java.util.concurrent.atomic.AtomicReference<
+                  design.inherent.reform.presentation.graphics.GraphicInputBasis.Content>();
+          var copied = new java.util.concurrent.atomic.AtomicLong();
+          return actor
+              .preflight(
+                  json -> {
+                    work.capture().checkpoint(execution);
+                    var content =
+                        design.inherent.reform.presentation.graphics.GraphicInputBasis.Content.of(
+                            json);
+                    long bytes =
+                        Math.addExact(
+                            content.bytes(),
+                            Math.addExact(
+                                256L,
+                                design.inherent.reform.presentation.graphics.GraphicInputBasis
+                                    .Content.of(work.expected().toString())
+                                    .bytes()));
+                    requireInputBytes(work.inputs(), bytes);
+                    work.capture().charge(work.inputs().reserve(bytes, 1));
+                    admitted.set(content);
+                    copied.set(bytes);
+                    work.capture().checkpoint(execution);
+                  },
+                  () -> work.capture().checkpoint(execution))
+              .thenCompose(
+                  base ->
+                      context.onOwner(
+                          () -> {
+                            work.capture().checkpoint(execution);
+                            requirePreviewRevision(work.expected());
+                            if (!work.expected().equals(base.target()))
+                              throw new PolicyRefusal(
+                                  "preview.stale", "The base draft changed during capture");
+                            if (!base.report().valid())
+                              throw new PolicyRefusal(
+                                  new ValidationReport(
+                                          List.of(
+                                              Issue.error(
+                                                  "preview.input_invalid",
+                                                  FieldPath.ROOT,
+                                                  "Repair the complete draft before preparing a preview")),
+                                          true)
+                                      .and(base.report()));
+                            return work.capture()
+                                .offer(
+                                    new DraftGraphicCapture.Data<>(
+                                        base, admitted.get(), copied.get()));
+                          }));
+        });
     selected.freeze();
-    auditionOperations = selected;
+    graphicCaptureOperations = selected;
     return selected;
   }
 
@@ -748,9 +837,9 @@ public final class DocumentActions<T> implements AutoCloseable {
 
   public Optional<OperationHandle<?>> operation(UUID id) {
     var ordinary = scope.find(id);
-    return ordinary.isPresent() || auditionOperations == null
+    return ordinary.isPresent() || graphicCaptureOperations == null
         ? ordinary
-        : auditionOperations.find(id);
+        : graphicCaptureOperations.find(id);
   }
 
   /** Coalesces first-use loading. A failed initial attempt needs an explicit reload to retry. */
@@ -775,16 +864,16 @@ public final class DocumentActions<T> implements AutoCloseable {
   }
 
   public List<OperationSnapshot<?>> operations() {
-    if (auditionOperations == null) return scope.snapshots();
+    if (graphicCaptureOperations == null) return scope.snapshots();
     var result = new java.util.ArrayList<OperationSnapshot<?>>(scope.snapshots());
-    result.addAll(auditionOperations.snapshots());
+    result.addAll(graphicCaptureOperations.snapshots());
     return List.copyOf(result);
   }
 
   /** Cached scope work; a terminal unknown receipt can still require actor reconciliation. */
   public boolean hasActiveOperations() {
     return scope.hasActiveOperations()
-        || auditionOperations != null && auditionOperations.hasActiveOperations();
+        || graphicCaptureOperations != null && graphicCaptureOperations.hasActiveOperations();
   }
 
   public OperationHandle<EditorActor.View<T>> load(OperationDescriptor.EntryPoint entry) {
@@ -945,8 +1034,8 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (inputs.limits().nativeBytes() != inputs.limits().inputBytes())
       throw new IllegalArgumentException("Use a dedicated captured-input ledger");
     UUID ticket = UUID.randomUUID();
-    synchronized (auditions) {
-      if (auditions.size() >= 8)
+    synchronized (captureGate) {
+      if (auditions.size() + draftGraphics.size() >= 8)
         throw new PolicyRefusal(
             "preview.busy", "Close a previous audition capture before opening another");
       var capture =
@@ -954,19 +1043,64 @@ public final class DocumentActions<T> implements AutoCloseable {
               context,
               () -> reference.requireCurrent(this, expected),
               () -> {
-                synchronized (auditions) {
+                synchronized (captureGate) {
                   auditions.remove(ticket);
                 }
               });
       auditions.put(ticket, new AuditionWork<>(reference, expected, inputs, capture));
       try {
-        capture.bind(auditionScope().submit(auditionCapture, entry, ticket, readiness(entry)));
+        capture.bind(
+            graphicCaptureScope().submit(auditionCapture, entry, ticket, readiness(entry)));
       } catch (RuntimeException | Error failed) {
         capture.submissionFailed(failed);
         throw failed;
       }
       return capture;
     }
+  }
+
+  /**
+   * Budgeted graphics draft capture; legacy capturePreview retains its full inspection contract.
+   */
+  public DraftGraphicCapture<T> captureGraphicDraft(
+      OperationDescriptor.EntryPoint entry,
+      DraftRevision expected,
+      design.inherent.reform.presentation.graphics.GraphicLedger inputs) {
+    requirePreviewRevision(java.util.Objects.requireNonNull(expected));
+    java.util.Objects.requireNonNull(inputs);
+    if (inputs.limits().nativeBytes() != inputs.limits().inputBytes())
+      throw new IllegalArgumentException("Use a dedicated captured-input ledger");
+    var ticket = UUID.randomUUID();
+    synchronized (captureGate) {
+      if (auditions.size() + draftGraphics.size() >= 8)
+        throw new PolicyRefusal(
+            "preview.busy", "Close a previous graphic capture before opening another");
+      var capture =
+          new DraftGraphicCapture<T>(
+              context,
+              () -> requirePreviewRevision(expected),
+              () -> {
+                synchronized (captureGate) {
+                  draftGraphics.remove(ticket);
+                }
+              });
+      draftGraphics.put(ticket, new DraftWork<>(expected, inputs, capture));
+      try {
+        capture.bind(
+            graphicCaptureScope().submit(draftGraphicCapture, entry, ticket, readiness(entry)));
+      } catch (RuntimeException | Error failed) {
+        capture.submissionFailed(failed);
+        throw failed;
+      }
+      return capture;
+    }
+  }
+
+  private static void requireInputBytes(
+      design.inherent.reform.presentation.graphics.GraphicLedger inputs, long bytes) {
+    if (bytes > inputs.limits().inputBytes())
+      throw new PolicyRefusal(
+          "preview.budget", "The complete captured input exceeds its copied-input allowance");
   }
 
   private void requirePreviewRevision(DraftRevision expected) {
@@ -1118,10 +1252,15 @@ public final class DocumentActions<T> implements AutoCloseable {
     if (context.isOpen()) context.checkOwnerThread();
     closed = true;
     final java.util.List<AuditionCapture<T>> captured;
-    synchronized (auditions) {
+    synchronized (captureGate) {
       captured = auditions.values().stream().map(AuditionWork::capture).toList();
     }
     captured.forEach(AuditionCapture::close);
+    final java.util.List<DraftGraphicCapture<T>> drafts;
+    synchronized (captureGate) {
+      drafts = draftGraphics.values().stream().map(DraftWork::capture).toList();
+    }
+    drafts.forEach(DraftGraphicCapture::close);
     importEpoch = new Object();
     conflictEpoch = new Object();
     try {
@@ -1132,7 +1271,7 @@ public final class DocumentActions<T> implements AutoCloseable {
       } finally {
         try {
           try {
-            if (auditionOperations != null) auditionOperations.close();
+            if (graphicCaptureOperations != null) graphicCaptureOperations.close();
           } finally {
             scope.close();
           }

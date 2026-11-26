@@ -522,7 +522,8 @@ class PlatformOutcomeTests(unittest.TestCase):
         complete = {"status": "PASS", "passed": True, "prepares": 9, "legacyPrepares": 1,
                     "inputBytes": 0, "inputObjects": 0, "nativeBytes": 0, "sceneBytes": 0,
                     "peakInputBytes": 700, "fullBasisVerified": True, "cameraRetained": True,
-                    "sourceUnchanged": True, "closedNoPublication": True}
+                    "sourceUnchanged": True, "closedNoPublication": True,
+                    "leasedDraftVerified": True, "sourceFailureVerified": True}
         self.assertFalse(accepted())
         self.native["semanticAuditions"] = dict(complete)
         self.assertTrue(accepted())

@@ -726,6 +726,18 @@ public final class DraftTree {
   }
 
   public <T> Inspection<T> inspect(DocumentDefinition<T> definition, JsonLimits jsonLimits) {
+    return inspect(definition, jsonLimits, ignored -> {});
+  }
+
+  /**
+   * Admit the bounded rendered representation before decoding/copying a complete value. This
+   * callback grants no validation or authority; a refusal propagates without entering the decoder.
+   */
+  public <T> Inspection<T> inspect(
+      DocumentDefinition<T> definition,
+      JsonLimits jsonLimits,
+      java.util.function.Consumer<String> admitRepresentation) {
+    Objects.requireNonNull(admitRepresentation);
     var renderer = new Renderer(jsonLimits);
     final String json;
     try {
@@ -745,6 +757,7 @@ public final class DraftTree {
     var report = new ValidationReport(renderer.issues, renderer.complete);
     if (!report.valid())
       return new Inspection<>(java.util.Optional.empty(), report, renderer.inputs);
+    admitRepresentation.accept(json);
     try {
       var decoded = definition.decode(JsonInput.read(json, jsonLimits));
       var merged = report.and(decoded.report());

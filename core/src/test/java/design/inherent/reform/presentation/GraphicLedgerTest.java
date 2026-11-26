@@ -72,6 +72,32 @@ class GraphicLedgerTest {
   }
 
   @Test
+  void growingOneBlockChecksEveryParentAtomicallyAndReleasesItsFinalSize() {
+    var root = new GraphicLedger(new GraphicLimits(16, 16, 16, 4, 12));
+    var child = root.child(new GraphicLimits(8, 8, 8, 2, 8));
+    var block = child.reserve(3, 1);
+    var sibling = root.reserve(5, 1);
+    child.grow(block, 7);
+    assertEquals(12, root.state().bytes());
+    assertEquals(7, child.state().bytes());
+    assertEquals(1, child.state().resources());
+    assertThrows(PolicyRefusal.class, () -> child.grow(block, 8));
+    assertEquals(7, child.state().bytes());
+    assertEquals(12, root.state().bytes());
+    sibling.close();
+    assertThrows(PolicyRefusal.class, () -> child.grow(block, 9));
+    assertThrows(IllegalArgumentException.class, () -> child.grow(block, 6));
+    assertThrows(IllegalArgumentException.class, () -> root.grow(block, 8));
+    child.grow(block, 8);
+    assertEquals(8, root.state().bytes());
+    assertEquals(1, root.state().resources());
+    block.close();
+    assertEquals(0, root.state().bytes());
+    assertEquals(0, child.state().resources());
+    assertThrows(IllegalStateException.class, () -> child.grow(block, 8));
+  }
+
+  @Test
   void siblingProvidersShareAtomicParentAdmissionAndRelease() throws Exception {
     var root = new GraphicLedger(new GraphicLimits(1024, 1024, 256, 4, 8));
     var childLimit = new GraphicLimits(512, 512, 128, 2, 6);

@@ -408,13 +408,36 @@ public final class EditorActor<T> implements AutoCloseable {
 
   /** Backend preparation is intentionally not retained as a future write capability. */
   public CompletionStage<Preflight<T>> preflight() {
+    return preflight(ignored -> {});
+  }
+
+  /**
+   * Optional copied-input admission after bounded rendering, before complete decode/preparation.
+   */
+  public CompletionStage<Preflight<T>> preflight(Consumer<String> admitRepresentation) {
+    return preflight(admitRepresentation, () -> {});
+  }
+
+  /** Cancellation safe points never abandon an already entered source read/preparation stage. */
+  public CompletionStage<Preflight<T>> preflight(
+      Consumer<String> admitRepresentation, Runnable checkpoint) {
+    Objects.requireNonNull(admitRepresentation);
+    Objects.requireNonNull(checkpoint);
     return act(() -> {
+          checkpoint.run();
           var selected = ready();
           var observed = inspection(selected);
-          return new PreflightPlan<>(observed, selected.source, observed.snapshot().inspect());
+          return new PreflightPlan<>(
+              observed,
+              selected.source,
+              observed
+                  .snapshot()
+                  .draft()
+                  .inspect(definition, observed.snapshot().jsonLimits(), admitRepresentation));
         })
         .thenCompose(
             plan -> {
+              checkpoint.run();
               if (!plan.inspected().report().valid())
                 return java.util.concurrent.CompletableFuture.completedStage(
                     new Preflight<>(
@@ -423,8 +446,10 @@ public final class EditorActor<T> implements AutoCloseable {
                         plan.inspected().report()));
               return readAtRevision(plan.observation().snapshot().sourceRevision())
                   .thenCompose(
-                      current ->
-                          source.prepare(plan.source(), plan.observation().snapshot().draft()))
+                      current -> {
+                        checkpoint.run();
+                        return source.prepare(plan.source(), plan.observation().snapshot().draft());
+                      })
                   .handle(
                       (prepared, failed) ->
                           new Preflight<>(

@@ -274,7 +274,8 @@ def successful_boot(result, native, library, target, loader_version, client=Fals
                 and type(native["semanticAuditions"].get("legacyPrepares")) is int
                 and native["semanticAuditions"]["legacyPrepares"] == 1
                 and all(native["semanticAuditions"].get(key) is True for key in
-                        ("fullBasisVerified", "cameraRetained", "sourceUnchanged", "closedNoPublication"))
+                        ("fullBasisVerified", "cameraRetained", "sourceUnchanged", "closedNoPublication",
+                         "leasedDraftVerified", "sourceFailureVerified"))
                 and all(type(native["semanticAuditions"].get(key)) is int
                         and native["semanticAuditions"][key] == 0
                         for key in ("inputBytes", "inputObjects", "nativeBytes", "sceneBytes"))

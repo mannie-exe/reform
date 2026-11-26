@@ -82,6 +82,7 @@ final class PlatformAuditionChecks implements PlatformFormProbe.Scene {
   private boolean fullBasisVerified, cameraRetained, sourceUnchanged, closedNoPublication;
   private boolean complete;
   private volatile JsonObject basisObservation;
+  private final JsonObject withdrawalObservation = new JsonObject();
 
   private PlatformAuditionChecks(PlatformFormProbe.Driver driver) {}
 
@@ -384,14 +385,14 @@ final class PlatformAuditionChecks implements PlatformFormProbe.Scene {
         bases.add(view.displayedStamp().orElseThrow().kind().name());
         fullBasisVerified = true;
         cameraRetained = true;
-        held = view.request(2, audition);
+        held = view.request(2);
         stage++;
       }
       case 6 -> {
         if (!entries.contains(2)) return false;
         heldBytes = host.retainedInput().bytes();
         check(
-            "entered provider retains copied input",
+            "entered DRAFT provider retains copied input",
             heldBytes > 0 && host.retainedInput().resources() == 1);
         skipped = view.request(3, audition);
         replacement = view.request(4, audition);
@@ -529,6 +530,51 @@ final class PlatformAuditionChecks implements PlatformFormProbe.Scene {
           throw new AssertionError("Denied source entered preview");
         } catch (PolicyRefusal refused) {
           check("actual source READ refusal prevents preparation", !refused.report().valid());
+          var expected = refused.report().issues().getFirst();
+          var observed = view.snapshot().report();
+          var preparation = (GraphicPreparation.Refused) view.preparation().orElseThrow();
+          var viewport = view.widget(Component.literal("Profile preview"));
+          String narration = NativeClientProbe.narration(viewport::updateNarration);
+          withdrawalObservation.addProperty("expectedCode", expected.code());
+          withdrawalObservation.addProperty("expectedMessage", expected.fallback());
+          withdrawalObservation.addProperty("snapshotReport", observed.toString());
+          withdrawalObservation.addProperty("preparationReport", preparation.report().toString());
+          withdrawalObservation.addProperty("narration", narration);
+          int retained = 0;
+          int receipts = 0;
+          long retainedBytes = 0;
+          for (var operation : editor.actions().operations()) {
+            if (operation
+                    .operation()
+                    .equals(DocumentId.parse("reform:document/capture_graphic_draft"))
+                && operation.result().orElse(null) instanceof DraftGraphicCapture.Receipt receipt) {
+              check(
+                  "draft history retains only charged content metadata",
+                  receipt.copiedBytes() >= receipt.content().bytes());
+              receipts++;
+            }
+            if (operation.operation().equals(DocumentId.parse("reform:document/capture_preview"))
+                && operation.result().orElse(null) instanceof EditorActor.Preflight<?> preflight
+                && preflight.candidate().isPresent()) {
+              retained++;
+              retainedBytes +=
+                  GraphicInputBasis.Content.of(preflight.candidate().orElseThrow().authoredJson())
+                      .bytes();
+            }
+          }
+          withdrawalObservation.addProperty("legacyDraftCandidatesInHistory", retained);
+          withdrawalObservation.addProperty("legacyDraftCandidateBytes", retainedBytes);
+          withdrawalObservation.addProperty("draftMetadataReceipts", receipts);
+          withdrawalObservation.addProperty("chargedInputBytes", host.retainedInput().bytes());
+          check(
+              "actual source refusal remains in public status, preparation, and native narration",
+              observed.issues().stream().anyMatch(issue -> issue.code().equals(expected.code()))
+                  && preparation.report().issues().stream()
+                      .anyMatch(issue -> issue.code().equals(expected.code()))
+                  && narration.contains(expected.fallback()));
+          check(
+              "host DRAFT input no longer escapes its lease through full-candidate history",
+              retained == 0 && receipts == 3 && host.retainedInput().bytes() == 0);
         }
         entriesBeforeRestore = entries.size();
         sourceRead.set(true);
@@ -604,6 +650,18 @@ final class PlatformAuditionChecks implements PlatformFormProbe.Scene {
     result.addProperty("sourceUnchanged", sourceUnchanged);
     result.addProperty("closedNoPublication", closedNoPublication);
     if (basisObservation != null) result.add("basis", basisObservation.deepCopy());
+    result.add("withdrawal", withdrawalObservation.deepCopy());
+    result.addProperty(
+        "leasedDraftVerified",
+        complete
+            && heldBytes > 0
+            && withdrawalObservation.has("draftMetadataReceipts")
+            && withdrawalObservation.get("draftMetadataReceipts").getAsInt() == 3);
+    result.addProperty(
+        "sourceFailureVerified",
+        complete
+            && withdrawalObservation.has("expectedCode")
+            && withdrawalObservation.get("expectedCode").getAsString().equals("owner.permission"));
     result.addProperty("prepares", entries.size());
     result.addProperty("legacyPrepares", legacyEntries.get());
     result.addProperty("passed", complete);
