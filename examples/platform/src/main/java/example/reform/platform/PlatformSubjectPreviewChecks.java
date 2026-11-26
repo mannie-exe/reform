@@ -107,7 +107,7 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
   private int sectionFactories;
   private boolean canonicalOwner, invalidSiblingRetained, nativeInputRetained;
   private EditBox originalNativeInput;
-  private String invalidRaw;
+  private String manualRaw;
   private static final FieldPath MODELS_PATH = FieldPath.ROOT.field("models"),
       ARTWORK_PATH = FieldPath.ROOT.field("artwork");
   private design.inherent.reform.presentation.ui.UiLocal<Boolean> modelVisible;
@@ -1051,18 +1051,28 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         if (!(actual instanceof EditBox input) || !widgets(workflow.screen()).contains(input))
           return false;
         originalNativeInput = input;
-        invalidRaw = "x".repeat(129);
+        manualRaw = "fixture:manual";
         check("actual canonical input accepts focus", focus(workflow.screen(), input));
-        replace(workflow.screen(), input, invalidRaw);
-        stage++;
+        replace(workflow.screen(), input, manualRaw);
+        stage = 800;
+      }
+      case 800 -> {
+        if (editor.busy()) return false;
+        check(
+            "unknown manual Models ID is admitted without coercion",
+            originalNativeInput.getValue().equals(manualRaw) && editor.view().validation().valid());
+        var sibling =
+            (EditBox) editor.form().fieldControl(FieldPath.ROOT.field("distance")).orElseThrow();
+        replace(workflow.screen(), sibling, "broken");
+        stage = 81;
       }
       case 81 -> {
         if (editor.busy() || editor.view().validation().valid()) return false;
         check(
-            "invalid canonical text stays in the actual field and blocks saving",
-            originalNativeInput.getValue().equals(invalidRaw) && !editor.canSubmit());
+            "canonical manual ID stays intact while invalid native distance blocks saving",
+            originalNativeInput.getValue().equals(manualRaw) && !editor.canSubmit());
         check(
-            "valid sibling remains stageable beside admitted invalid canonical text",
+            "valid Artwork sibling remains stageable beside admitted invalid native distance",
             editor.canStage(ARTWORK_PATH));
         choose(artworkPicker, "Artwork profiles", "fixture:alternate");
         frames = PlatformFrameObservations.sequence();
@@ -1075,16 +1085,30 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             || !accepted.orElseThrow().after().matches(editor.view().snapshot().orElseThrow()))
           return false;
         invalidSiblingRetained =
-            originalNativeInput.getValue().equals(invalidRaw)
+            originalNativeInput.getValue().equals(manualRaw)
                 && !editor.view().validation().valid()
                 && entries.size() == 6;
         check(
-            "real Artwork acceptance preserves invalid Models input and cannot compile a partial preview",
+            "real Artwork acceptance preserves manual Models and invalid distance without a partial preview",
             invalidSiblingRetained);
+        var prior = preview.attempt().orElseThrow();
         check(
-            "explicit preview refuses the complete invalid draft",
-            preview.prepare().invoke(null) instanceof UiActionResult.Refused
-                && entries.size() == 6);
+            "explicit Prepare starts its actual operation for the admitted invalid draft",
+            preview.prepare().invoke(null) instanceof UiActionResult.Applied
+                && preview.attempt().orElseThrow() != prior);
+        held = preview.attempt().orElseThrow();
+        stage = 820;
+      }
+      case 820 -> {
+        if (!held.completion().toCompletableFuture().isDone()) return false;
+        var result = held.completion().toCompletableFuture().join();
+        check(
+            "complete owner preflight refuses the explicit invalid attempt before material work",
+            result.state() == ClientGraphicHost.State.REFUSED
+                && result.report().issues().stream()
+                    .anyMatch(issue -> issue.code().equals("preview.input_invalid"))
+                && entries.size() == 6
+                && empty());
         check(
             "canonical native input refocuses before window change",
             focus(workflow.screen(), originalNativeInput));
@@ -1103,9 +1127,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         check(
             "compact window keeps the same canonical field buffer caret selection and focus",
             editor.form().fieldControl(MODELS_PATH).orElseThrow() == originalNativeInput
-                && originalNativeInput.getValue().equals(invalidRaw)
+                && originalNativeInput.getValue().equals(manualRaw)
                 && originalNativeInput.getCursorPosition() == 3
-                && originalNativeInput.getHighlighted().equals("xx")
+                && originalNativeInput.getHighlighted().equals(manualRaw.substring(3, 5))
                 && originalNativeInput.isFocused());
         NativeClientProbe.resize(client, originalWidth[0], originalHeight[0]);
         frames = PlatformFrameObservations.sequence();
@@ -1119,9 +1143,9 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
             || PlatformFrameObservations.sequence() - frames < 8) return false;
         nativeInputRetained =
             editor.form().fieldControl(MODELS_PATH).orElseThrow() == originalNativeInput
-                && originalNativeInput.getValue().equals(invalidRaw)
+                && originalNativeInput.getValue().equals(manualRaw)
                 && originalNativeInput.getCursorPosition() == 3
-                && originalNativeInput.getHighlighted().equals("xx")
+                && originalNativeInput.getHighlighted().equals(manualRaw.substring(3, 5))
                 && originalNativeInput.isFocused()
                 && sectionFactories == 1;
         check("return retains one section factory and original native input", nativeInputRetained);
@@ -1134,10 +1158,18 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
         stage = -1;
       }
       case 85 -> {
+        if (editor.busy()) return false;
+        replace(
+            workflow.screen(),
+            (EditBox) editor.form().fieldControl(FieldPath.ROOT.field("distance")).orElseThrow(),
+            "64");
+        stage = 850;
+      }
+      case 850 -> {
         if (editor.busy() || !editor.canSubmit() || !editor.view().validation().valid())
           return false;
         choose(artworkPicker, "Artwork profiles", "fixture:base");
-        stage++;
+        stage = 86;
       }
       case 86 -> {
         if (!ready(7) || editor.dirty()) return false;
@@ -1681,6 +1713,11 @@ public final class PlatformSubjectPreviewChecks implements PlatformFormProbe.Sce
               });
     }
     result.addProperty("sectionMode", sectionMode);
+    if (sectionMode) {
+      result.addProperty("nativeField", "models");
+      result.addProperty("invalidSibling", "distance");
+      result.addProperty("manualRaw", manualRaw);
+    }
     result.addProperty("sectionFactories", sectionFactories);
     result.addProperty("canonicalOwner", canonicalOwner);
     result.addProperty("invalidSiblingRetained", invalidSiblingRetained);
