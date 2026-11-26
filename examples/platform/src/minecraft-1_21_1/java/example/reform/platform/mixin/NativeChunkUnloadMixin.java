@@ -22,6 +22,18 @@ abstract class NativeChunkUnloadMixin {
 
   @Inject(method = "scheduleUnload", at = @At("HEAD"))
   private void observe(long position, ChunkHolder holder, CallbackInfo callback) {
+    try {
+      reform$observe(position, holder);
+    } catch (RuntimeException | AssertionError failed) {
+      reform$sampled = true;
+      var error = new JsonObject();
+      error.addProperty("observerFailure", failed.toString());
+      PlatformNativeUnloadObservation.sample(error);
+    }
+  }
+
+  @Unique
+  private void reform$observe(long position, ChunkHolder holder) {
     if (!PlatformNativeUnloadObservation.armed
         || reform$sampled
         || holder.getGenerationRefCount() == 0) return;
@@ -53,9 +65,13 @@ abstract class NativeChunkUnloadMixin {
     for (var entry : holder.getAllFutures()) {
       var future = new JsonObject();
       future.addProperty("status", entry.getFirst().toString());
-      future.addProperty("done", entry.getSecond().isDone());
-      future.addProperty("exceptional", entry.getSecond().isCompletedExceptionally());
-      future.addProperty("cancelled", entry.getSecond().isCancelled());
+      var nativeFuture = entry.getSecond();
+      future.addProperty("present", nativeFuture != null);
+      if (nativeFuture != null) {
+        future.addProperty("done", nativeFuture.isDone());
+        future.addProperty("exceptional", nativeFuture.isCompletedExceptionally());
+        future.addProperty("cancelled", nativeFuture.isCancelled());
+      }
       futures.add(future);
     }
     value.add("futures", futures);
